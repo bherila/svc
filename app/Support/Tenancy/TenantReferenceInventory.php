@@ -71,6 +71,12 @@ final class TenantReferenceInventory
     {
         return [
             // Companies own everything below them.
+            TenantReference::enforcedBy('historical_entries', 'historical_record_id', 'historical_records', 'history_entry_record_fk'),
+            TenantReference::enforcedBy('historical_entries', 'parent_record_id', 'historical_records', 'history_entry_parent_fk'),
+            TenantReference::enforcedBy('historical_entries', 'client_company_id', 'client_companies', 'history_entry_company_fk'),
+            TenantReference::enforcedBy('historical_blobs', 'historical_entry_id', 'historical_entries', 'history_blob_entry_fk'),
+            TenantReference::enforcedBy('client_contacts', 'client_company_id', 'client_companies', 'contacts_ws_company_fk'),
+            TenantReference::enforcedBy('historical_records', 'historical_source_id', 'historical_sources', 'historical_records_ws_source_fk'),
             TenantReference::enforcedBy('client_company_memberships', 'client_company_id', 'client_companies', 'ccm_ws_company_fk'),
             TenantReference::enforcedBy('client_portal_invitations', 'client_company_id', 'client_companies', 'cpi_ws_company_fk'),
             TenantReference::enforcedBy('client_company_activity', 'client_company_id', 'client_companies', 'cca_ws_company_fk'),
@@ -91,6 +97,16 @@ final class TenantReferenceInventory
 
             // Projects.
             TenantReference::enforcedBy('client_tasks', 'client_project_id', 'client_projects', 'ct_ws_project_fk'),
+            TenantReference::enforcedBy('client_tasks', 'parent_task_id', 'client_tasks', 'tasks_project_parent_fk', ['client_project_id']),
+            TenantReference::enforcedBy('client_tasks', 'client_task_list_id', 'client_task_lists', 'tasks_project_list_fk', ['client_project_id']),
+            TenantReference::enforcedBy('client_task_lists', 'client_project_id', 'client_projects', 'task_lists_ws_project_fk'),
+            TenantReference::enforcedBy('client_task_assignments', 'client_task_id', 'client_tasks', 'task_assignments_ws_task_fk'),
+            TenantReference::enforcedBy('client_collaboration_topics', 'client_company_id', 'client_companies', 'cct_ws_company_fk'),
+            TenantReference::enforcedBy('client_collaboration_topics', 'client_project_id', 'client_projects', 'cct_ws_project_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_company_id', 'client_companies', 'cc_ws_company_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_project_id', 'client_projects', 'cc_ws_project_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_task_id', 'client_tasks', 'cc_ws_task_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_collaboration_topic_id', 'client_collaboration_topics', 'cc_ws_topic_fk'),
             TenantReference::enforcedBy('client_time_entries', 'client_project_id', 'client_projects', 'cte_ws_project_fk'),
             TenantReference::enforcedBy('client_project_memberships', 'client_project_id', 'client_projects', 'cpm_ws_project_fk'),
             TenantReference::enforcedBy('client_portal_project_access', 'client_project_id', 'client_projects', 'cppa_ws_project_fk'),
@@ -110,12 +126,16 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_invoice_email_deliveries', 'client_invoice_id', 'client_invoices', 'cied_ws_invoice_fk'),
             TenantReference::enforcedBy('client_invoice_administrator_notifications', 'client_invoice_id', 'client_invoices', 'cian_ws_invoice_fk'),
             TenantReference::enforcedBy('payment_reconciliations', 'client_invoice_payment_id', 'client_invoice_payments', 'pr_ws_payment_fk'),
+            TenantReference::enforcedBy('processor_movements', 'client_invoice_payment_id', 'client_invoice_payments', 'pm_ws_payment_fk'),
+            TenantReference::enforcedBy('client_invoice_payment_refunds', 'client_invoice_payment_id', 'client_invoice_payments', 'cipr_ws_payment_fk'),
+            TenantReference::enforcedBy('client_invoice_payment_refunds', 'reverses_refund_id', 'client_invoice_payment_refunds', 'cipr_ws_reverses_fk'),
             TenantReference::enforcedBy('client_invoice_line_time_entries', 'client_invoice_line_id', 'client_invoice_lines', 'cilte_ws_line_fk'),
             TenantReference::enforcedBy('client_invoice_line_time_entries', 'client_time_entry_id', 'client_time_entries', 'cilte_ws_time_entry_fk'),
 
             // Square (#438): SVC's links to records held in Square.
             TenantReference::enforcedBy('company_square_customers', 'client_company_id', 'client_companies', 'csqc_ws_company_fk'),
             TenantReference::enforcedBy('invoice_square_links', 'client_invoice_id', 'client_invoices', 'isql_ws_invoice_fk'),
+            TenantReference::enforcedBy('square_invoice_coverages', 'client_invoice_id', 'client_invoices', 'sqic_ws_invoice_fk'),
             TenantReference::enforcedBy('invoice_reminder_logs', 'client_invoice_id', 'client_invoices', 'irl_ws_invoice_fk'),
 
             // Stripe.

@@ -285,7 +285,7 @@ final class PaymentCorrectionTest extends TestCase
     {
         [, $workspace, $invoice, $payment] = $this->recordedPayment();
 
-        $exit = Artisan::call('svc:billing:correct-payment', [
+        $exit = Artisan::call('svc:billing:correct-payment', ['--apply' => true,
             'payment' => $payment->public_id,
             '--workspace' => $workspace->public_id,
             '--method' => 'ach',
@@ -327,7 +327,6 @@ final class PaymentCorrectionTest extends TestCase
             '--workspace' => $workspace->public_id,
             '--notes' => 'Synthetic dry note',
             '--reason' => 'Synthetic dry run',
-            '--dry-run' => true,
             '--format' => 'json',
         ]);
 
@@ -378,7 +377,7 @@ final class PaymentCorrectionTest extends TestCase
             '--workspace' => $workspace->public_id,
             '--reference' => 'SYN-REF-2',
             '--reason' => 'Synthetic race',
-            '--dry-run' => $dryRun,
+            '--apply' => ! $dryRun,
             '--format' => 'json',
         ]);
         $output = Artisan::output();
@@ -409,7 +408,7 @@ final class PaymentCorrectionTest extends TestCase
     {
         [, $workspace, , $payment] = $this->recordedPayment();
 
-        $exit = Artisan::call('svc:billing:correct-payment', [
+        $exit = Artisan::call('svc:billing:correct-payment', ['--apply' => true,
             'payment' => $payment->public_id,
             '--workspace' => $workspace->public_id,
             ...$options,
@@ -425,7 +424,7 @@ final class PaymentCorrectionTest extends TestCase
         [, $workspace] = $this->recordedPayment('Alpha');
         [, , , $otherPayment] = $this->recordedPayment('Beta');
 
-        $exit = Artisan::call('svc:billing:correct-payment', [
+        $exit = Artisan::call('svc:billing:correct-payment', ['--apply' => true,
             'payment' => $otherPayment->public_id,
             '--workspace' => $workspace->public_id,
             '--method' => 'ach',

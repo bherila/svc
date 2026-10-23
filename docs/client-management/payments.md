@@ -148,11 +148,26 @@ method, reference and amount. The only write it offers is **Correct date**,
 described below; a row dated before the invoice's `issue_date` is marked, and
 the table says once, underneath, what the marker means.
 
+A payment the external finance system has reconciled - one with an active
+allocation from `svc.finance.external_system` (`finance` by default), flagged
+for review or not - carries a **Reconciled in finance** badge beside its status,
+shown to workspace owners and admins only. The badge links to the finance
+transaction at `SVC_FINANCE_TRANSACTION_URL`, a template in which
+`{transaction_uuid}` is replaced by the transaction's UUID; a payment split
+across several transactions gets one numbered link per transaction. Without a
+template, or with one that is not an absolute http(s) address, the badge shows
+without a link. Each row is anchored at `#payment-{payment-uuid}`, where the
+payment's deep link lands (see [the finance API](../finance-api.md#deep-links)).
+
 ## Correcting a payment's date
 
 `POST /workspaces/{workspace}/invoices/{clientInvoice}/payments/{clientInvoicePayment}/received-on`,
-requiring `manage` on the workspace, and reaching
-`InvoiceLifecycleService::setPaymentReceivedOn()`.
+requiring `manage` on the workspace, a `received_on` and a `reason` (at most 500
+characters), and reaching `InvoiceLifecycleService::correctPayment()` with the
+date as its one field. The reason is required on the screen as it is by
+`payments.correct` (#454), so every payment correction records the same audited
+`invoice.payment_corrected` - before, after and reason - whichever door it came
+through.
 
 This is **not** a payment-edit path and does not open one. The request names one
 field and the service writes one column: amount, currency, method, status and
@@ -204,15 +219,177 @@ credit pool or a reconciliation - so correcting one rewrites no financial fact.
   excerpt on each side, because the activity payload is capped at 10,000 bytes
   and a note may be that long by itself.
 
-`setPaymentReceivedOn()` is now this operation with one field and no reason:
-the date-only **Correct date** control on the invoice screen never asked for
-one. It keeps recording `invoice.payment_date_corrected` with its
-`previous_received_on`/`received_on` payload, so the activity feed and every
-earlier entry keep their meaning.
+`setPaymentReceivedOn()` is this operation with one field and no reason. The
+invoice screen's **Correct date** control used it before it asked for a reason;
+it now asks, and calls `correctPayment()`. `setPaymentReceivedOn()` still records
+`invoice.payment_date_corrected` with its `previous_received_on`/`received_on`
+payload, so the activity feed and every earlier entry keep their meaning.
 
-The console door is `svc:billing:correct-payment` and the agent door is the
-`payments.correct` MCP tool (see [the MCP guide](../mcp.md)); the agent door does
-not offer `notes`, which agents cannot read.
+The console door is `svc:billing:correct-payment` and the API door is
+`payments.correct`, over REST and MCP (see [the MCP guide](../mcp.md)); both
+take the same four fields, and `payments.list` returns the note to the managers
+who may write it.
+
+## Withdrawing, failing or refunding a payment recorded by hand
+
+A cheque that bounces, a transfer that is reversed, a payment entered twice and
+money handed back to the client are each a change to what a recorded payment is
+worth. They are made by transitioning the payment, never by editing it, so the
+history says what happened (#455). `ManualPaymentChange` is the whole rule and
+is unit tested without a database; `InvoiceLifecycleService::changeManualPayment()`
+applies it under the payment and invoice locks, through the same write a
+processor's events take (`setPaymentStatus()` / `setRefundedAmount()`).
+
+**Only a payment recorded by hand.** A Stripe or Square payment follows its
+processor, which reports its own failures, disputes and refunds; a change made
+here would contradict the next event, so it is refused. `payments.list` marks a
+hand-recorded payment `manual: true`.
+
+**Status changes** (`payments.set_status`, `svc:billing:payment-status`) move a
+payment to one of three statuses:
+
+| from | → `succeeded` (it cleared) | → `failed` (it bounced or was reversed) | → `canceled` (recorded in error, withdrawn) |
+| --- | --- | --- | --- |
+| `pending` | yes | yes | yes |
+| `succeeded`, nothing refunded | no change | yes | yes |
+| `succeeded`, partly refunded | no change | no - refund the rest | no - refund the rest |
+| `failed`, `canceled`, `refunded`, `disputed` | no | no (or no change) | no (or no change) |
+
+`failed`, `canceled`, `refunded` and `disputed` are final for a hand-recorded
+payment: money that arrives after all is recorded as a new payment, so both
+facts stay in the history. `refunded` is reached only by refunding the whole
+amount, `disputed` is a processor's word, and nothing returns to `pending`.
+Setting the status a payment already has writes and records nothing.
+
+**Refunds** (`payments.refund`, `svc:billing:refund-payment`) record money
+already returned to the client outside SVC - SVC never sends money. `amount` is
+what was returned now, in minor units, and the refunds of a payment may not
+exceed its amount. Only a succeeded payment can be refunded; refunding all of it
+makes it `refunded`, otherwise it stays `succeeded` with its `refunded_amount`
+raised. Each refund is kept as its own immutable entry; one entered in error is
+never reduced or deleted, but answered by a reversal (below).
+
+**Balances and issued invoices.** The invoice's paid amount, balance and status
+are recomputed as for any payment change, so a paid invoice reopens: to
+`partially_paid` or `issued` by the amount that stopped counting. The invoice
+document is not changed, a void invoice stays void, and automatic delivery is
+not rescheduled. If the client no longer owes the reopened balance, correct or
+void the invoice separately - voiding still requires that nothing is paid and
+nothing is pending. Moving a payment to `succeeded` is refused if successful
+payments would exceed the invoice total, or on a void invoice. Leaving
+`succeeded` changes the money the overpayment credit pool is derived from, so
+the pool change is recorded under the company lock as a processor's refund is.
+
+**Corrections and reconciliation.** Descriptive fields (method, reference, note,
+date) stay correctable in every status, through `payments.correct`. Money that
+stops counting cannot stay allocated to a finance transaction: failing,
+withdrawing or refunding a payment beyond what its active reconciliation
+allocations leave is refused, and the allocation is deactivated in the finance
+system first. A processor's refund or dispute is not refused: it reports money
+that has already moved, so it is recorded and the allocations are flagged for
+review instead (see [the finance reconciliation API](../finance-api.md)).
+
+**Reason and audit.** A reason (at most 500 characters) is required and kept in
+the activity the transition records - `invoice.payment_received`,
+`invoice.payment_failed`, `invoice.payment_canceled` or
+`invoice.payment_refunded` - with the status it replaced (and, for a refund, the
+previous refunded amount). The API requires the payment's `version` from
+`payments.list` as `expected_version`, explicit confirmation and an idempotency
+key; a payment that moved since it was read is refused with a conflict, and so
+is a change whose transaction began from an older view of the invoice than the
+one it locked (a payment recorded or changed on that invoice in the meantime).
+The reconciliation capacity is read with a share lock, so an allocation
+committed while the change waited is counted. The
+console commands take `--expected-version`, and `--dry-run` runs the whole
+change in a transaction that is always rolled back:
+
+```
+php artisan svc:billing:payment-status <payment> --workspace=<workspace> \
+    --status=succeeded|failed|canceled --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+php artisan svc:billing:refund-payment <payment> --workspace=<workspace> \
+    --amount=<minor-units> --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+php artisan svc:billing:reverse-refund <payment> --workspace=<workspace> \
+    --refund=<refund> [--amount=<minor-units>] --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+```
+
+The output names the refund or reversal entry written (`entry` in JSON), so
+the refund's id is at hand for a later reversal.
+
+## Reversing a refund recorded in error
+
+A refund recorded by mistake - the money was never returned, or less was than
+was typed - is corrected by a **reversing entry** linked to it (#472). The
+refund is never edited or deleted: what was recorded and what corrected it both
+stay in the history.
+
+**The refund history.** Every refund of a payment recorded by hand is one row of
+`client_invoice_payment_refunds` (`PaymentRefundLedger`), immutable once written:
+the model refuses an update or a delete. A row is a `refund` or a `reversal`,
+with its amount, reason and who recorded it; a reversal names the refund it
+answers in `reverses_refund_id`, which is unique, so the schema itself refuses a
+second reversal of one refund. For a hand-recorded payment the refunds less
+their reversals always equal `refunded_amount`, which stays the total every
+balance is derived from. A payment refunded by hand before the history existed
+was given one refund entry for its whole refunded amount by the migration, so it
+can be reversed like any other; the entry is dated by the payment's latest
+`invoice.payment_refunded` activity (converted from the workspace's wall clock,
+which activity times are written in, to UTC), or by the migration when there is none -
+never by the payment row's `updated_at`, which a later correction also moves.
+A processor's payment has no entries: its refunds are the processor's report of
+a total, and they follow its events.
+
+The history is read without locks of its own: the payment's row lock already
+serialises every writer, and share-locking a payment's often empty index range
+would take gap locks that deadlock two unrelated first refunds on MariaDB.
+Instead the change proves its snapshot is no older than the lock - every history
+write also moves the payment's `lock_version`, so a plain read of it must agree
+with the locked row - and otherwise refuses with a conflict to retry
+(`PaymentVersionChanged`, 409).
+`payments.list` and the invoice screen's payload carry the entries as
+`refunds`, oldest first, with each entry's `reason` returned to owners/admins
+only.
+
+**The rule** (`ManualPaymentChange::reversal()`, decided without a database
+against the entry read under the payment lock):
+
+- only a payment recorded by hand, and only a `succeeded` or `refunded` one -
+  the only statuses a refunded payment can be in;
+- only an entry of kind `refund` of this payment that nothing has reversed - a
+  reversal is not itself reversed; if the money was returned after all, the
+  refund is recorded again;
+- `amount` reverses part of the refund and defaults to all of it; it may not
+  exceed the refund, nor the payment's refunded amount;
+- a reason (at most 500 characters);
+- room in the history: a payment holds at most
+  `ManualPaymentChange::MAX_REFUND_ENTRIES` (50) refunds and reversals, so the
+  history every reader is handed with the payment stays bounded. A refund
+  past that is refused as well.
+
+**What it does.** The refunded amount falls by the reversed amount through the
+same write a refund takes - the payment and invoice locks, the credit-pool
+change, the invoice recomputation - so a fully refunded payment is `succeeded`
+again and the invoice's paid amount rises; `invoice.marked_paid` is recorded if
+that settles it. Because the money counts again, the reversal is refused on a
+void invoice and wherever successful payments would then exceed the invoice
+total: withdraw the payment that replaced the refunded money first. A reversal
+only raises what the payment is worth, so its finance reconciliation
+allocations are untouched. The activity is `invoice.payment_refund_reversed`
+with `reason`, `previous_status`, `previous_refunded_amount`, `reversal_id` and
+`reverses_refund_id`; a refund's `invoice.payment_refunded` now also carries its
+`refund_id`.
+
+**The doors.** `payments.reverse_refund`
+(`POST /api/v1/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal`,
+and the MCP tool of that name with `refund_id`) takes `expected_version`,
+`confirm: true`, `reason` and an optional `amount`, with an idempotency key, the
+same scopes and flags as `payments.refund`, and answers with the payment as
+`payments.list` returns it. `svc:billing:reverse-refund` is its console twin;
+when the refund named is not one it can reverse, it lists the payment's refunds
+not yet reversed. The invoice screen does not record refunds, so it offers no
+reversal either.
 
 ## Payment Workflow
 
@@ -226,19 +403,46 @@ boundary and surfaced as above. An `Idempotency-Key` header, or an
 Recording a payment is a five-field form: amount, method, reference, the date
 the money arrived, and the invoice's own currency, which is not asked for.
 
+`ReceivedPaymentData` is the one rule set for recording by hand: the browser
+form, `payments.record` over REST and MCP, and a payment folded into
+`invoices.issue` all parse through it, so a value one door refuses the others
+refuse (#454). Its optional bookkeeping fields - `notes`, `status` and
+`external_finance_transaction_uuid` - are accepted by the form and by
+`payments.record` alike. `status` may be `succeeded` (the default) or `pending`:
+`failed`, `canceled`, `refunded` and `disputed` are where a recorded payment
+ends up, reached by transitioning it, so a row never appears already failed or
+refunded with nothing in its history saying how.
+
+`payments.record` alone adds two things the other doors do not: an optional
+`finance_reconciliation` that writes the payment's finance allocation in the
+same transaction, and a refusal while another payment on the invoice is
+pending or while Square collects the invoice (`PaymentCollectionGuard`, under
+the invoice lock). See [the MCP guide](../mcp.md#received-payment-bookkeeping).
+
 There is no edit or delete of money. A payment's value is corrected by
 transitioning its status or its refunded amount through
 `InvoiceLifecycleService`, which recomputes the invoice and records the
-corresponding activity — history is preserved rather than rewritten. Its
+corresponding activity — history is preserved rather than rewritten. A payment
+recorded by hand is transitioned as described above. Its
 descriptive fields are bookkeeping rather than money and have their own audited
 correction, above. The console equivalent of recording one is:
 
 ```
 php artisan svc:billing:payment <invoice> <minor-units> <currency> <method> \
-    --workspace=<workspace> [--status=succeeded] [--idempotency-key=<key>]
+    --workspace=<workspace> [--received-on=YYYY-MM-DD] [--reference=<text>] \
+    [--notes=<text>] [--status=succeeded|pending] \
+    [--external-finance-transaction=<uuid>] [--idempotency-key=<key>]
 ```
 
-`--status` accepts only the six values above; anything else is refused rather
-than stored, and `--received-on` is bounded by the same rule the screens are:
-`YYYY-MM-DD`, not in the future, not more than two years back, on the
-workspace's calendar.
+It parses through the same `ReceivedPaymentData` rules and records through the
+same `RecordReceivedPayment` operation as the screen and `payments.record`, so
+the three accept exactly the same payments (`PaymentRecordingStatusParityTest`).
+`--status` is `succeeded` or `pending`: anything else is refused, and the refusal
+points at `svc:billing:payment-status` (to mark a recorded payment failed or
+canceled) and `svc:billing:refund-payment` (to record a refund), because those
+states are reached by changing the payment, never by recording a new row.
+A retry with the same idempotency key must name the same amount, currency,
+method, status, finance transaction and (when given) date; anything else is a
+different payment and is refused. `--received-on` is bounded by the same rule
+the screens are: `YYYY-MM-DD`, not
+in the future, not more than two years back, on the workspace's calendar.

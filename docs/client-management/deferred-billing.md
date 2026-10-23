@@ -19,9 +19,10 @@ the work independently of every retainer pool.
 `deferred_buydown` is reserved for the forthcoming buy-down writer (#366).
 Manual invoice, agent and billing-template inputs refuse it. It is excluded
 from the cadence generator's replaceable line types, so a cadence rebuild
-cannot release its reservation. This first slice establishes the accounting
-rule using synthetic test allocations; backlog reporting, settlement creation
-and its void/delete lifecycle are subsequent slices of #366.
+cannot release its reservation. The first slice established the accounting
+rule using synthetic test allocations and the second reports the backlog (see
+[Deferred backlog](#deferred-backlog)); settlement creation, its void/delete
+lifecycle and portal visibility are subsequent slices of #366.
 
 ## What it does
 
@@ -70,6 +71,90 @@ Deferred work draws only on capacity the month's ordinary work left free. When a
 
 When generating a post-termination invoice (`isRetainerMonthPostTermination = true`), the allocator switches modes and selects all outstanding deferred entries that the agreement may invoice, without a capacity filter. Consultant and `retainer`-mode hours attach to an `additional_hours` line priced at `agreement.hourly_rate`; `flat_hourly` hours keep their snapshotted rate on separate `subcontractor` lines; `direct` hours remain tracked and unbilled because the subcontractor invoices the client. A project-scoped agreement collects only its project. This termination-only deferred-billing path does **not** increment `hours_billed_at_rate` — that counter tracks the regular catch-up/overage pool used by the cumulative balance snapshot, which is a separate concept. The dollar amount is captured entirely by the generated lines' totals.
 
+## Deferred backlog
+
+The backlog is what an agreement still has on the shelf: the outstanding
+deferred work and what the termination invoice would charge for it today. It
+is a read model and never changes anything.
+
+| Piece | Role |
+| --- | --- |
+| `DeferredBacklogReader` | Workspace-scoped load for one or many agreements in a fixed number of queries: the project-chain check, the outstanding set, and (when a trend is asked for) the history with `withCapacityPlacement()`. |
+| `DeferredBacklog` | Database-free calculation over what was loaded: hours, entry count, oldest day worked, the agreement-rate and flat-hourly split, the amount, and the trend. |
+| `DeferredTerminationPricing` | The termination price, shared by `InvoiceLineComposer::addDeferredTerminationLine()` and the backlog. Flat-hourly grouping is `FlatHourlyPricing`, shared with the period's subcontractor lines. |
+
+**The same set as termination.** The outstanding entries use the termination
+collection's own predicates: `awaitingDeferredBilling()` (billable, deferred,
+linked to no line at all), `billableForInvoicing()`, the work date on or before
+the day read, and the agreement's project scope
+(`ClientTimeEntry::isWithinAgreementScope()`, the in-memory form of
+`forAgreementScope()`). The project chain is checked as invoice generation
+checks it before billing anything (`assertCompanyProjectChainsAgree()`): over
+every time entry of the client, whatever its status or kind, and over any
+entry of another workspace claiming the client, before any agreement narrows
+the set. Where generation would refuse, the backlog is withheld (`issue:
+project_chain_mismatch`, every figure null) instead of throwing, so a screen
+that shows it still renders. Amounts are added with
+`MoneyService::sum()`, so a total past the integer range is unpriced rather
+than an error.
+
+**Where a segment ends.** Agreements for the same project scope hand over to
+each other as invoice generation walks them
+(`AgreementSelector::successorAgreementForGeneration()`). An agreement reads
+its backlog, and its re-carried balance, through the earliest of today, its own
+end (where its capacity ledger stops) and the day before a successor starts
+(`through` says which day), so a successor's later work is never quoted at the
+outgoing agreement's rate. There is no lower bound, because the allocator and
+the termination collection apply none: a successor quotes older unlinked work
+its own invoices could still collect. Until the outgoing final invoice links
+such work, both agreements show it, as either may bill it.
+
+**The re-carried balance.** Deferred work an invoice applied beyond free
+capacity stays linked to that invoice, but the ledger carries the excess
+forward as a quantity (`MonthSummary::recarriedDeferredHours`), and
+termination bills it on its own `carried_deferred_billed` line. The backlog
+adds the ledger's closing balance as `carried_hours`, included in `hours` and
+priced by `DeferredTerminationPricing::carriedTotal()`, the function that line
+is priced by. Only an agreement's own ledger states it: `capacity_ledger.get`,
+the agreement page and the CLI read it, and `operations.summary` reports
+`carried_hours: null` rather than building a ledger per agreement. Where the
+agreement page or the CLI finds the ledger refusing to build, the backlog says
+so (`issue: ledger_unreadable`, the refusal as `issue_detail`, `carried_hours:
+null`) rather than quoting the balance as zero.
+
+**The same price as termination.** Consultant and `retainer`-mode minutes are
+pooled and priced once at `agreement.hourly_rate`; `flat_hourly` minutes keep
+the snapshotted rate, one group per person, project, rate and currency;
+`direct` work is excluded (it never reaches the set). Where the invoice would
+refuse to price, for example an agreement with no hourly rate, or a flat-hourly
+snapshot in another currency, the hours stand and the amount is null
+(`issue: unpriced`, with the refusal as `issue_detail`). Both rules are
+pinned by `DeferredBacklogParityTest`, which compares the backlog with
+`collectForTermination()` and with the lines `addDeferredTerminationLine()`
+writes for a fixture with mixed modes, two project scopes and rows of another
+workspace.
+
+**Trend.** Nothing dated after the day read counts, neither work nor an
+allocation, as the capacity ledger counts neither. For each requested month (`Y-m`): `hours_added` is deferred work
+done that month; `hours_applied` is deferred work a retainer pool of that month
+absorbed, booked on `capacityDate()` exactly as the ledger books it; and
+`hours_billed` is deferred work that left the shelf at an hourly price (on
+termination, as flat-hourly work, or by a future buy-down), booked on
+`allocatedOn()`. `net_hours_per_month` averages added minus applied minus
+billed over the months read. `capacity_ledger.get` reads the trend over the
+same months as its `months` rows; the admin agreement page reads the last three
+calendar months.
+
+Where it is shown:
+
+- `capacity_ledger.get` (MCP) and `GET /api/v1/workspaces/{workspace}/agreements/{agreement}/capacity-ledger`: a `deferred_backlog` object next to `months`.
+- `operations.summary`: for managers with `billing:read`, `deferred_backlog` lists the agreements with work on the shelf.
+- The admin agreement page: one line, for managers only.
+- `php artisan svc:billing:deferred-backlog {workspace} {agreement}`: the same presented object, for operators.
+
+All four call the same reader and presenter. The client portal does not show
+the backlog; that is the per-agreement visibility flag of a later slice.
+
 ## Regeneration
 
 Draft invoices auto-regenerate whenever a time entry in their period changes (see [cadence-billing.md](cadence-billing.md#draft-invoice-regeneration)). The regeneration flow already:
@@ -96,3 +181,46 @@ Only **draft** invoices are redrawn. Bulk cadence generation skips any retainer 
 - Termination invoices include every outstanding deferred entry (`test_termination_force_bills_all_deferred`).
 
 See `tests/Feature/ClientManagement/DeferredBillingAllocatorTest.php`.
+
+## Voluntary settlement of deferred work
+
+An operator may bill whole deferred entries separately without ending a recurring
+agreement. On the agreement page, **Bill deferred work** previews a target in
+hours or money. FIFO selection follows `(worked_on, id)`, skips an entry that
+would exceed the remaining target, and never splits one. Opting into round up
+includes the first entry that would exceed the target and then stops. Money
+targets apply to the gross contract charge before discounts; prices preserve
+termination's consultant/retainer rate and flat-hourly snapshot groups, including
+aggregate rounding. Direct work stays the subcontractor's to bill.
+
+Creating a draft reserves the selected entries on `deferred_buydown` lines in a
+`deferred_buydown` invoice. The draft must still be explicitly issued and sent.
+The work consumes no retainer capacity and contributes no catch-up/overage hours.
+An optional discount is a separate negative `adjustment` with a required reason
+printed on the invoice. No rate is changed. The settlement is dated on the
+workspace's current day; original time and worked dates stay unchanged.
+
+Void or draft discard releases the reservations back to the shelf. This differs
+from a void cadence period, whose period remains deliberately waived. An issued
+but unpaid settlement keeps its entries reserved; collection uses ordinary AR.
+Termination only collects entries still unlinked. Replay retains settlements and
+their claims as independent history.
+
+The preview version covers the agreement terms and complete candidate shelf.
+Creation refuses a changed shelf with 409, so the operator previews again.
+Only workspace billing managers may preview or create. Draft, future-starting
+and one-time agreements cannot sell a settlement; active, paused and ended
+recurring agreements can, subject to the same ownership and pricing checks as
+termination. Carried ledger balances without whole entry candidates remain on
+the termination path.
+
+The agreement's **Show deferred backlog to client** setting is off by default.
+When enabled, a client who may already read that visible agreement also sees its
+backlog there; the client receives no settlement control or internal issue detail.
+This does not publish the agreement or extend project access. No new email is
+sent when the setting changes or a settlement draft is created.
+
+The backlog trend reports `hours_bought_down` as a subset of `hours_billed`. Net
+shelf movement subtracts that work once, and no retainer usage counter includes it.
+The operations time summary still counts its draft reservation among all time
+allocated to drafts; that is a claim count, not retainer capacity.

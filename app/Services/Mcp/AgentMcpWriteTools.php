@@ -2,28 +2,11 @@
 
 namespace App\Services\Mcp;
 
-use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
-use App\Models\ClientTimeEntry;
-use App\Models\User;
-use App\Models\Workspace;
-use App\Services\AgentApi\AgentExpenseMutationAction;
-use App\Services\AgentApi\AgentExpenseReadService;
-use App\Services\AgentApi\AgentPaymentReadService;
-use App\Services\AgentApi\AgentReadService;
-use App\Services\AgentApi\AgentTaskMutationAction;
-use App\Services\AgentApi\CorrectPaymentAction;
-use App\Services\AgentApi\DeleteTimeEntryAction;
-use App\Services\AgentApi\IssueInvoiceAction;
-use App\Services\AgentApi\LogTimeEntriesAction;
-use App\Services\AgentApi\RecordPaymentAction;
-use App\Services\AgentApi\UpdateTimeEntryAction;
-use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
-use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
-use App\Support\AgentApi\Presenters\AgentTaskPresenter;
-use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
-use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
+use App\Support\AgentApi\ReadView;
+use App\Support\Billing\InvoiceEmailDraft;
+use App\Support\Billing\ReceivedPaymentData;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
@@ -32,16 +15,8 @@ use Mcp\Server\RequestContext;
 final class AgentMcpWriteTools
 {
     public function __construct(
-        private readonly InternalAgentApiTransport $api,
+        private readonly AgentMcpRestCall $rest,
         private readonly RequestArguments $requestArguments,
-        private readonly LogTimeEntriesAction $logTime,
-        private readonly UpdateTimeEntryAction $updateTime,
-        private readonly DeleteTimeEntryAction $deleteTime,
-        private readonly AgentTaskMutationAction $tasks,
-        private readonly AgentTimeEntryPresenter $timeEntries,
-        private readonly AgentTaskPresenter $taskPresenter,
-        private readonly McpAccountContextResolver $accounts,
-        private readonly ?McpRequestContext $requestContext = null,
     ) {}
 
     /** @return array<string,mixed> */
@@ -54,52 +29,52 @@ final class AgentMcpWriteTools
             }
         }
 
-        return $this->send('POST', "workspaces/{$workspace_id}/proposals", $body, $idempotency_key);
+        return $this->rest->call('proposals.create', ['workspace' => $workspace_id], $body, $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function proposalsSend(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $proposal_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/proposals/{$proposal_id}/send", compact('expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('proposals.send', ['workspace' => $workspace_id, 'proposal' => $proposal_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function proposalsAccept(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $proposal_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 200)] string $signer_name, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(maxLength: 200)] ?string $signer_title = null): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/proposals/{$proposal_id}/accept", compact('expected_version', 'confirm', 'signer_name', 'signer_title'), $idempotency_key);
+        return $this->rest->call('proposals.accept', ['workspace' => $workspace_id, 'proposal' => $proposal_id], compact('expected_version', 'confirm', 'signer_name', 'signer_title'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function workspacesCreate(#[Schema(minLength: 1, maxLength: 120)] string $name,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', 'workspaces', compact('name'), $idempotency_key);
+        return $this->rest->call('workspaces.create', [], compact('name'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function search(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minLength: 1, maxLength: 200)] string $q): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/search", compact('q'));
+        return $this->rest->call('search', ['workspace' => $workspace_id], query: compact('q'));
     }
 
     /** @return array<string,mixed> */
     public function attachmentsList(#[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'])] string $record_type,
-        #[Schema(format: 'uuid')] string $record_id): array
+        #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice', 'topic', 'comment'])] string $record_type,
+        #[Schema(format: 'uuid')] string $record_id, #[Schema(minimum: 1, maximum: 100)] int $limit = 100, #[Schema(maxLength: 4096)] ?string $cursor = null): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/records/{$record_type}/{$record_id}/attachments", []);
+        return $this->rest->call('attachments.list', ['workspace' => $workspace_id, 'recordType' => $record_type, 'recordPublicId' => $record_id], query: compact('limit', 'cursor'));
     }
 
     /** @return array<string,mixed> */
     public function attachmentsGet(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $attachment_id): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/attachments/{$attachment_id}", []);
+        return $this->rest->call('attachments.get', ['workspace' => $workspace_id, 'attachment' => $attachment_id], null);
     }
 
     /** @return array<string,mixed> */
     public function attachmentsDownloadUrl(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $attachment_id): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/attachments/{$attachment_id}/download-url", []);
+        return $this->rest->call('attachments.download_url', ['workspace' => $workspace_id, 'attachment' => $attachment_id], null);
     }
 
     /** Authorizes a later upload; upload the bytes to the returned URL with the same bearer credential.
@@ -108,7 +83,7 @@ final class AgentMcpWriteTools
         #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'])] string $record_type,
         #[Schema(format: 'uuid')] string $record_id): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/records/{$record_type}/{$record_id}/attachments/upload-url", []);
+        return $this->rest->call('attachments.upload_url', ['workspace' => $workspace_id, 'recordType' => $record_type, 'recordPublicId' => $record_id], []);
     }
 
     /** @return array<string,mixed> */
@@ -116,38 +91,46 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $confirm,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('DELETE', "workspaces/{$workspace_id}/attachments/{$attachment_id}", compact('expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('attachments.delete', ['workspace' => $workspace_id, 'attachment' => $attachment_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Record money already received. Omitted optional fields mean what the
+     * browser form means by them: today, no reference or note, succeeded, and
+     * no finance allocation.
+     *
+     * @param  array<string, mixed>|null  $finance_reconciliation
+     * @return array<string, mixed>
+     */
     public function paymentsRecord(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $invoice_id,
         #[Schema(minimum: 1)] int $amount,
         #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
-        #[Schema(format: 'date')] string $received_on,
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] string $method,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema] bool $confirm,
+        #[Schema(format: 'date')] ?string $received_on = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
+        #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
+        #[Schema(enum: ['pending', 'succeeded'])] ?string $status = null,
+        #[Schema(format: 'uuid')] ?string $external_finance_transaction_uuid = null,
+        ?array $finance_reconciliation = null,
     ): array {
-        $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
-        $workspace = $context->workspace;
-        if (! $workspace instanceof Workspace) {
-            throw new \LogicException('MCP payment recording requires a workspace context.');
-        }
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(RecordPaymentAction::class)->run($actor, $workspace,
-            $context->principal->clientId, $idempotency_key,
-            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'expected_version', 'confirm'));
-
-        return app(AgentPaymentReadService::class)->result($actor, $workspace, $ids);
+        // The body the tool always sent, nulls included: the route reads an
+        // explicit null exactly as an omitted field, so receipts written
+        // before the tool reached REST replay unchanged. The route decides
+        // finance_reconciliation's finance:reconcile scope from this
+        // connection's token.
+        return $this->rest->call('payments.record', ['workspace' => $workspace_id],
+            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'notes', 'status', 'external_finance_transaction_uuid', 'finance_reconciliation', 'expected_version', 'confirm'),
+            $idempotency_key);
     }
 
     /**
-     * Correct a received payment's method, reference or date. Omitted fields
-     * are left alone; an explicit null reference clears it.
+     * Correct a received payment's method, reference, note or date. Omitted
+     * fields are left alone; an explicit null reference or note clears it.
      *
      * @return array<string, mixed>
      */
@@ -162,34 +145,74 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] ?string $method = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
         #[Schema(format: 'date')] ?string $received_on = null,
+        #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
     ): array {
-        $body = compact('expected_version', 'reason', 'confirm');
-        foreach (compact('method', 'reference', 'received_on') as $name => $value) {
-            if ($this->requestArguments->has($request, $name)) {
-                $body[$name] = $value;
-            }
-        }
-        $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(CorrectPaymentAction::class)->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $payment_id, $body);
+        return $this->rest->call('payments.correct', ['workspace' => $workspace_id, 'payment' => $payment_id],
+            compact('expected_version', 'reason', 'confirm') + $this->provided($request, compact('method', 'reference', 'notes', 'received_on')),
+            $idempotency_key);
+    }
 
-        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+    /**
+     * Move a payment recorded by hand to succeeded, failed or canceled.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsSetStatus(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(enum: ['succeeded', 'failed', 'canceled'])] string $status,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+    ): array {
+        return $this->rest->call('payments.set_status', ['workspace' => $workspace_id, 'payment' => $payment_id], compact('status', 'expected_version', 'reason', 'confirm'), $idempotency_key);
+    }
+
+    /**
+     * Record money returned to the client against a payment recorded by hand.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsRefund(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(minimum: 1)] int $amount,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+    ): array {
+        return $this->rest->call('payments.refund', ['workspace' => $workspace_id, 'payment' => $payment_id], compact('amount', 'expected_version', 'reason', 'confirm'), $idempotency_key);
+    }
+
+    /**
+     * Answer a refund recorded in error with a reversing entry (#472): all of
+     * it, or `amount` of it when sent.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsReverseRefund(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(format: 'uuid')] string $refund_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+        RequestContext $request,
+        #[Schema(minimum: 1)] ?int $amount = null,
+    ): array {
+        return $this->rest->call('payments.reverse_refund', ['workspace' => $workspace_id, 'payment' => $payment_id, 'refund' => $refund_id],
+            compact('expected_version', 'reason', 'confirm') + $this->provided($request, compact('amount')),
+            $idempotency_key);
     }
 
     public function forContext(McpRequestContext $context): self
     {
         return new self(
-            $this->api,
+            $this->rest->forContext($context),
             $this->requestArguments,
-            $this->logTime,
-            $this->updateTime,
-            $this->deleteTime,
-            $this->tasks,
-            $this->timeEntries,
-            $this->taskPresenter,
-            $this->accounts,
-            $context,
         );
     }
 
@@ -197,12 +220,7 @@ final class AgentMcpWriteTools
      * @return array<string,mixed> */
     public function expensesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        $context = $this->workspaceContext($workspace_id, 'expenses:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(AgentExpenseMutationAction::class)->log($actor, $workspace, $context->principal->clientId, $idempotency_key, compact('entries'));
-
-        return ['data' => app(AgentExpenseReadService::class)->results($actor, $workspace, $ids)];
+        return $this->rest->call('expenses.log', ['workspace' => $workspace_id], compact('entries'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
@@ -218,87 +236,74 @@ final class AgentMcpWriteTools
         RequestContext $request,
         #[Schema(format: 'uuid')] ?string $project_id = null,
     ): array {
-        $body = compact('expected_version', 'spent_on', 'amount', 'currency', 'description');
-        if ($this->requestArguments->has($request, 'project_id')) {
-            $body['project_id'] = $project_id;
-        }
-        $context = $this->workspaceContext($workspace_id, 'expenses:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(AgentExpenseMutationAction::class)->update($actor, $workspace, $context->principal->clientId, $idempotency_key, $expense_id, $body);
-
-        return ['data' => app(AgentExpenseReadService::class)->results($actor, $workspace, $ids)[0]];
+        // An omitted project keeps the attribution; an explicit null clears it.
+        return $this->rest->call('expenses.update', ['workspace' => $workspace_id, 'expense' => $expense_id], compact('expected_version', 'spent_on', 'amount', 'currency', 'description') + $this->provided($request, compact('project_id')), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function expensesDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        $context = $this->workspaceContext($workspace_id, 'expenses:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $id = app(AgentExpenseMutationAction::class)->delete($actor, $workspace, $context->principal->clientId, $idempotency_key, $expense_id, compact('expected_version'));
-
-        return ['data' => ['deleted_id' => $id]];
+        return $this->rest->call('expenses.delete', ['workspace' => $workspace_id, 'expense' => $expense_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function expensesApprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/expenses/{$expense_id}/approve", compact('expected_version'), $idempotency_key);
+        return $this->rest->call('expenses.approve', ['workspace' => $workspace_id, 'expense' => $expense_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function expensesUnapprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/expenses/{$expense_id}/unapprove", compact('expected_version'), $idempotency_key);
+        return $this->rest->call('expenses.unapprove', ['workspace' => $workspace_id, 'expense' => $expense_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function expenseSchedulesList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] ?string $company_id = null, #[Schema(minimum: 1, maximum: 100)] int $limit = 25, #[Schema(maxLength: 2048)] ?string $cursor = null): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/expense-schedules?".http_build_query(array_filter(compact('company_id', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null)), []);
+        return $this->rest->call('expense_schedules.list', ['workspace' => $workspace_id], query: array_map(strval(...), array_filter(compact('company_id', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null)));
     }
 
     /** @return array<string,mixed> */
     public function expenseSchedulesCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(format: 'date')] string $starts_on, #[Schema(enum: ['monthly', 'quarterly', 'semi_annual', 'annual'])] string $cadence, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/expense-schedules", compact('company_id', 'expected_version', 'starts_on', 'cadence', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
+        return $this->rest->call('expense_schedules.create', ['workspace' => $workspace_id], compact('company_id', 'expected_version', 'starts_on', 'cadence', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function expenseSchedulesUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $active, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
     {
-        return $this->send('PATCH', "workspaces/{$workspace_id}/expense-schedules/{$schedule_id}", compact('expected_version', 'active', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
+        return $this->rest->call('expense_schedules.update', ['workspace' => $workspace_id, 'schedule' => $schedule_id], compact('expected_version', 'active', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function expenseSchedulesGenerate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/expense-schedules/{$schedule_id}/generate", compact('expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('expense_schedules.generate', ['workspace' => $workspace_id, 'schedule' => $schedule_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
-    public function expenseReceiptsList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id): array
+    public function expenseReceiptsList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minimum: 1, maximum: 100)] int $limit = 100, #[Schema(maxLength: 4096)] ?string $cursor = null): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/expenses/{$expense_id}/receipts", []);
+        return $this->rest->call('expenses.receipts.list', ['workspace' => $workspace_id, 'expense' => $expense_id], query: compact('limit', 'cursor'));
     }
 
     /** @return array<string,mixed> */
     public function expenseReceiptsDownload(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(format: 'uuid')] string $receipt_id): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/expenses/{$expense_id}/receipts/{$receipt_id}", []);
+        return $this->rest->call('expenses.receipts.download', ['workspace' => $workspace_id, 'expense' => $expense_id, 'receipt' => $receipt_id], null);
     }
 
     /** @return array<string,mixed> */
     public function expenseReceiptsUploadUrl(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id): array
     {
-        return $this->send('GET', "workspaces/{$workspace_id}/expenses/{$expense_id}/receipts/upload-url", []);
+        return $this->rest->call('expenses.receipts.upload_url', ['workspace' => $workspace_id, 'expense' => $expense_id], null);
     }
 
     /** @return array<string, mixed> */
     public function projectsCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, string $name, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $confirm, ?string $description = null, ?string $repository = null, bool $is_visible_to_client = true): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/projects", compact('company_id', 'name', 'expected_version', 'confirm', 'description', 'repository', 'is_visible_to_client'), $idempotency_key);
+        return $this->rest->call('projects.create', ['workspace' => $workspace_id], compact('company_id', 'name', 'expected_version', 'confirm', 'description', 'repository', 'is_visible_to_client'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
@@ -311,72 +316,43 @@ final class AgentMcpWriteTools
             }
         }
 
-        return $this->send('PATCH', "workspaces/{$workspace_id}/projects/{$project_id}", $body, $idempotency_key);
+        return $this->rest->call('projects.update', ['workspace' => $workspace_id, 'project' => $project_id], $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function projectsArchive(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $confirm): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/projects/{$project_id}/archive", compact('expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('projects.archive', ['workspace' => $workspace_id, 'project' => $project_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function projectMembersUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(format: 'uuid')] string $user_id, string $role, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $confirm): array
     {
-        return $this->send('PUT', "workspaces/{$workspace_id}/projects/{$project_id}/members", compact('user_id', 'role', 'expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('projects.members.update', ['workspace' => $workspace_id, 'project' => $project_id], compact('user_id', 'role', 'expected_version', 'confirm'), $idempotency_key);
     }
 
     /** @param list<array<string, mixed>> $entries
      * @return array<string, mixed> */
     public function timeEntriesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $approve = false): array
     {
-        $context = $this->context('time:write');
-        $context = $this->accounts->resolve($context, $workspace_id);
-        $workspace = $context->workspace;
-        if (! $workspace instanceof Workspace) {
-            throw new \LogicException('MCP time logging requires a workspace context.');
-        }
+        $flags = app(McpFeatureFlags::class);
         // Approval arriving through log answers to the same kill switch as the
-        // approve tool; the action separately enforces the write cutover.
-        if ($approve && ! app(McpFeatureFlags::class)->enabledFor('time_entries.approve', McpFeatureFlags::WRITE)) {
+        // approve tool; the route separately enforces the cutover, scope and role.
+        if ($approve && ! $flags->enabledFor('time_entries.approve', McpFeatureFlags::WRITE)) {
             throw new ToolCallException('Approving time is not enabled for agents.');
         }
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        // `approve` joins the payload only when set, so the digest of a plain
+
+        // `approve` joins the body only when set, so the digest of a plain
         // log - and every receipt written before the flag existed - is unchanged.
-        $payload = ['entries' => $entries] + ($approve ? ['approve' => true] : []);
-        $ids = $this->logTime->run(
-            $actor,
-            $workspace,
-            $context->principal->clientId,
+        // The read view is time_entries.list's, so it answers to that
+        // tool's kill switch here and to its scope in the route.
+        return $this->rest->call(
+            'time_entries.log',
+            ['workspace' => $workspace_id],
+            ['entries' => $entries] + ($approve ? ['approve' => true] : []),
             $idempotency_key,
-            $payload,
-            $context->principal->hasScope('time:approve'),
+            $flags->enabledFor('time_entries.list', McpFeatureFlags::READ) ? [ReadView::PARAMETER => ReadView::READ] : [],
         );
-        // A token that may read time gets the rows exactly as time_entries.list
-        // returns them, rate and status included, so no follow-up read is needed.
-        // It is the list read, so it answers to the list's scope and kill switch.
-        if ($context->principal->hasScope('time:read')
-            && app(McpFeatureFlags::class)->enabledFor('time_entries.list', McpFeatureFlags::READ)) {
-            return ['data' => app(AgentReadService::class)->timeEntriesByIds($context->principal->subject, $workspace, $ids)];
-        }
-        $entriesById = ClientTimeEntry::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('public_id', $ids)
-            ->withCapacityPlacement($workspace->id)
-            ->with('project')
-            ->with(AgentTimeEntryPresenter::authorRelations($workspace))
-            ->get()
-            ->keyBy('public_id');
-
-        return ['data' => collect($ids)->map(function (string $id) use ($entriesById, $workspace): array {
-            $entry = $entriesById->get($id);
-            if (! $entry instanceof ClientTimeEntry) {
-                throw new ToolCallException('The SVC API request could not be completed.');
-            }
-
-            return $this->timeEntries->present($workspace, $entry);
-        })->values()->all()];
     }
 
     /** @return array<string, mixed> */
@@ -395,57 +371,37 @@ final class AgentMcpWriteTools
         #[Schema(maxLength: 10000)] ?string $client_visible_description = null,
         #[Schema(format: 'uuid')] ?string $task_id = null,
     ): array {
-        $body = compact('expected_version');
-        foreach (compact('worked_on', 'minutes', 'description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description', 'task_id') as $name => $value) {
-            if ($this->requestArguments->has($context, $name)) {
-                $body[$name] = $value;
-            }
-        }
-
-        $context = $this->workspaceContext($workspace_id, 'time:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $entry = $this->updateTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, $body);
-
-        return ['data' => $this->timeEntries->present($workspace, $entry)];
+        return $this->rest->call('time_entries.update', ['workspace' => $workspace_id, 'entry' => $entry_id], compact('expected_version') + $this->provided($context, compact('worked_on', 'minutes', 'description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description', 'task_id')), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function timeEntriesDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $entry_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        $context = $this->workspaceContext($workspace_id, 'time:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $id = $this->deleteTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, ['expected_version' => $expected_version]);
-
-        return ['data' => ['deleted_id' => $id]];
+        return $this->rest->call('time_entries.delete', ['workspace' => $workspace_id, 'entry' => $entry_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function timeEntriesUnapprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $entry_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/time-entries/{$entry_id}/unapprove", compact('expected_version'), $idempotency_key);
+        return $this->rest->call('time_entries.unapprove', ['workspace' => $workspace_id, 'entry' => $entry_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @param list<array{id: string, expected_version: string}> $entries
      * @return array<string, mixed> */
     public function timeEntriesApprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 100)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/time-entries/approve", compact('entries'), $idempotency_key);
+        return $this->rest->call('time_entries.approve', ['workspace' => $workspace_id], compact('entries'), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
-    public function tasksCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 1, maxLength: 255)] string $title, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, ?string $description = null, ?bool $is_visible_to_client = null): array
+    /** @param list<string>|null $assignee_ids
+     * @return array<string, mixed> */
+    public function tasksCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 1, maxLength: 255)] string $title, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, ?string $description = null, ?bool $is_visible_to_client = null, #[Schema(format: 'date')] ?string $starts_on = null, #[Schema(format: 'date')] ?string $due_on = null, #[Schema(maxItems: 10, items: ['type' => 'string', 'format' => 'uuid'])] ?array $assignee_ids = null): array
     {
-        $context = $this->workspaceContext($workspace_id, 'tasks:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $task = $this->tasks->create($actor, $workspace, $context->principal->clientId, $idempotency_key, $project_id, array_filter(compact('title', 'description', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null));
-
-        return ['data' => $this->taskPresenter->present($workspace, $task)];
+        return $this->rest->call('tasks.create', ['workspace' => $workspace_id, 'project' => $project_id], array_filter(compact('title', 'description', 'is_visible_to_client', 'starts_on', 'due_on', 'assignee_ids'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
+    /** @param list<string>|null $assignee_ids
+     * @return array<string, mixed> */
     public function tasksUpdate(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $task_id,
@@ -456,53 +412,60 @@ final class AgentMcpWriteTools
         #[Schema(maxLength: 10000)] ?string $description = null,
         #[Schema(enum: ['open', 'in_progress', 'completed'])] ?string $status = null,
         ?bool $is_visible_to_client = null,
+        #[Schema(format: 'date')] ?string $starts_on = null,
+        #[Schema(format: 'date')] ?string $due_on = null,
+        #[Schema(maxItems: 10, items: ['type' => 'string', 'format' => 'uuid'])] ?array $assignee_ids = null,
     ): array {
-        $body = compact('expected_version');
-        foreach (compact('title', 'description', 'status', 'is_visible_to_client') as $name => $value) {
-            if ($this->requestArguments->has($context, $name)) {
-                $body[$name] = $value;
-            }
-        }
-
-        $context = $this->workspaceContext($workspace_id, 'tasks:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $task = $this->tasks->update($actor, $workspace, $context->principal->clientId, $idempotency_key, $task_id, $body);
-
-        return ['data' => $this->taskPresenter->present($workspace, $task)];
+        return $this->rest->call('tasks.update', ['workspace' => $workspace_id, 'task' => $task_id], compact('expected_version') + $this->provided($context, compact('title', 'description', 'status', 'is_visible_to_client', 'starts_on', 'due_on', 'assignee_ids')), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function invoicesHoldDelivery(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/automatic-delivery/hold", compact('expected_version'), $idempotency_key);
+        return $this->rest->call('invoices.hold_delivery', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function invoicesReleaseDelivery(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/automatic-delivery/release", compact('expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('invoices.release_delivery', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
 
     /** @param list<string> $time_entry_ids
      * @return array<string, mixed> */
     public function invoicesAddTime(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minItems: 1, maxItems: 100, uniqueItems: true)] array $time_entry_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/time", compact('expected_version', 'time_entry_ids'), $idempotency_key);
+        return $this->rest->call('invoices.add_time', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version', 'time_entry_ids'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function invoicesGeneratePeriod(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $agreement_id, #[Schema(format: 'date')] string $period_start, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/agreements/{$agreement_id}/invoices", compact('period_start', 'expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('invoices.generate_period', ['workspace' => $workspace_id, 'agreement' => $agreement_id], compact('period_start', 'expected_version', 'confirm'), $idempotency_key);
     }
 
     /** @param list<string> $time_entry_ids
      * @param list<array<string, mixed>> $manual_lines
      * @return array<string, mixed> */
-    public function invoicesCreateDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(maxItems: 100)] array $time_entry_ids = [], #[Schema(maxItems: 100)] array $manual_lines = [], ?string $currency = null, ?string $due_date = null, ?string $notes = null, ?string $scheduled_issue_date = null): array
-    {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'scheduled_issue_date', 'notes'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
+    public function invoicesCreateDraft(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $company_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(maxItems: 100)] array $time_entry_ids = [],
+        #[Schema(maxItems: 100)] array $manual_lines = [],
+        ?string $currency = null,
+        ?string $due_date = null,
+        ?string $notes = null,
+        ?string $scheduled_issue_date = null,
+        #[Schema(maxLength: 80)] ?string $invoice_number = null,
+        #[Schema(format: 'date')] ?string $issue_date = null,
+        #[Schema(format: 'date')] ?string $service_period_start = null,
+        #[Schema(format: 'date')] ?string $service_period_end = null,
+        ?bool $is_visible_to_client = null,
+    ): array {
+        // Only what was sent joins the body, so a request hashes as it would
+        // over REST and a draft created before these fields existed replays.
+        return $this->rest->call('invoices.create_draft', ['workspace' => $workspace_id], array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'scheduled_issue_date', 'notes', 'invoice_number', 'issue_date', 'service_period_start', 'service_period_end', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
     /** @param list<string> $time_entry_ids
@@ -528,7 +491,7 @@ final class AgentMcpWriteTools
             }
         }
 
-        return $this->send('PATCH', "workspaces/{$workspace_id}/invoices/{$invoice_id}", $body, $idempotency_key);
+        return $this->rest->call('invoices.update_draft', ['workspace' => $workspace_id, 'invoice' => $invoice_id], $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */
@@ -549,7 +512,7 @@ final class AgentMcpWriteTools
             }
         }
 
-        return $this->send('PATCH', "workspaces/{$workspace_id}/invoices/{$invoice_id}/details", $body, $idempotency_key);
+        return $this->rest->call('invoices.update_details', ['workspace' => $workspace_id, 'invoice' => $invoice_id], $body, $idempotency_key);
     }
 
     /** @param list<array<string, mixed>>|null $lines
@@ -573,13 +536,13 @@ final class AgentMcpWriteTools
             $body['lines'] = $lines;
         }
 
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/correct", $body, $idempotency_key);
+        return $this->rest->call('invoices.correct', ['workspace' => $workspace_id, 'invoice' => $invoice_id], $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function invoicesDiscardDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 1000)] string $reason, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/discard", compact('expected_version', 'reason', 'confirm'), $idempotency_key);
+        return $this->rest->call('invoices.discard_draft', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
     /**
@@ -596,51 +559,56 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         ?array $payment = null,
     ): array {
-        $context = $this->workspaceContext($workspace_id, 'billing:deliver');
-        $workspace = $this->workspace($context);
         $flags = app(McpFeatureFlags::class);
         // A payment folded into issue answers to the same kill switch as the
-        // payments.record tool; the action separately enforces its cutover,
+        // payments.record tool; the route separately enforces its cutover,
         // scope and role, and refuses before anything is written.
         if ($payment !== null && ! $flags->enabledFor('payments.record', McpFeatureFlags::WRITE)) {
             throw new ToolCallException('Recording payments is not enabled for agents.');
         }
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        // `payment` joins the body only when sent, so a plain issue hashes
-        // exactly as it did through the REST route before this migration.
-        $body = compact('expected_version', 'confirm') + ($payment !== null ? ['payment' => $payment] : []);
-        $ids = app(IssueInvoiceAction::class)->run(
-            $actor,
-            $workspace,
-            $context->principal->clientId,
-            $idempotency_key,
-            $invoice_id,
-            $body,
-            $context->principal->hasScope('payments:record'),
-        );
-        // A token that may read invoices gets the invoice exactly as
-        // invoices.get returns it. It is that read, so it answers to the read's
-        // scope and kill switch; otherwise the plain mutation shape is returned.
-        if ($context->principal->hasScope('billing:read')
-            && $flags->enabledFor('invoices.get', McpFeatureFlags::READ)) {
-            return ['data' => app(AgentReadService::class)->invoice($context->principal->subject, $workspace, $ids[0])];
-        }
-        $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $ids[0])->firstOrFail();
 
-        return ['data' => app(AgentInvoicePresenter::class)->mutation($workspace, $invoice)];
+        // `payment` joins the body only when sent, so a plain issue hashes
+        // exactly as it always has. The read view is invoices.get's, so it
+        // answers to that tool's kill switch here and to its scope in the route.
+        return $this->rest->call(
+            'invoices.issue',
+            ['workspace' => $workspace_id, 'invoice' => $invoice_id],
+            compact('expected_version', 'confirm') + ($payment !== null ? ['payment' => $payment] : []),
+            $idempotency_key,
+            $flags->enabledFor('invoices.get', McpFeatureFlags::READ) ? [ReadView::PARAMETER => ReadView::READ] : [],
+        );
     }
 
     /** @param list<string> $recipients
      * @return array<string, mixed> */
-    public function invoicesSend(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minItems: 1, maxItems: 10)] array $recipients, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
-    {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/send", compact('expected_version', 'recipients', 'confirm'), $idempotency_key);
+    public function invoicesSend(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minItems: 1, maxItems: 10)] array $recipients,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $context,
+        #[Schema(maxLength: InvoiceEmailDraft::SUBJECT_MAX_LENGTH)] ?string $subject = null,
+        #[Schema(maxLength: InvoiceEmailDraft::MESSAGE_MAX_LENGTH)] ?string $message = null,
+        ?bool $bcc_self = null,
+    ): array {
+        // The compose fields join the body only when sent, so a plain send
+        // hashes exactly as it did before they existed.
+        $body = compact('expected_version', 'recipients', 'confirm');
+        foreach (compact('subject', 'message', 'bcc_self') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->rest->call('invoices.send', ['workspace' => $workspace_id, 'invoice' => $invoice_id], $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function invoicesVoid(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 1000)] string $reason, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/void", compact('expected_version', 'reason', 'confirm'), $idempotency_key);
+        return $this->rest->call('invoices.void', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
     /** @param list<array<string, mixed>> $line_template
@@ -668,7 +636,7 @@ final class AgentMcpWriteTools
             }
         }
 
-        return $this->send('POST', "workspaces/{$workspace_id}/billing-schedules", $body, $idempotency_key);
+        return $this->rest->call('billing_schedules.create', ['workspace' => $workspace_id], $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */
@@ -679,51 +647,18 @@ final class AgentMcpWriteTools
         #[Schema] bool $confirm,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
     ): array {
-        return $this->send('POST', "workspaces/{$workspace_id}/billing-schedules/{$schedule_id}/generate", compact('expected_version', 'confirm'), $idempotency_key);
+        return $this->rest->call('billing_schedules.generate', ['workspace' => $workspace_id, 'schedule' => $schedule_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
 
-    /** @param array<string, mixed> $body
-     * @return array<string, mixed> */
-    private function send(string $method, string $path, array $body, ?string $idempotencyKey = null): array
+    /**
+     * The optional arguments the caller actually sent, so an omitted field
+     * stays omitted and an explicit null still clears.
+     *
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    private function provided(RequestContext $request, array $values): array
     {
-        $headers = $idempotencyKey === null ? [] : ['Idempotency-Key' => $idempotencyKey];
-        if ($this->requestContext !== null) {
-            $headers['X-Request-Id'] = $this->requestContext->requestId;
-        }
-        $response = $this->api->send($method, $path, json: $body, headers: $headers);
-        if ($response->status >= 200 && $response->status < 300 && $response->json !== null) {
-            return $response->json;
-        }
-        throw new ToolCallException(AgentMcpApiFailure::message($response->status, $response->json));
-    }
-
-    private function context(string $scope): McpRequestContext
-    {
-        $context = $this->requestContext ?? throw new \LogicException('MCP write tools require a request context.');
-        if (! $context->principal->hasScope($scope)) {
-            throw new ToolCallException('This connection lacks the required permission.');
-        }
-
-        return $context;
-    }
-
-    private function workspaceContext(string $workspaceId, string $scope): McpRequestContext
-    {
-        $context = $this->accounts->resolve($this->context($scope), $workspaceId);
-        if (! $context->workspace instanceof Workspace) {
-            throw new \LogicException('MCP write tools require a workspace context.');
-        }
-
-        return $context;
-    }
-
-    private function workspace(McpRequestContext $context): Workspace
-    {
-        $workspace = $context->workspace;
-        if (! $workspace instanceof Workspace) {
-            throw new \LogicException('MCP write tools require a workspace context.');
-        }
-
-        return $workspace;
+        return array_filter($values, fn (string $name): bool => $this->requestArguments->has($request, $name), ARRAY_FILTER_USE_KEY);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Services\Square;
 
 use App\Models\Workspace;
+use App\Services\Tenancy\WorkspacePublicIdResolver;
 use LogicException;
 use SensitiveParameter;
 
@@ -71,6 +72,13 @@ final readonly class SquareConfiguration
     {
         return $this->isConfigured()
             && hash_equals((string) $this->workspacePublicId, (string) $workspace->public_id);
+    }
+
+    public function workspace(): ?Workspace
+    {
+        return $this->isConfigured()
+            ? app(WorkspacePublicIdResolver::class)->find((string) $this->workspacePublicId)
+            : null;
     }
 
     public function baseUrl(): string

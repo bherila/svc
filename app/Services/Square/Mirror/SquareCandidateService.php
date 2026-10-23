@@ -7,6 +7,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceCoverage;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\User;
 use App\Models\Workspace;
@@ -61,6 +62,9 @@ final class SquareCandidateService
             : ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($invoice->client_agreement_id)->first();
         $customerId = $this->links->activeCustomer($company)?->square_customer_id;
         $seriesKey = $agreement?->square_series_key;
+        // The series in its own location (#488); a marker from before markers
+        // named one takes the prefix in every location, as it always did.
+        $seriesLocation = $agreement?->square_location_id;
         $current = $this->links->activeLink($invoice);
 
         $meta = [
@@ -81,12 +85,13 @@ final class SquareCandidateService
         }
 
         $pool = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)
-            ->where(static function (Builder $query) use ($customerId, $seriesKey): void {
+            ->where(static function (Builder $query) use ($customerId, $seriesKey, $seriesLocation): void {
                 if ($customerId !== null) {
                     $query->orWhere('square_customer_id', $customerId);
                 }
                 if ($seriesKey !== null) {
-                    $query->orWhere('series_key', $seriesKey);
+                    $query->orWhere(static fn (Builder $series): Builder => $series->where('series_key', $seriesKey)
+                        ->when($seriesLocation !== null, static fn (Builder $located): Builder => $located->where('square_location_id', $seriesLocation)));
                 }
             })
             ->orderByDesc('due_on')->orderByDesc('id')
@@ -111,7 +116,9 @@ final class SquareCandidateService
                 continue;
             }
             $link = $linkedTo[$snapshot->square_invoice_id] ?? null;
-            if ($link !== null && $link['client_invoice_id'] !== $invoice->id) {
+            // A Square invoice recorded as covered (#487) is claimed even by
+            // this invoice: it cannot be linked until the coverage is cleared.
+            if ($link !== null && ($link['covered'] || $link['client_invoice_id'] !== $invoice->id)) {
                 if (count($meta['excluded']['linked_elsewhere']) < 20) {
                     $meta['excluded']['linked_elsewhere'][] = [
                         'square_invoice_id' => $snapshot->square_invoice_id,
@@ -126,11 +133,10 @@ final class SquareCandidateService
             $offered[$snapshot->square_invoice_id] = $snapshot;
         }
 
-        $cadences = [];
+        // A series is its prefix in one location (#488), so each candidate's
+        // cadence is read from the members in its own location.
         $keys = array_values(array_unique(array_filter(array_map(static fn (SquareInvoiceSnapshot $snapshot): ?string => $snapshot->series_key, array_values($offered)))));
-        foreach ($this->mirror->summaries($workspace, $keys) as $summary) {
-            $cadences[$summary['series_key']] = $summary['cadence'];
-        }
+        $cadences = array_map(static fn (array $summary): mixed => $summary['cadence'], $this->mirror->summariesByLocation($workspace, $keys));
         $ranked = SquareCandidateScorer::rank($this->facts($invoice, $agreement), $customerId, array_values(array_map(static fn (SquareInvoiceSnapshot $snapshot): array => [
             'square_invoice_id' => $snapshot->square_invoice_id,
             'status' => $snapshot->status,
@@ -141,7 +147,7 @@ final class SquareCandidateService
             'sale_or_service_date' => $snapshot->sale_or_service_date?->toDateString(),
             'square_customer_id' => $snapshot->square_customer_id,
             'series_key' => $snapshot->series_key,
-            'series_cadence' => $snapshot->series_key === null ? null : ($cadences[$snapshot->series_key] ?? null),
+            'series_cadence' => $snapshot->series_key === null ? null : ($cadences[($snapshot->square_location_id ?? '').'|'.$snapshot->series_key] ?? null),
             'invoice_number' => $snapshot->invoice_number,
         ], $offered)));
         $meta['ambiguous'] = SquareCandidateScorer::ambiguous($ranked);
@@ -190,25 +196,32 @@ final class SquareCandidateService
     }
 
     /**
-     * The svc invoice each of these Square invoices is actively linked to.
+     * The svc invoice each of these Square invoices is actively linked to, or
+     * recorded as covered by (#487).
      *
      * @param  list<string>  $squareInvoiceIds
-     * @return array<string, array{client_invoice_id: int, invoice_id: string|null, invoice_number: string|null}>
+     * @return array<string, array{client_invoice_id: int, invoice_id: string|null, invoice_number: string|null, covered: bool}>
      */
     private function activeLinks(Workspace $workspace, array $squareInvoiceIds): array
     {
         if ($squareInvoiceIds === []) {
             return [];
         }
-        $links = InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereIn('active_square_invoice_slot', $squareInvoiceIds)->get(['square_invoice_id', 'client_invoice_id']);
-        $invoices = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($links->pluck('client_invoice_id')->all())->get(['id', 'public_id', 'invoice_number'])->keyBy('id');
+        $claims = [
+            ...InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereIn('active_square_invoice_slot', $squareInvoiceIds)->get(['square_invoice_id', 'client_invoice_id'])
+                ->map(static fn (InvoiceSquareLink $link): array => [$link->square_invoice_id, $link->client_invoice_id, false])->all(),
+            ...SquareInvoiceCoverage::query()->where('workspace_id', $workspace->id)->whereIn('active_square_invoice_slot', $squareInvoiceIds)->get(['square_invoice_id', 'client_invoice_id'])
+                ->map(static fn (SquareInvoiceCoverage $coverage): array => [$coverage->square_invoice_id, $coverage->client_invoice_id, true])->all(),
+        ];
+        $invoices = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey(array_column($claims, 1))->get(['id', 'public_id', 'invoice_number'])->keyBy('id');
         $linked = [];
-        foreach ($links as $link) {
-            $invoice = $invoices->get($link->client_invoice_id);
-            $linked[$link->square_invoice_id] = [
-                'client_invoice_id' => $link->client_invoice_id,
+        foreach ($claims as [$squareInvoiceId, $invoiceId, $covered]) {
+            $invoice = $invoices->get($invoiceId);
+            $linked[$squareInvoiceId] ??= [
+                'client_invoice_id' => $invoiceId,
                 'invoice_id' => $invoice?->public_id,
                 'invoice_number' => $invoice?->invoice_number,
+                'covered' => $covered,
             ];
         }
 

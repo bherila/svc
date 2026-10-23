@@ -10,6 +10,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\PortalAccess;
 use App\Support\AgentApi\AgentApiScopes;
@@ -137,17 +138,19 @@ final class PortalProjectScopingTest extends TestCase
     {
         $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
 
-        $this->artisan('svc:portal:project-access', [
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
             'company' => $this->company->public_id,
             'email' => $user->email,
+            '--confirm' => true, '--expected-version' => $this->portalVersion($user),
             '--project' => [$this->theirs->public_id],
         ])->assertSuccessful();
 
         $this->assertSame(['Theirs'], $this->projectNamesFor($user));
 
-        $this->artisan('svc:portal:project-access', [
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
             'company' => $this->company->public_id,
             'email' => $user->email,
+            '--confirm' => true, '--expected-version' => $this->portalVersion($user),
             '--company-wide' => true,
         ])->assertSuccessful();
 
@@ -167,9 +170,10 @@ final class PortalProjectScopingTest extends TestCase
             'name' => 'Foreign', 'is_visible_to_client' => true,
         ]);
 
-        $this->artisan('svc:portal:project-access', [
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
             'company' => $this->company->public_id,
             'email' => $user->email,
+            '--confirm' => true, '--expected-version' => $this->portalVersion($user),
             '--project' => [$foreign->public_id],
         ])->assertFailed();
     }
@@ -353,6 +357,12 @@ final class PortalProjectScopingTest extends TestCase
             'email' => $user->email,
             '--show' => true,
         ])->assertExitCode(1);
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
+            'company' => $this->company->public_id,
+            'email' => $user->email,
+            '--confirm' => true, '--expected-version' => str_repeat('0', 64),
+            '--company-wide' => true,
+        ])->expectsOutputToContain('That user is not a portal member of that company.')->assertExitCode(1);
     }
 
     /**
@@ -486,5 +496,13 @@ final class PortalProjectScopingTest extends TestCase
             'status' => 'approved',
             'currency' => 'USD',
         ]);
+    }
+
+    /** The contact's current version, which the console command takes as the API does. */
+    private function portalVersion(User $user): string
+    {
+        $company = $this->company->fresh();
+
+        return (string) app(AgentPortalContactReadService::class)->contact($company->workspace()->firstOrFail(), $company, $user->public_id)['version'];
     }
 }

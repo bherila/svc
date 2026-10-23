@@ -111,6 +111,15 @@ by default; set to `projects`, the viewer sees only the projects listed in
 unrestricted and an empty list for a scoped user granted nothing — those are
 different answers.
 
+REST and MCP context project capabilities follow the same grants as project
+reads. Selected-project contacts receive no capability IDs for ungranted projects;
+an empty grant returns none. Agent context selects the portal audience whenever
+the person has valid portal membership in the workspace, including an identity
+that is also an internal owner or admin: project entries carry the client role
+and client capabilities. Native internal project permissions remain independent
+of portal grants. Capability queries resolve project roles and portal company
+membership in batches rather than once per project.
+
 The rule is that the narrowing is one decision applied wherever a portal surface
 reads, not a filter applied while rendering a project list — scoping only the
 list leaves every direct resource URL working for a project the user was never
@@ -119,7 +128,13 @@ granted. `PortalAccess` exists to be that one decision;
 shows which surfaces currently ask it, which is the question to ask when adding
 one rather than a list this page can keep true.
 `svc:portal:project-access` sets and clears the scope, as the system actor of
-`App\Services\Access\WorkspaceAccess`.
+`App\Services\Access\WorkspaceAccess`. It runs `App\Services\Access\PortalAccessOperation`,
+the operation behind `clients.portal_access.update` that the settings page, REST
+and MCP also use, with the same fields and validation: it takes the contact's
+current version (`--show` prints it) as `--expected-version`, and `--confirm`.
+It is kept as a break-glass tool by owner decision (#460): the client's settings
+page is the everyday way to change a contact's scope, and the command is for when
+no workspace manager can reach that page.
 
 **Changing access.** Staff memberships, staff project assignments and portal
 memberships are written only through `App\Services\Access\WorkspaceAccess`
@@ -347,7 +362,8 @@ two lines has to become two rows.
   `invoice.marked_paid`, `invoice.voided` (which a discarded draft also
   records), `invoice.payment_received`, `invoice.payment_failed`,
   `invoice.payment_canceled`, `invoice.payment_disputed`,
-  `invoice.payment_refunded`, `payment_method.added`,
+  `invoice.payment_refunded`, `invoice.payment_refund_reversed`,
+  `payment_method.added`,
   `payment_method.removed`, `payment_method.default_changed`.
   `payment_method.attached` and `payment_method.detached` are **Stripe event
   types**, not activity keys — `StripeWebhookService` handles those two and the
@@ -593,6 +609,20 @@ GET    /workspaces/{workspace}/attachments/{clientAttachment}
 DELETE /workspaces/{workspace}/attachments/{clientAttachment}
 ```
 
+A download reauthorizes the file's parent on every request. Workspace membership
+alone does not authorize another project's file. Internal project and task files
+require that project; invoice and agreement files reuse `BillingRecordAccess`.
+Company files and financial records without project lineage require a workspace
+manager. Company-level proposals retain their detail screen's company-reachability
+rule. Missing or cross-tenant parent chains are refused before bytes are served.
+
+Portal downloads require company membership, the parent's disclosure/lifecycle
+rules and its current project grants. Invoice files use `PortalInvoiceQuery`, so
+every attributed project (invoice lines and agreement) must be granted to a
+selected-project contact. Company-wide contacts keep company-level invoice access.
+The generic agent file API remains workspace-manager-only for metadata, downloads
+and writes. Only available attachments can be downloaded.
+
 Uploads are two-phase because a database write and a blob write cannot share a
 transaction: stream to a staged object while hashing, create the row, promote
 the staged object to its immutable key, mark it available. Deletion is two-phase
@@ -783,12 +813,15 @@ Recording a payment is the one write the invoice screen offers
 path anywhere.
 
 Correcting one means transitioning its status or its refunded amount through
-`InvoiceLifecycleService::setPaymentStatus()` / `setRefundedAmount()`, so history
-is preserved rather than rewritten — but note that **`StripeWebhookService` was
-their only caller** when this was written, so a hand-entered payment could be
-recorded and not corrected in place. Check with
-`rg -n 'setPaymentStatus|setRefundedAmount' app/` rather than taking that as
-current.
+`InvoiceLifecycleService`, so history is preserved rather than rewritten. A
+processor's events reach `setPaymentStatus()` / `setRefundedAmount()`; a
+payment recorded by hand is withdrawn, failed, cleared or refunded through
+`changeManualPayment()` - `payments.set_status`, `payments.refund` and their
+console twins - with a reason and the rules in
+[payments.md](payments.md#withdrawing-failing-or-refunding-a-payment-recorded-by-hand).
+A refund recorded in error is answered by a reversing entry linked to it
+(`payments.reverse_refund`, `svc:billing:reverse-refund`), never edited; see
+[payments.md](payments.md#reversing-a-refund-recorded-in-error).
 
 Paid and balance amounts are **derived**. `InvoiceLifecycleService::refreshStatus()`
 sums each `succeeded` payment's amount less its `refunded_amount`, floors each
@@ -820,8 +853,11 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
   categories below are what that showed when this was written:
   - the **agent API** (`/api/v1/*`) uses `auth:api` (Passport) with a scope
     check per route and an expected OAuth resource;
-  - the **finance reconciliation API** uses `auth:sanctum` with the
-    `finance.read` / `finance.reconcile` abilities;
+  - the **finance reconciliation routes** are agent API operations too (#457),
+    gated by the `finance:read` / `finance:reconcile` scopes, and admit
+    `auth:sanctum` as well as `auth:api`: the finance integration's Sanctum
+    token, whose `finance.read` / `finance.reconcile` abilities stand for those
+    scopes there and open nothing else;
   - **two adapter webhooks** are unauthenticated by design and verify the
     caller themselves. `POST /api/webhooks/stripe` constructs the event through
     `StripeGateway::constructWebhookEvent()` with the `Stripe-Signature` header
@@ -952,8 +988,12 @@ SVC stores identifiers and nothing else: no banking data, no transaction
 records, no ledger, and no foreign key into another application's database. The
 coupling is deliberately one-directional and opaque so the finance side stays a
 replaceable adapter. See
-[the finance reconciliation API](../finance-api.md) and the `finance.read` /
-`finance.reconcile` abilities.
+[the finance reconciliation API](../finance-api.md): the
+`finance.invoice_payments.list`, `finance.payouts.list`,
+`finance.reconciliations.upsert` and `finance.reconciliations.deactivate`
+operations, over REST, MCP and the `svc:finance:*` commands. Processor payouts
+and each payment's fee and payout are the processors' own reports, stored so the
+finance side can match a deposit to the payout it was.
 
 ## Time entry invoiced status
 

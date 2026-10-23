@@ -37,14 +37,16 @@ class ExpenseReceiptTest extends TestCase
             ->component('clients/expense-receipts')->has('files', 0));
         $this->postJson(route('svc.files.store', [$workspace, 'expense', $expense->public_id]), [
             'file' => UploadedFile::fake()->createWithContent('synthetic-receipt.txt', 'Synthetic receipt content'),
-        ])->assertCreated()->assertJsonPath('record_type', 'expense');
+        ])->assertRedirect()->assertSessionHasNoErrors();
         $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame('expense', $attachment->record_type);
+        $this->assertSame($expense->public_id, $attachment->record_public_id);
         $this->assertStringContainsString('/expense/'.$expense->public_id.'/', $attachment->object_key);
         $this->assertStringNotContainsString('synthetic-receipt.txt', $attachment->object_key);
         $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.filename', 'synthetic-receipt.txt'));
         $download = route('svc.files.download', [$workspace, $attachment->public_id]);
         $this->get($download)->assertOk()->assertStreamedContent('Synthetic receipt content');
-        $this->deleteJson(route('svc.files.destroy', [$workspace, $attachment->public_id]))->assertStatus(202);
+        $this->deleteJson(route('svc.files.destroy', [$workspace, $attachment->public_id]))->assertRedirect();
         $this->get($download)->assertNotFound();
         $this->get($url)->assertInertia(fn (Assert $page) => $page->has('files', 0));
         $this->assertSame('draft', $expense->fresh()->status);
@@ -101,10 +103,10 @@ class ExpenseReceiptTest extends TestCase
                 $queries[] = [$match[1], $sql];
             }
         });
-        $response = $this->actingAs($manager)->postJson(route('svc.files.store', [$workspace, 'expense', $expense->public_id]), ['file' => UploadedFile::fake()->createWithContent('trace.txt', 'synthetic')])->assertCreated();
-        $id = $response->json('id');
+        $this->actingAs($manager)->postJson(route('svc.files.store', [$workspace, 'expense', $expense->public_id]), ['file' => UploadedFile::fake()->createWithContent('trace.txt', 'synthetic')])->assertRedirect();
+        $id = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole()->public_id;
         $this->get(route('svc.files.download', [$workspace, $id]))->assertOk();
-        $this->deleteJson(route('svc.files.destroy', [$workspace, $id]))->assertStatus(202);
+        $this->deleteJson(route('svc.files.destroy', [$workspace, $id]))->assertRedirect();
         $this->assertContains('client_attachments', array_column($queries, 0));
         $this->assertContains('client_expenses', array_column($queries, 0));
         $this->assertContains('client_companies', array_column($queries, 0));

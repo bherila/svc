@@ -30,6 +30,43 @@ const activities: CompanyActivity[] = [
 ];
 
 describe('activity timeline', () => {
+    it('shows collaboration events with plain labels and no content payload', () => {
+        const actions = [
+            'topic_created',
+            'topic_updated',
+            'topic_deleted',
+            'comment_created',
+            'comment_updated',
+            'comment_deleted',
+        ];
+        render(
+            <ActivityTimeline
+                activities={actions.map((action) => ({
+                    id: action,
+                    action: `collaboration.${action}`,
+                    actor_name: 'Synthetic author',
+                    payload: {},
+                    created_at: null,
+                }))}
+            />,
+        );
+
+        for (const label of [
+            'Note or discussion added',
+            'Note or discussion updated',
+            'Note or discussion removed',
+            'Comment added',
+            'Comment updated',
+            'Comment removed',
+        ]) {
+            expect(screen.getByText(label)).toBeVisible();
+        }
+
+        expect(
+            screen.queryByText(/system activity|collaboration\./i),
+        ).not.toBeInTheDocument();
+    });
+
     it('exposes the server-provided correction evidence capability', () => {
         const href =
             '/workspaces/synthetic/invoices/synthetic/corrections/synthetic';
@@ -50,6 +87,34 @@ describe('activity timeline', () => {
         expect(
             screen.getByRole('link', { name: 'View correction evidence' }),
         ).toHaveAttribute('href', href);
+    });
+
+    it('names a reversed refund as a reversal, not another refund', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'synthetic-refund',
+                        action: 'invoice.payment_refunded',
+                        actor_name: null,
+                        payload: { refunded_amount: 400 },
+                        created_at: '2026-08-29T19:00:00.000Z',
+                    },
+                    {
+                        id: 'synthetic-reversal',
+                        action: 'invoice.payment_refund_reversed',
+                        actor_name: null,
+                        payload: {
+                            refunded_amount: 0,
+                            previous_refunded_amount: 400,
+                        },
+                        created_at: '2026-08-29T20:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+        expect(screen.getByText('Payment refunded')).toBeVisible();
+        expect(screen.getByText('Refund reversed')).toBeVisible();
     });
 
     it('surfaces notable events and keeps system noise available on demand', async () => {

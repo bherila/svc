@@ -2,7 +2,8 @@
 #
 # Runner-side verification performed before the shared atomic action commits a
 # release as healthy. It verifies the rendered home page, its manifest-derived hashed
-# JS and CSS assets, production OAuth redirect, protected resource discovery, authentication, operation scopes and MCP session
+# JS and CSS assets, production OAuth redirect, exactly one canonical scheduler cron line,
+# protected resource discovery, authentication, operation scopes and MCP session
 # isolation. Smoke credentials are short-lived, data-blind and always revoked.
 set -euo pipefail
 
@@ -40,7 +41,24 @@ redirect_url=$(curl --fail --silent --show-error --connect-timeout 10 --max-time
     "$DEPLOY_SITE_URL/oauth/redirect")
 printf '%s' "$redirect_url" | node scripts/deploy/verify-oauth-redirect.mjs
 
-remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials"
+# The action has installed SVC's cron by now. The scheduler is SVC's only background runner, so
+# the release is not healthy unless there is exactly one canonical scheduler line.
+# shellcheck disable=SC2029 # The arguments expand on the runner and are escaped for remote Bash.
+ssh "$DEPLOY_SSH_TARGET" "bash -s -- $(printf '%q ' "$DEPLOY_STABLE_DIR" "$DEPLOY_PHP_BINARY")" \
+    <scripts/deploy/cron-audit.sh
+
+# Maintenance and the Artisan drain pause issuance during migration. Once the
+# action serves the new release, issuance must already work; no human handoff.
+oauth_response=$(curl --silent --show-error --connect-timeout 5 --max-time 10 \
+    --output /dev/null --write-out '%{http_code} %{content_type}' \
+    "$DEPLOY_SITE_URL/.well-known/oauth-authorization-server")
+read -r oauth_status oauth_content_type <<<"$oauth_response"
+case "$oauth_status ${oauth_content_type,,}" in
+    '200 application/json' | '200 application/json;'*) ;;
+    *) echo 'OAuth issuance readiness failed; no smoke credentials were issued.' >&2; exit 1 ;;
+esac
+
+remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials --apply"
 cleanup() {
     status=$?
     trap - EXIT

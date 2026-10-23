@@ -47,12 +47,16 @@ enum ScheduleDefect: string
      */
     case UnreadableLineTemplate = 'unreadable_line_template';
 
+    /** The fixed-price period would sell coverage after another agreement takes over. */
+    case AgreementHandoverOverlap = 'agreement_handover_overlap';
+
     /**
      * A one-line description for an operator, with no identifiers in it.
      */
     public function summary(): string
     {
         return match ($this) {
+            self::AgreementHandoverOverlap => 'whose billing period overlaps a successor agreement',
             self::UnreadableCadence => 'whose cadence this application cannot read',
             self::UnreadableLineTemplate => 'whose line template is empty or not a list of billable lines',
         };

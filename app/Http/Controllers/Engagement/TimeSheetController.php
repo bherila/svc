@@ -407,6 +407,7 @@ class TimeSheetController extends Controller
                 InvoiceKind::InterimOverage => $hasAgreement
                     && $isNonClosingInterim
                     && (bool) $link->getAttribute('agreement_bill_overage_interim'),
+                InvoiceKind::DeferredBuyDown => false,
                 InvoiceKind::Terminal => false,
                 null => false,
             };

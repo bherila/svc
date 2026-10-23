@@ -194,6 +194,16 @@
             "mcp.switch:billing.audit_undated_collectible_invoices"
         ]
     },
+    "billing.audit_unlinked_proposal_agreements": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.audit_unlinked_proposal_agreements",
+            "mcp.switch:billing.audit_unlinked_proposal_agreements"
+        ]
+    },
     "billing.audit_unplaceable_invoices": {
         "scopes": [
             "billing:read"
@@ -202,6 +212,16 @@
             "mcp",
             "mcp.switch:mcp.read.billing.audit_unplaceable_invoices",
             "mcp.switch:billing.audit_unplaceable_invoices"
+        ]
+    },
+    "billing.preflight_schedule_generation": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.preflight_schedule_generation",
+            "mcp.switch:billing.preflight_schedule_generation"
         ]
     },
     "billing_audit.stale_and_missing": {
@@ -281,6 +301,76 @@
             "mcp",
             "mcp.switch:mcp.write.clients",
             "mcp.switch:clients.archive"
+        ]
+    },
+    "clients.contacts.archive": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.archive"
+        ]
+    },
+    "clients.contacts.create": {
+        "scopes": [
+            "clients:write"
+        ],
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.create"
+        ]
+    },
+    "clients.contacts.get": {
+        "scopes": [
+            "clients:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:clients.contacts.get"
+        ]
+    },
+    "clients.contacts.list": {
+        "scopes": [
+            "clients:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:clients.contacts.list"
+        ]
+    },
+    "clients.contacts.restore": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.restore"
+        ]
+    },
+    "clients.contacts.update": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.update"
         ]
     },
     "clients.create": {
@@ -431,6 +521,112 @@
             "mcp.switch:clients.update"
         ]
     },
+    "collaboration.comments.create": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.comments.create"
+        ]
+    },
+    "collaboration.comments.delete": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.comments.delete"
+        ]
+    },
+    "collaboration.comments.list": {
+        "scopes": [
+            "collaboration:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.comments.list"
+        ]
+    },
+    "collaboration.comments.update": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.comments.update"
+        ]
+    },
+    "collaboration.topics.create": {
+        "scopes": [
+            "collaboration:write"
+        ],
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.topics.create"
+        ]
+    },
+    "collaboration.topics.delete": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.topics.delete"
+        ]
+    },
+    "collaboration.topics.get": {
+        "scopes": [
+            "collaboration:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.topics.get"
+        ]
+    },
+    "collaboration.topics.list": {
+        "scopes": [
+            "collaboration:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.topics.list"
+        ]
+    },
+    "collaboration.topics.update": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.topics.update"
+        ]
+    },
     "companies.payment_reminders.get": {
         "scopes": [
             "billing:read"
@@ -490,6 +686,9 @@
             "mcp.switch:companies.square_customer.set"
         ]
     },
+    "connections.disconnect": {
+        "authenticated": true
+    },
     "connections.revoke": {
         "scopes": [
             "mcp:use"
@@ -503,6 +702,16 @@
             "mcp",
             "mcp.switch:mcp.read",
             "mcp.switch:context.get"
+        ]
+    },
+    "deferred_backlog.preview": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:deferred_backlog.preview"
         ]
     },
     "expense_schedules.create": {
@@ -671,6 +880,66 @@
             "mcp.switch:expenses.update"
         ]
     },
+    "finance.invoice_payments.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.invoice_payments.list"
+        ]
+    },
+    "finance.payouts.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.payouts.list"
+        ]
+    },
+    "finance.processor_movements.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.processor_movements.list"
+        ]
+    },
+    "finance.reconciliations.acknowledge": {
+        "scopes": [
+            "finance:reconcile"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:finance.reconciliations.acknowledge"
+        ]
+    },
+    "finance.reconciliations.deactivate": {
+        "scopes": [
+            "finance:reconcile"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:finance.reconciliations.deactivate"
+        ]
+    },
+    "finance.reconciliations.upsert": {
+        "scopes": [
+            "finance:reconcile"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:finance.reconciliations.upsert"
+        ]
+    },
     "invoices.add_time": {
         "scopes": [
             "billing:write",
@@ -703,6 +972,19 @@
             "mcp",
             "mcp.switch:mcp.read",
             "mcp.switch:invoices.corrections.get"
+        ]
+    },
+    "invoices.create_deferred_buydown": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.create_deferred_buydown"
         ]
     },
     "invoices.create_draft": {
@@ -867,6 +1149,19 @@
             "mcp.switch:invoices.square_candidates"
         ]
     },
+    "invoices.square_cover": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_cover"
+        ]
+    },
     "invoices.square_link": {
         "scopes": [
             "billing:write",
@@ -878,6 +1173,33 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:invoices.square_link"
+        ]
+    },
+    "invoices.square_reconcile": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes",
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_reconcile"
+        ]
+    },
+    "invoices.square_uncover": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_uncover"
         ]
     },
     "invoices.square_unlink": {
@@ -926,6 +1248,9 @@
             "mcp.switch:invoices.void"
         ]
     },
+    "oauth.token.revoke": {
+        "authenticated": true
+    },
     "operations.summary": {
         "scopes": [
             "identity:read"
@@ -938,8 +1263,10 @@
     },
     "payments.correct": {
         "scopes": [
-            "payments:record"
+            "payments:record",
+            "payments:read"
         ],
+        "scope_rule": "all",
         "flags": [
             "agent.writes.payments",
             "mcp",
@@ -968,6 +1295,45 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:payments.record"
+        ]
+    },
+    "payments.refund": {
+        "scopes": [
+            "payments:record",
+            "payments:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.refund"
+        ]
+    },
+    "payments.reverse_refund": {
+        "scopes": [
+            "payments:record",
+            "payments:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.reverse_refund"
+        ]
+    },
+    "payments.set_status": {
+        "scopes": [
+            "payments:record",
+            "payments:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.set_status"
         ]
     },
     "projects.archive": {

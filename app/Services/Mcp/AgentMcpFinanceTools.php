@@ -1,0 +1,139 @@
+<?php
+
+namespace App\Services\Mcp;
+
+use App\Services\Finance\FinanceReconciliationOperations;
+use App\Support\Finance\FinancePaymentQuery;
+use App\Support\Finance\FinancePayoutQuery;
+use App\Support\Finance\FinanceProcessorMovementQuery;
+use App\Support\Finance\ReconciliationTarget;
+use Mcp\Capability\Attribute\Schema;
+
+/**
+ * Finance reconciliation over MCP (#457): each tool is its REST operation,
+ * dispatched through {@see AgentMcpRestCall}, so the tool and the route run
+ * one {@see FinanceReconciliationOperations} with the
+ * same refusals.
+ */
+final class AgentMcpFinanceTools
+{
+    private const string SYSTEM = '^'.ReconciliationTarget::SYSTEM_PATTERN.'$';
+
+    public function __construct(private readonly AgentMcpRestCall $rest) {}
+
+    /** @return array<string, mixed> */
+    public function list(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled', FinancePaymentQuery::ANY_STATUS])] ?string $status = null,
+        #[Schema(format: 'uuid')] ?string $invoice_id = null,
+        #[Schema(format: 'date')] ?string $received_from = null,
+        #[Schema(format: 'date')] ?string $received_to = null,
+        #[Schema(minimum: 1, maximum: FinancePaymentQuery::MAX_PER_PAGE)] int $per_page = FinancePaymentQuery::DEFAULT_PER_PAGE,
+        #[Schema(minimum: 1)] ?int $page = null,
+        #[Schema(format: 'date-time')] ?string $updated_since = null,
+        #[Schema(format: 'date-time')] ?string $watermark = null,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
+    ): array {
+        // A query string carries text; the REST route reads it as given.
+        $query = array_map(strval(...), array_filter(
+            ['invoice' => $invoice_id, ...compact('status', 'received_from', 'received_to', 'per_page', 'page', 'updated_since', 'watermark', 'cursor')],
+            static fn (mixed $value): bool => $value !== null,
+        ));
+
+        return $this->rest->call('finance.invoice_payments.list', ['workspace' => $workspace_id], query: $query);
+    }
+
+    /** @return array<string, mixed> */
+    public function payouts(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: FinancePayoutQuery::PROVIDERS)] ?string $provider = null,
+        #[Schema(enum: ['pending', 'in_transit', 'paid', 'failed', 'canceled'])] ?string $status = null,
+        #[Schema(format: 'date')] ?string $arrival_from = null,
+        #[Schema(format: 'date')] ?string $arrival_to = null,
+        #[Schema(minimum: 1, maximum: FinancePayoutQuery::MAX_PER_PAGE)] int $per_page = FinancePayoutQuery::DEFAULT_PER_PAGE,
+        #[Schema(minimum: 1)] ?int $page = null,
+        #[Schema(format: 'date-time')] ?string $updated_since = null,
+        #[Schema(format: 'date-time')] ?string $watermark = null,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
+    ): array {
+        $query = array_map(strval(...), array_filter(
+            compact('provider', 'status', 'arrival_from', 'arrival_to', 'per_page', 'page', 'updated_since', 'watermark', 'cursor'),
+            static fn (mixed $value): bool => $value !== null,
+        ));
+
+        return $this->rest->call('finance.payouts.list', ['workspace' => $workspace_id], query: $query);
+    }
+
+    /** @return array<string, mixed> */
+    public function movements(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: FinanceProcessorMovementQuery::PROVIDERS)] ?string $provider = null,
+        #[Schema(enum: FinanceProcessorMovementQuery::KINDS)] ?string $kind = null,
+        #[Schema(format: 'uuid')] ?string $payment_id = null,
+        #[Schema(format: 'date')] ?string $occurred_from = null,
+        #[Schema(format: 'date')] ?string $occurred_to = null,
+        #[Schema(minimum: 1, maximum: FinanceProcessorMovementQuery::MAX_PER_PAGE)] int $per_page = FinanceProcessorMovementQuery::DEFAULT_PER_PAGE,
+        #[Schema(format: 'date-time')] ?string $updated_since = null,
+        #[Schema(format: 'date-time')] ?string $watermark = null,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
+    ): array {
+        $query = array_map(strval(...), array_filter(
+            compact('provider', 'kind', 'payment_id', 'occurred_from', 'occurred_to', 'per_page', 'updated_since', 'watermark', 'cursor'),
+            static fn (mixed $value): bool => $value !== null,
+        ));
+
+        return $this->rest->call('finance.processor_movements.list', ['workspace' => $workspace_id], query: $query);
+    }
+
+    /** @return array<string, mixed> */
+    public function upsert(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(maxLength: ReconciliationTarget::SYSTEM_MAX_LENGTH, pattern: self::SYSTEM)] string $external_system,
+        #[Schema(format: 'uuid')] string $transaction_id,
+        #[Schema(minimum: 1)] int $allocated_amount,
+        #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
+        bool $is_active,
+        #[Schema(format: 'date')] ?string $reconciled_on = null,
+    ): array {
+        return $this->rest->call(
+            'finance.reconciliations.upsert',
+            $this->allocation($workspace_id, $payment_id, $external_system, $transaction_id),
+            compact('allocated_amount', 'currency', 'reconciled_on', 'is_active'),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    public function acknowledge(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(maxLength: ReconciliationTarget::SYSTEM_MAX_LENGTH, pattern: self::SYSTEM)] string $external_system,
+        #[Schema(format: 'uuid')] string $transaction_id,
+        #[Schema(pattern: '^[a-f0-9]{64}$')] string $expected_payment_version,
+        #[Schema(enum: ['processor_refund', 'processor_dispute'])] string $expected_review_reason,
+        #[Schema(format: 'date-time')] string $expected_review_flagged_at,
+        bool $confirm,
+    ): array {
+        return $this->rest->call(
+            'finance.reconciliations.acknowledge',
+            $this->allocation($workspace_id, $payment_id, $external_system, $transaction_id),
+            compact('expected_payment_version', 'expected_review_reason', 'expected_review_flagged_at', 'confirm'),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    public function deactivate(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(maxLength: ReconciliationTarget::SYSTEM_MAX_LENGTH, pattern: self::SYSTEM)] string $external_system,
+        #[Schema(format: 'uuid')] string $transaction_id,
+    ): array {
+        return $this->rest->call('finance.reconciliations.deactivate', $this->allocation($workspace_id, $payment_id, $external_system, $transaction_id));
+    }
+
+    /** @return array<string, string> the REST binding's path parameters */
+    private function allocation(string $workspace, string $payment, string $system, string $transaction): array
+    {
+        return ['workspace' => $workspace, 'payment' => $payment, 'external_system' => $system, 'transaction' => $transaction];
+    }
+}

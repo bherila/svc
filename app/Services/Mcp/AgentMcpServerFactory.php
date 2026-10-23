@@ -3,7 +3,6 @@
 namespace App\Services\Mcp;
 
 use App\Services\AgentApi\AgentAgreementReadService;
-use App\Services\AgentApi\AgentBillingAuditReadService;
 use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\AgentApi\AgentCapacityLedgerReadService;
 use App\Services\AgentApi\AgentClientReadService;
@@ -63,13 +62,13 @@ final class AgentMcpServerFactory
         private readonly AgentAgreementReadService $agreementReadService,
         private readonly AgentBillingScheduleReadService $billingScheduleReadService,
         private readonly AgentCapacityLedgerReadService $capacityLedgerReadService,
-        private readonly AgentBillingAuditReadService $billingAuditReadService,
         private readonly AgentClientReadService $clientReadService,
         private readonly SquareReadService $squareReadService,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpAuthorizer $authorizer,
         private readonly McpPrincipalResolverInterface $principals,
         private readonly AgentMcpWriteTools $writes,
+        private readonly AgentMcpRestCall $rest,
         private readonly AgentMcpPrompts $prompts,
         private readonly RequestArguments $requestArguments,
     ) {}
@@ -90,9 +89,9 @@ final class AgentMcpServerFactory
         $agreementResource = new AgentMcpAgreementResource($this->agreementReadService, $this->accounts, $context);
         $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
-        $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $clients = new AgentMcpClientTools($this->clientReadService, $this->accounts, $context);
-        $clientWrites = new AgentMcpClientWriteTools(app(InternalAgentApiTransport::class), $this->requestArguments);
+        $rest = $this->rest->forContext($context);
+        $clientWrites = new AgentMcpClientWriteTools($rest, $this->requestArguments);
         $writes = $this->writes->forContext($context);
         $instances = [
             AgentMcpReadTools::class => $reads,
@@ -101,15 +100,19 @@ final class AgentMcpServerFactory
             AgentMcpAgreementResource::class => $agreementResource,
             AgentMcpBillingScheduleTools::class => $schedules,
             AgentMcpCapacityLedgerTools::class => $capacityLedger,
-            AgentMcpBillingAuditTools::class => $billingAudits,
+            AgentMcpBillingAuditTools::class => new AgentMcpBillingAuditTools($rest),
             AgentMcpClientTools::class => $clients,
             AgentMcpSquareTools::class => new AgentMcpSquareTools($this->squareReadService, $this->accounts, $context),
             AgentMcpSquareMirrorTools::class => new AgentMcpSquareMirrorTools(app(InternalAgentApiTransport::class)),
             AgentMcpClientWriteTools::class => $clientWrites,
-            AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools(app(InternalAgentApiTransport::class), $this->requestArguments),
+            AgentMcpClientContactTools::class => new AgentMcpClientContactTools($rest, $this->requestArguments),
+            AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools($rest, $this->requestArguments),
             AgentMcpSquareLinkTools::class => new AgentMcpSquareLinkTools(app(InternalAgentApiTransport::class), $this->requestArguments),
-            AgentMcpPaymentReminderTools::class => new AgentMcpPaymentReminderTools(app(InternalAgentApiTransport::class)),
-            AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools(app(InternalAgentApiTransport::class), $this->requestArguments),
+            AgentMcpPaymentReminderTools::class => new AgentMcpPaymentReminderTools($rest),
+            AgentMcpDeferredBuyDownTools::class => new AgentMcpDeferredBuyDownTools($rest, $this->requestArguments),
+            AgentMcpCollaborationTools::class => new AgentMcpCollaborationTools($rest, $this->requestArguments),
+            AgentMcpFinanceTools::class => new AgentMcpFinanceTools($rest),
+            AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools($rest, $this->requestArguments),
             AgentMcpWriteTools::class => $writes,
             AgentMcpPrompts::class => $this->prompts,
         ];

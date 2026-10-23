@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -12,21 +13,26 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
  * @property string $public_id
  * @property int $workspace_id
  * @property int $client_project_id
+ * @property int|null $parent_task_id
+ * @property int|null $client_task_list_id
  * @property string $title
  * @property string|null $description
  * @property string $status
  * @property bool $is_visible_to_client
  * @property CarbonImmutable|null $completed_at
+ * @property CarbonImmutable|null $starts_on
+ * @property CarbonImmutable|null $due_on
  * @property int $lock_version
  */
-#[Fillable(['workspace_id', 'client_project_id', 'title', 'description', 'status', 'is_visible_to_client', 'completed_at', 'milestone_price_amount', 'client_invoice_line_id'])]
-#[Hidden(['id', 'workspace_id', 'client_project_id'])]
+#[Fillable(['workspace_id', 'client_project_id', 'title', 'description', 'status', 'is_visible_to_client', 'completed_at', 'milestone_price_amount', 'client_invoice_line_id', 'starts_on', 'due_on'])]
+#[Hidden(['id', 'workspace_id', 'client_project_id', 'parent_task_id', 'client_task_list_id'])]
 class ClientTask extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -37,7 +43,20 @@ class ClientTask extends Model implements WorkspaceOwned
             'is_visible_to_client' => 'boolean',
             'completed_at' => 'immutable_datetime',
             'milestone_price_amount' => 'integer',
+            'starts_on' => DateOnly::class,
+            'due_on' => DateOnly::class,
         ];
+    }
+
+    protected function workspaceOwnershipIsImmutable(): bool
+    {
+        return true;
+    }
+
+    /** @return HasMany<ClientTaskAssignment, $this> */
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(ClientTaskAssignment::class);
     }
 
     /** @return BelongsTo<Workspace, $this> */

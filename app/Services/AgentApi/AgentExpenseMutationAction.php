@@ -28,11 +28,11 @@ final class AgentExpenseMutationAction
 
         return $this->mutations->run($user, $workspace, $clientId, 'expenses.log', $key, $payload, function () use ($user, $workspace, $payload): array {
             Validator::make(['body' => $payload], ['body' => ['required', 'array:entries']])->validate();
-            $rules = ['entries' => ['required', 'array', 'min:1', 'max:20'], 'entries.*' => ['required', 'array:company_id,project_id,spent_on,amount,currency,description'], 'entries.*.company_id' => ['required', 'uuid']];
+            $rules = ['entries' => ['required', 'array', 'min:1', 'max:20'], 'entries.*' => ['required', 'array:company_id,project_id,spent_on,amount,currency,description,external_finance_transaction_uuid'], 'entries.*.company_id' => ['required', 'uuid'], 'entries.*.external_finance_transaction_uuid' => ['sometimes', 'nullable', 'uuid']];
             foreach ($this->rules() as $field => $rule) {
                 $rules['entries.*.'.$field] = $rule;
             }
-            /** @var array{entries:list<array{company_id:string,project_id?:?string,spent_on:string,amount:int,currency:string,description:string}>} $data */
+            /** @var array{entries:list<array{company_id:string,project_id?:?string,spent_on:string,amount:int,currency:string,description:string,external_finance_transaction_uuid?:?string}>} $data */
             $data = Validator::make($payload, $rules)->validate();
             $companies = ClientCompany::query()->where('workspace_id', $workspace->id)
                 ->whereIn('public_id', array_column($data['entries'], 'company_id'))->get()->keyBy('public_id');
@@ -45,7 +45,7 @@ final class AgentExpenseMutationAction
                 $projectId = $entry['project_id'] ?? null;
                 $project = $projectId === null ? null : $projects->get($projectId);
                 abort_unless($projectId === null || ($project instanceof ClientProject && $project->client_company_id === $company->id), 404);
-                $record = $this->expenses->record($workspace, $company, $project, $this->facts($entry), $user);
+                $record = $this->expenses->record($workspace, $company, $project, $this->facts($entry), $user, $entry['external_finance_transaction_uuid'] ?? null);
                 $ids[] = $record->public_id;
             }
 

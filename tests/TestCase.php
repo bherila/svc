@@ -12,20 +12,33 @@ use Laravel\Passport\Token;
 
 abstract class TestCase extends BaseTestCase
 {
+    /** @var array{private: string, public: string}|null */
+    private static ?array $oauthSigningKeys = null;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->withoutVite();
-        $key = openssl_pkey_new([
-            'private_key_bits' => 2048,
-            'private_key_type' => OPENSSL_KEYTYPE_RSA,
-        ]);
-        $this->assertNotFalse($key);
-        $this->assertTrue(openssl_pkey_export($key, $privateKey));
-        $details = openssl_pkey_get_details($key);
-        $this->assertIsArray($details);
-        config(['passport.private_key' => $privateKey, 'passport.public_key' => $details['key']]);
+        // A locally built SSR bundle must not turn a backend test into an HTTP
+        // call to the renderer. CI and a clean checkout have no such bundle.
+        config(['inertia.ssr.enabled' => false]);
+        // Real JWT validation needs ephemeral keys, not a new expensive keypair
+        // for every assertion. Each isolated test process owns its own pair;
+        // every new application still receives it through ordinary config.
+        if (self::$oauthSigningKeys === null) {
+            $key = openssl_pkey_new([
+                'private_key_bits' => 2048,
+                'private_key_type' => OPENSSL_KEYTYPE_RSA,
+            ]);
+            $this->assertNotFalse($key);
+            $this->assertTrue(openssl_pkey_export($key, $privateKey));
+            $this->assertIsString($privateKey);
+            $details = openssl_pkey_get_details($key);
+            $this->assertIsArray($details);
+            self::$oauthSigningKeys = ['private' => $privateKey, 'public' => $details['key']];
+        }
+        config(['passport.private_key' => self::$oauthSigningKeys['private'], 'passport.public_key' => self::$oauthSigningKeys['public']]);
     }
 
     /**

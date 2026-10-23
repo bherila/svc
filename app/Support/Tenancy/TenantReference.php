@@ -19,6 +19,7 @@ final readonly class TenantReference
      *                                   what they name - for those, the audit asks whether an
      *                                   existing parent is in the wrong workspace rather than
      *                                   treating a permitted deletion as corruption.
+     * @param  list<string>  $additionalScopeColumns  explicit same-named scope columns, in FK order after workspace_id
      */
     public function __construct(
         public string $childTable,
@@ -28,11 +29,25 @@ final readonly class TenantReference
         public ?string $constraintName,
         public string $note,
         public bool $parentMayBeAbsent = false,
+        public array $additionalScopeColumns = [],
     ) {}
 
-    public static function enforcedBy(string $childTable, string $childColumn, string $parentTable, string $constraintName): self
+    /** @param list<string> $additionalScopeColumns */
+    public static function enforcedBy(string $childTable, string $childColumn, string $parentTable, string $constraintName, array $additionalScopeColumns = []): self
     {
-        return new self($childTable, $childColumn, $parentTable, true, $constraintName, '');
+        return new self($childTable, $childColumn, $parentTable, true, $constraintName, '', additionalScopeColumns: $additionalScopeColumns);
+    }
+
+    /** @return list<string> */
+    public function childColumns(): array
+    {
+        return ['workspace_id', ...$this->additionalScopeColumns, $this->childColumn];
+    }
+
+    /** @return list<string> */
+    public function parentColumns(): array
+    {
+        return ['workspace_id', ...$this->additionalScopeColumns, 'id'];
     }
 
     /**

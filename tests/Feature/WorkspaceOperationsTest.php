@@ -209,6 +209,7 @@ class WorkspaceOperationsTest extends TestCase
         $workspace = Workspace::query()->create(['name' => 'Synthetic Query Scope', 'slug' => 'synthetic-query-scope']);
         $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
 
+        $singleCompanyQueries = null;
         foreach (range(1, 4) as $companyNumber) {
             $company = ClientCompany::query()->create([
                 'workspace_id' => $workspace->id,
@@ -270,6 +271,13 @@ class WorkspaceOperationsTest extends TestCase
                 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
                 'available_at' => now(),
             ]);
+            if ($companyNumber === 1) {
+                DB::enableQueryLog();
+                DB::flushQueryLog();
+                $this->actingAs($manager)->get("/workspaces/{$workspace->public_id}/operations")->assertOk();
+                $singleCompanyQueries = count(DB::getQueryLog());
+                DB::disableQueryLog();
+            }
         }
 
         DB::flushQueryLog();
@@ -283,7 +291,10 @@ class WorkspaceOperationsTest extends TestCase
             ->has('workspace.clients.0.proposals.0.attachments', 1));
 
         $queries = DB::getQueryLog();
-        $this->assertLessThanOrEqual(12, count($queries));
+        // The shared file reader adds two current actor authority lookups,
+        // independent of the number of companies, parents and files.
+        $this->assertSame($singleCompanyQueries, count($queries));
+        $this->assertLessThanOrEqual(14, count($queries));
 
         $attachmentQueries = collect($queries)->filter(
             fn (array $query): bool => str_contains($query['query'], 'client_attachments'),

@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { ChevronDownIcon } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -51,6 +52,8 @@ const MODULES: readonly {
     { key: 'time', label: 'Time' },
     { key: 'expenses', label: 'Expenses' },
     { key: 'tasks', label: 'Tasks' },
+    { key: 'notes', label: 'Notes' },
+    { key: 'discussions', label: 'Discussions' },
 ];
 
 type AvailableModule = {
@@ -79,6 +82,36 @@ export function ClientModuleTabs({
     destinations: ClientModuleDestinations;
     className?: string;
 }) {
+    const strip = useRef<HTMLElement>(null);
+    useEffect(() => {
+        const nav = strip.current;
+
+        if (!nav) {
+            return;
+        }
+
+        const revealCurrent = () => {
+            const selected = nav.querySelector('[aria-current="page"]');
+
+            if (!selected || nav.clientWidth === 0) {
+                return;
+            }
+
+            const bounds = nav.getBoundingClientRect();
+            const item = selected.getBoundingClientRect();
+
+            if (item.right > bounds.right) {
+                nav.scrollLeft += item.right - bounds.right;
+            } else if (item.left < bounds.left) {
+                nav.scrollLeft -= bounds.left - item.left;
+            }
+        };
+        revealCurrent();
+        const observer = new ResizeObserver(revealCurrent);
+        observer.observe(nav);
+
+        return () => observer.disconnect();
+    }, [active]);
     const modules = availableModules(destinations);
     const current = modules.find((module) => module.key === active) ?? null;
 
@@ -89,6 +122,7 @@ export function ClientModuleTabs({
              * the row would grow, and it scrolls rather than wrapping.
              */}
             <nav
+                ref={strip}
                 aria-label="Client sections"
                 className={cn(
                     'hidden min-w-0 items-center gap-0.5 overflow-x-auto sm:flex',

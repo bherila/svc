@@ -3,7 +3,9 @@
 The signed receiver is `POST /api/webhooks/square`. Register the notification URL
 under the application's configured `APP_URL`, for example
 `https://svc.example.test/api/webhooks/square`, for `invoice.updated`,
-`invoice.payment_made`, `payment.updated` and `refund.updated`.
+`invoice.payment_made`, `payment.updated`, `refund.updated`, `dispute.created`,
+`dispute.state.updated` (or its older name, `dispute.state.changed`),
+`payout.sent`, `payout.paid` and `payout.failed`.
 The local operator installs `SQUARE_WEBHOOK_SIGNATURE_KEY`; an absent key refuses
 requests with 403 before decoding, database work or Square reads. Oversized bodies
 are refused with 413 before hashing.
@@ -12,12 +14,64 @@ The receiver checks the base64 HMAC-SHA256 signature over that configured URL
 followed by the exact raw request body. It has no session, authentication or CSRF
 middleware. Any external application edge must also permit the machine path.
 Only event and object identifiers are used from a signed notification. Invoice,
-order and payment facts are re-fetched through the existing read-only client.
+order, payment, dispute and payout facts are re-fetched through the existing
+read-only client. A payout is read with `GET /v2/payouts/{id}` and its entries
+with `GET /v2/payouts/{id}/payout-entries` (the access token needs Square's
+`PAYOUTS_READ` permission), stored for the connected workspace, and recorded on
+each charged payment with its arrival date and fee (see
+[processor settlement and payouts](finance-api.md#processor-settlement-and-payouts)).
+Square's payout `type` is how much of the balance moved: a whole-balance
+`BATCH` payout is stored as `automatic`, and a part-balance `SIMPLE` payout as
+`instant` when it went to a card or carries a `payout_fee`, `manual` otherwise.
+A transfer into a Square balance (`SQUARE_STORED_BALANCE`, or the deprecated
+`SQUARE_BALANCE`) reaches no bank account and is not stored.
+Reconciling a payment also records its capture time and Square's processing fee
+so far, as a fee charged (positive). Square's documents disagree on the sign of
+`processing_fee` amounts - the payments guide reports deductions as negative,
+the ProcessingFee reference assessments as positive - so the sign of the
+`INITIAL` fee decides which convention a response uses, and adjustments net in
+it. Payout history is filled by `svc:finance:backfill-payouts`, which lists
+each location's payouts with `GET /v2/payouts`.
+
+A payout can arrive before its invoice payment is recorded: Square does not promise
+[notification order](https://developer.squareup.com/docs/webhooks/overview#requirements-and-limitations).
+Charge entries are first kept in the workspace's `square_pending_settlements`, then delivered
+through `ProcessorSettlementRecorder`. The payment reconciliation path also delivers waiting
+entries after it records or refreshes the payment. Missing payments retain their entries; a
+successful or already-current delivery consumes the entry with the payment update in one
+transaction. Newer reports replace older waiting facts, and the recorder still prevents a stale
+report from replacing newer payment facts. Dry runs create or consume no entries. No queue worker
+or repeat delivery of an already-completed webhook is needed.
+
+Some payout charges are non-invoice sales that will never be recorded here. The daily
+`svc:square:prune-pending-settlements` command removes at most 1,000 waiting entries older than
+30 days for the configured workspace; a larger backlog continues on later daily runs or manual
+invocations. `SQUARE_PENDING_SETTLEMENT_RETENTION_DAYS` changes this positive-day retention.
+A newer accepted report resets the retention time; a duplicate or stale report does not.
+After retention expires, late-recorded payments still use the explicit recovery command
+`svc:finance:backfill-payouts --provider=square --apply` to reread their payout history. This
+bounded retention is accepted for the single-operator workload; unbounded late invoice recording
+would need a longer configured window or a separate recovery process.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.
+`svc:square:reconcile-payments --invoice=INVOICE_PUBLIC_ID --apply` reconciles one linked
+invoice now instead, and `invoices.square_reconcile` (REST and MCP, workspace
+managers, `billing:write` and `billing:read`) does the same for an agent - for example right after
+`invoices.square_link`, rather than waiting up to fifteen minutes. All three use
+`SquareInvoiceReconciliation`, which runs the sweep's own read-only refetch; an
+invoice with no active link is refused. Repeating it records nothing twice. The
+operation reads Square before writing its idempotency receipt, so the receipt and
+its audit record the outcome: a failed read or a refused payment is audited as a
+failure, leaves no receipt, and the same key may be retried. Each call can read
+Square up to 102 times, so a workspace gets 20 per ten minutes before 429. Asked
+for one invoice while Square is not configured, the command fails rather than
+reporting success.
 It visits active links in bounded database batches, including paid invoices so
-refunds missed by webhooks are recovered. Both transports finish their work in
+refunds missed by webhooks are recovered. After recording payments, it lists
+disputes in every state through read-only `GET /v2/disputes` (`DISPUTES_READ`),
+so missed dispute notifications and disputes received before their payment are
+recovered on the next sweep. Wins are included so earlier holds can be restored. Both transports finish their work in
 the request or command; neither dispatches jobs. The sweep works without the
 webhook signature key, using the existing Square connection configuration.
 Recorded Square payments are also swept independently of current links, so a
@@ -31,8 +85,51 @@ provider `square` and the payment identifier as the existing unique provider key
 Refunds apply the existing received-payment correction and are cumulative, so a
 slower response cannot restore refunded money. A draft, void invoice, currency
 mismatch, over-balance payment, invalid data or ambiguous tip allocation is
-refused instead of changing the ledger. Failed events release their durable
-claim and answer 503 for retry; successfully completed event IDs do no more work.
+refused instead of changing the ledger. A refund or dispute is recorded
+whatever the payment's finance reconciliation allocations; they are kept and
+flagged for review (see [the finance reconciliation API](finance-api.md)).
+Failed events release their durable claim and answer 503 for retry;
+successfully completed event IDs do no more work.
+
+A dispute notification names a dispute, but both the webhook and the sweep
+read the complete bounded all-state dispute list before applying the payment's
+whole group. Distinct open, lost and accepted disputes are summed; resolved
+disputes contribute zero. A win for one dispute never releases another's hold.
+On a payment svc recorded:
+
+- An open inquiry or chargeback, and a lost or accepted dispute, make the
+  payment `disputed` and hold back only the amount Square contests
+  (`disputed_amount`): a 5,000 dispute against a 12,345 payment reopens the
+  invoice by 5,000, not 12,345. A changed amount is recorded again.
+- A won dispute (in part or in full) or a closed inquiry restores it to
+  `succeeded`. If the invoice was paid again while the dispute was open, the
+  restoration is still recorded: the excess is the invoice's overpayment, feeds
+  the derived overpayment credit, and is named as `overpaid_amount` in the
+  `invoice.payment_received` activity for review. If the invoice was voided
+  meanwhile, the payment is restored, the invoice stays void, and the activity
+  carries `review: restored_on_void_invoice`.
+- A refunded payment stays refunded.
+- The known payment revisions are captured before reading Square and checked
+  under the payment lock before applying a group. A payment changed during the
+  read refuses the stale snapshot for retry. The maximum dispute update time
+  is retained as an additional stale-read check, never used on its own to
+  decide whether a group is current.
+
+A dispute on a payment svc never recorded changes nothing. An unknown state,
+another currency, an amount above the payment or an unreadable update time is
+refused and released for retry. The sweep starts dispute pagination from the
+beginning each time because [ListDisputes](https://developer.squareup.com/reference/square/disputes-api/list-disputes)
+has no changed-since filter. It admits at most 100 pages of 100 records per page;
+these are local safety bounds, not a claim about Square's page size. Invalid or
+repeated cursors, unreadable records, refused reads and a remaining cursor at the
+page bound fail the command instead of claiming completion. No dispute writes
+happen until every page is readable and complete; repeated dispute ids also
+refuse the snapshot. At most 10,000 known local payment revisions are captured
+before the read. A group's sum above the payment amount, an integer overflow or
+a currency disagreement is refused rather than capped or guessed; these facts
+exceed the current payment model and need operator review. The next sweep retries. An operator whose account exceeds
+these bounds must arrange a separately reviewed recovery before relying on a
+complete sweep. No webhook body or new queue is retained.
 The received date comes from the card capture timeline in the workspace's time
 zone. Payments without a trustworthy completion timestamp fail closed; creation
 and last-update times are not substituted for the day money was received.
@@ -46,9 +143,96 @@ receipt expires.
 When an invoice paid through another source remains open in the Square mirror,
 the operator invoice and `billing_audit.stale_and_missing` show
 `paid_outside_square`, with a finished dashboard link. The owner closes the Square
-invoice there; svc does not write to Square. Other phase-two audit flags are a
-separate slice: missing series periods, unmatched payments, unlinked open balances
-and amount or cadence drift.
+invoice there; svc does not write to Square.
+
+## Billing-audit flags
+
+`billing_audit.stale_and_missing` also carries `square_billing_audit`, read from
+svc's mirror as of its last sync and empty where Square does not serve the
+workspace. Each flag has a full `count`, at most 100 entries with finished svc and
+Square dashboard URLs, and `truncated`. Periods and drift name the agreement's
+`square_location_id` (#488), and drift's explore link shows the series in that
+location only:
+
+- `unmirrored_series_periods`: a member of a series an agreement is billed in
+  (`square_series_key` in its `square_location_id`), within the agreement (from its start to its end, once it
+  has one), that no svc invoice is linked to or recorded as covering
+  (`invoices.square_cover`, #487; a void invoice covers nothing). `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
+  `FAILED` ones are no bill, so none of them is flagged.
+- `unmatched_payments`: a Square payment id on an invoice in svc's reach (actively
+  linked, a billed-in-Square series member within its agreement, or of a confirmed
+  customer) that svc has
+  not recorded under provider `square`. `not_recorded` means the invoice is linked
+  and the sweep has not recorded the payment, for example because it failed
+  closed; `invoice_not_linked` means no svc invoice is linked to receive it. A
+  payment recorded against another svc invoice still matches. The mirror takes
+  payment ids from the order's tenders - `payment_id`, else the tender's own `id`
+  - and counts a tender once it is settled (a captured card, Square account or buy
+  now pay later tender, a completed bank transfer, or cash): an authorization may
+  still be voided, and a capture changes the invoice's paid amount, so the order is read
+  again then. Any change Square makes to a paid invoice advances its version, which
+  also sends the order to be read again: a refund and an equal recapture between two
+  syncs leave the status and paid amount where they were, but not the tenders. An order with more tenders than the reconciler accepts (100) stays
+  unresolved, as does a paid invoice until the sync has read its order or an order
+  whose tender list is malformed; ids awaiting a re-read are not reported.
+- `unlinked_customer_balances`: Square customers with no client company mapped
+  and an open invoice, most owed first - the customers `square.customers.unlinked`
+  lists with `with_open_balance`.
+- `series_drift`: a billed-in-Square agreement whose billed series members differ
+  in `cadence`, `currency` (another one, or more than one) or latest billed
+  `amount`, or whose series the mirror does not hold (`series_not_mirrored`).
+  `SCHEDULED` members are not billed yet, and members dated before the
+  agreement's start are history; both are left out. Square numbers invoices
+  uniquely per location only, so a series is its prefix in the agreement's
+  location, and the prefix in another location is another agreement's series or
+  none (#488). A series that cannot be placed - a bill with its prefix that names
+  no location, or, for a marker set before markers named a location, the prefix
+  billed from more than one - is
+  reported as `multiple_locations` and nothing else is derived from it - no
+  comparison, unmirrored period or unmatched payment - and Square still billing
+  after the agreement ended is reported as `billed_after_end`. The agreement's amount
+  is its retainer fee for one whole cycle; an agreement that sells no retainer fee
+  is not compared on amount, and a series with fewer than two dated billed members
+  has no cadence to compare.
+
+The audit loads the agreements, the members of their series, the other mirrored
+invoices within its reach, their active links, customers and recorded payment ids
+once, with every query bounded and scoped to the workspace, and classifies them in
+`SquareBillingAuditPolicy` without the database. Series members load first under
+their own bound, so a large mirror never hides a billed-in-Square series.
+`complete` is false unless the newest sync run completed without truncation (a
+run still going or failed leaves the mirror between generations), when a bound (5,000 series members, 5,000 other mirrored invoices or
+500 agreements, or 10,000 payment ids checked against the ledger) was reached, or while the sync has yet to read the payment ids of
+a paid invoice in reach (it reads a bounded number of orders per run, and stamps
+an order too large to read so it does not hold up the rest). The counts are then
+a floor: without a complete sync nothing is derived from a series and no balance
+is stated; a series is reported absent only after a complete sync, no series drift
+is reported when series members were bounded, and no customer balance is stated
+when the other invoices were, since any of them could then be partial. Payment ids record
+the invoice's status, paid amount and Square version they were read for and the
+tender rules they were read by, so a change to those rules re-reads each
+paid invoice's order once. Every flag
+is resolved in svc or in the Square dashboard by a person: nothing here links,
+records, imports or writes to Square.
+
+## Status probe
+
+`php artisan svc:square:status --format=json` reports whether Square is
+configured, its environment and pinned `Square-Version`, whether its workspace
+exists and the webhook signature key is installed, the last completed sync and
+the latest sync run (status, trigger, counts and error code), plus
+`last_run_abandoned` (a run still requested or running after the sync's own
+30-minute abandonment threshold) and `sync_overdue` (no completed sync within an
+hour). It never prints a credential and never calls Square. It exits 0 when Square
+is configured, its workspace exists, a sync completed within the hour and the
+latest run neither failed, was truncated nor was abandoned - nor is the last
+completed run a truncated one a newer run is still retrying (`last_completed_truncated`) -
+and 1 otherwise - so a stopped
+scheduler shows up even though nothing else marks its runs while it is down. The
+post-deploy probe runs it beside `svc:stripe:status` and `svc:brevo:status`, and,
+as for those, treats exit 1 as a report rather than a deploy failure - but only
+when the probe printed its JSON report, so a probe that crashed still fails the
+deploy.
 
 Payment reminders for linked invoices carry the mirrored Square payment page;
 see [payment reminders](client-management/invoice-delivery.md#payment-reminders).

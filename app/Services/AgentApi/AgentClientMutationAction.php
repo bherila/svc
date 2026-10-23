@@ -48,10 +48,10 @@ final class AgentClientMutationAction
     public function createClient(User $user, Workspace $workspace, string $oauthClientId, string $key, array $payload): string
     {
         return $this->execute('clients.create', $user, $workspace, $oauthClientId, $key, $payload, function () use ($workspace, $payload): string {
-            /** @var array{name: string, billing_email?: ?string} $data */
+            /** @var array{name: string, billing_email?: ?string, billing_address?: ?string, phone?: ?string, website_url?: ?string, tax_id?: ?string, currency?: ?string, notes?: ?string} $data */
             $data = Validator::make($payload, ClientMutationRules::clientCreate())->validate();
 
-            return $this->createClient->handle($workspace, $data['name'], $data['billing_email'] ?? null)->public_id;
+            return $this->createClient->handle($workspace, $data['name'], $data['billing_email'] ?? null, $data)->public_id;
         });
     }
 

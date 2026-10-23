@@ -12,8 +12,11 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Models\PaymentReconciliation;
+use App\Support\Finance\ReconciliationReviewReason;
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -26,6 +29,19 @@ use Tests\TestCase;
  * as a whole once any line of it changes, and only a whole-table assertion
  * notices an entry removed from it.
  */
+#[CoversClass(DateOnly::class)]
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientAgreementRecurringItem::class)]
+#[CoversClass(ClientBillingSchedule::class)]
+#[CoversClass(ClientExpense::class)]
+#[CoversClass(ClientExpenseSchedule::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientInvoiceLine::class)]
+#[CoversClass(ClientInvoicePayment::class)]
+#[CoversClass(ClientProposal::class)]
+#[CoversClass(ClientTask::class)]
+#[CoversClass(PaymentReconciliation::class)]
+#[CoversClass(ReconciliationReviewReason::class)]
 final class CalendarDateCastTablesTest extends TestCase
 {
     /** @param  array<string, string>  $expected */
@@ -38,15 +54,45 @@ final class CalendarDateCastTablesTest extends TestCase
         $this->assertSame($expected, $instance->getCasts());
     }
 
+    public function test_the_portal_backlog_setting_is_fillable_and_can_be_turned_off_again(): void
+    {
+        $agreement = new ClientAgreement;
+        // Editing the new privacy setting must retain every existing writable
+        // agreement term; a dropped mass-assignment field silently loses input.
+        $this->assertEqualsCanonicalizing([
+            'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'title', 'status',
+            'starts_on', 'ends_on', 'agreement_text', 'is_visible_to_client', 'currency', 'hourly_rate_amount',
+            'show_deferred_backlog_to_client', 'retainer_amount', 'retainer_minutes', 'billing_cadence', 'rollover_policy',
+            'activated_at', 'signed_at', 'signed_by_user_id', 'signer_name', 'signer_title', 'terminated_at',
+            'catch_up_threshold_minutes', 'period_retainer_minutes', 'period_retainer_amount',
+            'rollover_months', 'initial_rollover_minutes', 'bill_overage_interim', 'first_cycle_proration', 'agreement_link',
+        ], $agreement->getFillable());
+        $agreement->forceFill(['id' => 1, 'workspace_id' => 1, 'lock_version' => 2,
+            'client_company_id' => 3, 'client_project_id' => 4, 'source_proposal_id' => 5,
+            'signed_by_user_id' => 6, 'square_series_key' => 'SYNTHETIC-SERIES', 'square_location_id' => 'SYNTHETIC-LOCATION']);
+        foreach (['id', 'workspace_id', 'lock_version', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id', 'square_series_key', 'square_location_id'] as $private) {
+            $this->assertArrayNotHasKey($private, $agreement->toArray());
+        }
+        $agreement->fill(['show_deferred_backlog_to_client' => 1]);
+        $this->assertTrue($agreement->show_deferred_backlog_to_client);
+        $agreement->fill(['show_deferred_backlog_to_client' => 0]);
+        $this->assertFalse($agreement->show_deferred_backlog_to_client);
+    }
+
     /** @return iterable<string, array{class-string<Model>, array<string, string>}> */
     public static function tables(): iterable
     {
         $tables = [
+            ClientTask::class => [
+                'id' => 'int', 'is_visible_to_client' => 'boolean', 'completed_at' => 'immutable_datetime',
+                'milestone_price_amount' => 'integer', 'starts_on' => DateOnly::class, 'due_on' => DateOnly::class,
+            ],
             ClientAgreement::class => [
                 'id' => 'int',
                 'starts_on' => DateOnly::class,
                 'ends_on' => DateOnly::class,
                 'is_visible_to_client' => 'boolean',
+                'show_deferred_backlog_to_client' => 'boolean',
                 'hourly_rate_amount' => 'integer',
                 'retainer_amount' => 'integer',
                 'retainer_minutes' => 'integer',
@@ -107,6 +153,8 @@ final class CalendarDateCastTablesTest extends TestCase
                 'allocated_amount' => 'integer',
                 'reconciled_on' => DateOnly::class,
                 'is_active' => 'boolean',
+                'review_reason' => ReconciliationReviewReason::class,
+                'review_flagged_at' => 'immutable_datetime',
             ],
             ClientInvoiceLine::class => [
                 'id' => 'int',
@@ -141,8 +189,14 @@ final class CalendarDateCastTablesTest extends TestCase
                 'id' => 'int',
                 'amount' => 'integer',
                 'refunded_amount' => 'integer',
+                'disputed_amount' => 'integer',
                 'received_on' => DateOnly::class,
                 'provider_event_created_at' => 'integer',
+                'provider_dispute_updated_at_ms' => 'integer',
+                'provider_charged_at' => 'immutable_datetime',
+                'provider_fee_amount' => 'integer',
+                'provider_payout_arrival_date' => DateOnly::class,
+                'provider_payout_reported_at_ms' => 'integer',
             ],
             ClientBillingSchedule::class => [
                 'id' => 'int',

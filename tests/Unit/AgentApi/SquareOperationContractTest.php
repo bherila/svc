@@ -65,7 +65,10 @@ final class SquareOperationContractTest extends TestCase
             'square.import_customer' => [[AgentDeploymentFlags::CLIENTS], [AgentDeploymentFlags::SQUARE]],
             'square.sync' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
             'invoices.square_link' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_reconcile' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
             'invoices.square_unlink' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_cover' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_uncover' => [[AgentDeploymentFlags::INVOICES], []],
             'companies.square_customer.get' => [[], []],
             'companies.square_customer.set' => [[AgentDeploymentFlags::CLIENTS], []],
             'companies.square_customer.clear' => [[AgentDeploymentFlags::CLIENTS], []],
@@ -159,7 +162,7 @@ final class SquareOperationContractTest extends TestCase
                 $this->assertSame('agent-api.v1.square.'.$route, $operation->rest->routeName, $id);
                 $this->assertSame('/workspaces/{workspace}/square'.$path, $operation->rest->path, $id);
                 $this->assertSame([200], $operation->rest->successStatuses, $id);
-                $this->assertSame(['x-mcp-tool' => $id], $operation->extensions, $id);
+                $this->assertSame(['x-svc-flags' => [], 'x-mcp-tool' => $id], $operation->extensions, $id);
                 $this->assertStringEndsWith(self::COMMON, $operation->description, $id);
                 $this->assertNotSame(self::COMMON, $operation->description, $id);
                 $this->assertSame($operation->rest->description, $operation->description, $id);
@@ -199,7 +202,7 @@ final class SquareOperationContractTest extends TestCase
                 } else {
                     // The sync reads Square, writes only svc's mirror, and the
                     // outer agent write switch withholds it.
-                    $this->assertSame($id === 'square.sync', $catalog->readsExternalSystem($id), $id);
+                    $this->assertSame(in_array($id, ['square.sync', 'invoices.square_reconcile'], true), $catalog->readsExternalSystem($id), $id);
                     $this->assertSame([$id === 'square.import_customer' ? AgentDeploymentFlags::CLIENTS : AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
                     $this->assertSame(IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey, $id);
                     $this->assertStringContainsString('nothing is created, changed or paid in Square', $operation->description, $id);

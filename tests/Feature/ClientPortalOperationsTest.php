@@ -150,17 +150,17 @@ class ClientPortalOperationsTest extends TestCase
 
         $this->actingAs($admin)
             ->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
-            ->assertOk();
+            ->assertRedirect();
 
         $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
         $this->actingAs($clientUser)->postJson($acceptPath, [
             'signer_name' => 'Synthetic Portal Signer',
             'signer_title' => 'Synthetic Buyer',
-        ])->assertOk();
+        ])->assertRedirect();
         $this->actingAs($clientUser)->postJson($acceptPath, [
             'signer_name' => 'Synthetic Portal Signer',
             'signer_title' => 'Synthetic Buyer',
-        ])->assertOk();
+        ])->assertRedirect();
         $this->actingAs($clientUser)->postJson($acceptPath, [
             'signer_name' => 'Replay Signer',
             'signer_title' => 'Replay Title',

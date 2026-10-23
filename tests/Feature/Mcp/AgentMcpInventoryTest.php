@@ -37,7 +37,9 @@ final class AgentMcpInventoryTest extends TestCase
         'billing.audit_missing_billed_overage',
         'billing.audit_opening_rollover',
         'billing.audit_undated_collectible_invoices',
+        'billing.audit_unlinked_proposal_agreements',
         'billing.audit_unplaceable_invoices',
+        'billing.preflight_schedule_generation',
         'billing_audit.stale_and_missing',
         'billing_schedules.create',
         'billing_schedules.generate',
@@ -45,6 +47,12 @@ final class AgentMcpInventoryTest extends TestCase
         'billing_schedules.list',
         'capacity_ledger.get',
         'clients.archive',
+        'clients.contacts.archive',
+        'clients.contacts.create',
+        'clients.contacts.get',
+        'clients.contacts.list',
+        'clients.contacts.restore',
+        'clients.contacts.update',
         'clients.create',
         'clients.get',
         'clients.list',
@@ -58,12 +66,22 @@ final class AgentMcpInventoryTest extends TestCase
         'clients.portal_invitations.revoke',
         'clients.restore',
         'clients.update',
+        'collaboration.comments.create',
+        'collaboration.comments.delete',
+        'collaboration.comments.list',
+        'collaboration.comments.update',
+        'collaboration.topics.create',
+        'collaboration.topics.delete',
+        'collaboration.topics.get',
+        'collaboration.topics.list',
+        'collaboration.topics.update',
         'companies.payment_reminders.get',
         'companies.payment_reminders.set',
         'companies.square_customer.clear',
         'companies.square_customer.get',
         'companies.square_customer.set',
         'context.get',
+        'deferred_backlog.preview',
         'expense_schedules.create',
         'expense_schedules.generate',
         'expense_schedules.list',
@@ -77,9 +95,16 @@ final class AgentMcpInventoryTest extends TestCase
         'expenses.receipts.upload_url',
         'expenses.unapprove',
         'expenses.update',
+        'finance.invoice_payments.list',
+        'finance.payouts.list',
+        'finance.processor_movements.list',
+        'finance.reconciliations.acknowledge',
+        'finance.reconciliations.deactivate',
+        'finance.reconciliations.upsert',
         'invoices.add_time',
         'invoices.correct',
         'invoices.corrections.get',
+        'invoices.create_deferred_buydown',
         'invoices.create_draft',
         'invoices.discard_draft',
         'invoices.generate_period',
@@ -94,7 +119,10 @@ final class AgentMcpInventoryTest extends TestCase
         'invoices.send',
         'invoices.send_reminder',
         'invoices.square_candidates',
+        'invoices.square_cover',
         'invoices.square_link',
+        'invoices.square_reconcile',
+        'invoices.square_uncover',
         'invoices.square_unlink',
         'invoices.update_details',
         'invoices.update_draft',
@@ -103,6 +131,9 @@ final class AgentMcpInventoryTest extends TestCase
         'payments.correct',
         'payments.list',
         'payments.record',
+        'payments.refund',
+        'payments.reverse_refund',
+        'payments.set_status',
         'projects.archive',
         'projects.create',
         'projects.get',
@@ -150,11 +181,12 @@ final class AgentMcpInventoryTest extends TestCase
     {
         return [
             'time_entry_writes_enabled' => ['time_entries.log', 'time_entries.update', 'time_entries.delete', 'time_entries.unapprove'],
-            'invoice_writes_enabled' => ['billing_schedules.create', 'billing_schedules.generate', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.create_draft', 'invoices.update_draft', 'invoices.update_details', 'invoices.correct', 'invoices.discard_draft', 'invoices.issue', 'invoices.send', 'invoices.void', 'invoices.square_link', 'invoices.square_unlink', 'invoices.send_reminder'],
+            'invoice_writes_enabled' => ['invoices.create_deferred_buydown', 'billing_schedules.create', 'billing_schedules.generate', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.create_draft', 'invoices.update_draft', 'invoices.update_details', 'invoices.correct', 'invoices.discard_draft', 'invoices.issue', 'invoices.send', 'invoices.void', 'invoices.square_link', 'invoices.square_unlink', 'invoices.square_cover', 'invoices.square_uncover', 'invoices.send_reminder'],
             'expense_writes_enabled' => ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate', 'expenses.receipts.upload_url'],
-            'payment_writes_enabled' => ['payments.record', 'payments.correct'],
-            'client_writes_enabled' => ['clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
+            'payment_writes_enabled' => ['payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
+            'client_writes_enabled' => ['clients.contacts.create', 'clients.contacts.update', 'clients.contacts.archive', 'clients.contacts.restore', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
                 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set'],
+            'collaboration_writes_enabled' => ['collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
             'workspace_writes_enabled' => ['workspaces.create'],
@@ -168,7 +200,7 @@ final class AgentMcpInventoryTest extends TestCase
         foreach (self::gatedTools() as $flag => $names) {
             yield $flag => [$flag, $names];
         }
-        $outer = ['time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync'];
+        $outer = ['time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             if ($flag !== 'time_entry_writes_enabled') {
                 $outer = [...$outer, ...$names];
@@ -193,10 +225,10 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_122_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_153_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
-        $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync'];
+        $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             config(['agent_api.'.$flag => false]);
             $disabled = [...$disabled, ...$names];
@@ -204,14 +236,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(122, self::TOOLS);
+        $this->assertCount(153, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_122_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_153_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -273,9 +305,8 @@ final class AgentMcpInventoryTest extends TestCase
     public function test_inventory_and_openapi_map_every_integrated_tool_with_matching_scopes(): void
     {
         $this->enableAll();
-        // These historical read tools predate REST parity and are outside the
-        // remaining operations named in #386. Every added tool is mapped.
-        $legacy = ['capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover'];
+        // Every tool has its REST operation; the billing audits were the
+        // last without one (#459).
         $spec = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $mapped = [];
         $definitions = collect($this->mcpTools())->keyBy(fn (Operation $operation): string => (string) $operation->mcpName());
@@ -297,7 +328,7 @@ final class AgentMcpInventoryTest extends TestCase
         }
         $actual = array_keys($mapped);
         sort($actual);
-        $this->assertSame(array_values(array_diff(self::TOOLS, $legacy)), $actual);
+        $this->assertSame(self::TOOLS, $actual);
     }
 
     public function test_missing_scopes_precede_role_and_every_tool_reports_its_required_scope(): void
@@ -317,13 +348,14 @@ final class AgentMcpInventoryTest extends TestCase
         $withheld = collect(app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, false))->keyBy('name');
         foreach (['clients.portal_access.list', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
             'clients.portal_invitations.list', 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.list', 'clients.get', 'agreements.list', 'agreements.get',
-            'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.preview_period',
+            'deferred_backlog.preview', 'invoices.create_deferred_buydown', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.preview_period',
             'billing_audit.stale_and_missing', 'billing_schedules.list', 'billing_schedules.get', 'billing_schedules.create', 'billing_schedules.generate',
             'projects.create', 'projects.update', 'projects.archive', 'projects.members.list', 'projects.members.update',
             'proposals.create', 'proposals.send', 'time_entries.unapprove',
             'attachments.list', 'attachments.get', 'attachments.download_url', 'attachments.upload_url', 'attachments.delete',
             'expense_schedules.list', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate',
             'expenses.approve', 'expenses.unapprove', 'expenses.receipts.list', 'expenses.receipts.download', 'expenses.receipts.upload_url',
+            'finance.processor_movements.list', 'finance.reconciliations.acknowledge',
             'square.customers.get', 'square.customers.list', 'square.customers.search', 'square.invoices.get', 'square.invoices.list', 'square.invoices.search', 'square.locations.list', 'square.orders.get', 'square.payments.get', 'square.payments.list', 'square.sync', 'square.mirror.invoices.list', 'square.series.list', 'square.series.get'] as $name) {
             $this->assertSame(['name' => $name, 'reason' => 'role'], $withheld[$name], $name);
         }

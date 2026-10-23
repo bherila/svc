@@ -219,7 +219,7 @@ final class SystemOnlyLineTypesTest extends TestCase
                 'invoice_number' => 'GRAN-MANUAL-2', 'currency' => 'USD',
                 'lines' => [$this->line('adjustment')],
             ])
-            ->assertSuccessful();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame(1, ClientInvoice::query()->count());
     }

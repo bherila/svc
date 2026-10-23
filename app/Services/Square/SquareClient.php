@@ -2,6 +2,7 @@
 
 namespace App\Services\Square;
 
+use App\Support\Square\SquareIdentifiers;
 use GuzzleHttp\Exception\TransferException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -23,7 +24,7 @@ use InvalidArgumentException;
  */
 final class SquareClient
 {
-    /** Square ids are opaque: letters, digits, and `:`, `_` or `-` (e.g. `inv:0-...`). */
+    /** Non-invoice Square ids are opaque: letters, digits, and `:`, `_` or `-` (e.g. `inv:0-...`). */
     public const string ID_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}$/D';
 
     /** Square cursors are opaque, printable and unspaced. */
@@ -136,6 +137,71 @@ final class SquareClient
     }
 
     /**
+     * All states and locations: wins must be recovered as well as new disputes.
+     *
+     * @return array<string, mixed>
+     */
+    public function listDisputes(?string $cursor): array
+    {
+        return $this->send(SquareEndpoint::ListDisputes, query: ['cursor' => $this->cursor($cursor)]);
+    }
+
+    /** @return array<string, mixed> */
+    public function getDispute(string $disputeId): array
+    {
+        return $this->send(SquareEndpoint::RetrieveDispute, $disputeId);
+    }
+
+    /**
+     * The actual refund named by a balance entry, without issuing a refund.
+     * https://developer.squareup.com/reference/square/refunds-api/get-payment-refund
+     *
+     * @return array<string, mixed>
+     */
+    public function getPaymentRefund(string $refundId): array
+    {
+        return $this->send(SquareEndpoint::GetPaymentRefund, $refundId);
+    }
+
+    /**
+     * The seller's payouts for one location, newest first by default (S7).
+     *
+     * @param  string|null  $beginTime  RFC 3339
+     * @return array<string, mixed>
+     */
+    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit, ?string $endTime = null, bool $newestFirst = true): array
+    {
+        return $this->send(SquareEndpoint::ListPayouts, query: [
+            'location_id' => $locationId === null ? null : $this->id($locationId),
+            'begin_time' => $beginTime,
+            'end_time' => $endTime,
+            'sort_order' => $newestFirst ? 'DESC' : 'ASC',
+            'cursor' => $this->cursor($cursor),
+            'limit' => self::limit($limit, 100),
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    public function getPayout(string $payoutId): array
+    {
+        return $this->send(SquareEndpoint::GetPayout, $payoutId);
+    }
+
+    /**
+     * What one payout settled: its charges, refunds, fees and adjustments.
+     *
+     * @return array<string, mixed>
+     */
+    public function listPayoutEntries(string $payoutId, ?string $cursor, int $limit): array
+    {
+        return $this->send(SquareEndpoint::ListPayoutEntries, $payoutId, query: [
+            'sort_order' => 'ASC',
+            'cursor' => $this->cursor($cursor),
+            'limit' => self::limit($limit, 100),
+        ]);
+    }
+
+    /**
      * @param  array<string, scalar|null>  $query
      * @param  array<string, mixed>|null  $body
      * @return array<string, mixed>
@@ -149,7 +215,7 @@ final class SquareClient
         if ($endpoint->takesId() !== ($id !== null)) {
             throw new InvalidArgumentException('This Square endpoint takes exactly one id.');
         }
-        $path = $id === null ? $endpoint->path() : str_replace('{id}', rawurlencode($this->id($id)), $endpoint->path());
+        $path = $id === null ? $endpoint->path() : str_replace('{id}', rawurlencode($endpoint === SquareEndpoint::GetInvoice ? $this->invoiceId($id) : $this->id($id)), $endpoint->path());
         $query = array_filter($query, static fn (mixed $value): bool => $value !== null);
 
         for ($attempt = 1; ; $attempt++) {
@@ -172,13 +238,13 @@ final class SquareClient
                     continue;
                 }
 
-                throw SquareRequestFailed::unavailable();
+                throw SquareRequestFailed::unavailable(SquareReadFailureReason::Transport);
             }
 
             if ($response->successful()) {
                 $decoded = $response->json();
                 if (! is_array($decoded)) {
-                    throw SquareRequestFailed::unreadable();
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedJson);
                 }
 
                 return $decoded;
@@ -235,6 +301,15 @@ final class SquareClient
 
         // A redirect (never followed) or anything else Square does not send.
         return SquareRequestFailed::unreadable();
+    }
+
+    private function invoiceId(string $id): string
+    {
+        if (! SquareIdentifiers::isInvoiceId($id)) {
+            throw new InvalidArgumentException('Not a Square invoice id.');
+        }
+
+        return $id;
     }
 
     private function id(string $id): string

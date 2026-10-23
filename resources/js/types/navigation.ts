@@ -13,8 +13,15 @@
  * wordmark that gave no sign of leading anywhere.
  */
 
-/** The five modules of a client, in the order the tab strip reads them. */
-export type ClientModule = 'home' | 'invoices' | 'time' | 'expenses' | 'tasks';
+/** The modules of a client, in the order the tab strip reads them. */
+export type ClientModule =
+    | 'home'
+    | 'invoices'
+    | 'time'
+    | 'expenses'
+    | 'tasks'
+    | 'notes'
+    | 'discussions';
 
 /**
  * Finished URLs, generated per viewer after authorization.
@@ -30,6 +37,8 @@ export type ClientModuleDestinations = {
     time: string | null;
     expenses: string | null;
     tasks: string | null;
+    notes: string | null;
+    discussions: string | null;
 };
 
 export type ClientNavigationOption = {
@@ -61,4 +70,5 @@ export type WorkspaceNavigation = {
     mcp_setup_href: string | null;
     /** The Square mirror's explore screen, for managers where Square is connected. */
     square_href: string | null;
+    history_href?: string | null;
 };

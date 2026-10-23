@@ -194,18 +194,6 @@ parameters:
 			path: app/Services/Billing/InvoiceLineComposer.php
 
 		-
-			message: '#^Cannot cast mixed to int\.$#'
-			identifier: cast.int
-			count: 2
-			path: app/Services/Billing/InvoiceLineComposer.php
-
-		-
-			message: '#^Cannot cast mixed to string\.$#'
-			identifier: cast.string
-			count: 1
-			path: app/Services/Billing/InvoiceLineComposer.php
-
-		-
 			message: '#^Parameter \#1 \$agreement of method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\ClientTimeEntry\>\:\:forAgreementScope\(\) expects App\\Models\\ClientAgreement, App\\Models\\ClientAgreement\|null given\.$#'
 			identifier: argument.type
 			count: 1
@@ -232,13 +220,13 @@ parameters:
 		-
 			message: '#^Cannot cast mixed to int\.$#'
 			identifier: cast.int
-			count: 3
+			count: 2
 			path: app/Services/Billing/StripeWebhookService.php
 
 		-
 			message: '#^Cannot cast mixed to string\.$#'
 			identifier: cast.string
-			count: 6
+			count: 4
 			path: app/Services/Billing/StripeWebhookService.php
 
 		-

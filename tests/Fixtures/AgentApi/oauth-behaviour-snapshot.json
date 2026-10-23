@@ -20,6 +20,8 @@
                 "identity:read",
                 "projects:read",
                 "projects:write",
+                "collaboration:read",
+                "collaboration:write",
                 "tasks:read",
                 "tasks:write",
                 "time:read",
@@ -32,6 +34,8 @@
                 "expenses:write",
                 "payments:read",
                 "payments:record",
+                "finance:read",
+                "finance:reconcile",
                 "clients:read",
                 "clients:write",
                 "proposals:read",
@@ -47,7 +51,8 @@
                 "client_secret_basic",
                 "client_secret_post"
             ],
-            "registration_endpoint": "http://localhost:8000/oauth/register"
+            "registration_endpoint": "http://localhost:8000/oauth/register",
+            "authorization_response_iss_parameter_supported": true
         }
     },
     "protected_resource": {
@@ -67,6 +72,8 @@
                 "identity:read",
                 "projects:read",
                 "projects:write",
+                "collaboration:read",
+                "collaboration:write",
                 "tasks:read",
                 "tasks:write",
                 "time:read",
@@ -79,6 +86,8 @@
                 "expenses:write",
                 "payments:read",
                 "payments:record",
+                "finance:read",
+                "finance:reconcile",
                 "clients:read",
                 "clients:write",
                 "proposals:read",
@@ -106,6 +115,8 @@
                 "identity:read",
                 "projects:read",
                 "projects:write",
+                "collaboration:read",
+                "collaboration:write",
                 "tasks:read",
                 "tasks:write",
                 "time:read",
@@ -118,6 +129,8 @@
                 "expenses:write",
                 "payments:read",
                 "payments:record",
+                "finance:read",
+                "finance:reconcile",
                 "clients:read",
                 "clients:write",
                 "proposals:read",
@@ -255,6 +268,7 @@
         "status": 302,
         "keys": [
             "code",
+            "iss",
             "state"
         ]
     },

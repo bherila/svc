@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\SvcCommand;
+use App\Models\Workspace;
 use App\Services\Billing\OverpaymentCreditAuditor;
 use App\Support\Billing\CreditPoolPartition;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Report overpayment credit funded against credit consumed, per pool.
@@ -19,24 +21,35 @@ use Illuminate\Support\Facades\DB;
  * Read-only. A deficit is a current state to investigate, not proof of how it
  * arose, and nothing here repairs data or refunds anyone.
  */
-final class AuditOverpaymentCreditCommand extends Command
+final class AuditOverpaymentCreditCommand extends SvcCommand
 {
     protected $signature = 'svc:billing:audit-overpayment-credit
         {--format=text : Output text or json}
-        {--list : Also list each pool by public id (not safe to paste)}';
+        {--list : Also list each pool by public id (not safe to paste)}
+        {--workspace= : Audit only this workspace (its public id); every workspace by default}';
 
     protected $description = 'Compare overpayment credit funded with credit consumed, per workspace, company and currency';
+
+    /** Workspaces, or pools' companies, looked up per query in --list. */
+    private const int LOOKUP_BATCH = 500;
 
     public function handle(OverpaymentCreditAuditor $auditor): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
 
-            return self::INVALID;
+        $workspace = null;
+        $requested = $this->option('workspace');
+        // A bare --workspace must not widen into every tenant.
+        if ($requested !== null || $this->input->hasParameterOption('--workspace')) {
+            $workspace = is_string($requested) && Str::isUuid($requested) ? $this->workspaceByPublicId($requested) : null;
+            if ($workspace === null) {
+                $this->error('The --workspace option must be the public id of an existing workspace.');
+
+                return self::INVALID;
+            }
         }
 
-        $partitions = $auditor->partitions();
+        $partitions = $auditor->partitions($workspace);
         $summary = $this->summary($partitions);
         $rows = $this->option('list') ? $this->rows($partitions) : null;
 
@@ -136,12 +149,36 @@ final class AuditOverpaymentCreditCommand extends Command
      */
     private function rows(array $partitions): array
     {
-        $workspaces = DB::table('workspaces')->pluck('public_id', 'id')->all();
-        $companies = DB::table('client_companies')->pluck('public_id', 'id')->all();
+        // Only the pools' own workspaces and companies, so a scoped listing
+        // reads nothing of other tenants. A company stamped to another
+        // workspace than its pool's resolves to "missing".
+        // Everything in bounded batches, whatever the number of workspaces,
+        // and a company is only looked for in its pool's workspace.
+        $workspaces = [];
+        $workspaceIds = array_values(array_unique(array_map(static fn (CreditPoolPartition $partition): int => $partition->workspaceId, $partitions)));
+        foreach (array_chunk($workspaceIds, self::LOOKUP_BATCH) as $chunk) {
+            $workspaces += DB::table('workspaces')->whereIn('id', $chunk)->pluck('public_id', 'id')->all();
+        }
+        $pairs = [];
+        foreach ($partitions as $partition) {
+            if ($partition->companyId !== null) {
+                $pairs[$partition->workspaceId.':'.$partition->companyId] = [$partition->workspaceId, $partition->companyId];
+            }
+        }
+        $names = [];
+        foreach (array_chunk(array_values($pairs), self::LOOKUP_BATCH) as $chunk) {
+            $rows = DB::table('client_companies')
+                ->whereIn('workspace_id', array_values(array_unique(array_column($chunk, 0))))
+                ->whereIn('id', array_values(array_unique(array_column($chunk, 1))))
+                ->get(['id', 'workspace_id', 'public_id']);
+            foreach ($rows as $company) {
+                $names[(int) $company->workspace_id][(int) $company->id] = (string) $company->public_id;
+            }
+        }
 
         return array_map(fn (CreditPoolPartition $partition): array => [
             'workspace' => (string) ($workspaces[$partition->workspaceId] ?? 'missing'),
-            'company' => $partition->companyId === null ? null : (string) ($companies[$partition->companyId] ?? 'missing'),
+            'company' => $partition->companyId === null ? null : ($names[$partition->workspaceId][$partition->companyId] ?? 'missing'),
             'currency' => $partition->currency,
             'funded_minor' => $partition->funded(),
             'consumed_minor' => $partition->consumed(),

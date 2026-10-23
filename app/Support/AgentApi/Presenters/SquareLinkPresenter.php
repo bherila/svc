@@ -5,6 +5,7 @@ namespace App\Support\AgentApi\Presenters;
 use App\Models\ClientInvoice;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceCoverage;
 use App\Models\User;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
@@ -33,11 +34,14 @@ final class SquareLinkPresenter
     {
         $link = $this->links->activeLink($invoice);
         $refusal = $this->guard->refusal($invoice);
+        $covers = $this->links->activeCoveragesOf($invoice);
+        $this->primeNames($covers->pluck('covered_by_user_id'));
 
         return [
             'invoice_id' => $invoice->public_id,
             'invoice_version' => AgentApiVersion::for($invoice),
             'link' => $link === null ? null : $this->link($link),
+            'covers' => $covers->map($this->coverage(...))->values()->all(),
             'agreement_series_key' => $this->links->agreementSeriesKey($invoice),
             'square_collects' => $refusal !== null,
             'payment_mismatch' => app(SquarePaymentMismatchAudit::class)->invoice($invoice->workspace, $invoice),
@@ -59,6 +63,21 @@ final class SquareLinkPresenter
             'reasons' => $link->reasons,
             'linked_at' => $link->linked_at->toISOString(),
             'linked_by' => $this->name($link->linked_by_user_id),
+        ];
+    }
+
+    /**
+     * A Square invoice this invoice covers besides its linked one (#487).
+     *
+     * @return array<string, mixed>
+     */
+    public function coverage(SquareInvoiceCoverage $coverage): array
+    {
+        return [
+            'square_invoice_id' => $coverage->square_invoice_id,
+            'square_invoice_number' => $coverage->square_invoice_number,
+            'covered_at' => $coverage->covered_at->toISOString(),
+            'covered_by' => $this->name($coverage->covered_by_user_id),
         ];
     }
 

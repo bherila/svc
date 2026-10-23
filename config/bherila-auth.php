@@ -62,6 +62,7 @@ return [
     // page may be confidential). Every URL derives from APP_URL. What follows
     // is only where SVC differs from the profile.
     'oauth_server' => AgentOAuthServer::config(AgentApiScopes::descriptions(), [
+        'revocation' => ['enabled' => true],
         // Existing resource-bound credentials remain valid when issuance is
         // disabled; metadata, registration, authorization, and token routes do not.
         'enabled' => (bool) env('AGENT_API_OAUTH_SERVER_ENABLED', true),
@@ -95,7 +96,16 @@ return [
             'last_used_at_column' => 'last_used_at',
             'scopes_column' => 'scopes',
             'enforce_registered_scopes' => true,
+            // Days an unused self-registered client is kept before
+            // `bherila-auth:prune-dynamic-clients` removes it (#460). Read from
+            // SVC's existing setting so a deployment needs no new variable.
+            'retention_days' => (int) env('AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS', 30),
         ],
+        // RFC 9207: every authorization response (code or error, from the
+        // consent screen or a first-party client that skips it) names this
+        // issuer, so a client of several authorization servers can tell which
+        // one answered before it exchanges a code.
+        'authorization_response_issuer' => ['enabled' => true],
         'authorization_state' => [
             'cache_prefix' => 'svc-oauth-resource:',
             'ttl_seconds' => null,

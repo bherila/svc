@@ -33,6 +33,9 @@ final class AgentMcpContractTest extends TestCase
     use InspectsAgentOperations;
     use RefreshDatabase;
 
+    /** Finance reconciliation writes (#457): a PUT or DELETE named by payment, system and transaction. */
+    private const array IDEMPOTENT_BY_PATH = ['finance.reconciliations.upsert', 'finance.reconciliations.deactivate'];
+
     public function test_invoice_workflow_contract_matches_routes_and_nested_cutovers(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
@@ -191,12 +194,25 @@ final class AgentMcpContractTest extends TestCase
             'attachments.list' => ['files:read'],
             'attachments.upload' => ['files:write'],
             'attachments.upload_url' => ['files:write'],
+            'billing.audit_missing_billed_overage' => ['billing:read'],
+            'billing.audit_opening_rollover' => ['billing:read'],
+            'billing.audit_undated_collectible_invoices' => ['billing:read'],
+            'billing.audit_unlinked_proposal_agreements' => ['billing:read'],
+            'billing.audit_unplaceable_invoices' => ['billing:read'],
+            'billing.preflight_schedule_generation' => ['billing:read'],
             'billing_audit.stale_and_missing' => ['billing:read'],
             'billing_schedules.create' => ['billing:write', 'billing:read'],
             'billing_schedules.generate' => ['billing:deliver', 'billing:read'],
             'billing_schedules.get' => ['billing:read'],
             'billing_schedules.list' => ['billing:read'],
+            'capacity_ledger.get' => ['billing:read'],
             'clients.archive' => ['clients:write', 'clients:read'],
+            'clients.contacts.archive' => ['clients:write', 'clients:read'],
+            'clients.contacts.create' => ['clients:write'],
+            'clients.contacts.get' => ['clients:read'],
+            'clients.contacts.list' => ['clients:read'],
+            'clients.contacts.restore' => ['clients:write', 'clients:read'],
+            'clients.contacts.update' => ['clients:write', 'clients:read'],
             'clients.create' => ['clients:write'],
             'clients.get' => ['clients:read'],
             'clients.list' => ['clients:read'],
@@ -210,13 +226,24 @@ final class AgentMcpContractTest extends TestCase
             'clients.portal_invitations.revoke' => ['clients:write'],
             'clients.restore' => ['clients:write', 'clients:read'],
             'clients.update' => ['clients:write', 'clients:read'],
+            'collaboration.comments.create' => ['collaboration:write', 'collaboration:read'],
+            'collaboration.comments.delete' => ['collaboration:write', 'collaboration:read'],
+            'collaboration.comments.list' => ['collaboration:read'],
+            'collaboration.comments.update' => ['collaboration:write', 'collaboration:read'],
+            'collaboration.topics.create' => ['collaboration:write'],
+            'collaboration.topics.delete' => ['collaboration:write', 'collaboration:read'],
+            'collaboration.topics.get' => ['collaboration:read'],
+            'collaboration.topics.list' => ['collaboration:read'],
+            'collaboration.topics.update' => ['collaboration:write', 'collaboration:read'],
             'companies.payment_reminders.get' => ['billing:read'],
             'companies.payment_reminders.set' => ['billing:write', 'billing:read'],
             'companies.square_customer.clear' => ['billing:write', 'billing:read'],
             'companies.square_customer.get' => ['billing:read'],
             'companies.square_customer.set' => ['billing:write', 'billing:read'],
+            'connections.disconnect' => [],
             'connections.revoke' => ['mcp:use'],
             'context.get' => ['identity:read'],
+            'deferred_backlog.preview' => ['billing:read'],
             'expense_schedules.create' => ['clients:read', 'expenses:write'],
             'expense_schedules.generate' => ['expenses:read', 'expenses:write'],
             'expense_schedules.list' => ['expenses:read'],
@@ -232,9 +259,16 @@ final class AgentMcpContractTest extends TestCase
             'expenses.receipts.upload_url' => ['expenses:read', 'expenses:write'],
             'expenses.unapprove' => ['expenses:read', 'expenses:write'],
             'expenses.update' => ['expenses:write'],
+            'finance.invoice_payments.list' => ['finance:read'],
+            'finance.payouts.list' => ['finance:read'],
+            'finance.processor_movements.list' => ['finance:read'],
+            'finance.reconciliations.acknowledge' => ['finance:reconcile'],
+            'finance.reconciliations.deactivate' => ['finance:reconcile'],
+            'finance.reconciliations.upsert' => ['finance:reconcile'],
             'invoices.add_time' => ['billing:write', 'billing:read'],
             'invoices.correct' => ['billing:deliver'],
             'invoices.corrections.get' => ['billing:read'],
+            'invoices.create_deferred_buydown' => ['billing:write', 'billing:read'],
             'invoices.create_draft' => ['billing:write'],
             'invoices.discard_draft' => ['billing:write'],
             'invoices.download_pdf' => ['billing:read'],
@@ -250,15 +284,22 @@ final class AgentMcpContractTest extends TestCase
             'invoices.send' => ['billing:deliver'],
             'invoices.send_reminder' => ['billing:write', 'billing:read'],
             'invoices.square_candidates' => ['billing:read'],
+            'invoices.square_cover' => ['billing:write', 'billing:read'],
             'invoices.square_link' => ['billing:write', 'billing:read'],
+            'invoices.square_reconcile' => ['billing:write', 'billing:read'],
+            'invoices.square_uncover' => ['billing:write', 'billing:read'],
             'invoices.square_unlink' => ['billing:write', 'billing:read'],
             'invoices.update_details' => ['billing:write'],
             'invoices.update_draft' => ['billing:write'],
             'invoices.void' => ['billing:deliver'],
+            'oauth.token.revoke' => [],
             'operations.summary' => ['identity:read'],
-            'payments.correct' => ['payments:record'],
+            'payments.correct' => ['payments:record', 'payments:read'],
             'payments.list' => ['payments:read'],
             'payments.record' => ['payments:record', 'billing:read'],
+            'payments.refund' => ['payments:record', 'payments:read'],
+            'payments.reverse_refund' => ['payments:record', 'payments:read'],
+            'payments.set_status' => ['payments:record', 'payments:read'],
             'projects.archive' => ['projects:write', 'projects:read'],
             'projects.create' => ['projects:write', 'clients:read'],
             'projects.get' => ['projects:read'],
@@ -351,6 +392,13 @@ final class AgentMcpContractTest extends TestCase
 
                 continue;
             }
+            if ($definition->id === 'finance.reconciliations.deactivate') {
+                // A DELETE on its path, with no body to inherit.
+                $this->assertNull($definition->rest?->requestSchema);
+                $this->assertNull($definition->input);
+
+                continue;
+            }
             $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->id);
             $input = $this->toolInputSchema($definition->id);
             $encoded = json_encode($input, JSON_THROW_ON_ERROR);
@@ -388,6 +436,43 @@ final class AgentMcpContractTest extends TestCase
                 $this->assertStringContainsString('upload itself requires an idempotency key and parent version', $definition->safety->note);
                 $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs);
                 $this->assertNotContains('idempotency_key', $input['required'] ?? []);
+
+                continue;
+            }
+            if ($definition->id === 'finance.reconciliations.acknowledge') {
+                // The exact payment/review proof is a single-use CAS, rather
+                // than a receipt-backed replay of an earlier acknowledgement.
+                $this->assertSame(IdempotencyKey::None, $definition->safety->idempotencyKey);
+                $this->assertTrue($definition->isIdempotent());
+                $this->assertTrue($definition->safety->expectedVersion);
+                $this->assertTrue($definition->safety->confirm);
+                $this->assertSame('PUT', $definition->rest?->method);
+                $this->assertTrue($operation['x-agent-write-safety']['expected_version']);
+                $this->assertTrue($operation['x-agent-write-safety']['confirm']);
+                $this->assertStringContainsString('stale or already-cleared reviews return 409', (string) $definition->safety->note);
+                $this->assertArrayHasKey('409', $operation['responses']);
+                $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->id);
+                $required = ['expected_payment_version', 'expected_review_reason', 'expected_review_flagged_at', 'confirm'];
+                $this->assertSame($required, $body['required']);
+                $this->assertFalse($body['additionalProperties']);
+                foreach ($required as $name) {
+                    $this->assertContains($name, $input['required']);
+                }
+                $this->assertTrue($input['properties']['confirm']['const']);
+                $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs);
+                $this->assertArrayNotHasKey('idempotency_key', $input['properties']);
+
+                continue;
+            }
+            if (in_array($definition->id, self::IDEMPOTENT_BY_PATH, true)) {
+                // A PUT or DELETE on its natural key is the same write however
+                // often it is sent (#457): no key, and the safety says why.
+                $this->assertSame(IdempotencyKey::None, $definition->safety->idempotencyKey, $definition->id);
+                $this->assertTrue($definition->isIdempotent(), $definition->id);
+                $this->assertContains($definition->rest?->method, ['PUT', 'DELETE'], $definition->id);
+                $this->assertStringContainsString('Idempotent by its path', (string) $definition->safety->note, $definition->id);
+                $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs, $definition->id);
+                $this->assertArrayNotHasKey('idempotency_key', $input['properties'] ?? [], $definition->id);
 
                 continue;
             }

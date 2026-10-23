@@ -98,6 +98,8 @@ class WorkspaceNavigationTest extends TestCase
                 ->where('workspaceNavigation.clients.0.destinations.invoices', $base.'/invoices')
                 ->where('workspaceNavigation.clients.0.destinations.time', $base.'/time')
                 ->where('workspaceNavigation.clients.0.destinations.tasks', $base.'/tasks')
+                ->where('workspaceNavigation.clients.0.destinations.notes', $base.'/collaboration?kind=note')
+                ->where('workspaceNavigation.clients.0.destinations.discussions', $base.'/collaboration?kind=discussion')
                 // The operator surface for expenses arrived in #75's first
                 // slice, so the tab is a link rather than a null.
                 ->where('workspaceNavigation.clients.0.destinations.expenses', $base.'/expenses')
@@ -126,6 +128,8 @@ class WorkspaceNavigationTest extends TestCase
             ->has('workspaceNavigation.clients', 1)
             ->where('workspaceNavigation.current_client_id', $company->public_id)
             ->where('workspaceNavigation.clients.0.destinations.home', "/portal/{$company->public_id}")
+            ->where('workspaceNavigation.clients.0.destinations.notes', "/portal/{$company->public_id}/collaboration?kind=note")
+            ->where('workspaceNavigation.clients.0.destinations.discussions', "/portal/{$company->public_id}/collaboration?kind=discussion")
             ->where('workspaceNavigation.permissions.manage_workspace', false)
             ->where('workspaceNavigation.permissions.create_client', false)
             ->where('workspaceNavigation.permissions.manage_current_client', false)

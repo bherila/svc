@@ -32,7 +32,7 @@ class AgreementWorkflow
      */
     private const EDITABLE = [
         'title', 'starts_on', 'ends_on', 'billing_cadence', 'currency', 'agreement_text',
-        'is_visible_to_client', 'hourly_rate_amount', 'retainer_amount', 'retainer_minutes',
+        'is_visible_to_client', 'show_deferred_backlog_to_client', 'hourly_rate_amount', 'retainer_amount', 'retainer_minutes',
         'period_retainer_amount', 'period_retainer_minutes', 'catch_up_threshold_minutes',
         'rollover_months', 'rollover_policy', 'first_cycle_proration', 'bill_overage_interim',
     ];
@@ -76,6 +76,7 @@ class AgreementWorkflow
                 'ends_on' => $attributes['ends_on'] ?? null,
                 'agreement_text' => $attributes['agreement_text'] ?? null,
                 'is_visible_to_client' => $attributes['is_visible_to_client'] ?? false,
+                'show_deferred_backlog_to_client' => $attributes['show_deferred_backlog_to_client'] ?? false,
                 'billing_cadence' => $attributes['billing_cadence'] ?? 'one_time',
                 'currency' => strtoupper($attributes['currency']),
                 'hourly_rate_amount' => $attributes['hourly_rate_amount'] ?? null,

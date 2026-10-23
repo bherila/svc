@@ -79,7 +79,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers). SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement is refused with 409. Nothing is sent to Square. */
+        /** @description Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers) in one Square location: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Without location_id the location is the one SVC's Square mirror holds the series in; a series it holds in no location or in more than one is refused with 422 until location_id names it. SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement in that location (or in every location, from before markers named one) is refused with 409. Nothing is sent to Square. */
         put: operations['agreements.square_series.set'];
         post?: never;
         /** @description Workspace managers only. Clear an agreement's billed-in-Square marker so SVC collects its invoices again. Requires the agreement's current expected_version and confirm: true; the change is recorded in the client history. */
@@ -113,7 +113,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only metadata, excluding storage and uploader identifiers. */
+        /** @description Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility. */
         get: operations['attachments.get'];
         put?: never;
         post?: never;
@@ -165,7 +165,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+        /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
         get: operations['attachments.list'];
         put?: never;
         post?: never;
@@ -184,7 +184,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
         post: operations['attachments.upload'];
         delete?: never;
         options?: never;
@@ -209,6 +209,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/billing-audits/missing-billed-overage': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Aggregate counts of the workspace's charged invoices missing billed-overage data, as svc:billing:audit-missing-billed-overage reports for every workspace. Counts only; no invoice is identified. */
+        get: operations['billing.audit_missing_billed_overage'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/opening-rollover': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @deprecated
+         * @description Workspace managers only. Aggregate counts of the workspace's agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.
+         *
+         *     Deprecated: This audit sized the opening-rollover repair (#134), which is done. It will be removed after its deprecation window; see https://github.com/bherila/svc/issues/500. Nothing replaces it.
+         */
+        get: operations['billing.audit_opening_rollover'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/undated-collectible-invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Aggregate counts and per-currency balances, in minor units, of the workspace's collectible invoices without a due date, as svc:billing:audit-undated-collectible-invoices reports for every workspace. Counts only; no invoice is identified. */
+        get: operations['billing.audit_undated_collectible_invoices'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Count the workspace's proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed. */
+        get: operations['billing.audit_unlinked_proposal_agreements'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/unplaceable-invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Aggregate counts of the workspace's invoices whose billing period or cycle cannot be placed safely, and the overage hours at stake, as svc:billing:audit-unplaceable-invoices reports for every workspace. Counts only; no invoice is identified. */
+        get: operations['billing.audit_unplaceable_invoices'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/schedule-generation-preflight': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only, including agreement_handover_overlap schedule defects. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After. */
+        get: operations['billing.preflight_schedule_generation'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/billing-audits/stale-and-missing': {
         parameters: {
             query?: never;
@@ -216,7 +323,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. This read only flags them: nothing issues, sends or generates an invoice. */
+        /** @description Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. Where Square serves the workspace, square_payment_mismatches lists invoices paid outside Square while Square is still open, and square_billing_audit flags billed series periods with no linked svc invoice, Square payments svc has not recorded, unlinked Square customers with an open balance, and series whose cadence, currency or amount drifted from the agreement, from svc's mirror as of its last sync. agreement_handovers reports up to 100 issued cadence invoices whose stored coverage overlaps a successor, including potentially prorated invoices requiring review. This read only flags them: nothing issues, sends or generates an invoice, and nothing is written to Square. */
         get: operations['billing_audit.stale_and_missing'];
         put?: never;
         post?: never;
@@ -236,7 +343,7 @@ export interface paths {
         /** @description Manager-only bounded billing schedules with opaque current revisions. */
         get: operations['billing_schedules.list'];
         put?: never;
-        /** @description Create a schedule without issuing. expected_version is the parent agreement revision. Workspace managers only. */
+        /** @description Create a schedule without issuing. Refuses a first period overlapping a successor agreement with 422; no automatic proration. expected_version is the parent agreement revision. Workspace managers only. */
         post: operations['billing_schedules.create'];
         delete?: never;
         options?: never;
@@ -253,7 +360,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. */
+        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. Refuses successor agreement coverage overlaps with 422 before writing any invoice. */
         post: operations['billing_schedules.generate'];
         delete?: never;
         options?: never;
@@ -278,6 +385,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/agreements/{agreement}/capacity-ledger': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only trailing window of the computed agreement capacity ledger, and the agreement's deferred backlog: the outstanding deferred work the termination invoice would collect today, its amount at the hourly rate as that invoice would price it, and its monthly trend over the same months. */
+        get: operations['capacity_ledger.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/archive': {
         parameters: {
             query?: never;
@@ -289,6 +413,76 @@ export interface paths {
         put?: never;
         /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Archival requires confirm: true. */
         post: operations['clients.archive'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/contacts/{contact}/archive': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. Archive retains the record and requires explicit confirm: true. */
+        post: operations['clients.contacts.archive'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/contacts': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. All records, including archived contacts, are returned unless status is specified. */
+        get: operations['clients.contacts.list'];
+        put?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. */
+        post: operations['clients.contacts.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/contacts/{contact}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. */
+        get: operations['clients.contacts.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. Omitted fields remain unchanged; explicit null clears nullable fields. Current expected_version is required. */
+        patch: operations['clients.contacts.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/contacts/{contact}/restore': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. */
+        post: operations['clients.contacts.restore'];
         delete?: never;
         options?: never;
         head?: never;
@@ -339,7 +533,7 @@ export interface paths {
         /** @description List portal contacts for a client as a workspace owner/admin, including scope, selected projects and finished mutation URLs. */
         get: operations['clients.portal_access.list'];
         put?: never;
-        /** @description Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key. */
+        /** @description Grant portal access to an existing account found by exact email (ignoring case) and bound to the configured identity provider. When nobody signs in with the address, the 422 names `email`, or `invite` while portal invitations are enabled: create a portal invitation for the address instead. Requires explicit confirmation and an idempotency key. */
         post: operations['clients.portal_access.grant'];
         delete?: never;
         options?: never;
@@ -434,6 +628,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Comment lists use ascending opaque cursor pagination; limit is a maximum row count and serialized byte bounds may shorten a page. Follow meta.next_cursor or next_href until null; previous_href is always null. REST, MCP and CLI share this contract; native thread pages retain focused comment links. Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        get: operations['collaboration.comments.list'];
+        put?: never;
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        post: operations['collaboration.comments.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/comments/{comment}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        delete: operations['collaboration.comments.delete'];
+        options?: never;
+        head?: never;
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        patch: operations['collaboration.comments.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/topics': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        get: operations['collaboration.topics.list'];
+        put?: never;
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        post: operations['collaboration.topics.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        get: operations['collaboration.topics.get'];
+        put?: never;
+        post?: never;
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        delete: operations['collaboration.topics.delete'];
+        options?: never;
+        head?: never;
+        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        patch: operations['collaboration.topics.update'];
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/payment-reminders': {
         parameters: {
             query?: never;
@@ -471,6 +738,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/connection': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Disconnects the calling application from the calling person's account, as a finance system does when the person turns its connection off. Every credential the person holds for the calling OAuth client is revoked in one transaction - pending authorization codes and refresh tokens before access tokens - so nothing issued to that client can act or mint a replacement, including a refresh already in flight. Other applications' connections, and other people's connections to the same application, are unaffected. A personal API token disconnects only itself. Any REST credential may call it; an MCP connection uses connections.revoke. */
+        delete: operations['connections.disconnect'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/connections/{token}': {
         parameters: {
             query?: never;
@@ -481,6 +765,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** @description Disconnects the calling connection: token is the id of the access token making the request. Its refresh tokens are revoked before the access token itself, in one transaction, so the connection cannot mint a replacement; the token stops working on the next request. Any other token id, including another of the same person's connections, is a 404 and revokes nothing. For two minutes afterwards, a refresh of this connection that was already in flight is revoked as it is issued, so it cannot keep the connection; the person's other connections, including to the same client, are unaffected. Every connection a person holds is revoked by an operator with svc:auth:revoke-connections. */
         delete: operations['connections.revoke'];
         options?: never;
         head?: never;
@@ -496,6 +781,23 @@ export interface paths {
         };
         /** @description Returns role capabilities intersected with the current token scopes and write-cutover state. Per-project capability IDs are included only with projects:read. */
         get: operations['context.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/preview': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only FIFO whole-entry deferred settlement quote. Supply exactly one of hours or amount (gross minor units before discount). round_up optionally includes the next entry. Contract rates are unchanged; any discount requires a reason. Entry-backed deferred work only; carried ledger balances remain for termination. No writes. */
+        get: operations['deferred_backlog.preview'];
         put?: never;
         post?: never;
         delete?: never;
@@ -649,10 +951,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only list of the 100 newest available receipts; includes current expense_version. */
+        /** @description Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied. */
         get: operations['expenses.receipts.list'];
         put?: never;
-        /** @description Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
         post: operations['expenses.receipts.upload'];
         delete?: never;
         options?: never;
@@ -689,6 +991,92 @@ export interface paths {
         /** @description Manager-only lifecycle change. Version checked under expense lock; both expense write flags required. Invoiced and unknown statuses are refused. */
         post: operations['expenses.unapprove'];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoice-payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. A processor payment also carries what the processor reports about settling it: its own payment identifier, its charge time (not received_on, which for Stripe is the day svc heard of it), its fee, and the payout it settled in with that payout's arrival date; finance.payouts.list lists the payouts. These move the payment's version when the processor reports them. Workspace owners/admins; with the finance token, any workspace member. Internal ids and payment notes are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        get: operations['finance.invoice_payments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payouts': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The payment-processor payouts (Stripe, Square) that settled this workspace's payments: each payout's signed amount in minor units (negative when the payout took money from the bank account), currency, arrival date, type (automatic, manual or instant) and status (pending, in_transit, paid, failed or canceled); newest arrival first. Its member payments are the payments whose provider_payout_identifier names it, in finance.invoice_payments.list. Matching is net-only: a payout's amount is what reached the bank, and refunds, disputes or fees that land in a different payout, and manual or instant Stripe payouts (whose members Stripe does not list), are left for the finance system to treat as unexplained. A payout reported failed or canceled after it was reported paid stays so. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: the change feed works as on finance.invoice_payments.list (newest change first inside a snapshot watermark; deduplicate by (id, version)) and takes only the provider filter, since a payout's status and arrival date can change (status, arrival_from and arrival_to are refused there). Payouts are never deleted. Workspace owners/admins; with the finance token, any workspace member. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        get: operations['finance.payouts.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/processor-movements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read signed refunds, refund reversals, dispute debits, dispute credits, fees and fee reversals bound to their original payment. Money is signed integer minor units; net_minor equals principal_minor minus fee_minor. Occurrence facts retain the UTC processor timestamp and captured workspace local date/timezone. No processor account keys or raw source objects are exposed. Always a bounded change feed ordered by newest change and id, inside a snapshot watermark; follow meta.next_cursor until null, then use the watermark as inclusive updated_since and deduplicate by (id, version). Only immutable provider, kind, payment_id and occurrence-date filters are accepted; unknown filters, page and mutable review filters are refused. Workspace owners/admins; with the finance token, any workspace member. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        get: operations['finance.processor_movements.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}/acknowledgement': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Explicitly affirm that the allocation remains correct after its processor refund or dispute review. Requires confirm: true, the current payment version from finance.invoice_payments.list, and the exact review reason and timestamp shown on the allocation. Clears only that current review; allocated money and active state are retained even above payment net or on a disputed/refunded payment. Does not resolve a dispute, restore a payment, issue credit or move money. The payment version advances so synchronizers see the cleared flag. Conditional and idempotent by effect: no Idempotency-Key or replay receipt; repeating the original request, any stale payment version, a changed review, or an already-cleared flag returns 409 and requires a fresh read. Owner/admin only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        put: operations['finance.reconciliations.acknowledge'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. is_active is required through OAuth and MCP (the finance token may omit it, keeping the allocation's state), so a delayed retry never reactivates an allocation withdrawn since: send the state wanted now. Any change advances the payment's version. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        put: operations['finance.reconciliations.upsert'];
+        post?: never;
+        /** @description Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, the payment's version advances, and setting it again with finance.reconciliations.upsert and is_active true reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        delete: operations['finance.reconciliations.deactivate'];
         options?: never;
         head?: never;
         patch?: never;
@@ -744,6 +1132,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries. */
+        post: operations['invoices.create_deferred_buydown'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices': {
         parameters: {
             query?: never;
@@ -753,6 +1158,7 @@ export interface paths {
         };
         get: operations['invoices.list'];
         put?: never;
+        /** @description Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen's form: invoice_number (default: the workspace's next number; a number already used is refused), issue_date (default: the day it is issued), a service period (either end may be given alone), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent. */
         post: operations['invoices.create_draft'];
         delete?: never;
         options?: never;
@@ -851,6 +1257,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Issue a draft invoice as a workspace owner or admin, using its current version and confirm: true. Issuing never emails the client itself; automatic invoice email, when the client has it, is scheduled after its delay. An optional payment records money already received elsewhere in the same transaction and receipt (payments:record and AGENT_API_PAYMENT_WRITES_ENABLED); it never initiates a charge, and the scheduled delivery is cancelled. Requires AGENT_API_WRITES_ENABLED and AGENT_API_INVOICE_WRITES_ENABLED. */
         post: operations['invoices.issue'];
         delete?: never;
         options?: never;
@@ -935,6 +1342,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits; repeating the same idempotency key sends nothing more. */
         post: operations['invoices.send'];
         delete?: never;
         options?: never;
@@ -959,6 +1367,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoices/{invoice}/square-coverage': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square. */
+        post: operations['invoices.square_cover'];
+        /** @description Workspace managers only. Stop recording a Square invoice as covered by this invoice. The record is kept as history and the Square invoice may be covered or linked again. Requires the invoice's current expected_version and confirm: true; a Square invoice this invoice does not cover is refused with 409. */
+        delete: operations['invoices.square_uncover'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices/{invoice}/square-link': {
         parameters: {
             query?: never;
@@ -972,6 +1398,23 @@ export interface paths {
         post: operations['invoices.square_link'];
         /** @description Workspace managers only. Unlink an invoice from its Square invoice. The link is kept as history and either side may be linked again. Requires the invoice's current expected_version and confirm: true. */
         delete: operations['invoices.square_unlink'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/square-reconcile': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Reconcile one linked invoice with Square now, rather than waiting for a webhook or the sweep every 15 minutes: the same read-only refetch of the Square invoice, its order and payments, then completed payments recorded through the received-payment service with provider square and the Square payment id, and refunds applied as corrections. Repeating it is safe: a Square payment is recorded once and refunds are cumulative. Square is read before the receipt is written, so a failed read or a refused payment leaves no receipt and the same key may be retried; a completed key returns the invoice as it now stands. Each call reads Square up to 102 times, so a workspace gets 20 per ten minutes, then 429 with Retry-After. An invoice with no active Square link is refused with 422, as are Square facts the ledger refuses (a draft or void invoice, a currency mismatch, an over-balance payment). Nothing is created, changed or paid in Square. Returns the invoice's Square state; read invoices.get for its balance. */
+        post: operations['invoices.square_reconcile'];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1010,6 +1453,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/oauth/token': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Revokes only the OAuth access token making this request and its tracked refresh-token family, including rotated access tokens. Other connections of the same person or client, other people, and pending authorization codes from other grants are unaffected. Any supported OAuth access token can call this endpoint with no additional scopes, for either the REST or MCP resource; personal OAuth tokens can revoke themselves too. SVC does not issue client-credentials tokens. No token id or request body is accepted. Repeating the request returns 204 or 401 once authentication sees the revocation. This is a client credential lifecycle endpoint and is deliberately not an MCP tool. */
+        delete: operations['oauth.token.revoke'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/summary': {
         parameters: {
             query?: never;
@@ -1017,7 +1477,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. */
+        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. With billing:read, a workspace manager also receives deferred_backlog: the agreements with deferred work outstanding and what termination would charge for it. */
         get: operations['operations.summary'];
         put?: never;
         post?: never;
@@ -1040,7 +1500,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list (hence payments:read as well as payments:record) and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
         patch: operations['payments.correct'];
         trace?: never;
     };
@@ -1054,8 +1514,59 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. Overpayment refused. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payments/{payment}/refunds': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner/admin record of money already returned to the client outside SVC, against a succeeded payment that was recorded by hand. amount is what was returned now, in minor units, at most what is left unrefunded; refunding the whole amount makes the payment refunded, otherwise it stays succeeded with its refunded_amount raised. The invoice's paid amount, balance and status are recomputed, so a paid invoice reopens by the amount; correct or void the invoice separately if the client no longer owes it. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own refunds; a pending, failed, canceled, disputed or fully refunded payment; more than is left; or a refund that would exceed the payment's active finance reconciliation allocations. SVC never sends money. Requires both outer workflow and payment write flags. */
+        post: operations['payments.refund'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner/admin correction of a refund that was recorded in error against a payment recorded by hand - the money was never returned to the client. Records a reversing entry linked to the refund, which stays in the payment's refunds unchanged: the refund is never edited or deleted. amount reverses part of the refund, in minor units; omitted, the whole refund is reversed. A refund is reversed at most once and never by more than it was, and a reversal is not itself reversed - if the money was returned after all, record the refund again with payments.refund. The payment's refunded_amount falls by the amount, a fully refunded payment becomes succeeded again, and the invoice's paid amount, balance and status are recomputed, so an invoice can be paid again. Requires confirm: true, the payment version and the refund id from payments.list, and a reason, which is kept in the client history with both entries' ids. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), whose refunds follow its own events; a refund already reversed, a reversal, or an id that is not a refund of this payment; more than the refund or than the payment's refunded amount; a void invoice; or successful payments that would exceed the invoice total. Never initiates a charge and never moves money. Requires both outer workflow and payment write flags. */
+        post: operations['payments.reverse_refund'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payments/{payment}/status': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner/admin change of the status of a payment that was recorded by hand: succeeded when money recorded as pending cleared; failed when it bounced or was reversed; canceled when it was recorded in error and is withdrawn. Allowed from pending to any of the three, and from succeeded with nothing refunded to failed or canceled. failed, canceled, refunded and disputed are final - money that arrives later is recorded as a new payment - and a partly refunded payment is refunded in full instead. Setting the status it already has changes nothing. The invoice's paid amount, balance and status are recomputed, so withdrawing a succeeded payment reopens the balance; a succeeded payment cannot exceed the invoice total and cannot succeed on a void invoice. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own status; a transition outside these; or leaving succeeded while the payment holds active finance reconciliation allocations. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
+        post: operations['payments.set_status'];
         delete?: never;
         options?: never;
         head?: never;
@@ -1101,7 +1612,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Task data is embedded only when the token also has tasks:read. */
+        /** @description Task data is embedded only when the token also has tasks:read. Task pages are bounded by row count and serialized bytes including the base project. Follow tasks_next_href or pass tasks_cursor to continue; a short page does not imply completion. */
         get: operations['projects.get'];
         put?: never;
         post?: never;
@@ -1201,7 +1712,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
+        /** @description Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind. */
         get: operations['search'];
         put?: never;
         post?: never;
@@ -1492,6 +2003,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Create a task in a project whose tasks the caller may manage. Hidden from clients unless is_visible_to_client is true. Requires AGENT_API_WRITES_ENABLED. */
         post: operations['tasks.create'];
         delete?: never;
         options?: never;
@@ -1512,7 +2024,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
+        /** @description Update a task the caller may manage, using its current version. Omitted properties remain unchanged; explicit null clears nullable properties. Completing stamps completed_at once; reopening clears it. Requires AGENT_API_WRITES_ENABLED. */
         patch: operations['tasks.update'];
         trace?: never;
     };
@@ -1558,10 +2070,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** @description Soft-delete draft time, or approved time on a regenerable draft invoice (the invoice is regenerated in the same transaction), using its current version: the caller's own, or anyone's as a workspace owner or admin. Time on an issued, paid or void invoice is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         delete: operations['time_entries.delete'];
         options?: never;
         head?: never;
-        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
+        /** @description Update draft time, or approved time on a regenerable draft invoice, using its current version: the caller's own, or anyone's as a workspace owner or admin. Omitted properties remain unchanged; explicit null clears nullable properties. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         patch: operations['time_entries.update'];
         trace?: never;
     };
@@ -1574,6 +2087,7 @@ export interface paths {
         };
         get: operations['time_entries.list'];
         put?: never;
+        /** @description Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true approves the entries in the same transaction and receipt; it requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         post: operations['time_entries.log'];
         delete?: never;
         options?: never;
@@ -1653,6 +2167,26 @@ export interface components {
             project_id: string | null;
             /** @description Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them. */
             square_series_key: string | null;
+            /** @description The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again. */
+            square_location_id: string | null;
+            /** @description Whether this agreement exposes its deferred backlog in the client portal; off by default. */
+            show_deferred_backlog_to_client: boolean;
+        };
+        AgreementHandoverAudit: {
+            count: number;
+            invoices: {
+                /** Format: uuid */
+                invoice_id: string;
+                /** Format: uuid */
+                successor_id: string;
+                /** Format: date */
+                successor_starts_on: string;
+                /** Format: date */
+                coverage_start: string;
+                /** Format: date */
+                coverage_end: string;
+            }[];
+            truncated: boolean;
         };
         AgreementListResponse: {
             data: components['schemas']['Agreement'][];
@@ -1669,6 +2203,7 @@ export interface components {
         AgreementSquareSeriesRequest: {
             expected_version: components['schemas']['Version'];
             series_key: components['schemas']['SquareSeriesKey'];
+            location_id?: components['schemas']['SquareLocationId'];
             /** @constant */
             confirm: true;
         };
@@ -1688,7 +2223,9 @@ export interface components {
                 | 'task'
                 | 'proposal'
                 | 'agreement'
-                | 'invoice';
+                | 'invoice'
+                | 'topic'
+                | 'comment';
             /** Format: uuid */
             record_id: string;
             filename: string;
@@ -1718,6 +2255,9 @@ export interface components {
         AttachmentListResponse: {
             data: components['schemas']['Attachment'][];
             parent_version: string;
+            meta: {
+                next_cursor: string | null;
+            };
         };
         AttachmentResponse: {
             data: components['schemas']['Attachment'];
@@ -1813,6 +2353,68 @@ export interface components {
         BillingScheduleResponse: {
             data: components['schemas']['BillingSchedule'];
         };
+        CapacityLedger: {
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: date */
+            through: string;
+            months: components['schemas']['CapacityLedgerMonth'][];
+            deferred_backlog: components['schemas']['DeferredBacklog'];
+        };
+        CapacityLedgerMonth: {
+            period: string;
+            /** Format: date */
+            cycle_start: string | null;
+            bill_excess_immediately: boolean;
+            retainer_hours: number;
+            hours_worked: number;
+            opening_retainer_hours: number;
+            opening_rollover_hours: number;
+            opening_expired_hours: number;
+            opening_available_hours: number;
+            hours_used_from_retainer: number;
+            hours_used_from_rollover: number;
+            unused_hours: number;
+            excess_hours: number;
+            negative_hours: number;
+            signed_available_hours: number;
+            remaining_rollover_hours: number;
+        };
+        CapacityLedgerResponse: {
+            data: components['schemas']['CapacityLedger'];
+        };
+        ChangeFeedMeta: {
+            /** @description Null on the last page of the pass. */
+            next_cursor: string | null;
+            /**
+             * Format: date-time
+             * @description The pass's snapshot upper bound; the next pass's updated_since.
+             */
+            watermark: string;
+        };
+        ClientBusinessContact: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            company_id: string;
+            version: string;
+            first_name: string | null;
+            last_name: string | null;
+            title: string | null;
+            /** Format: email */
+            email: string | null;
+            phone: string | null;
+            notes: string | null;
+            is_archived: boolean;
+        };
+        ClientBusinessContactListResponse: {
+            data: components['schemas']['ClientBusinessContact'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        ClientBusinessContactResponse: {
+            data: components['schemas']['ClientBusinessContact'];
+        };
         ClientCompany: {
             version: string;
             /** Format: uuid */
@@ -1825,13 +2427,117 @@ export interface components {
             /** @description The confirmed Square customer, or null. */
             square_customer:
                 components['schemas']['CompanySquareCustomer'] | null;
+            billing_address: string | null;
+            phone: string | null;
+            /** Format: uri */
+            website_url: string | null;
+            tax_id: string | null;
+            currency: string | null;
+            notes: string | null;
         };
         ClientCompanyListResponse: {
             data: components['schemas']['ClientCompany'][];
-            meta: components['schemas']['PaginationMeta'];
+            /** @description ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise. */
+            meta:
+                | components['schemas']['PaginationMeta']
+                | components['schemas']['ChangeFeedMeta'];
         };
         ClientCompanyResponse: {
             data: components['schemas']['ClientCompany'];
+        };
+        CollaborationComment: {
+            /** Format: uuid */
+            id: string;
+            body: string | null;
+            author_name: string;
+            created_at: string | null;
+            edited_at: string | null;
+            deleted: boolean;
+            version: string;
+            web_url: string;
+            is_visible_to_client: boolean | null;
+            effective_visible_to_client: boolean | null;
+        };
+        CollaborationCommentCreateRequest: {
+            expected_version: string;
+            body: string;
+            is_visible_to_client?: boolean;
+        };
+        CollaborationCommentListResponse: {
+            data: components['schemas']['CollaborationComment'][];
+            parent_version: string;
+            next_href: string | null;
+            previous_href: string | null;
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        CollaborationCommentResponse: {
+            data: components['schemas']['CollaborationComment'];
+            parent_version: string;
+        };
+        CollaborationCommentUpdateRequest: {
+            expected_version: string;
+            body?: string;
+            is_visible_to_client?: boolean;
+        };
+        CollaborationDeleteRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        CollaborationTopic: {
+            /** Format: uuid */
+            id: string;
+            body: string | null;
+            author_name: string;
+            created_at: string | null;
+            edited_at: string | null;
+            deleted: boolean;
+            version: string;
+            web_url: string;
+            is_visible_to_client: boolean | null;
+            effective_visible_to_client: boolean | null;
+            title: string;
+            /** @enum {string} */
+            kind: 'note' | 'discussion';
+            kind_label: string;
+            /** Format: uuid */
+            project_id: string | null;
+            scope_label: string;
+        };
+        CollaborationTopicCreateRequest: {
+            /** @enum {string} */
+            kind: 'note' | 'discussion';
+            title: string;
+            body: string;
+            /** Format: uuid */
+            project_id?: string | null;
+            is_visible_to_client?: boolean;
+        };
+        CollaborationTopicListResponse: {
+            data: components['schemas']['CollaborationTopicSummary'][];
+            next_href: string | null;
+            previous_href: string | null;
+        };
+        CollaborationTopicResponse: {
+            data: components['schemas']['CollaborationTopic'];
+        };
+        CollaborationTopicSummary: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            kind_label: string;
+            author_name: string;
+            scope_label: string;
+            href: string;
+            web_url: string;
+        };
+        CollaborationTopicUpdateRequest: {
+            expected_version: string;
+            title?: string;
+            body?: string;
+            is_visible_to_client?: boolean;
         };
         CompanyPaymentReminders: {
             client_id: components['schemas']['Uuid'];
@@ -1886,8 +2592,15 @@ export interface components {
             data: components['schemas']['CompanySquareState'];
         };
         Context: {
+            /**
+             * @description Published agent API contract baseline. A finance consumer must explicitly support this integer; it is independent of resource version hashes, the application release and the MCP protocol.
+             * @enum {integer}
+             */
+            contract_version: 3;
             id: components['schemas']['Uuid'];
             name: string;
+            /** @description Your subject at the trusted identity provider, the same in every application it signs you in to; null when this account is not bound to it. Compare it with the subject the connecting application knows before trusting the connection. */
+            provider_subject: string | null;
             workspaces: components['schemas']['WorkspaceContext'][];
             capabilities: 'workspaces:create'[];
             withheld_tools: components['schemas']['WithheldTool'][];
@@ -1899,6 +2612,77 @@ export interface components {
         CurrencyAmount: {
             currency: components['schemas']['Currency'];
             amount: number;
+        };
+        DeferredBacklog: {
+            /**
+             * Format: date
+             * @description The day the backlog is read as of: the workspace's today, or the day before a successor agreement for the same project scope takes over. Later work is not on it.
+             */
+            through: string;
+            /** @description Every hour the termination invoice would bill today: the outstanding deferred entries plus carried_hours. Null only when withheld. */
+            hours: number | null;
+            entry_count: number | null;
+            /** Format: date */
+            oldest_worked_on: string | null;
+            /** @description Consultant and retainer-mode hours, priced at the agreement's hourly rate. Null when withheld or unpriced. */
+            agreement_rate_hours: number | null;
+            /** @description Flat-hourly subcontractor hours, priced at each entry's snapshotted rate. Null when withheld or unpriced. */
+            flat_hourly_hours: number | null;
+            /** @description Deferred hours an earlier invoice applied beyond free capacity, which the ledger carries forward as a quantity and termination bills on its own line at the agreement's rate. Included in hours and the amount. Null where the ledger was not read: always in operations.summary, and when the ledger refuses to build. */
+            carried_hours: number | null;
+            /** @description What the termination invoice would charge for these hours, in minor units of the agreement currency. Direct subcontractor work is never included. */
+            amount_at_hourly_rate:
+                components['schemas']['CurrencyAmount'] | null;
+            issue: components['schemas']['DeferredBacklogIssue'] | null;
+            issue_message: string | null;
+            /** @description The refusal behind issue: the pricing refusal termination would raise when unpriced, or the ledger refusal when ledger_unreadable. */
+            issue_detail: string | null;
+            /** @description Average of added minus applied minus billed over the trend months; positive means the shelf is growing. Null without a trend. */
+            net_hours_per_month: number | null;
+            trend: components['schemas']['DeferredBacklogMonth'][];
+        };
+        /**
+         * @description project_chain_mismatch: a deferred entry points to a project outside the client, so termination would refuse and every figure is withheld. unpriced: the hours stand but termination would refuse to price them; the amount is null and issue_detail says why. ledger_unreadable: the agreement's capacity ledger refuses to build, so any re-carried balance termination would also bill is unknown; the figures exclude it and issue_detail says why.
+         * @enum {string}
+         */
+        DeferredBacklogIssue:
+            'project_chain_mismatch' | 'unpriced' | 'ledger_unreadable';
+        DeferredBacklogMonth: {
+            /** @description Calendar month, as the capacity ledger names it. */
+            period: string;
+            /** @description Deferred work done this month, whatever has happened to it since. */
+            hours_added: number;
+            /** @description Deferred work a retainer pool of this month absorbed, booked on the ledger's capacity date. */
+            hours_applied: number;
+            /** @description Deferred work that left the shelf this month at an hourly price instead: on termination, as flat-hourly work, or by a buy-down. */
+            hours_billed: number;
+            /** @description Buy-down subset of hours_billed, excluded from retainer usage and not deducted twice from net shelf growth. */
+            hours_bought_down: number;
+        };
+        DeferredBuyDownCreateRequest: {
+            hours?: number;
+            amount?: number;
+            /** @default false */
+            round_up: boolean;
+            /** @default 0 */
+            discount_amount: number;
+            discount_reason?: string | null;
+            expected_backlog_version: string;
+        } & (unknown | unknown);
+        DeferredBuyDownPreview: {
+            backlog_version: string;
+            currency: string;
+            entry_ids: string[];
+            minutes: number;
+            hours: number;
+            amount_before_discount: number;
+            discount_amount: number;
+            discount_reason: string | null;
+            total_amount: number;
+            round_up: boolean;
+        };
+        DeferredBuyDownPreviewResponse: {
+            data: components['schemas']['DeferredBuyDownPreview'];
         };
         DeletionReceipt: {
             deleted_id: components['schemas']['Uuid'];
@@ -1932,6 +2716,11 @@ export interface components {
             version: components['schemas']['Version'];
             can_edit: boolean;
             can_delete: boolean;
+            /**
+             * Format: uuid
+             * @description Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers.
+             */
+            readonly external_finance_transaction_uuid: string | null;
         };
         ExpenseApprovalRequest: {
             expected_version: components['schemas']['Version'];
@@ -1953,6 +2742,11 @@ export interface components {
             description: string;
             /** Format: uuid */
             project_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Optional creation-only finance transaction provenance. Retry identity remains the Idempotency-Key, not this reference.
+             */
+            external_finance_transaction_uuid?: string | null;
         };
         ExpenseLogRequest: {
             entries: components['schemas']['ExpenseLogItem'][];
@@ -1978,6 +2772,9 @@ export interface components {
         ExpenseReceiptListResponse: {
             data: components['schemas']['ExpenseReceipt'][];
             expense_version: components['schemas']['Version'];
+            meta: {
+                next_cursor: string | null;
+            };
         };
         ExpenseReceiptUploadRequest: {
             expected_version: components['schemas']['Version'];
@@ -2067,6 +2864,243 @@ export interface components {
             description: string;
             /** Format: uuid */
             project_id?: string | null;
+        };
+        FinanceInvoicePayment: {
+            /** Format: uuid */
+            id: string;
+            version: components['schemas']['Version'];
+            /** @enum {string} */
+            status:
+                | 'pending'
+                | 'succeeded'
+                | 'failed'
+                | 'refunded'
+                | 'disputed'
+                | 'canceled';
+            amount: number;
+            refunded_amount: number;
+            /** @description While disputed, what the processor's dispute holds back (the whole amount when the processor did not say); null for any other status. */
+            disputed_amount: number | null;
+            /** @description amount less refunded_amount, never below zero. */
+            net_amount: number;
+            /** @description What the active allocations cover. */
+            reconciled_amount: number;
+            /** @description net_amount less reconciled_amount, never below zero. */
+            unreconciled_amount: number;
+            currency: string;
+            /** Format: date */
+            received_on: string | null;
+            method: string | null;
+            reference: string | null;
+            /** @description The processor that recorded the payment, or null for one recorded by hand. */
+            provider: string | null;
+            /** @description The processor's own identifier for the payment (a Stripe payment intent, a Square payment); null for a payment recorded by hand. */
+            provider_payment_identifier: string | null;
+            /**
+             * Format: date-time
+             * @description When the processor charged the payment, as the processor reports it; null until it does, and for a payment recorded by hand. Not received_on, which for Stripe is the day svc heard of the payment.
+             */
+            provider_charged_at: string | null;
+            /** @description The processor's fee for the payment in minor units of its currency, positive for a fee charged; null until the processor reports it, or when the payment settled in another currency. */
+            provider_fee_amount: number | null;
+            /** @description The processor payout the payment settled in (finance.payouts.list lists it); null until the processor reports one. */
+            provider_payout_identifier: string | null;
+            /**
+             * Format: date
+             * @description The day that payout arrives at the bank, as the processor reports it; null without a payout.
+             */
+            provider_payout_arrival_date: string | null;
+            /** @description The payment's invoice as it is when read: a snapshot, not change-tracked. A change to the invoice (its status, total, number) does not advance the payment's version or updated_at; follow invoices.list's change feed to keep it current. */
+            invoice: {
+                /** Format: uuid */
+                id: string;
+                number: string;
+                status: components['schemas']['InvoiceStatus'];
+                total_amount: number;
+                currency: string;
+                /** @description The invoice's client as it is when read: a snapshot, not change-tracked. A renamed client does not advance the payment's version or updated_at; follow clients.list's change feed to keep it current. */
+                client: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                };
+            };
+            /** @description Every allocation, active first, newest first. */
+            reconciliations: components['schemas']['FinanceReconciliation'][];
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        FinanceInvoicePaymentListResponse: {
+            data: components['schemas']['FinanceInvoicePayment'][];
+            /** @description Numbered pages only. */
+            links?: {
+                /** Format: uri */
+                first: string | null;
+                /** Format: uri */
+                last: string | null;
+                /** Format: uri */
+                prev: string | null;
+                /** Format: uri */
+                next: string | null;
+            };
+            /** @description ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise. */
+            meta:
+                | components['schemas']['FinancePageMeta']
+                | components['schemas']['ChangeFeedMeta'];
+        };
+        FinancePageMeta: {
+            current_page: number;
+            from: number | null;
+            last_page: number;
+            links: {
+                /** Format: uri */
+                url: string | null;
+                label: string;
+                page: number | null;
+                active: boolean;
+            }[];
+            /** Format: uri */
+            path: string | null;
+            per_page: number;
+            to: number | null;
+            total: number;
+        };
+        FinancePayout: {
+            /** Format: uuid */
+            id: string;
+            version: components['schemas']['Version'];
+            /** @enum {string} */
+            provider: 'stripe' | 'square';
+            /** @description The processor's own payout identifier; a payment's provider_payout_identifier names it. */
+            provider_payout_identifier: string;
+            /** @description Signed minor units: positive for a deposit to the bank account, negative for a withdrawal from it. */
+            amount: number;
+            currency: string;
+            /**
+             * Format: date
+             * @description The day the processor says the payout arrives at the bank.
+             */
+            arrival_date: string | null;
+            /** @enum {string} */
+            type: 'automatic' | 'manual' | 'instant';
+            /**
+             * @description A failed or canceled payout did not reach the bank account, or came back from it.
+             * @enum {string}
+             */
+            status: 'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled';
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        FinancePayoutListResponse: {
+            data: components['schemas']['FinancePayout'][];
+            /** @description Numbered pages only. */
+            links?: {
+                /** Format: uri */
+                first: string | null;
+                /** Format: uri */
+                last: string | null;
+                /** Format: uri */
+                prev: string | null;
+                /** Format: uri */
+                next: string | null;
+            };
+            /** @description ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise. */
+            meta:
+                | components['schemas']['FinancePageMeta']
+                | components['schemas']['ChangeFeedMeta'];
+        };
+        FinanceProcessorMovement: {
+            id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+            payment_id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            provider: 'stripe' | 'square';
+            /** @enum {string} */
+            kind:
+                | 'refund'
+                | 'refund_reversal'
+                | 'dispute_debit'
+                | 'dispute_credit'
+                | 'fee'
+                | 'fee_reversal';
+            principal_minor: number;
+            fee_minor: number;
+            net_minor: number;
+            currency: components['schemas']['Currency'];
+            /** Format: date-time */
+            provider_occurred_at: string;
+            /** Format: date */
+            occurred_on: string;
+            occurred_timezone: string;
+            /** @enum {string} */
+            date_basis: 'stripe_balance_created' | 'square_effective_at';
+            /** Format: date-time */
+            available_on: string | null;
+            provider_payout_identifier: string | null;
+            needs_review: boolean;
+            /** @enum {string|null} */
+            review_reason: 'immutable_facts_changed' | null;
+        };
+        FinanceProcessorMovementListResponse: {
+            data: components['schemas']['FinanceProcessorMovement'][];
+            meta: components['schemas']['ChangeFeedMeta'];
+        };
+        FinanceReconciliation: {
+            /** Format: uuid */
+            id: string;
+            /** @description The external finance system, as a lowercase slug. */
+            external_system: string;
+            /**
+             * Format: uuid
+             * @description The external finance system's transaction UUID.
+             */
+            external_transaction_id: string;
+            /** @description Minor units of the payment this transaction covers. */
+            allocated_amount: number;
+            currency: string;
+            /** Format: date */
+            reconciled_on: string | null;
+            /** @description Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history. */
+            is_active: boolean;
+            /** @description Active and flagged because the payment processor refunded or disputed the payment after this allocation was written. Cleared by the next write that fits the payment, or by deactivating it. */
+            needs_review: boolean;
+            /**
+             * @description Why it was last flagged.
+             * @enum {string|null}
+             */
+            review_reason: 'processor_refund' | 'processor_dispute' | null;
+            /** Format: date-time */
+            review_flagged_at: string | null;
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        FinanceReconciliationAcknowledgementRequest: {
+            expected_payment_version: string;
+            /** @enum {string} */
+            expected_review_reason: 'processor_refund' | 'processor_dispute';
+            /** Format: date-time */
+            expected_review_flagged_at: string;
+            /** @constant */
+            confirm: true;
+        };
+        FinanceReconciliationRequest: {
+            /** @description Minor units of the payment the transaction covers. */
+            allocated_amount: number;
+            /** @description The payment's currency. */
+            currency: string;
+            /** Format: date */
+            reconciled_on?: string | null;
+            /** @description The state wanted now: true counts the allocation (and reactivates a withdrawn one), false keeps it without counting. Required through OAuth and MCP (a 422 without it), so a late retry never brings back an allocation withdrawn since. The finance token may omit it, which keeps an existing allocation's state and makes a new one active. */
+            is_active?: boolean;
+        };
+        FinanceReconciliationResponse: {
+            data: components['schemas']['FinanceReconciliation'];
         };
         Invoice: {
             id: components['schemas']['Uuid'];
@@ -2173,6 +3207,28 @@ export interface components {
             notes?: string | null;
             time_entry_ids?: components['schemas']['Uuid'][];
             manual_lines?: components['schemas']['InvoiceManualLine'][];
+            /** @description The invoice's number. Omitted or null takes the workspace's next number; a number already used in the workspace is refused. */
+            invoice_number?: string | null;
+            /**
+             * Format: date
+             * @description The date the invoice will be issued as. Omitted or null means the day invoices.issue runs; issuing refuses a date still in the future.
+             */
+            issue_date?: string | null;
+            /**
+             * Format: date
+             * @description First day of the work this invoice bills. Either end may be given alone.
+             */
+            service_period_start?: string | null;
+            /**
+             * Format: date
+             * @description Last day of the work this invoice bills; on or after service_period_start when both are given.
+             */
+            service_period_end?: string | null;
+            /**
+             * @description Whether the client portal shows the draft. Issuing always makes the invoice visible.
+             * @default false
+             */
+            is_visible_to_client: boolean;
         };
         InvoiceDeliveryHoldRequest: {
             expected_version: components['schemas']['Version'];
@@ -2233,6 +3289,13 @@ export interface components {
             }[];
             /** @description Workspace managers only; null for other viewers. Who collects this invoice and its Square link. */
             square: components['schemas']['InvoiceSquare'] | null;
+            /** @description Workspace managers only; null for other viewers. Payments on this invoice that may still be in flight: pending, a Stripe payment stored as failed (its intent can still be confirmed), or a status SVC cannot read. payments.record refuses while this is above zero. */
+            pending_payments: number | null;
+            /**
+             * @description Workspace managers only; null for other viewers. square when Square collects this invoice (see square.square_collects), so its payments arrive through Square and payments.record refuses; svc otherwise.
+             * @enum {string|null}
+             */
+            collection_owner: 'svc' | 'square' | null;
         };
         InvoiceDetailResponse: {
             data: components['schemas']['InvoiceDetail'];
@@ -2276,7 +3339,7 @@ export interface components {
             /** @description Money already received for this draft, recorded in the same transaction so the invoice is issued and paid or not changed at all. Requires the payments:record OAuth scope, a workspace owner/admin, and the payment write cutover; never initiates a charge, refuses overpayment, and cancels the automatic client delivery that issuing schedules. */
             payment?: components['schemas']['InvoiceIssuePayment'];
         };
-        /** @description REST returns the invoice mutation shape. MCP returns the invoice exactly as invoices.get does when the token also holds billing:read and invoices.get is enabled, and the mutation shape otherwise. */
+        /** @description The invoice exactly as invoices.get presents it when the request asks for view=read and the token also holds billing:read, and the mutation shape otherwise. The MCP tool asks for the view while invoices.get is enabled. */
         InvoiceIssueResponse: {
             data:
                 | components['schemas']['InvoiceDetail']
@@ -2284,7 +3347,11 @@ export interface components {
         };
         /** @enum {string} */
         InvoiceKind:
-            'cadence_period' | 'interim_overage' | 'terminal' | 'ad_hoc';
+            | 'cadence_period'
+            | 'interim_overage'
+            | 'terminal'
+            | 'ad_hoc'
+            | 'deferred_buydown';
         InvoiceLine: {
             id: components['schemas']['Uuid'];
             /** Format: uuid */
@@ -2298,7 +3365,10 @@ export interface components {
         };
         InvoiceListResponse: {
             data: components['schemas']['Invoice'][];
-            meta: components['schemas']['PaginationMeta'];
+            /** @description ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise. */
+            meta:
+                | components['schemas']['PaginationMeta']
+                | components['schemas']['ChangeFeedMeta'];
         };
         InvoiceManualLine: {
             /** Format: uuid */
@@ -2504,20 +3574,43 @@ export interface components {
             /** @constant */
             confirm: true;
             recipients: string[];
+            /** @description Omitted or null uses the invoice's default subject. */
+            subject?: string | null;
+            /** @description A covering note shown above the invoice. Omitted or null uses the template's own words. */
+            message?: string | null;
+            /**
+             * @description Send a blind copy to the signed-in user's own address. No other blind copy can be named.
+             * @default false
+             */
+            bcc_self: boolean;
         };
         InvoiceSquare: {
             invoice_id: components['schemas']['Uuid'];
             invoice_version: components['schemas']['Version'];
             /** @description The active link to a Square invoice, or null. */
             link: components['schemas']['SquareInvoiceLink'] | null;
+            /** @description Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first. */
+            covers: components['schemas']['SquareInvoiceCoverage'][];
             /** @description The Square series of the agreement this invoice was generated under, when that agreement is billed in Square. */
             agreement_series_key: string | null;
-            /** @description True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open. */
+            /** @description True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses. */
             square_collects: boolean;
             /** @description Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects. */
             collection_refusal: string | null;
             payment_mismatch:
                 components['schemas']['SquarePaymentMismatch'] | null;
+        };
+        InvoiceSquareCoverRequest: {
+            expected_version: components['schemas']['Version'];
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+            /** @description The Square invoice's currency. When given it must equal the SVC invoice's. */
+            currency?: string;
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
         };
         InvoiceSquareLinkRequest: {
             expected_version: components['schemas']['Version'];
@@ -2545,8 +3638,19 @@ export interface components {
              */
             confirm: true;
         };
+        /** @description No fields: the invoice's active Square link names what to reconcile. */
+        InvoiceSquareReconcileRequest: Record<string, never>;
         InvoiceSquareResponse: {
             data: components['schemas']['InvoiceSquare'];
+        };
+        InvoiceSquareUncoverRequest: {
+            expected_version: components['schemas']['Version'];
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
         };
         InvoiceSquareUnlinkRequest: {
             expected_version: components['schemas']['Version'];
@@ -2577,6 +3681,27 @@ export interface components {
         };
         /** @enum {string} */
         LinkedTimeState: 'reserved' | 'consumed' | 'released';
+        MissingBilledOverageAudit: {
+            invoices: number;
+            without_a_billed_overage: number;
+            charged_of_those: number;
+            on_an_agreement_of_those: number;
+            agreements_affected: number;
+        };
+        MissingBilledOverageAuditResponse: {
+            data: components['schemas']['MissingBilledOverageAudit'];
+        };
+        OpeningRolloverAudit: {
+            agreements: number;
+            with_initial_rollover: number;
+            legacy_monthly_of_those: number;
+            affected: number;
+            capacity_at_stake_minutes: number;
+            longest_rollover_months: number;
+        };
+        OpeningRolloverAuditResponse: {
+            data: components['schemas']['OpeningRolloverAudit'];
+        };
         PaginationMeta: {
             next_cursor: string | null;
         };
@@ -2733,6 +3858,11 @@ export interface components {
             /** Format: uri */
             web_url: string;
             tasks?: components['schemas']['Task'][];
+            /**
+             * Format: uri
+             * @description Present with the bounded tasks array when tasks:read is held. Continue on this project URL with its opaque tasks_cursor; null when the task page is complete.
+             */
+            tasks_next_href?: string | null;
         };
         ProjectDetailResponse: {
             data: components['schemas']['ProjectDetail'];
@@ -2871,10 +4001,29 @@ export interface components {
             /** Format: date */
             received_on: string | null;
             method: string | null;
+            /** @description Null unless the reader is a workspace owner/admin. */
             reference: string | null;
-            status: string;
+            /** @enum {string} */
+            status:
+                | 'pending'
+                | 'succeeded'
+                | 'failed'
+                | 'refunded'
+                | 'disputed'
+                | 'canceled';
             refunded_amount: number;
             version: components['schemas']['Version'];
+            /** @description The operator's private note. Null unless the reader is a workspace owner/admin. */
+            notes: string | null;
+            /**
+             * Format: uuid
+             * @description The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin.
+             */
+            external_finance_transaction_uuid: string | null;
+            /** @description Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status, payments.refund or payments.reverse_refund. */
+            manual: boolean;
+            /** @description The refunds recorded by hand against this payment and their reversals, oldest first, at most 50; refunded_amount is the refunds less their reversals. Empty for a processor (Stripe, Square) payment, whose refunds are reported by the processor as a total. */
+            refunds: components['schemas']['ReceivedPaymentRefund'][];
         };
         ReceivedPaymentBatchResponse: {
             data: components['schemas']['ReceivedPayment'][];
@@ -2885,6 +4034,8 @@ export interface components {
                   reason: string;
                   method?: string;
                   reference?: string | null;
+                  /** @description The operator's private note; null or blank clears it. */
+                  notes?: string | null;
                   /** Format: date */
                   received_on?: string;
                   /**
@@ -2893,6 +4044,7 @@ export interface components {
                    */
                   confirm: true;
               }
+            | unknown
             | unknown
             | unknown
             | unknown;
@@ -2905,10 +4057,38 @@ export interface components {
             invoice_id: string;
             amount: number;
             currency: string;
-            /** Format: date */
-            received_on: string;
+            /**
+             * Format: date
+             * @description The day the money arrived (YYYY-MM-DD), not in the future and at most two years back on the workspace's calendar. Omitted means today on that calendar.
+             */
+            received_on?: string;
             method: string;
             reference?: string | null;
+            /** @description The operator's private note. */
+            notes?: string | null;
+            /**
+             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status.
+             * @default succeeded
+             * @enum {string}
+             */
+            status: 'pending' | 'succeeded';
+            /**
+             * Format: uuid
+             * @description The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers.
+             */
+            external_finance_transaction_uuid?: string | null;
+            /** @description Also write this payment's finance reconciliation allocation, in the same transaction and receipt: what finance.reconciliations.upsert would write for the new payment, active, in the payment's currency. Needs finance:reconcile and status succeeded; allocated_amount is at most amount. Omitted or null writes none. */
+            finance_reconciliation?: {
+                /** @description The external finance system, as a lowercase slug. */
+                external_system_slug: string;
+                /**
+                 * Format: uuid
+                 * @description That system's transaction the payment is reconciled to.
+                 */
+                external_transaction_uuid: string;
+                /** @description Minor units of the payment the transaction covers. */
+                allocated_amount: number;
+            } | null;
             /**
              * @description Explicit user confirmation is required.
              * @constant
@@ -2917,21 +4097,151 @@ export interface components {
             /** @description Current invoice version from invoices.get. */
             expected_version: string;
         };
+        ReceivedPaymentRefund: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description refund: money returned to the client outside SVC. reversal: a refund recorded in error, answered; the refund it names is unchanged.
+             * @enum {string}
+             */
+            kind: 'refund' | 'reversal';
+            /** @description Minor units, in the payment's currency. */
+            amount: number;
+            /** @description Why, as recorded. Null unless the reader is a workspace owner/admin. */
+            reason: string | null;
+            /**
+             * Format: uuid
+             * @description For a reversal, the refund it reverses; null for a refund.
+             */
+            reverses_refund_id: string | null;
+            /**
+             * Format: uuid
+             * @description For a refund, the reversal that answers it, or null while none has; a refund is reversed at most once. Always null for a reversal.
+             */
+            reversed_by_id: string | null;
+            /** Format: date-time */
+            recorded_at: string;
+        };
+        ReceivedPaymentRefundRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
+            /** @description Why, kept in the client history. */
+            reason: string;
+            /** @description What was returned to the client now, in minor units; at most what is left unrefunded. */
+            amount: number;
+        };
+        ReceivedPaymentRefundReversalRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
+            /** @description Why the refund was recorded in error, kept in the client history. */
+            reason: string;
+            /** @description How much of the refund to reverse, in minor units, at most the refund; omitted or null reverses all of it. */
+            amount?: number | null;
+        };
         ReceivedPaymentResponse: {
             data: components['schemas']['ReceivedPayment'];
+        };
+        ReceivedPaymentStatusRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
+            /** @description Why, kept in the client history. */
+            reason: string;
+            /**
+             * @description succeeded: money recorded as pending cleared. failed: it bounced or was reversed. canceled: it was recorded in error and is withdrawn.
+             * @enum {string}
+             */
+            status: 'succeeded' | 'failed' | 'canceled';
+        };
+        ScheduleGenerationPreflight: {
+            schedules: number;
+            schedules_due: number;
+            periods_classified: number;
+            complete: boolean;
+            would_halt: number;
+            halted_by_a_refusal: number;
+            halted_by_a_pending_draft: number;
+            halted_by_a_schedule_defect: number;
+            schedules_truncated: number;
+            refusals_by_reason: {
+                dangling_schedule_link: number;
+                dangling_agreement_link: number;
+                contradictory_lineage: number;
+                unattributed_and_contested: number;
+                unknown_status: number;
+                unsupported_invoice_kind: number;
+                incomplete_period: number;
+                partial_overlap: number;
+                conflicting_exact_claims: number;
+            };
+            defects_by_kind: {
+                unreadable_cadence: number;
+                unreadable_line_template: number;
+                agreement_handover_overlap: number;
+            };
+        };
+        ScheduleGenerationPreflightResponse: {
+            data: components['schemas']['ScheduleGenerationPreflight'];
         };
         SearchResponse: {
             data: components['schemas']['SearchResult'][];
         };
         SearchResult: {
             /** @enum {string} */
-            kind: 'client' | 'project' | 'invoice' | 'task';
+            kind:
+                | 'client'
+                | 'project'
+                | 'invoice'
+                | 'task'
+                | 'note'
+                | 'discussion'
+                | 'comment';
             /** Format: uuid */
             id: string;
             title: string;
             subtitle: string | null;
             href: string;
             workspace: string;
+        };
+        /** @description Phase-two Square billing-audit flags, read from svc's mirror as of its last sync. Empty where Square does not serve the workspace. Nothing here writes to Square. */
+        SquareBillingAudit: {
+            /** @description False unless the newest sync run completed and listed every Square invoice (a run still going, failed or truncated leaves the mirror between generations), when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, 500 agreements, or 10,000 payment ids checked), or when the mirror has yet to read the payment ids of a paid invoice in reach. Every count is then a floor; series_not_mirrored needs a complete sync, series_drift is withheld when series members were bounded, and unlinked_customer_balances when other invoices were. */
+            complete: boolean;
+            /** @description Billed members of a series an agreement is billed in, within the agreement (from its start to its end, once it has one), with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged. */
+            unmirrored_series_periods: {
+                count: number;
+                periods: components['schemas']['SquareUnmirroredSeriesPeriod'][];
+                truncated: boolean;
+            };
+            /** @description Square payments on invoices in svc's reach - linked, in a billed-in-Square series, or of a confirmed customer - that svc has not recorded under provider square. */
+            unmatched_payments: {
+                count: number;
+                payments: components['schemas']['SquareUnmatchedPayment'][];
+                truncated: boolean;
+            };
+            /** @description Square customers with no client company mapped and an open invoice, most owed first: the customers square.customers.unlinked lists with an open balance. */
+            unlinked_customer_balances: {
+                count: number;
+                customers: components['schemas']['SquareUnlinkedCustomerBalance'][];
+                truncated: boolean;
+            };
+            /** @description Billed-in-Square agreements whose billed members since the agreement began (SCHEDULED ones are not yet billed) differ in cadence, currency (another, or more than one) or latest amount, whose series the mirror does not hold, or whose series prefix is used in more than one Square location. */
+            series_drift: {
+                count: number;
+                agreements: components['schemas']['SquareSeriesDrift'][];
+                truncated: boolean;
+            };
         };
         SquareCandidate: {
             square_invoice_id: string;
@@ -3117,6 +4427,15 @@ export interface components {
             payment_requests_truncated: boolean;
             attachment_count: number;
         };
+        /** @description A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it. */
+        SquareInvoiceCoverage: {
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+            /** Format: date-time */
+            covered_at: string;
+            /** @description Who recorded it, when known. */
+            covered_by: string | null;
+        };
         /** @description A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square. */
         SquareInvoiceId: string;
         SquareInvoiceLink: {
@@ -3159,6 +4478,8 @@ export interface components {
             timezone: string | null;
             created_at: string | null;
         };
+        /** @description A Square location id. */
+        SquareLocationId: string;
         SquareLocationListResponse: {
             data: components['schemas']['SquareLocation'][];
         };
@@ -3416,6 +4737,51 @@ export interface components {
             members: components['schemas']['SquareMirrorInvoice'][];
             members_truncated: boolean;
         };
+        SquareSeriesDrift: {
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            agreement_url: string;
+            series_key: components['schemas']['SquareSeriesKey'];
+            /** @description The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location. */
+            square_location_id: string | null;
+            /** @description multiple_locations: the series prefix is used in more than one Square location among the bills since the agreement began, which Square allows; the series is not compared, and no unmirrored period or unmatched payment is derived from it. billed_after_end: Square billed a member after the agreement ended. */
+            codes: (
+                | 'cadence'
+                | 'currency'
+                | 'amount'
+                | 'series_not_mirrored'
+                | 'multiple_locations'
+                | 'billed_after_end'
+            )[];
+            /**
+             * @description Null when the agreement does not bill on a repeating cycle.
+             * @enum {string|null}
+             */
+            agreement_cadence:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | null;
+            /**
+             * @description Read from the spacing of the billed members' due dates; unknown with fewer than two dated billed members, and null when the mirror holds no member.
+             * @enum {string|null}
+             */
+            series_cadence:
+                | 'weekly'
+                | 'monthly'
+                | 'quarterly'
+                | 'semi_annual'
+                | 'annual'
+                | 'irregular'
+                | 'unknown'
+                | null;
+            agreement_currency: string;
+            /** @description The billed members' one currency; null when they were billed in more than one, which is currency drift. */
+            series_currency: string | null;
+            /** @description The retainer fee for one whole cycle, in minor units; null when the agreement sells none, and it is then not compared. */
+            agreement_amount: number | null;
+            /** @description The latest billed member's amount, in minor units. */
+            series_amount: number | null;
+            /** Format: uri */
+            explore_url: string;
+        };
         /** @description A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers. */
         SquareSeriesKey: string;
         SquareSeriesListResponse: {
@@ -3494,6 +4860,17 @@ export interface components {
             last_due_on: string | null;
             series_keys: string[];
         };
+        SquareUnlinkedCustomerBalance: {
+            customer_id: string;
+            recipient_name: string | null;
+            open_invoice_count: number;
+            /** @description Null when the open invoices are in more than one currency. */
+            currency: string | null;
+            /** @description Minor units; null when the open invoices are in more than one currency or one of them has no known amount. */
+            open_amount: number | null;
+            /** Format: uri */
+            explore_url: string;
+        };
         SquareUnlinkedCustomerListResponse: {
             data: components['schemas']['SquareUnlinkedCustomer'][];
             meta: {
@@ -3505,6 +4882,41 @@ export interface components {
                 last_run: components['schemas']['SquareSyncRun'] | null;
                 truncated: boolean;
             };
+        };
+        SquareUnmatchedPayment: {
+            payment_id: string;
+            /**
+             * @description not_recorded: the Square invoice is linked, but svc holds no Square payment with this id. invoice_not_linked: the Square invoice is in a billed-in-Square series or belongs to a confirmed customer, and no svc invoice is linked to it.
+             * @enum {string}
+             */
+            reason: 'not_recorded' | 'invoice_not_linked';
+            square_invoice_id: string;
+            invoice_number: string | null;
+            invoice_id: components['schemas']['Uuid'] | null;
+            /** Format: uri */
+            invoice_url: string | null;
+            /** Format: uri */
+            dashboard_url: string | null;
+        };
+        SquareUnmirroredSeriesPeriod: {
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            agreement_url: string;
+            series_key: components['schemas']['SquareSeriesKey'];
+            /** @description The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location. */
+            square_location_id: string | null;
+            square_invoice_id: string;
+            invoice_number: string | null;
+            status: string;
+            /**
+             * Format: date
+             * @description The due date, else the scheduled date.
+             */
+            due_on: string | null;
+            currency: string | null;
+            total_amount: number | null;
+            /** Format: uri */
+            dashboard_url: string | null;
         };
         StaleAndMissingInvoiceAudit: {
             /** Format: date */
@@ -3518,6 +4930,8 @@ export interface components {
             missing_periods: components['schemas']['InvoiceMissingPeriod'][];
             missing_periods_truncated: boolean;
             square_payment_mismatches: components['schemas']['SquarePaymentMismatchAudit'];
+            square_billing_audit: components['schemas']['SquareBillingAudit'];
+            agreement_handovers: components['schemas']['AgreementHandoverAudit'];
         };
         StaleAndMissingInvoiceAuditResponse: {
             data: components['schemas']['StaleAndMissingInvoiceAudit'];
@@ -3531,6 +4945,22 @@ export interface components {
             active_projects?: number;
             time?: components['schemas']['SummaryTime'];
             invoices?: components['schemas']['SummaryInvoices'];
+            deferred_backlog?: components['schemas']['SummaryDeferredBacklog'];
+        };
+        SummaryDeferredBacklog: {
+            /** @description Active or terminated agreements with deferred work outstanding, or with a withheld backlog. */
+            agreement_count: number;
+            /** @description True when more agreements have a backlog than are listed, or the scan reached its bound. */
+            truncated: boolean;
+            /** @description Withheld backlogs first, then the largest. No trend. */
+            agreements: components['schemas']['SummaryDeferredBacklogAgreement'][];
+        };
+        SummaryDeferredBacklogAgreement: {
+            agreement_id: components['schemas']['Uuid'];
+            client_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            web_url: string;
+            backlog: components['schemas']['DeferredBacklog'];
         };
         SummaryInvoices: {
             draft_count: number;
@@ -3560,12 +4990,28 @@ export interface components {
             version: components['schemas']['Version'];
             /** Format: uri */
             web_url: string;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Internal planning metadata, withheld from portal and dual-identity API responses. */
+            assignees?: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            }[];
         };
         TaskCreateRequest: {
             title: string;
             description?: string | null;
             /** @description Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task. */
             is_visible_to_client?: boolean;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them. */
+            assignee_ids?: string[];
         };
         TaskListResponse: {
             data: components['schemas']['Task'][];
@@ -3581,6 +5027,12 @@ export interface components {
             /** @enum {string} */
             status?: 'open' | 'in_progress' | 'completed';
             is_visible_to_client?: boolean;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them. */
+            assignee_ids?: string[];
         };
         TimeApprovalItem: {
             id: components['schemas']['Uuid'];
@@ -3632,6 +5084,7 @@ export interface components {
             subcontractor_cost_amount?: number | null;
             subcontractor_cost_currency?: string | null;
         };
+        /** @description The logged rows exactly as time_entries.list presents them, rates and subcontractor terms included for workspace owners and admins, when the request asks for view=read and the token also holds time:read; the write shape otherwise. The MCP tool asks for the view while time_entries.list is enabled. */
         TimeEntryBatchResponse: {
             data: components['schemas']['TimeEntry'][];
         };
@@ -3687,6 +5140,52 @@ export interface components {
              */
             task_id?: string | null;
         } & unknown;
+        UndatedCollectibleInvoiceAudit: {
+            invoices: number;
+            collectible: number;
+            undated: number;
+            with_an_issue_date: number;
+            without_an_issue_date: number;
+            would_become_overdue_if_backfilled: number;
+            undated_balances: {
+                [key: string]: number;
+            };
+            would_become_overdue_balances: {
+                [key: string]: number;
+            };
+        };
+        UndatedCollectibleInvoiceAuditResponse: {
+            data: components['schemas']['UndatedCollectibleInvoiceAudit'];
+        };
+        UnlinkedProposalAgreementAudit: {
+            proposals: number;
+            sent_without_a_linked_agreement: number;
+            with_an_unlinked_agreement_on_the_company: number;
+            with_an_active_unlinked_agreement: number;
+            accepted_without_a_linked_agreement: number;
+            unlinked_agreements: number;
+        };
+        UnlinkedProposalAgreementAuditResponse: {
+            data: components['schemas']['UnlinkedProposalAgreementAudit'];
+        };
+        UnplaceableInvoiceAudit: {
+            invoices: number;
+            without_a_service_period: number;
+            without_a_service_period_start: number;
+            unplaceable_by_a_period_guard: number;
+            charged_of_those: number;
+            on_an_agreement_of_those: number;
+            affected: number;
+            overage_hours_at_stake: number;
+            without_a_cycle: number;
+            of_a_kind_read_by_cycle: number;
+            live_without_a_cycle: number;
+            cycle_affected: number;
+            cycle_overage_hours_at_stake: number;
+        };
+        UnplaceableInvoiceAuditResponse: {
+            data: components['schemas']['UnplaceableInvoiceAudit'];
+        };
         /** Format: uuid */
         Uuid: string;
         Version: string;
@@ -3741,6 +5240,7 @@ export interface components {
             hourly_rate_amount?: number | null;
             retainer_amount?: number | null;
             retainer_minutes?: number | null;
+            show_deferred_backlog_to_client?: boolean;
         };
         agreements_terminateRequest: {
             /** @constant */
@@ -3774,6 +5274,7 @@ export interface components {
             first_cycle_proration?:
                 'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
             bill_overage_interim?: boolean | null;
+            show_deferred_backlog_to_client?: boolean;
         };
         clients_archiveRequest: {
             expected_version: string;
@@ -3783,10 +5284,53 @@ export interface components {
              */
             confirm: true;
         };
+        clients_contacts_archiveRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        clients_contacts_createRequest: {
+            first_name?: string | null;
+            last_name?: string | null;
+            title?: string | null;
+            /** Format: email */
+            email?: string | null;
+            phone?: string | null;
+            notes?: string | null;
+            /** @default false */
+            is_archived: boolean;
+        } & (
+            | {
+                  first_name: string;
+              }
+            | {
+                  last_name: string;
+              }
+        );
+        clients_contacts_restoreRequest: {
+            expected_version: string;
+        };
+        clients_contacts_updateRequest: {
+            first_name?: string | null;
+            last_name?: string | null;
+            title?: string | null;
+            /** Format: email */
+            email?: string | null;
+            phone?: string | null;
+            notes?: string | null;
+            expected_version: string;
+        };
         clients_createRequest: {
             name: string;
             /** Format: email */
             billing_email?: string | null;
+            billing_address?: string | null;
+            phone?: string | null;
+            /** Format: uri */
+            website_url?: string | null;
+            tax_id?: string | null;
+            currency?: string | null;
+            notes?: string | null;
         };
         clients_portal_access_grantRequest: {
             /** @constant */
@@ -3838,6 +5382,13 @@ export interface components {
             automatic_invoice_email_enabled?: boolean;
             automatic_invoice_email_delay_days?: number | null;
             is_active?: boolean;
+            billing_address?: string | null;
+            phone?: string | null;
+            /** Format: uri */
+            website_url?: string | null;
+            tax_id?: string | null;
+            currency?: string | null;
+            notes?: string | null;
         } & unknown;
     };
     responses: {
@@ -3859,6 +5410,10 @@ export interface components {
         TaskId: string;
         TimeEntryId: string;
         InvoiceId: string;
+        /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+        UpdatedSince: string;
+        /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+        Watermark: string;
         TokenId: string;
         Limit: number;
         Cursor: string;
@@ -4114,7 +5669,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Manager-only metadata, excluding storage and uploader identifiers. */
+            /** @description Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4209,7 +5764,10 @@ export interface operations {
     };
     'attachments.list': {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path: {
                 workspace: components['parameters']['WorkspaceId'];
@@ -4219,14 +5777,16 @@ export interface operations {
                     | 'task'
                     | 'proposal'
                     | 'agreement'
-                    | 'invoice';
+                    | 'invoice'
+                    | 'topic'
+                    | 'comment';
                 recordPublicId: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+            /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4266,13 +5826,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+            /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4304,6 +5873,369 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['AttachmentUploadUrlResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_missing_billed_overage': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['MissingBilledOverageAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_opening_rollover': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['OpeningRolloverAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_undated_collectible_invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['UndatedCollectibleInvoiceAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_unlinked_proposal_agreements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['UnlinkedProposalAgreementAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_unplaceable_invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['UnplaceableInvoiceAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.preflight_schedule_generation': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ScheduleGenerationPreflightResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the workspace already ran 5 preflights in the last ten minutes (retry after Retry-After; the message says when). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4442,6 +6374,32 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'capacity_ledger.get': {
+        parameters: {
+            query?: {
+                months?: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CapacityLedgerResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'clients.archive': {
         parameters: {
             query?: never;
@@ -4472,12 +6430,192 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'clients.contacts.archive': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_archiveRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+                status?: 'active' | 'archived';
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_createRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_updateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.restore': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_restoreRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'clients.list': {
         parameters: {
             query?: {
                 status?: 'active' | 'archived';
                 limit?: components['parameters']['Limit'];
                 cursor?: components['parameters']['Cursor'];
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
             };
             header?: never;
             path: {
@@ -4606,6 +6744,51 @@ export interface operations {
                     'application/json': components['schemas']['PortalContactListResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks clients:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description limit is out of range, or the cursor is malformed or belongs to another client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4634,6 +6817,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalContactResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller, or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when nobody signs in with the address (`email`, or `invite` while invitations are enabled), the person already has portal access, or a project does not belong to the client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4667,6 +6904,60 @@ export interface operations {
                     'application/json': components['schemas']['PortalAccessRevokedResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or contact is not visible to the caller, or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the contact again), or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4698,6 +6989,60 @@ export interface operations {
                     'application/json': components['schemas']['PortalContactResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or contact is not visible to the caller, or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the contact again), or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when a project does not belong to the client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4723,6 +7068,51 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalInvitationListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks clients:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description limit is out of range, or the cursor is malformed or belongs to another client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4753,6 +7143,69 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalInvitationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account send invitations. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or another invitation to this address is being sent (retry after Retry-After). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when the address already signs in here, a local account holds it unlinked, a project does not belong to the client, or the identity provider refuses the address. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the identity provider is limiting invitations (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The identity provider is unavailable or misconfigured; nothing was invited. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4786,6 +7239,69 @@ export interface operations {
                     'application/json': components['schemas']['PortalInvitationResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account send invitations. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the identity provider is limiting invitations (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The identity provider is unavailable or misconfigured; the invitation was not sent again. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4817,6 +7333,69 @@ export interface operations {
                     'application/json': components['schemas']['PortalInvitationResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account withdraw invitations. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the identity provider is limiting invitations (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The identity provider withdrawal did not finish. Access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4845,6 +7424,760 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.comments.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                parentType: 'task' | 'topic';
+                parentPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized native collaboration result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationCommentListResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.comments.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                parentType: 'task' | 'topic';
+                parentPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CollaborationCommentCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized native collaboration result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationCommentResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.comments.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                comment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CollaborationDeleteRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized native collaboration result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationCommentResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.comments.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                comment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CollaborationCommentUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized native collaboration result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationCommentResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.topics.list': {
+        parameters: {
+            query?: {
+                kind?: 'note' | 'discussion';
+                project_id?: string;
+                page?: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized native collaboration result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationTopicListResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.topics.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CollaborationTopicCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized native collaboration result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationTopicResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.topics.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                topic: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized native collaboration result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationTopicResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.topics.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                topic: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CollaborationDeleteRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized native collaboration result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationTopicResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.topics.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                topic: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CollaborationTopicUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized native collaboration result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationTopicResponse'];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current role does not permit this operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parent or tenant is not visible, or the agent write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Expected version is stale or the idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description An input field or idempotency key is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4988,6 +8321,43 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'connections.disconnect': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The token is missing, expired or revoked, or is not a REST credential. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'connections.revoke': {
         parameters: {
             query?: never;
@@ -5025,6 +8395,36 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ContextResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'deferred_backlog.preview': {
+        parameters: {
+            query?: {
+                hours?: number;
+                amount?: number;
+                round_up?: boolean;
+                discount_amount?: number;
+                discount_reason?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selection and backlog version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['DeferredBuyDownPreviewResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -5203,6 +8603,60 @@ export interface operations {
                     'application/json': components['schemas']['DeletionResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or expense is not visible to the caller, or an expense write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or expected_version is missing or malformed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -5231,6 +8685,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, expense or project is not visible to the caller, the project is not the expense client's, or an expense write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -5291,6 +8799,60 @@ export interface operations {
                     'application/json': components['schemas']['ExpenseBatchResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, a client or a project is not visible to the caller, a project is not the client's, or an expense write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, an entry has an unknown field, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -5349,7 +8911,10 @@ export interface operations {
     };
     'expenses.receipts.list': {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path: {
                 workspace: components['parameters']['WorkspaceId'];
@@ -5398,6 +8963,15 @@ export interface operations {
                     'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
                 };
             };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -5420,6 +8994,15 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseReceiptUploadUrlResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -5450,6 +9033,505 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.invoice_payments.list': {
+        parameters: {
+            query?: {
+                status?:
+                    | 'pending'
+                    | 'succeeded'
+                    | 'failed'
+                    | 'refunded'
+                    | 'disputed'
+                    | 'canceled'
+                    | 'any';
+                invoice?: string;
+                received_from?: string;
+                received_to?: string;
+                per_page?: number;
+                page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of received payments with their allocations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceInvoicePaymentListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller may not read this workspace's payments, or the token lacks finance:read (the finance token, finance.read). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, per_page out of range, a watermark in the future, or page on a change-feed request. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.payouts.list': {
+        parameters: {
+            query?: {
+                provider?: 'stripe' | 'square';
+                status?:
+                    'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled';
+                arrival_from?: string;
+                arrival_to?: string;
+                per_page?: number;
+                page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of processor payouts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinancePayoutListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller may not read this workspace's payouts, or the token lacks finance:read (the finance token, finance.read). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A filter is invalid (`errors` names it): an unknown provider or status, a malformed date, arrival_to before arrival_from, per_page out of range, a watermark in the future, page or a filter other than provider on a change-feed request. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.processor_movements.list': {
+        parameters: {
+            query?: {
+                provider?: 'stripe' | 'square';
+                kind?:
+                    | 'refund'
+                    | 'refund_reversal'
+                    | 'dispute_debit'
+                    | 'dispute_credit'
+                    | 'fee'
+                    | 'fee_reversal';
+                payment_id?: string;
+                occurred_from?: string;
+                occurred_to?: string;
+                per_page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A cursor page of signed processor movements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceProcessorMovementListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller may not read this workspace or lacks finance:read (the finance token, finance.read). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A filter is unsupported or invalid, or the cursor does not match the workspace, immutable filters or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.reconciliations.acknowledge': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The external finance system, as a lowercase slug. */
+                external_system: string;
+                /** @description The external finance system's transaction UUID. */
+                transaction: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['FinanceReconciliationAcknowledgementRequest'];
+            };
+        };
+        responses: {
+            /** @description The unchanged allocation with its current review cleared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, payment or allocation is not visible in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The payment revision or review proof changed, or the review is already clear; refresh before acknowledging. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Confirmation is not boolean true, review proof is missing or invalid, or an unknown body field is supplied. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.reconciliations.upsert': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The external finance system, as a lowercase slug. */
+                external_system: string;
+                /** @description The external finance system's transaction UUID. */
+                transaction: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['FinanceReconciliationRequest'];
+            };
+        };
+        responses: {
+            /** @description The allocation, updated (201 when this created it) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it; the payment does not exist in this workspace; or the system or transaction is not a slug and a UUID. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field is invalid (`errors` names it, or external_system_slug for the path), or the payment is not succeeded, its currency differs, or the active allocations would exceed its amount net of refunds. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.reconciliations.deactivate': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The external finance system, as a lowercase slug. */
+                external_system: string;
+                /** @description The external finance system's transaction UUID. */
+                transaction: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The allocation, no longer active */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it; the payment or allocation does not exist in this workspace; or the system or transaction is not a slug and a UUID. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description external_system is longer than 80 characters (`errors` names external_system_slug). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -5540,6 +9622,36 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'invoices.create_deferred_buydown': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['DeferredBuyDownCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Reserved draft */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'invoices.list': {
         parameters: {
             query?: {
@@ -5559,7 +9671,12 @@ export interface operations {
                     to: string;
                 };
                 collectible?: boolean;
+                /** @description Refused (422) together with updated_since or watermark, like every filter but company_id and invoice_kind: an invoice becomes overdue as the date passes, without changing, so a change feed cannot filter on it. */
                 overdue?: boolean;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
             };
             header?: never;
             path: {
@@ -5780,7 +9897,10 @@ export interface operations {
     };
     'invoices.issue': {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Send `read` to receive the issued invoice exactly as invoices.get presents it, when the token also holds billing:read; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds. */
+                view?: 'read';
+            };
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
@@ -5803,6 +9923,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceIssueResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks billing:deliver; with a payment, also without payments:record or while AGENT_API_PAYMENT_WRITES_ENABLED is off. Each is checked again on a replay. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or invoice is not visible to the caller, or an invoice write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request (payment is part of the request). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, view is not read or is sent as a field, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice cannot be issued (void, or a draft that fails its checks), when a payment is sent for an invoice that is no longer a draft, or when the payment is in another currency, exceeds the balance or predates the issue date. Without a payment, an invoice already issued, partially paid or paid is returned as it is, not refused. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -5999,6 +10173,66 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'invoices.square_cover': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareCoverRequest'];
+            };
+        };
+        responses: {
+            /** @description Square invoice recorded as covered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_uncover': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareUncoverRequest'];
+            };
+        };
+        responses: {
+            /** @description Square invoice no longer covered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'invoices.square_link': {
         parameters: {
             query?: never;
@@ -6048,6 +10282,36 @@ export interface operations {
         };
         responses: {
             /** @description Invoice unlinked from Square */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_reconcile': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareReconcileRequest'];
+            };
+        };
+        responses: {
+            /** @description The invoice after reconciliation */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6114,6 +10378,43 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'oauth.token.revoke': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Calling token family revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The OAuth bearer is missing, invalid, expired or already revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -6226,6 +10527,152 @@ export interface operations {
                     'application/json': components['schemas']['ReceivedPaymentBatchResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks payments:record or billing:read; with finance_reconciliation, also without finance:reconcile. Each is checked again on a replay. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or invoice does not exist, or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the invoice again), the invoice changed while the request waited for it, or the Idempotency-Key was already used with a different request or is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field (finance_reconciliation is a closed object too), confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice may still be in flight - pending, or a failed Stripe payment that can be retried (pending_payments on invoices.get), or Square collects the invoice (collection_owner square); and with finance_reconciliation, a pending payment or an allocated_amount over the payment amount. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.refund': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentRefundRequest'];
+            };
+        };
+        responses: {
+            /** @description Payment with the refund recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.reverse_refund': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The refund to reverse: a refunds[].id of kind refund from payments.list. */
+                refund: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentRefundReversalRequest'];
+            };
+        };
+        responses: {
+            /** @description Payment with the reversal recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.set_status': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentStatusRequest'];
+            };
+        };
+        responses: {
+            /** @description Payment with its new status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentResponse'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -6318,7 +10765,9 @@ export interface operations {
     };
     'projects.get': {
         parameters: {
-            query?: never;
+            query?: {
+                tasks_cursor?: string;
+            };
             header?: never;
             path: {
                 workspace: components['parameters']['WorkspaceId'];
@@ -6581,7 +11030,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
+            /** @description Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7059,6 +11508,60 @@ export interface operations {
                     'application/json': components['schemas']['TaskResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or project is not visible to the caller, or AGENT_API_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -7111,6 +11614,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['TaskResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or task is not visible to the caller, or AGENT_API_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the task again), or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -7199,6 +11756,60 @@ export interface operations {
                     'application/json': components['schemas']['DeletionResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks time:write, or the entry is someone else's and the caller is not a workspace owner or admin (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or entry is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the entry again), the entry is approved without a draft invoice or allocated to an issued, paid or void one, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or expected_version is missing or malformed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -7227,6 +11838,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['TimeEntryResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks time:write, or the entry is someone else's and the caller is not a workspace owner or admin (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, entry or task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the entry again), the entry is no longer editable, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -7270,7 +11935,10 @@ export interface operations {
     };
     'time_entries.log': {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Send `read` to receive the written time entries exactly as time_entries.list presents them, when the token also holds time:read; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds. */
+                view?: 'read';
+            };
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
@@ -7292,6 +11960,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['TimeEntryBatchResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks time:write; the caller may not log time on a project; a billing rate or approve: true was sent without time:approve; or approval was asked for while AGENT_API_WRITES_ENABLED is off or without the approver role on every project. Each is checked again on a replay. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, a project or a task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request (approve is part of the request), or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, view is not read or is sent as a field, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

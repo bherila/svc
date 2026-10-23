@@ -1,11 +1,12 @@
 # SVC Agent API and MCP product contract
 
 SVC exposes its agent surface through a versioned REST API and a remote Streamable
-HTTP MCP endpoint at `/api/v1/mcp`. MCP read tools and migrated task/draft-time
-tools adapt the same application queries and actions as REST; they do not query
-Eloquent models directly. Legacy approval/invoice registrations remain disabled by
-default until their controller-transport migration and consequential-workflow
-approval are complete.
+HTTP MCP endpoint at `/api/v1/mcp`. MCP read tools adapt the same application
+queries as REST, and MCP write tools run the REST operation itself - its
+authorization, validation, receipts and refusals - except the payment tools,
+which still call their shared actions directly; neither queries Eloquent models
+directly. Invoice and payment write registrations remain disabled by default
+behind their nested cutovers.
 
 ## Scope and exclusions
 
@@ -45,7 +46,7 @@ delivery attached. `payments.record` requires `payments:record`, workspace owner
 permission, and both `AGENT_API_WRITES_ENABLED` and
 `AGENT_API_PAYMENT_WRITES_ENABLED`; the payment flag defaults to false. It records
 money already received and cannot initiate a charge. `payments.correct` carries the
-same gates and corrects only a recorded payment's method, reference or received
+same gates, plus `payments:read` for the version it checks (#473), and corrects only a recorded payment's method, reference or received
 date, with its version and a reason. There is no generic CRUD tool.
 
 All resources use public UUIDs. Lists use cursors with a maximum page size of 100.
@@ -63,7 +64,11 @@ IDs. `operations.summary` always returns the workspace ID and conditionally incl
 project, time, and billing sections only when their respective read scopes are
 present. Invoice amounts are grouped by currency and distinguish drafts,
 collectible balances, and overdue balances; invoice-ready time excludes deferred,
-nonbillable, unrated, and already allocated entries.
+nonbillable, unrated, and already allocated entries. With `billing:read`, a
+workspace manager also receives `deferred_backlog`: the active or terminated
+agreements with deferred work outstanding, largest first, each with the hours
+and the amount the termination invoice would charge for them (see
+[deferred billing](client-management/deferred-billing.md#deferred-backlog)).
 
 Time follows `draft -> approved -> invoiced`. Approval snapshots the hourly rate and
 currency from the most recently effective active agreement, preferring a

@@ -223,7 +223,7 @@ final class SquareCollectionGuardTest extends TestCase
 
         $commands = array_map(static fn (Event $event): string => (string) $event->command, app(Schedule::class)->events());
         $this->assertNotEmpty(array_filter($commands, static fn (string $command): bool => str_contains($command, 'svc:billing:dispatch-invoice-emails')), 'The scheduler runs the dispatcher');
-        Artisan::call('svc:billing:dispatch-invoice-emails', ['--limit' => 50]);
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true, '--limit' => 50]);
 
         Mail::assertNothingSent();
         $invoice->refresh();
@@ -250,7 +250,7 @@ final class SquareCollectionGuardTest extends TestCase
         $this->makeSquareCollected($reason, $workspace, $invoice);
 
         if ($transport === 'web') {
-            $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertOk();
+            $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertRedirect()->assertSessionHasNoErrors();
         } else {
             $this->actingAsMcp($owner, self::SCOPES);
             $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue", ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true], ['Idempotency-Key' => 'synthetic-issue'])->assertOk();
@@ -310,7 +310,7 @@ final class SquareCollectionGuardTest extends TestCase
 
         $this->actingAs($owner)
             ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send", ['recipients' => ['billing@synthetic.example.test']])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('status', 'sent')->count());
     }
@@ -330,7 +330,7 @@ final class SquareCollectionGuardTest extends TestCase
         $this->assertNull(app(SquareCollectionGuard::class)->refusal($invoice->refresh()));
         $this->actingAs($owner)
             ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send", ['recipients' => ['billing@synthetic.example.test']])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
     }
 
     /** Recording a payment Square collected is bookkeeping, not collection. */
@@ -343,7 +343,7 @@ final class SquareCollectionGuardTest extends TestCase
             ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
                 'amount' => 5000, 'currency' => 'USD', 'received_on' => '2026-10-08', 'method' => 'card', 'reference' => 'Synthetic Square payment',
             ])
-            ->assertCreated();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame('paid', $invoice->refresh()->status);
     }
@@ -372,7 +372,7 @@ final class SquareCollectionGuardTest extends TestCase
             $links->link($workspace, $invoice, $owner, AgentApiVersion::for($invoice->refresh()), new SquareInvoiceReference('inv:0-fixture1', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
         } else {
             $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($invoice->client_agreement_id)->firstOrFail();
-            $links->markAgreement($workspace, $agreement, $owner, AgentApiVersion::for($agreement), '000001');
+            $links->markAgreement($workspace, $agreement, $owner, AgentApiVersion::for($agreement), '000001', 'LOCFIXTURE01');
         }
         $this->assertNotNull(app(SquareCollectionGuard::class)->refusal($invoice->refresh()));
     }

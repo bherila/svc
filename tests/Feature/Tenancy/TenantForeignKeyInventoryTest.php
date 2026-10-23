@@ -7,6 +7,7 @@ use App\Support\Tenancy\TenantReferenceInventory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Support\OwnTables;
 use Tests\TestCase;
 
 /**
@@ -40,7 +41,7 @@ final class TenantForeignKeyInventoryTest extends TestCase
                 $columns = array_map(strtolower(...), $foreignKey['columns']);
                 $foreignColumns = array_map(strtolower(...), $foreignKey['foreign_columns']);
 
-                if ($columns !== ['workspace_id', $reference->childColumn]) {
+                if ($columns !== $reference->childColumns()) {
                     continue;
                 }
 
@@ -48,7 +49,7 @@ final class TenantForeignKeyInventoryTest extends TestCase
                     continue;
                 }
 
-                if ($foreignColumns !== ['workspace_id', 'id']) {
+                if ($foreignColumns !== $reference->parentColumns()) {
                     continue;
                 }
 
@@ -81,6 +82,15 @@ final class TenantForeignKeyInventoryTest extends TestCase
 
             $this->assertNotSame([], $indexes, "{$parent} has no unique (workspace_id, id) index for a composite key to reference.");
         }
+        foreach (TenantReferenceInventory::all() as $reference) {
+            if ($reference->additionalScopeColumns === []) {
+                continue;
+            }
+            $indexes = array_filter(Schema::getIndexes($reference->parentTable),
+                static fn (array $index): bool => $index['unique'] === true
+                    && array_map(strtolower(...), $index['columns']) === $reference->parentColumns());
+            $this->assertNotSame([], $indexes, $reference->label().' has no exact scoped unique parent key.');
+        }
     }
 
     public function test_no_reference_names_a_column_the_schema_does_not_have(): void
@@ -96,6 +106,10 @@ final class TenantForeignKeyInventoryTest extends TestCase
                 Schema::hasColumn($reference->parentTable, 'workspace_id'),
                 "{$reference->parentTable} is not tenant-owned and cannot be a composite parent.",
             );
+            foreach ($reference->additionalScopeColumns as $scopeColumn) {
+                $this->assertTrue(Schema::hasColumn($reference->childTable, $scopeColumn), $reference->label().' has no child scope column '.$scopeColumn);
+                $this->assertTrue(Schema::hasColumn($reference->parentTable, $scopeColumn), $reference->label().' has no parent scope column '.$scopeColumn);
+            }
 
             if (! $reference->enforced) {
                 $this->assertNotSame('', $reference->note, $reference->label().' is exempt without a reason.');
@@ -117,7 +131,7 @@ final class TenantForeignKeyInventoryTest extends TestCase
         }
 
         $tenantTables = array_values(array_filter(
-            array_map(static fn (array $table): string => $table['name'], Schema::getTables()),
+            OwnTables::names(),
             static fn (string $table): bool => Schema::hasColumn($table, 'workspace_id'),
         ));
 
@@ -166,18 +180,17 @@ final class TenantForeignKeyInventoryTest extends TestCase
         $found = [];
 
         foreach (Schema::getForeignKeys($table) as $foreignKey) {
-            if (count($foreignKey['columns']) !== 1) {
-                continue;
-            }
-
             $parent = strtolower((string) $foreignKey['foreign_table']);
-            $column = strtolower((string) $foreignKey['columns'][0]);
-
-            if ($column === 'workspace_id' || ! in_array($parent, $tenantTables, true)) {
+            if (! in_array($parent, $tenantTables, true)) {
                 continue;
             }
-
-            $found[$column] = $parent;
+            foreach ($foreignKey['columns'] as $index => $column) {
+                // Composite scope columns are not separate references to this
+                // table; the column paired with the parent's id is the edge.
+                if (strtolower($foreignKey['foreign_columns'][$index]) === 'id' && strtolower($column) !== 'workspace_id') {
+                    $found[strtolower($column)] = $parent;
+                }
+            }
         }
 
         foreach (Schema::getColumnListing($table) as $column) {

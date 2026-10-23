@@ -3,6 +3,9 @@ import {
     BuildingIcon,
     CheckSquareIcon,
     FolderIcon,
+    FileTextIcon,
+    MessageSquareIcon,
+    MessagesSquareIcon,
     ReceiptIcon,
     SearchIcon,
 } from 'lucide-react';
@@ -43,6 +46,10 @@ const KIND_ORDER: readonly SearchResultKind[] = [
     'project',
     'invoice',
     'task',
+    'note',
+    'discussion',
+    'comment',
+    'history',
 ];
 
 const KIND_HEADING: Record<SearchResultKind, string> = {
@@ -50,6 +57,10 @@ const KIND_HEADING: Record<SearchResultKind, string> = {
     project: 'Projects',
     invoice: 'Invoices',
     task: 'Tasks',
+    note: 'Notes',
+    discussion: 'Discussions',
+    comment: 'Comments',
+    history: 'History',
 };
 
 const KIND_ICON: Record<SearchResultKind, typeof BuildingIcon> = {
@@ -57,6 +68,10 @@ const KIND_ICON: Record<SearchResultKind, typeof BuildingIcon> = {
     project: FolderIcon,
     invoice: ReceiptIcon,
     task: CheckSquareIcon,
+    note: FileTextIcon,
+    discussion: MessagesSquareIcon,
+    comment: MessageSquareIcon,
+    history: FolderIcon,
 };
 
 /**

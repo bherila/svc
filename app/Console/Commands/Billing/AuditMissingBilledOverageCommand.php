@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\SvcCommand;
 use App\Services\Billing\MissingBilledOverageAuditor;
 use App\Support\Billing\MissingBilledOverageCounts;
-use Illuminate\Console\Command;
 
 /**
  * Report charged invoices carrying no billed-overage figure (#144).
@@ -17,7 +17,7 @@ use Illuminate\Console\Command;
  * {@see MissingBilledOverageCounts}, so the output is safe
  * to paste into a public issue against real client billing records.
  */
-final class AuditMissingBilledOverageCommand extends Command
+final class AuditMissingBilledOverageCommand extends SvcCommand
 {
     protected $signature = 'svc:billing:audit-missing-billed-overage
         {--format=text : Output text or json}';
@@ -27,12 +27,6 @@ final class AuditMissingBilledOverageCommand extends Command
     public function handle(MissingBilledOverageAuditor $auditor): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $counts = $auditor->count();
 

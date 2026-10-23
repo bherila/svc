@@ -11,14 +11,14 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Support\AgentApi\AgentApiCursor;
-use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Validator;
 
 final class AgentPaymentReadService
 {
-    public function __construct(private readonly AgentAccess $access, private readonly PortalInvoiceQuery $portalInvoices) {}
+    public function __construct(private readonly AgentAccess $access, private readonly PortalInvoiceQuery $portalInvoices, private readonly AgentPaymentPresenter $presenter) {}
 
     /** @return array<string, mixed> */
     public function listing(User|AgentPrincipal $user, Workspace $workspace, ?string $invoiceId, ?string $companyId, int $limit = 25, ?string $cursor = null): array
@@ -64,7 +64,6 @@ final class AgentPaymentReadService
             $payments->pop();
         }
         $last = $payments->last();
-        $manager = $this->access->isWorkspaceManager($user, $workspace);
 
         return [
             'data' => $payments->map(fn (ClientInvoicePayment $payment): array => $this->present($payment, $manager))->values()->all(),
@@ -88,40 +87,25 @@ final class AgentPaymentReadService
         abort_unless($this->access->isWorkspaceManager($user, $workspace), 403);
         $payments = $this->query($workspace)->whereIn('public_id', $ids)->get();
         abort_unless($payments->count() === count($ids), 404);
-        $manager = $this->access->isWorkspaceManager($user, $workspace);
 
-        return ['data' => $payments->map(fn (ClientInvoicePayment $payment): array => $this->present($payment, $manager))->values()->all()];
+        return ['data' => $payments->map(fn (ClientInvoicePayment $payment): array => $this->present($payment, true))->values()->all()];
     }
 
     /** @return Builder<ClientInvoicePayment> */
     private function query(Workspace $workspace): Builder
     {
-        return ClientInvoicePayment::query()->select(['id', 'public_id', 'workspace_id', 'client_invoice_id', 'amount', 'refunded_amount', 'currency', 'received_on', 'method', 'reference', 'status', 'lock_version'])->where('workspace_id', $workspace->id)
+        return ClientInvoicePayment::query()->select(AgentPaymentPresenter::COLUMNS)->where('workspace_id', $workspace->id)
             ->whereHas('invoice', fn (Builder $invoices) => $invoices->where('workspace_id', $workspace->id))
             ->with(['invoice' => fn ($invoices) => $invoices->where('workspace_id', $workspace->id)
-                ->select(['id', 'workspace_id', 'public_id'])]);
+                ->select(['id', 'workspace_id', 'public_id']), ...AgentPaymentPresenter::with($workspace)]);
     }
 
-    /** The explicit allow-list excludes processor, reconciliation and private note fields.
-     * @return array<string, mixed> */
+    /** @return array<string, mixed> */
     private function present(ClientInvoicePayment $payment, bool $manager): array
     {
         $invoice = $payment->getRelation('invoice');
         abort_unless($invoice instanceof ClientInvoice, 404);
 
-        return [
-            'id' => $payment->public_id,
-            'invoice_id' => $invoice->public_id,
-            'amount' => $payment->amount,
-            'refunded_amount' => $payment->refunded_amount,
-            'currency' => $payment->currency,
-            'received_on' => $payment->received_on?->toDateString(),
-            'method' => $payment->method,
-            'reference' => $manager ? $payment->reference : null,
-            'status' => $payment->status,
-            // The opaque revision payments.correct checks. Any write to the row
-            // moves it, so a correction made against a stale read is refused.
-            'version' => AgentApiVersion::for($payment),
-        ];
+        return $this->presenter->present($payment, $invoice, $manager);
     }
 }

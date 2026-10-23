@@ -5,6 +5,7 @@ namespace App\Services\Mcp;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Services\Square\SquareReadService;
+use App\Support\Square\SquareIdentifiers;
 use Illuminate\Validation\ValidationException;
 use LogicException;
 use Mcp\Capability\Attribute\Schema;
@@ -86,7 +87,7 @@ final class AgentMcpSquareTools
     /** @return array<string, mixed> */
     public function invoice(
         #[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(minLength: 1, maxLength: 192, pattern: self::ID)] string $invoice_id,
+        #[Schema(minLength: 1, maxLength: SquareIdentifiers::INVOICE_ID_MAX_LENGTH, pattern: SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN)] string $invoice_id,
     ): array {
         return $this->read($workspace_id, fn (McpRequestContext $context): array => $this->square->invoice($context->principal->subject, $context->workspace, $invoice_id));
     }

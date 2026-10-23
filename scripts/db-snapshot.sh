@@ -9,7 +9,7 @@
 set -euo pipefail
 
 PROJECT="svc"
-REMOTE_HOST="ssh-bwh-php"
+REMOTE_HOST="ssh-svc"
 REMOTE_PROJECT_PATH="svc-laravel"
 X_DATA="${X_DATA_DIR:-$HOME/proj/x-data}"
 LOCAL_DIRECTORY="${DB_SNAPSHOT_DIR:-$X_DATA/${PROJECT}-database}"

@@ -16,6 +16,7 @@ enum SearchColumn
 {
     case Name;
     case Title;
+    case Body;
     case InvoiceNumber;
 
     /**
@@ -43,6 +44,7 @@ enum SearchColumn
     {
         return match ($this) {
             self::Name => "name LIKE ? ESCAPE '!'",
+            self::Body => "body LIKE ? ESCAPE '!'",
             self::Title => "title LIKE ? ESCAPE '!'",
             self::InvoiceNumber => "invoice_number LIKE ? ESCAPE '!'",
         };

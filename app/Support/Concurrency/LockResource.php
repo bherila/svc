@@ -41,6 +41,9 @@ enum LockResource: string
     // Agent receipt reservations precede domain callbacks and every business lock.
     case AgentMutationReceipt = 'agent_mutation_receipts';
 
+    // An import claims its source identity before any native business locks.
+    case HistoricalSource = 'historical_sources';
+
     // Shared by billing writers, exclusive only for whole-run rollback maintenance.
     case BillingMaintenance = 'billing_maintenance_locks';
 
@@ -70,6 +73,13 @@ enum LockResource: string
     // after locking the entry; invoice state was already locked before it.
     case ClientInvoiceLineTimeEntry = 'client_invoice_line_time_entries';
     case ClientTask = 'client_tasks';
+    // Responsibility reads are current after the task lock, before access facts.
+    case ClientTaskAssignment = 'client_task_assignments';
+
+    // Collaboration locks its tenant access boundary, then the topic or task
+    // parent, then a comment. Private file publication follows its parent.
+    case ClientCollaborationTopic = 'client_collaboration_topics';
+    case ClientComment = 'client_comments';
 
     // Recurrence locks its schedule before inserting draft expense rows.
     // Invoice allocation locks expenses after invoice/time/task composition;
@@ -85,6 +95,8 @@ enum LockResource: string
     // resource acquired at the end.
     case ClientCompany = 'client_companies';
     case ClientProject = 'client_projects';
+    // Contact edits are scoped to their company; future combined edits take the company first.
+    case ClientContact = 'client_contacts';
     // Project access serialises on the project before checking the target's
     // workspace membership, so a concurrent workspace removal cannot admit a grant.
     case WorkspaceMembership = 'workspace_memberships';
@@ -117,9 +129,22 @@ enum LockResource: string
     // Payment reminders (#438) follow the same shape: claimed and resolved
     // under the invoice lock, then the reminder row.
     case InvoiceReminderLog = 'invoice_reminder_logs';
+    // Pending Square settlement delivery takes payment first, after any billing locks already
+    // held by invoice reconciliation. Producers hold only this lock in a separate transaction.
+    case SquarePendingSettlement = 'square_pending_settlements';
 
-    // Credentials. Disconnecting an agent revokes its refresh token and then
-    // its access token, and takes no other lock on the way; nothing else in the
+    // Movement ingestion locks its owned payment before the immutable child entry.
+    // It does not return to invoice or other billing writes after this lock.
+    case ProcessorMovement = 'processor_movements';
+
+    // Reconciling one Square-linked invoice (#458) re-reads its link under a
+    // share lock after the invoice lock, so a re-link committed meanwhile is
+    // seen; link changes themselves lock only the invoice.
+    case InvoiceSquareLink = 'invoice_square_links';
+
+    // Credentials. Revoking an agent credential (CredentialRevoker) locks its access
+    // token rows, then revokes their refresh tokens and then the access tokens
+    // themselves, and takes no other lock on the way; nothing else in the
     // application locks either table, so this pair orders only against itself.
     case OAuthAccessToken = 'oauth_access_tokens';
 

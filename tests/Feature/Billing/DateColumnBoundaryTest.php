@@ -7,6 +7,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -18,6 +19,7 @@ use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
@@ -170,6 +172,17 @@ final class DateColumnBoundaryTest extends TestCase
         $this->assertTrue(ClientInvoice::query()->whereKey($invoice->id)->whereBetween('service_period_end', ['2026-01-01', '2026-01-31'])->exists());
     }
 
+    public function test_task_planning_dates_are_born_bare_and_keep_inclusive_month_boundaries(): void
+    {
+        $task = ClientTask::query()->create(['workspace_id' => $this->workspace->id, 'client_project_id' => $this->project->id,
+            'title' => 'Synthetic month-boundary task', 'starts_on' => CarbonImmutable::parse('2026-01-01 09:00:00'), 'due_on' => Carbon::parse('2026-01-31 17:45:00')]);
+        foreach (['starts_on' => '2026-01-01', 'due_on' => '2026-01-31'] as $column => $date) {
+            $this->assertSame('date', Schema::getColumnType('client_tasks', $column));
+            $this->assertSame($date, DB::table('client_tasks')->where('workspace_id', $this->workspace->id)->where('id', $task->id)->value($column));
+            $this->assertTrue(ClientTask::query()->where('workspace_id', $this->workspace->id)->whereKey($task->id)->whereBetween($column, ['2026-01-01', '2026-01-31'])->exists());
+        }
+    }
+
     /** The migration strips the midnight from every calendar-date column SQLite stored. */
     public function test_the_migration_strips_the_time_from_every_calendar_date(): void
     {
@@ -216,12 +229,19 @@ final class DateColumnBoundaryTest extends TestCase
      * @var array<string, array<string, string>>
      */
     private const BORN_DATE_ONLY = [
+        'client_tasks' => [
+            'starts_on' => '2026_10_22_180000_add_task_planning_dates',
+            'due_on' => '2026_10_22_180000_add_task_planning_dates',
+        ],
         'client_invoices' => ['scheduled_issue_date' => '2026_10_12_120000_add_scheduled_issue_date_to_client_invoices'],
         'square_invoice_snapshots' => [
             'due_on' => '2026_10_12_210000_create_square_mirror',
             'sale_or_service_date' => '2026_10_12_210000_create_square_mirror',
         ],
         'invoice_reminder_logs' => ['due_on' => '2026_10_14_120000_create_invoice_reminder_logs'],
+        'client_invoice_payments' => ['provider_payout_arrival_date' => '2026_10_20_000000_add_settlement_facts_to_client_invoice_payments'],
+        'processor_payouts' => ['arrival_date' => '2026_10_20_000100_create_processor_payouts'],
+        'processor_movements' => ['occurred_on' => '2026_10_21_210000_create_processor_movements'],
     ];
 
     /**
@@ -283,6 +303,12 @@ final class DateColumnBoundaryTest extends TestCase
             'app/Services/Billing/DeferredBillingAllocator.php' => ['$upToDate'],
             // filters() validates both bounds with date_format:Y-m-d.
             'app/Services/Square/Mirror/SquareMirrorReadService.php' => ['$filters[\'due_from\']', '$filters[\'due_to\']'],
+            // FinancePayoutQuery and FinanceProcessorMovementQuery::fromInput()
+            // validate these readonly string bounds with date_format:Y-m-d.
+            'app/Services/Finance/FinanceReconciliationOperations.php' => [
+                '(string) $query->arrivalFrom', '(string) $query->arrivalTo',
+                '$query->occurredFrom', '$query->occurredTo',
+            ],
         ];
 
         $columns = implode('|', array_map(static fn (string $column): string => preg_quote($column, '/'), self::dateOnlyColumns()));

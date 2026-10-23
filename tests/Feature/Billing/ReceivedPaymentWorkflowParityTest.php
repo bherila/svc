@@ -38,7 +38,7 @@ final class ReceivedPaymentWorkflowParityTest extends TestCase
         $this->actingAs($owner)->post('/workspaces/'.$workspace->public_id.'/invoices/'.$web->public_id.'/payments', $facts, ['Idempotency-Key' => 'synthetic-web-receipt'])->assertRedirect()->assertSessionHas('status', 'Payment recorded.');
         $this->post('/workspaces/'.$workspace->public_id.'/invoices/'.$web->public_id.'/payments', $facts, ['Idempotency-Key' => 'synthetic-web-receipt'])->assertRedirect();
         $this->assertDatabaseCount('client_invoice_payments', 1);
-        $this->postJson('/workspaces/'.$workspace->public_id.'/invoices/'.$pending->public_id.'/payments', ['amount' => 100, 'currency' => 'USD', 'method' => 'Synthetic check', 'status' => 'pending', 'notes' => 'Synthetic web bookkeeping', 'idempotency_key' => 'synthetic-web-pending'])->assertCreated()->assertJsonPath('data.status', 'pending');
+        $this->postJson('/workspaces/'.$workspace->public_id.'/invoices/'.$pending->public_id.'/payments', ['amount' => 100, 'currency' => 'USD', 'method' => 'Synthetic check', 'status' => 'pending', 'notes' => 'Synthetic web bookkeeping', 'idempotency_key' => 'synthetic-web-pending'])->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame('Synthetic web bookkeeping', ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->where('idempotency_key', 'synthetic-web-pending')->firstOrFail()->notes);
         $this->assertSame(1200, $pending->fresh()->balance_amount);
         $principal = $this->actingAsMcp($owner, ['billing:deliver', 'payments:record', 'billing:read']);

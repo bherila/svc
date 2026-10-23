@@ -30,18 +30,18 @@ final class SquarePaymentSyncTest extends TestCase
         [$workspace, , , $invoice] = $this->paymentFixture();
         Queue::fake();
         config(['services.square.webhook_signature_key' => null]);
-        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
         $this->assertSame('paid', $invoice->fresh()->status);
         $payment = $invoice->payments()->firstOrFail();
         $this->assertSame('square', $payment->provider);
         $this->assertSame('pay_fixture_1', $payment->provider_payment_identifier);
         $this->assertSame('2030-02-01', $payment->received_on->toDateString());
         $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 345, 'currency' => 'USD'];
-        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
         $this->assertSame(345, $invoice->fresh()->balance_amount);
         $this->squarePayments['pay_fixture_1']['refunded_money']['amount'] = 12_345;
-        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
-        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
         $this->assertSame('refunded', $payment->fresh()->status);
         $this->assertSame(12_345, $invoice->fresh()->balance_amount);
         $this->assertSame(1, $invoice->payments()->count());
@@ -81,7 +81,7 @@ final class SquarePaymentSyncTest extends TestCase
         app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
         InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->update(['active_invoice_slot' => null, 'active_square_invoice_slot' => null]);
         $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 345, 'currency' => 'USD'];
-        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
         $this->assertSame(345, $invoice->fresh()->balance_amount);
         $this->assertSame(1, $invoice->payments()->count());
     }
@@ -110,13 +110,13 @@ final class SquarePaymentSyncTest extends TestCase
         foreach ([401, 403, 429, 503] as $status) {
             $this->squareInvoiceFailureStatus = $status;
             $before = count(Http::recorded());
-            $this->artisan('svc:square:reconcile-payments')->assertFailed();
+            $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertFailed();
             $this->assertSame(1, count(Http::recorded()) - $before, 'The shared failure must stop further adapter calls.');
         }
         $this->squareInvoiceFailureStatus = 404;
         $before = count(Http::recorded());
-        $this->artisan('svc:square:reconcile-payments')->assertFailed();
-        $this->assertSame(3, count(Http::recorded()) - $before);
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertFailed();
+        $this->assertSame(4, count(Http::recorded()) - $before);
     }
 
     public function test_an_unlinked_or_foreign_invoice_is_not_fetched_or_written(): void

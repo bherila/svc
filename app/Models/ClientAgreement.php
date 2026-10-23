@@ -41,6 +41,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $ends_on
  * @property CarbonImmutable|null $signed_at
  * @property string|null $square_series_key
+ * @property string|null $square_location_id
  * @property-read float $monthly_retainer_hours
  * @property-read float $monthly_retainer_fee
  * @property-read float|null $retainer_hours
@@ -51,6 +52,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'title', 'status',
     'starts_on', 'ends_on', 'agreement_text', 'is_visible_to_client', 'currency', 'hourly_rate_amount',
+    'show_deferred_backlog_to_client',
     'retainer_amount', 'retainer_minutes', 'billing_cadence', 'rollover_policy', 'activated_at', 'signed_at',
     'signed_by_user_id', 'signer_name', 'signer_title', 'terminated_at',
     // Retainer and rollover terms the billing engine reads.
@@ -58,9 +60,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'rollover_months', 'initial_rollover_minutes', 'bill_overage_interim',
     'first_cycle_proration', 'agreement_link',
 ])]
-// `square_series_key` is the billed-in-Square marker (#438): an operator fact
-// read through the agent API and the operator screen, never serialized whole.
-#[Hidden(['id', 'workspace_id', 'lock_version', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id', 'square_series_key'])]
+// `square_series_key` and `square_location_id` are the billed-in-Square marker
+// (#438, #488): an operator fact read through the agent API and the operator
+// screen, never serialized whole.
+#[Hidden(['id', 'workspace_id', 'lock_version', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id', 'square_series_key', 'square_location_id'])]
 class ClientAgreement extends Model implements RetainerAgreementTerms, WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -71,6 +74,7 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
             'starts_on' => DateOnly::class,
             'ends_on' => DateOnly::class,
             'is_visible_to_client' => 'boolean',
+            'show_deferred_backlog_to_client' => 'boolean',
             'hourly_rate_amount' => 'integer',
             'retainer_amount' => 'integer',
             'retainer_minutes' => 'integer',

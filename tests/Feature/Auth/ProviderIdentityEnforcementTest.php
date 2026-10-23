@@ -318,7 +318,7 @@ final class ProviderIdentityEnforcementTest extends TestCase
         $user = $this->boundUser('person-finance-inactive');
         $this->disableProviderIdentity('person-finance-inactive');
 
-        $this->assertSame(1, Artisan::call('svc:auth:issue-token', [
+        $this->assertSame(1, Artisan::call('svc:auth:issue-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => 'refused',
             'abilities' => ['finance.read'],
@@ -329,7 +329,7 @@ final class ProviderIdentityEnforcementTest extends TestCase
 
     public function test_unbound_accounts_are_left_alone_the_deploy_smoke_principal_included(): void
     {
-        Artisan::call('svc:mcp:deploy-smoke-credentials');
+        Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true]);
         $issued = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
 
         Auth::forgetGuards();
@@ -373,7 +373,7 @@ final class ProviderIdentityEnforcementTest extends TestCase
 
     private function issueSanctumToken(User $user): string
     {
-        $this->assertSame(0, Artisan::call('svc:auth:issue-token', [
+        $this->assertSame(0, Artisan::call('svc:auth:issue-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => 'finance integration',
             'abilities' => ['finance.read'],

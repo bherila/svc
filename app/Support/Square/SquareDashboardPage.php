@@ -2,7 +2,6 @@
 
 namespace App\Support\Square;
 
-use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
 
 /** Operator navigation is separate from the mirrored customer payment URL. */
@@ -15,7 +14,7 @@ final class SquareDashboardPage
             SquareConfiguration::SANDBOX => 'squareupsandbox.com',
             default => null,
         };
-        if ($host === null || preg_match(SquareClient::ID_PATTERN, $invoiceId) !== 1) {
+        if ($host === null || ! SquareIdentifiers::isInvoiceId($invoiceId)) {
             return null;
         }
 

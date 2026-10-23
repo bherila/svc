@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands\Engagement;
 
+use App\Console\Commands\SvcCommand;
 use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
 use App\Support\Engagement\UnlinkedProposalAgreementCounts;
-use Illuminate\Console\Command;
 
 /**
  * Report proposals whose agreement the duplicate guard in acceptance cannot see.
@@ -25,7 +25,7 @@ use Illuminate\Console\Command;
  * repair the link by guessing, so this is a prompt to restore known links by
  * hand rather than a deployment gate - and a non-zero exit would make it one.
  */
-final class AuditUnlinkedProposalAgreementsCommand extends Command
+final class AuditUnlinkedProposalAgreementsCommand extends SvcCommand
 {
     protected $signature = 'svc:engagement:audit-unlinked-proposal-agreements
         {--format=text : Output text or json}';
@@ -35,12 +35,6 @@ final class AuditUnlinkedProposalAgreementsCommand extends Command
     public function handle(UnlinkedProposalAgreementAuditor $auditor): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         // Unscoped: an operator sizing this needs every workspace at once. A
         // tenant-facing caller passes its own workspace instead.

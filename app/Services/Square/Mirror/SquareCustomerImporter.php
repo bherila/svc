@@ -18,6 +18,7 @@ use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\Square\SquareRequestFailed;
 use App\Support\AgentApi\ExplicitConfirmation;
+use App\Support\Billing\BillingCadence;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -133,14 +134,24 @@ final class SquareCustomerImporter
                         'starts_on' => $series['first_due_on'],
                         'billing_cadence' => $series['cadence'],
                         'currency' => $series['currency'],
-                        'retainer_amount' => $series['amount'],
                     ]);
-                    // Billed in Square: svc issues and records, Square collects.
-                    $agreement->forceFill(['square_series_key' => $series['series_key']])->save();
+                    // The series bills its amount once per cycle. retainer_amount
+                    // is a monthly fee the engine multiplies by the cycle's
+                    // months, so a quarterly or annual series' amount is the
+                    // whole-cycle override instead. Billed in Square: svc
+                    // issues and records, Square collects.
+                    $agreement->forceFill([
+                        ...($series['cadence'] === BillingCadence::Monthly->value
+                            ? ['retainer_amount' => $series['amount']]
+                            : ['period_retainer_amount' => $series['amount']]),
+                        'square_series_key' => $series['series_key'],
+                        'square_location_id' => $series['location_id'],
+                    ])->save();
                 }
                 $this->activities->record($workspace, $company, 'company.imported_from_square', $company, [
                     'square_customer_id' => $customerId,
                     'series_key' => $series['series_key'] ?? null,
+                    'location_id' => $series['location_id'] ?? null,
                     'agreement_id' => $agreement?->public_id,
                 ], $user, (string) Str::uuid());
 
@@ -152,10 +163,11 @@ final class SquareCustomerImporter
     }
 
     /**
-     * The series to mirror: this customer's, readable as an agreement, and
-     * not already marking one.
+     * The series to mirror: this customer's, billed from one Square location
+     * (the same prefix in two locations is two series, #488), readable as an
+     * agreement, and not already marking one there.
      *
-     * @return array{series_key: string, cadence: string, currency: string, amount: int, first_due_on: string}
+     * @return array{series_key: string, location_id: string, cadence: string, currency: string, amount: int, first_due_on: string}
      */
     private function series(Workspace $workspace, string $customerId, string $seriesKey): array
     {
@@ -169,12 +181,16 @@ final class SquareCustomerImporter
         if (! in_array($summary['cadence'], self::CADENCES, true) || ! is_string($summary['currency']) || ! is_int($summary['amount']) || ! is_string($summary['first_due_on'])) {
             throw new DomainException(sprintf('Square series %s has no monthly, quarterly, semi-annual or annual cadence, one currency and an amount to mirror. Import the customer without it and set the agreement up by hand.', $seriesKey));
         }
-        $holder = $this->links->agreementForSeries($workspace->id, $seriesKey);
+        $locations = $this->links->seriesLocations($workspace->id, $seriesKey);
+        if (count($locations) !== 1 || $locations[0] === null) {
+            throw new DomainException(sprintf('Square series %s is used in more than one Square location, or by an invoice naming none, so it is not one series to mirror. Import the customer without it and mark the agreement with its location by hand.', $seriesKey));
+        }
+        $holder = $this->links->agreementForSeries($workspace->id, $seriesKey, $locations[0]);
         if ($holder !== null) {
             abort(409, sprintf('Square series %s already marks agreement "%s".', $seriesKey, (string) $holder->title));
         }
 
-        return ['series_key' => $seriesKey, 'cadence' => $summary['cadence'], 'currency' => $summary['currency'], 'amount' => $summary['amount'], 'first_due_on' => $summary['first_due_on']];
+        return ['series_key' => $seriesKey, 'location_id' => $locations[0], 'cadence' => $summary['cadence'], 'currency' => $summary['currency'], 'amount' => $summary['amount'], 'first_due_on' => $summary['first_due_on']];
     }
 
     private static function email(?string $email): ?string

@@ -1,46 +1,206 @@
 # Client Management CLI
 
-These Artisan commands are admin-only operational helpers. They default to user id `1`; pass `--user=<id>` only when another admin should be the actor.
+Application commands use `svc:<area>:<operation>`. Run `php artisan list svc` or
+`php artisan help <command>` for the current argument list. Commands live under
+`app/Console/Commands/<Area>`; the old `engagement:log-time`, `svc:log-time` and
+`billing:apply-payment` aliases remain available.
 
-Use built-in help for the current option list:
+## Write convention
+
+**Preview is the default. Pass `--apply` to write.** This includes payment
+recording and corrections, refunds, finance reconciliation, logging time,
+portal access, credential issuance and revocation, maintenance and delivery.
+`--confirm` and `--expected-version` still apply wherever the operation requires
+them; `--apply` does not replace those checks.
+
+`--dry-run` and `--pretend` remain deprecated preview aliases through the next
+CLI compatibility window. Combining either with `--apply` exits `2` before the
+operation runs. Storage status also keeps `--write` as a deprecated alias for
+`--apply`. Deprecation notices go to stderr in a terminal; JSON captured through
+`Artisan::call` omits notices so its single output buffer stays parseable.
+
+Database-only operations (time, payments, finance allocations and portal scope)
+preview the same operation inside a transaction that is always rolled back.
+Payment and time results include `dry_run`; IDs from a preview do not identify
+persisted new records. A preview can still refuse invalid or stale input.
+
+Credential commands, email delivery, Square sync/reconciliation and receipt
+pruning report intent without invoking their effectful operation. Their preview
+JSON is `{ "dry_run": true, "operation": "svc:…", "executed": false }`.
+This is not a certification that a future applied run will succeed. OAuth client
+pruning and attachment repair use their existing native preview paths; payout
+backfill retains its existing read-only provider lookups. The scheduler and
+deployment smoke explicitly pass `--apply`; the vendor Passport and auth
+maintenance commands retain their own contracts.
+
+## Workspaces and output
+
+Workspace arguments/options take a **public UUID**, resolved by one shared
+lookup. Log-time and payout backfill still accept a workspace slug with a
+deprecation notice. Other commands do not interpret internal numeric IDs or
+slugs as workspace public IDs. An explicitly empty `--workspace` never widens a
+scoped command into all workspaces. Square commands use the workspace bound in
+server configuration through `SquareConfiguration::workspace()`.
+
+Every application command accepts `--format=text|json`; other values exit `2`
+before the operation runs. Audit JSON shapes and exit codes are preserved.
+Replay and rehearsal now emit a single `summary` object without progress text;
+early refusals produce an `error` object and the same failing exit code.
+Rehearsal `--show --format=json` adds a `details` array with the same private
+billing detail as text output. OAuth prune wraps the vendor's report text in
+`{ "dry_run": true|false, "exit_code": number, "report": string }`.
+Existing credential commands that already emit JSON by default keep doing so.
+
+## Tasks
+
+`svc:tasks list|get|create|update WORKSPACE_UUID --actor=USER_UUID` uses the same
+workspace-scoped reads, task lifecycle, calendar dates, assignee eligibility,
+versions and retry receipts as REST/MCP. Use `--project=PROJECT_UUID` to create or
+filter a list, and `--task=TASK_UUID` to read or update one task. List accepts
+`--limit=1..100` and `--cursor`.
+
+Task pages also respect a serialized byte budget, so a short page can still have
+more rows. Follow `meta.next_cursor` until it is null. REST and MCP project
+details embed at most 25 tasks within the whole project response budget; when
+`tasks:read` is held, follow `tasks_next_href` or pass its `tasks_cursor` to
+`projects.get` to continue. Project-only tokens receive the base project without
+task data or a continuation.
 
 ```bash
-php artisan list client-management
-php artisan help client-management:invoices
-php artisan help client-management:apply-payment
-php artisan help client-management:create-time-entry
-php artisan help client-management:invoice-email-status
+php artisan svc:tasks list WORKSPACE_UUID --actor=USER_UUID --format=json
+php artisan svc:tasks create WORKSPACE_UUID --actor=USER_UUID --project=PROJECT_UUID --input=task.json --key=unique-retry-key --format=json
 ```
 
-## List Invoices
+Mutations preview and roll back unless `--apply` is supplied. `--input` accepts a
+JSON object in a file or `-` for standard input, at most 1 MiB. Updates require the
+current opaque `expected_version`. Omitted fields remain unchanged; explicit
+`null` clears a date, and an empty `assignee_ids` array clears assignments.
+Assignments do not grant project access. Local commands require current account
+permissions independently of OAuth deployment switches. Reusing an applied
+request and key replays the existing operation; stale versions and revoked
+permissions are refused.
+
+Task commands use current internal staff authority. An account that also has
+portal access can use its staff permissions locally; REST/MCP treat that account
+as a portal reader and refuse task mutations.
+
+## Business contacts
+
+Company and business-contact listings apply both a maximum row count and a
+serialized byte budget. Large profiles/notes can produce shorter pages in REST,
+MCP and CLI. Continue with `meta.next_cursor` until it is null; a short page does
+not imply completion. Full notes remain available on every returned record.
+
+`svc:clients:contacts` lists, reads, creates, updates, archives and restores
+business contacts. The acting `--actor` must currently be an owner or admin of
+the workspace. Workspace, company and contact identifiers are public UUIDs.
+These records describe people at a client company; editing them does not create
+login accounts, send invitations or change portal access.
 
 ```bash
-php artisan client-management:invoices
-php artisan client-management:invoices --client=acme-inc
-php artisan client-management:invoices --status=issued --status=paid
-php artisan client-management:invoices --client=acme-inc --status=draft,issued --format=json
+php artisan svc:clients:contacts list WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --format=json
+php artisan svc:clients:contacts get WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --contact=CONTACT_UUID --format=json
+php artisan svc:clients:contacts create WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --input=contact.json --key=unique-retry-key --format=json
 ```
 
-The table includes invoice totals, payment totals, remaining balances, and hour-balance columns. Omit `--client` to list across all clients.
+Mutations preview and roll back by default. Add `--apply` to persist. `--input=-`
+reads a JSON object from standard input; files and standard input accept at most
+1 MiB. Use the same body as `clients.contacts.create`, `update`, `archive` or
+`restore` in REST/MCP. Updates merge only the fields supplied, and explicit
+`null` clears an optional field. At least one name must remain. Update, archive
+and restore require the current opaque `expected_version` returned by reads;
+archive additionally requires `"confirm": true`. Keep the request and `--key`
+unchanged when retrying an applied operation. List accepts `--status=active` or
+`archived`, `--limit=1..100` and a continuation `--cursor` bound to that company
+and status. Local commands use current internal account permissions independently of
+OAuth deployment switches. REST/MCP business-contact operations treat any current
+portal identity in the workspace as the client audience, including dual-role
+accounts, and refuse those private reads and writes. Native CLI authority remains
+internal and is rechecked on each write and replay.
 
 ## Apply Payment
 
-```bash
-php artisan client-management:apply-payment INV-202605-001 250.00 2026-05-14
-php artisan client-management:apply-payment 123 250.00 2026-05-14 --type=wire --notes="Wire confirmation 1042"
-```
-
-Payments can be applied only to issued invoices. `--type` defaults to `ach` and accepts `ach`, `credit-card`, `wire`, `check`, or `other`. A full or over payment marks the invoice paid, matching the admin API behavior.
-
-## Create Time Entry
+Amounts are integer currency minor units, as in REST. The workspace is required;
+the invoice must belong to it. Recording uses the shared `RecordReceivedPayment`
+operation and accepts `succeeded` or `pending`. Later status changes and refunds
+use their own commands. A full payment updates the invoice through the same
+billing rules as the API.
 
 ```bash
-php artisan client-management:create-time-entry acme-inc "Build payment export" 1:30 2026-05-14
-php artisan client-management:create-time-entry acme-inc "Discovery call" 0.75 2026-05-14 --project=platform --billable=0 --category="Project Management"
-php artisan client-management:create-time-entry acme-inc "Deferred implementation" 2.25 2026-05-14 --defer=1
+php artisan svc:billing:payment INVOICE_PUBLIC_UUID 25000 USD wire --workspace=WORKSPACE_PUBLIC_UUID --format=json
+php artisan svc:billing:payment INVOICE_PUBLIC_UUID 25000 USD wire --workspace=WORKSPACE_PUBLIC_UUID --apply
+php artisan svc:billing:correct-payment PAYMENT_PUBLIC_UUID --workspace=WORKSPACE_PUBLIC_UUID --reference=SYNTHETIC-001 --reason="Synthetic correction" --apply
 ```
 
-If `--project` is omitted, the command uses the client's only project. When a client has zero or multiple projects, pass `--project=<id|slug|exact name>`. Defaults are billable `true`, deferred billing `false`, and category `Software Development`.
+## Log Time
+
+The console twin of `time_entries.log`. It validates with the same rules and
+creates through the same `TimeEntryMutationService::create()` as REST, MCP and
+the time sheet, so it accepts and refuses exactly what they do
+(`TimeEntryCreationParityTest` runs every case through all four).
+
+```bash
+php artisan svc:engagement:log-time <workspace> <project> 45 "Synthetic work" --user=worker@example.test --apply
+php artisan svc:engagement:log-time <workspace> <project> 90 "Synthetic work" --user=7 --no-billable \
+  --worked-on=2026-10-01 --client-description="Release preparation" --format=json --apply
+```
+
+`<workspace>` is a public UUID (legacy slugs are deprecated) and `<project>` a public id or slugified
+name. The worker named by `--user` must hold a project role that may log time
+there. Only someone who may approve the time may pass `--rate`: a project owner
+or manager, or a workspace owner or admin. The currency defaults to the
+workspace's. `--worked-on` defaults to today on the workspace calendar and
+must fall inside the time sheet's window. Time is billable unless `--no-billable`
+is given, as an API entry without `is_billable` is. Client-facing text makes the entry
+client-visible unless `--internal` is given. It exits `0` when the entry is
+logged or successfully previewed, `2` when the input is refused (the API's 422) and `1` when the
+workspace, project, task or worker is not found or may not log the time (the
+API's 404 and 403). `engagement:log-time` and `svc:log-time` remain aliases.
+
+## Replay — the billing regression gate
+
+`svc:billing:replay` is kept on purpose, as the regression gate for the billing
+engine. It regenerates a workspace's invoice history inside one transaction that
+is always rolled back and compares every regenerated line and total with what
+was billed. Money is exact: an unexplained difference of one minor unit fails
+the run. Hours differences are reported for a human read and do not fail it.
+
+```bash
+php artisan svc:billing:replay --workspace=<workspace public id>
+php artisan svc:billing:replay --workspace=<workspace public id> --company=<company public id> --as-of=2026-09-30
+php artisan svc:billing:replay --workspace=<workspace public id> --report=storage/app/replay-report.json
+```
+
+Run it:
+
+- before merging any change to invoice generation, the ledger, rate resolution,
+  rollover or overage arithmetic;
+- after an import, before the imported history is relied on;
+- before and after an engine fix for a divergence it reported, to show the
+  divergence gone and nothing else moved.
+
+It never writes, so it is safe against real data, but it holds one long
+transaction across periods: do not run it while the workspace is generating
+invoices (see [concurrency.md](concurrency.md#the-known-inversions)). Stdout is
+aggregate; `--report` writes per-invoice detail with keyed description digests,
+which stays on the host and is never pasted into an issue. Do not add a
+`--commit` option: if a divergence needs fixing, fix the engine and replay again.
+
+## Portal Project Access — break-glass
+
+`svc:portal:project-access` narrows a portal user to named projects, or returns
+them to company-wide access, through the same `PortalAccessOperation` as the
+client's settings page, REST and MCP (`clients.portal_access.update`). It is
+kept as a break-glass tool by owner decision (#460): use the settings page day to
+day, and the command when no workspace manager can reach it.
+
+```bash
+php artisan svc:portal:project-access <company public id> person@example.test --show
+php artisan svc:portal:project-access <company public id> person@example.test \
+  --project=<project public id> --expected-version=<version from --show> --confirm --apply
+php artisan svc:portal:project-access <company public id> person@example.test --company-wide \
+  --expected-version=<version from --show> --confirm --apply
+```
 
 ## Rehearse Generation
 
@@ -55,29 +215,11 @@ php artisan svc:billing:rehearse-generation --workspace=<workspace public id> --
 
 A company with no agreement in force, ended, or starting within the month is listed as skipped, not failed.
 
-## Migrate Legacy Cadence Invoices
+## Retired client-management commands
 
-One-off, idempotent migration of legacy `period == cycle` cadence invoices to the prior-period layout. Dry-run by default; pass `--apply` to write.
-
-```bash
-php artisan client-management:migrate-legacy-cadence-invoices                       # preview all
-php artisan client-management:migrate-legacy-cadence-invoices --company=acme-inc     # scope to one client
-php artisan client-management:migrate-legacy-cadence-invoices --apply                # write changes
-```
-
-Issued/paid legacy rows are re-keyed so `period_start`/`period_end` point at the prior work cycle (`cycle_*` and the invoice number are left untouched); void legacy rows are soft-deleted, and any orphaned unbilled billable time entries in their window are marked non-billable. Re-running is a no-op once migrated. See [Cadence billing & regeneration › Regenerating Cadence Invoices](cadence-billing.md#regenerating-cadence-invoices) for why this is needed.
-
-## Invoice Email Delivery Status
-
-Show or refresh the Brevo email-delivery status for a client invoice.
-
-```bash
-php artisan client-management:invoice-email-status INV-202605-001            # show stored status
-php artisan client-management:invoice-email-status 123 --refresh             # query Brevo for latest events
-php artisan client-management:invoice-email-status 123 --delivery=45 --format=json
-```
-
-`--refresh` queries Brevo and stores the latest delivery events; without it the command reports the last stored status. Use `--delivery=<id>` to scope to one delivery record.
+The old `client-management:*` commands documented here no longer exist. Use the
+current `svc:*` commands and API for those operations. Legacy cadence migration
+and the old invoice-email-status command have no active CLI alias.
 
 ## Regenerate the Null-Semantics Manifests
 
@@ -95,16 +237,18 @@ with no known reader, both compared as exact sets. Adding a branch therefore
 means editing a constant in the same commit — which is the point, and also a
 guaranteed conflict as soon as two branches add one. Hand-resolving a sorted
 70-line constant is the friction that gets a guard deleted rather than fixed;
-with this, resolving is *take both sides, re-run, commit*.
+with this, resolving is _take both sides, re-run, commit_.
 
 It cannot weaken anything by itself: it derives the manifests from `REGISTRY`, so
 running it after a branch is deleted produces a manifest that agrees with the
 deletion. It resolves conflicts, it does not approve them — read the diff. The
 guard test remains the gate.
 
-## Audit Opening Rollover
+## Audit Opening Rollover — deprecated
 
-Read-only. Counts the agreements whose ledger would change if the opening-rollover seed in `InvoiceLedgerBuilder` were repaired (#134), so the size of that change is known before it is made.
+**Deprecated (#460); removal is tracked in #500.** The audit sized the opening-rollover repair (#134), and that repair is done, so the count now describes capacity agreements already receive rather than a pending change. The command, its `billing.audit_opening_rollover` MCP tool and `GET /workspaces/{workspace}/billing-audits/opening-rollover` stay through a deprecation window; nothing replaces them. Text output opens with the deprecation notice. The JSON output is unchanged.
+
+Read-only. Counts the agreements whose ledger takes the opening-rollover seed in `InvoiceLedgerBuilder` (#134).
 
 ```bash
 php artisan svc:billing:audit-opening-rollover                 # counts
@@ -184,6 +328,21 @@ Balances are reported per currency, never summed across them. It reports counts
 and balances only, so it is safe to run against real billing data and to paste
 into an issue. It always exits zero.
 
+## Backfill Invoice Due Dates — retired
+
+`svc:billing:backfill-invoice-due-dates` and `UndatedCollectibleInvoiceRepairer`
+were removed by #460. They dated the imported collectible invoices #149 found;
+that repair is done, and `InvoiceLifecycleService::issue()` dates every invoice
+it issues. The read-only audit above stays: run it after an import, and date
+any row it reports from the invoice itself.
+
+## Derive Time Rates — retired
+
+`svc:billing:derive-time-rates` was removed by #460. It priced time imported by
+the importer that #196 removed, so it had no rows left to reach. Approval
+resolves an entry's agreement rate through `AgreementBillingRateResolver`, which
+`AgreementBillingRateResolverTest` pins.
+
 ## Audit Missing Billed Overage
 
 Read-only. Counts charged invoices carrying no `hours_billed_at_rate` at all, and
@@ -197,7 +356,7 @@ php artisan svc:billing:audit-missing-billed-overage --format=json   # machine-r
 Three sums total the overage an agreement has already been charged so the next
 period does not charge it again. All three are `SUM(hours_billed_at_rate)`, and
 SQL aggregation contributes nothing for a null — so a charged invoice with a
-null there reads as *zero already billed*, and its hours can be sold a second
+null there reads as _zero already billed_, and its hours can be sold a second
 time.
 
 Same defect class as #135 by a different route: there a `<=` answered false for
@@ -206,7 +365,7 @@ value it contributes vanishes.
 
 **No fix is implied, and none should be inferred from the count.**
 `service_period_end` could be read fail-closed because the question was which
-side of a window a row falls on. This one cannot: the question is *how much* was
+side of a window a row falls on. This one cannot: the question is _how much_ was
 billed, and a null is not a quantity. Coercing it to zero is the current
 behaviour and is the bug; coercing it to anything else invents a number. The
 decision is to refuse on unknown, or to establish the column is never null on a
@@ -216,7 +375,7 @@ The agreement count is the one that sizes the exposure, because the sums are per
 agreement: ten such invoices on one agreement leave one figure unknown, one on
 each of ten leaves ten.
 
-It says *may* throughout, deliberately. A null proves the contribution is
+It says _may_ throughout, deliberately. A null proves the contribution is
 unknown — not that the invoice carried overage — so a flagged sum may read
 short and may be exactly right. This audit exists to establish whether #144 is
 live at all, and claiming more than counts can support is how an audit stops
@@ -250,3 +409,78 @@ Kind is applied before either, exactly as those lookups apply it — an ad-hoc o
 **No fix is implied for the cycle columns, and none should be inferred from the count.** A null service period can be read fail-closed because the question is which side of a window the row falls on. A null cycle cannot: the question is which single cycle the row belongs to, and counting it in every cycle would under-charge repeatedly rather than repair anything. Those rows need a real value, which is what this command exists to find.
 
 It reports counts and aggregate hours only — never a row, an id, an invoice number, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It always exits zero; it is a prompt to correct rows, not a gate.
+
+### Agreement handover coverage
+
+`svc:billing:audit-handovers --workspace=<workspace-public-id> --format=json`
+reports issued invoice coverage overlapping a successor, with at most 100 invoice
+identifiers. Omit `--workspace` for an operator report across all workspaces.
+It writes nothing and exits 0 when the report completes (2 for an unknown workspace).
+Review the original pricing and proration before correcting an invoice.
+`svc:billing:preflight-schedule-generation` also reports due schedule handover
+conflicts and exits 1 until they are resolved, using the generator's policy.
+
+### Deferred work settlement
+
+`svc:billing:deferred-buydown <workspace-public-id> <agreement-public-id>
+--user=<manager-public-id> --hours=4 --format=json` previews the same selection
+as REST/MCP. Use `--amount=<gross-minor-units>` instead of hours for a money target.
+`--round-up`, `--discount-amount=<minor-units>` and `--discount-reason=<text>` are
+optional. It writes nothing by default. To reserve the shown selection as a
+draft, repeat with `--apply --expected-backlog-version=<backlog_version>
+--idempotency-key=<key>`. Reusing the exact request and key returns the same draft.
+Refused input/versions or missing write arguments exit 2; a successful preview or
+creation exits 0. Issue and send remain separate operations.
+
+## Read signed processor movements
+
+`svc:finance:processor-movements` is the read-only console twin of
+`finance.processor_movements.list`, using the same workspace-scoped service as
+REST and MCP. The acting `--user` must be a workspace owner or admin. It needs no
+`--apply`: it performs no provider HTTP or database writes.
+
+```bash
+php artisan svc:finance:processor-movements --workspace=WORKSPACE_PUBLIC_UUID \
+  --user=USER_PUBLIC_UUID --provider=stripe --kind=refund --per-page=50 --format=json
+```
+
+The JSON envelope is `{data, meta: {next_cursor, watermark}}`. Pass `--cursor` to
+continue, retaining the original immutable filters; once complete, pass the
+watermark as `--updated-since` for the next inclusive pass. Optional filters are
+`--provider`, `--kind`, `--payment-id`, `--occurred-from` and `--occurred-to`.
+`--watermark` can fix an earlier snapshot. There is no numbered page or mutable
+review-status filter. See the [signed movement contract](../finance-api.md#signed-processor-movements)
+for money signs, public fields and deduplication.
+
+## Acknowledge a finance allocation review
+
+`svc:finance:acknowledge-reconciliation PAYMENT SYSTEM TRANSACTION` is the
+console twin of `finance.reconciliations.acknowledge`. Supply `--workspace`,
+`--user` (owner/admin), `--expected-payment-version`, `--expected-review-reason`,
+`--expected-review-flagged-at` and `--confirm`. It previews by default; `--apply`
+persists the acknowledgement and audit. Only the current review is cleared;
+allocated money and active state stay unchanged, including an allocation above
+payment net. A stale revision or cleared review fails and requires refetching,
+so the same confirmation never clears a later review. There is no browser action.
+See the [finance acknowledgement contract](../finance-api.md#acknowledge-an-allocation-review).
+
+## Native collaboration
+
+`php artisan svc:collaboration <operation> <workspace-uuid> <client-uuid>
+--actor=<user-uuid> --input=<private-json-path>` accepts the same nine short
+operations as REST: `topics.list/get/create/update/delete` and
+`comments.list/create/update/delete`. Input may also come from stdin with
+`--input=-`. Files must be regular, non-symlink files readable only by their
+owner; the input limit is 1 MiB, including Unicode bodies.
+
+The JSON object contains `payload` (the REST body or read query), optional `id`
+(the topic/comment UUID, or parent UUID for comment list/create), optional
+`parent_type` (`task` or `topic`), and a required `idempotency_key` for writes.
+`--format=json` returns the canonical result plus `dry_run` and `operation`.
+Writes preview by default and roll back content, activity and receipts; use
+`--apply` for the reviewed change. Reusing a key with different input fails.
+Versioned writes require `expected_version`; deletes also require `confirm:
+true`. The explicit actor's current staff role and parent access are checked,
+even on receipt replay. Native CLI is independent of agent deployment flags;
+portal access does not become a client write grant. No history or email is
+changed.

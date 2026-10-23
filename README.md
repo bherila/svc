@@ -89,6 +89,22 @@ endpoint, callback and `identity:read` scope, authorization-code response type,
 nonempty client/state and a valid S256 challenge, with one value per required
 parameter. Redirect query values never appear in arguments or verification logs.
 
+The deploy action owns SVC's one cron line, the every-minute `schedule:run` from
+`cd "$HOME/svc-laravel"` with a 1G memory limit and `# JOB:svc-laravel-scheduler`. It pauses
+the line before maintenance, replaces any legacy line run from that directory and installs the
+canonical line once the release serves; other applications' lines are left alone. Preflight
+refuses an SVC line spelled any other way (`~/svc-laravel`, a release path, a bare job id),
+because the action could neither pause nor replace it. Live verification and the post-finalize
+diagnostic then require exactly one SVC line, the canonical one, and report fixed labels only.
+
+The `deployment-diagnostic` workflow (manual dispatch from `main`, behind the `web1`
+environment) re-checks a live deployment without changing it. Give it the release id and
+full commit from a reviewed deploy run; it runs the pinned action's finalized runtime audit
+(identity, canonical paths, serving, no `deploy.lock`, no open transactions, zero pending
+migrations, persistent database), the cron proof and the hashed asset audit, then re-proves
+the deployment generation so a deploy that began mid-run fails it. It issues no credentials
+and runs no storage write probe.
+
 ### There is no queue worker
 
 Nothing on the shared account runs `queue:work`, so anything dispatched to the
@@ -113,7 +129,9 @@ later over a webhook. Point Brevo's transactional event webhook at
 credentials are rejected. Brevo signs nothing, so that shared secret is the
 only guard: with none configured the endpoint refuses every request. Check a
 deployment without exposing either secret with `php artisan svc:brevo:status
---format=json`.
+--format=json`. `php artisan svc:square:status --format=json` does the same for
+Square and also reports the last mirror sync; see
+[Square payment status](docs/square-status.md#status-probe).
 
 ## Private-file mirror
 
@@ -149,9 +167,11 @@ and manifests are private data and must never be added to this public repository
 ## Finance reconciliation API
 
 SVC exposes a narrow, versioned bearer-token API for listing invoice payments and
-linking them to transaction UUIDs owned by an external finance system. Tokens are
-expiring, stored only as hashes, and require explicit `finance.read` or
-`finance.reconcile` abilities. See [the API contract](docs/finance-api.md).
+linking them to transaction UUIDs owned by an external finance system. Its finance
+integration tokens are expiring, stored only as hashes, and require explicit
+`finance.read` or `finance.reconcile` abilities; OAuth clients use the
+`finance:read` / `finance:reconcile` scopes, and the same operations are MCP tools
+and `svc:finance:*` commands. See [the API contract](docs/finance-api.md).
 
 ## Connect an MCP client
 
@@ -212,7 +232,12 @@ endpoint have their own, separate list (`oauth_server.cors` in `config/bherila-a
 which admits the hosted agents' browser origins.
 Dynamic public-client registrations are marked at creation, updated when used, and
 pruned after 30 inactive days by the scheduled
-`svc:oauth:prune-dynamic-clients` command (the retention is configurable).
+`bherila-auth:prune-dynamic-clients` command (`AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS`
+sets the retention; `svc:oauth:prune-dynamic-clients` remains as an alias).
+Expired Passport tokens and authorization codes are purged daily, 31 days past
+their expiry, by a scheduled `passport:purge --expired --hours=744`; see
+[Token retention](docs/mcp-operations.md#token-retention) for why revoked rows
+are not purged sooner.
 
 ## Agent skills
 

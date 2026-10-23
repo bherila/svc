@@ -10,6 +10,7 @@ use App\Services\AgentApi\AgentAgreementReadService;
 use App\Services\AgentApi\AgentClientMutationAction;
 use App\Services\AgentApi\AgentClientReadService;
 use App\Services\AgentApi\AgentMutationContextFactory;
+use App\Support\AgentApi\ChangeWindow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -25,9 +26,9 @@ final class AgentClientController extends Controller
 
     public function index(Request $request, Workspace $workspace): JsonResponse
     {
-        $data = $request->validate(['status' => ['nullable', 'in:active,archived'], 'limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['nullable', 'string', 'max:2048']]);
+        $data = $request->validate(['status' => ['nullable', 'in:active,archived'], 'limit' => ['sometimes', 'integer', 'min:1', 'max:100'], 'cursor' => ['nullable', 'string', 'max:2048'], ...ChangeWindow::rules()]);
 
-        return response()->json($this->clients->list($this->principal($request), $workspace, $data['status'] ?? null, (int) ($data['limit'] ?? 25), $data['cursor'] ?? null));
+        return response()->json($this->clients->list($this->principal($request), $workspace, $data['status'] ?? null, (int) ($data['limit'] ?? 25), $data['cursor'] ?? null, ChangeWindow::from($data)));
     }
 
     public function show(Request $request, Workspace $workspace, string $client): JsonResponse

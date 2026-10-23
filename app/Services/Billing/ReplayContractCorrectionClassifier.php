@@ -520,7 +520,7 @@ final class ReplayContractCorrectionClassifier
 
         $unexpectedByCompany = [];
         foreach ($actual as $key => $snapshot) {
-            if (isset($expected[$key]) || ($snapshot['invoice_kind'] ?? null) === InvoiceKind::AdHoc->value) {
+            if (isset($expected[$key]) || in_array($snapshot['invoice_kind'] ?? null, InvoiceKind::preservedHistoryValues(), true)) {
                 continue;
             }
             [$companyId, $agreementId, $kind, $identity] = array_pad(explode('|', $key, 4), 4, '');

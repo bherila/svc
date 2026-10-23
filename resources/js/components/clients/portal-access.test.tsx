@@ -1,15 +1,15 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 
 const inertia = vi.hoisted(() => ({
-    delete: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(),
+    reload: vi.fn((options?: { onFinish?: () => void }) =>
+        options?.onFinish?.(),
+    ),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -19,10 +19,40 @@ vi.mock('@inertiajs/react', () => ({
     ),
 }));
 
+const api = '/api/v1/workspaces/workspace-1/clients/client-1';
+const version = 'a'.repeat(64);
+let fetchMock: ReturnType<typeof vi.fn>;
+
+function respond(...answers: [number, unknown][]) {
+    for (const [status, body] of answers) {
+        fetchMock.mockResolvedValueOnce(
+            new Response(JSON.stringify(body), {
+                status,
+                headers: { 'Content-Type': 'application/json' },
+            }),
+        );
+    }
+}
+
+function request(index = 0) {
+    const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
+
+    return {
+        url,
+        method: init.method,
+        body: JSON.parse(String(init.body)) as Record<string, unknown>,
+        key: (init.headers as Record<string, string>)['Idempotency-Key'],
+    };
+}
+
 beforeEach(() => {
-    inertia.delete.mockReset();
-    inertia.post.mockReset();
-    inertia.put.mockReset();
+    inertia.reload.mockClear();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
 });
 
 const props = (
@@ -34,15 +64,23 @@ const props = (
         { id: 'project-beta', name: 'SyntheticProjectName'.repeat(20) },
     ],
     portal: {
-        add_url: '/synthetic/portal-access',
+        add_url: `${api}/portal-access`,
         members: [
             {
                 id: 'contact-1',
                 name: 'SyntheticContactName'.repeat(20),
                 email: `${'synthetic'.repeat(30)}@client.example.test`,
                 scope: 'projects',
-                projects: ['project-beta'],
-                url: '/synthetic/portal-access/contact-1',
+                projects: [
+                    {
+                        id: 'project-beta',
+                        name: 'SyntheticProjectName'.repeat(20),
+                        href: '/api/v1/workspaces/workspace-1/projects/project-beta',
+                    },
+                ],
+                version,
+                update_href: `${api}/portal-access/contact-1`,
+                revoke_href: `${api}/portal-access/contact-1`,
             },
         ],
     },
@@ -73,10 +111,7 @@ describe('portal access', () => {
         render(
             <PortalAccess
                 {...props({
-                    portal: {
-                        add_url: '/synthetic/portal-access',
-                        members: [],
-                    },
+                    portal: { add_url: `${api}/portal-access`, members: [] },
                 })}
             />,
         );
@@ -86,21 +121,31 @@ describe('portal access', () => {
         ).toBeInTheDocument();
     });
 
-    it('saves a contact to the server URL with only the chosen projects', async () => {
+    it('saves a contact through the API with its version, then reloads', async () => {
+        respond([200, { data: {} }]);
         const user = userEvent.setup();
         render(<PortalAccess {...props()} />);
 
         await user.click(screen.getByRole('checkbox', { name: 'Alpha' }));
         await user.click(screen.getByRole('button', { name: 'Save access' }));
 
-        expect(inertia.put).toHaveBeenCalledWith(
-            '/synthetic/portal-access/contact-1',
-            { scope: 'projects', projects: ['project-beta', 'project-alpha'] },
-            expect.objectContaining({ preserveScroll: true }),
-        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        const sent = request();
+        expect([sent.method, sent.url]).toEqual([
+            'PATCH',
+            `${api}/portal-access/contact-1`,
+        ]);
+        expect(sent.body).toEqual({
+            scope: 'projects',
+            projects: ['project-beta', 'project-alpha'],
+            expected_version: version,
+            confirm: true,
+        });
+        expect(sent.key).toEqual(expect.any(String));
     });
 
     it('sends no projects for access to the whole client', async () => {
+        respond([200, { data: {} }]);
         const user = userEvent.setup();
         render(<PortalAccess {...props()} />);
 
@@ -112,41 +157,64 @@ describe('portal access', () => {
         );
         await user.click(screen.getByRole('button', { name: 'Save access' }));
 
-        expect(inertia.put).toHaveBeenCalledWith(
-            '/synthetic/portal-access/contact-1',
-            { scope: 'company', projects: [] },
-            expect.anything(),
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+        expect(request().body).toMatchObject({
+            scope: 'company',
+            projects: [],
+        });
+    });
+
+    it('shows a stale version refusal on the row and keeps the page', async () => {
+        respond([
+            409,
+            {
+                message:
+                    'Portal access changed. Read it again before confirming.',
+            },
+        ]);
+        const user = userEvent.setup();
+        render(<PortalAccess {...props()} />);
+
+        await user.click(screen.getByRole('button', { name: 'Save access' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Portal access changed. Read it again before confirming.',
         );
+        expect(inertia.reload).not.toHaveBeenCalled();
     });
 
     it('removes a contact only after confirming', async () => {
+        respond([200, { data: { revoked: true } }]);
         const user = userEvent.setup();
         render(<PortalAccess {...props()} />);
 
         await user.click(screen.getByRole('button', { name: 'Remove' }));
-        expect(inertia.delete).not.toHaveBeenCalled();
+        expect(fetchMock).not.toHaveBeenCalled();
         expect(screen.getByRole('alertdialog')).toHaveTextContent(
             'Synthetic Client portal',
         );
         await user.click(screen.getByRole('button', { name: 'Remove access' }));
 
-        expect(inertia.delete).toHaveBeenCalledWith(
-            '/synthetic/portal-access/contact-1',
-            expect.anything(),
-        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        expect(request()).toMatchObject({
+            method: 'DELETE',
+            url: `${api}/portal-access/contact-1`,
+            body: { expected_version: version, confirm: true },
+        });
     });
 
     it('adds a contact by email and shows why the server refused', async () => {
-        inertia.post.mockImplementation(
-            (
-                _url: string,
-                _data: unknown,
-                options: { onError: (errors: Record<string, string>) => void },
-            ) =>
-                options.onError({
-                    email: 'Nobody signs in with that address yet. Ask them to sign in once, then add them.',
-                }),
-        );
+        respond([
+            422,
+            {
+                message: 'The given data was invalid.',
+                errors: {
+                    email: [
+                        'Nobody signs in with that address yet. Ask them to sign in once, then add them.',
+                    ],
+                },
+            },
+        ]);
         const user = userEvent.setup();
         render(<PortalAccess {...props()} />);
 
@@ -158,18 +226,89 @@ describe('portal access', () => {
             screen.getByRole('button', { name: 'Give portal access' }),
         );
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/synthetic/portal-access',
-            {
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Nobody signs in with that address yet.',
+        );
+        expect(request()).toMatchObject({
+            method: 'POST',
+            url: `${api}/portal-access`,
+            body: {
                 email: 'new@client.example.test',
                 scope: 'company',
                 projects: [],
+                confirm: true,
             },
-            expect.anything(),
+        });
+        expect(inertia.reload).not.toHaveBeenCalled();
+    });
+
+    it('clears the form once a contact is added', async () => {
+        respond([201, { data: {} }]);
+        const user = userEvent.setup();
+        render(<PortalAccess {...props()} />);
+
+        await user.type(
+            screen.getByLabelText('Add a contact'),
+            'new@client.example.test',
         );
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'Nobody signs in with that address yet.',
+        await user.click(
+            screen.getByRole('button', { name: 'Give portal access' }),
         );
+
+        await waitFor(() =>
+            expect(screen.getByLabelText('Add a contact')).toHaveValue(''),
+        );
+        expect(inertia.reload).toHaveBeenCalledOnce();
+    });
+
+    it('retries a grant whose answer was lost with the same key', async () => {
+        fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+        respond([201, { data: {} }]);
+        const user = userEvent.setup();
+        render(<PortalAccess {...props()} />);
+
+        await user.type(
+            screen.getByLabelText('Add a contact'),
+            'new@client.example.test',
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Give portal access' }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'SVC could not be reached.',
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Give portal access' }),
+        );
+
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        expect(request(1).key).toBe(request(0).key);
+    });
+
+    it('starts from the reloaded access when a contact changes elsewhere', () => {
+        const page = props();
+        const { rerender } = render(<PortalAccess {...page} />);
+        const name = `Portal access for ${'SyntheticContactName'.repeat(20)}`;
+        expect(screen.getByRole('combobox', { name })).toHaveValue('projects');
+
+        rerender(
+            <PortalAccess
+                {...page}
+                portal={{
+                    ...page.portal,
+                    members: [
+                        {
+                            ...page.portal.members[0],
+                            scope: 'company',
+                            projects: [],
+                            version: 'b'.repeat(64),
+                        },
+                    ],
+                }}
+            />,
+        );
+
+        expect(screen.getByRole('combobox', { name })).toHaveValue('company');
     });
 
     it('offers selected projects only when the client has some', () => {
@@ -177,10 +316,7 @@ describe('portal access', () => {
             <PortalAccess
                 {...props({
                     projects: [],
-                    portal: {
-                        add_url: '/synthetic/portal-access',
-                        members: [],
-                    },
+                    portal: { add_url: `${api}/portal-access`, members: [] },
                 })}
             />,
         );
@@ -196,9 +332,9 @@ describe('portal access', () => {
         const invitationProps = () =>
             props({
                 portal: {
-                    add_url: '/synthetic/portal-access',
+                    add_url: `${api}/portal-access`,
                     members: [],
-                    invite_url: '/synthetic/portal-invitations',
+                    invite_url: `${api}/portal-invitations`,
                     invitations: [
                         {
                             id: 'invitation-1',
@@ -210,10 +346,8 @@ describe('portal access', () => {
                             expires_at: '2026-10-19T12:00:00Z',
                             email_sent: true,
                             link: longLink,
-                            resend_url:
-                                '/synthetic/portal-invitations/invitation-1/resend',
-                            revoke_url:
-                                '/synthetic/portal-invitations/invitation-1',
+                            resend_url: `${api}/portal-invitations/invitation-1/resend`,
+                            revoke_url: `${api}/portal-invitations/invitation-1`,
                         },
                         {
                             id: 'invitation-2',
@@ -226,8 +360,7 @@ describe('portal access', () => {
                             email_sent: true,
                             link: null,
                             resend_url: null,
-                            revoke_url:
-                                '/synthetic/portal-invitations/invitation-2',
+                            revoke_url: `${api}/portal-invitations/invitation-2`,
                         },
                     ],
                 },
@@ -280,6 +413,7 @@ describe('portal access', () => {
         });
 
         it('offers a provider withdrawal retry without exposing an admission link', async () => {
+            respond([200, { data: {} }]);
             const page = invitationProps();
             page.portal.invitations = [
                 {
@@ -301,51 +435,70 @@ describe('portal access', () => {
             await userEvent.click(
                 screen.getByRole('button', { name: 'Retry withdrawal' }),
             );
-            expect(inertia.delete).not.toHaveBeenCalled();
+            expect(fetchMock).not.toHaveBeenCalled();
             await userEvent.click(
                 within(screen.getByRole('alertdialog')).getByRole('button', {
                     name: 'Withdraw invitation',
                 }),
             );
-            expect(inertia.delete).toHaveBeenCalledWith(
-                page.portal.invitations[0].revoke_url,
-                expect.any(Object),
-            );
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+            expect(request()).toMatchObject({
+                method: 'DELETE',
+                url: page.portal.invitations[0].revoke_url,
+                body: { confirm: true },
+            });
             expect(horizontalOverflowRisks(container)).toEqual([]);
         });
 
         it('sends an invitation again and withdraws one only after confirming', async () => {
-            inertia.post.mockImplementationOnce(
-                (
-                    _url: string,
-                    _data: unknown,
-                    options: { onFinish: () => void },
-                ) => options.onFinish(),
-            );
+            respond([200, { data: {} }], [200, { data: {} }]);
             const user = userEvent.setup();
             render(<PortalAccess {...invitationProps()} />);
 
             await user.click(
                 screen.getByRole('button', { name: 'Send again' }),
             );
-            expect(inertia.post).toHaveBeenCalledWith(
-                '/synthetic/portal-invitations/invitation-1/resend',
-                {},
-                expect.objectContaining({ preserveScroll: true }),
-            );
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+            expect(request()).toMatchObject({
+                method: 'POST',
+                url: `${api}/portal-invitations/invitation-1/resend`,
+                body: { confirm: true },
+            });
 
             await user.click(screen.getByRole('button', { name: 'Withdraw' }));
-            expect(inertia.delete).not.toHaveBeenCalled();
+            expect(fetchMock).toHaveBeenCalledOnce();
             await user.click(
                 screen.getByRole('button', { name: 'Withdraw invitation' }),
             );
-            expect(inertia.delete).toHaveBeenCalledWith(
-                '/synthetic/portal-invitations/invitation-1',
-                expect.anything(),
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+            expect(request(1)).toMatchObject({
+                method: 'DELETE',
+                url: `${api}/portal-invitations/invitation-1`,
+            });
+        });
+
+        it('retries a lost resend with the same key, so it is not sent twice', async () => {
+            fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+            respond([200, { data: {} }]);
+            const user = userEvent.setup();
+            render(<PortalAccess {...invitationProps()} />);
+
+            await user.click(
+                screen.getByRole('button', { name: 'Send again' }),
             );
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                'SVC could not be reached.',
+            );
+            await user.click(
+                screen.getByRole('button', { name: 'Send again' }),
+            );
+
+            await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+            expect(request(1).key).toBe(request(0).key);
         });
 
         it('dismisses a not-applied invitation, which cannot be sent again', async () => {
+            respond([200, { data: {} }]);
             const user = userEvent.setup();
             render(<PortalAccess {...invitationProps()} />);
 
@@ -358,27 +511,27 @@ describe('portal access', () => {
                     name: 'Dismiss',
                 }),
             );
-            expect(inertia.delete).toHaveBeenCalledWith(
-                '/synthetic/portal-invitations/invitation-2',
-                expect.anything(),
-            );
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+            expect(request()).toMatchObject({
+                method: 'DELETE',
+                url: `${api}/portal-invitations/invitation-2`,
+            });
         });
 
         it('offers to send an invitation when nobody signs in with the address', async () => {
-            inertia.post.mockImplementationOnce(
-                (
-                    _url: string,
-                    _data: unknown,
-                    options: {
-                        onError: (errors: Record<string, string>) => void;
-                        onFinish: () => void;
+            respond(
+                [
+                    422,
+                    {
+                        message: 'The given data was invalid.',
+                        errors: {
+                            invite: [
+                                'Nobody signs in with that address yet. Send them an invitation, and they get this access when they first sign in.',
+                            ],
+                        },
                     },
-                ) => {
-                    options.onError({
-                        invite: 'Nobody signs in with that address yet. Send them an invitation, and they get this access when they first sign in.',
-                    });
-                    options.onFinish();
-                },
+                ],
+                [201, { data: {} }],
             );
             const user = userEvent.setup();
             render(<PortalAccess {...invitationProps()} />);
@@ -394,30 +547,111 @@ describe('portal access', () => {
                 screen.getByRole('button', { name: 'Give portal access' }),
             );
             await user.click(
-                screen.getByRole('button', { name: 'Send invitation' }),
+                await screen.findByRole('button', { name: 'Send invitation' }),
             );
 
-            expect(inertia.post).toHaveBeenLastCalledWith(
-                '/synthetic/portal-invitations',
-                {
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+            expect(request(1)).toMatchObject({
+                method: 'POST',
+                url: `${api}/portal-invitations`,
+                body: {
                     email: 'new@client.example.test',
                     scope: 'company',
                     projects: [],
+                    confirm: true,
                 },
-                expect.objectContaining({ preserveScroll: true }),
+            });
+        });
+
+        it('keeps offering a failed invitation, to retry with the same key', async () => {
+            respond(
+                [
+                    422,
+                    {
+                        message: 'The given data was invalid.',
+                        errors: {
+                            invite: ['Nobody signs in with that address yet.'],
+                        },
+                    },
+                ],
+                [
+                    503,
+                    {
+                        message:
+                            'The identity provider is unavailable. Try again later.',
+                    },
+                ],
+                [201, { data: {} }],
             );
+            const user = userEvent.setup();
+            render(<PortalAccess {...invitationProps()} />);
+
+            await user.type(
+                screen.getByLabelText('Add a contact'),
+                'new@client.example.test',
+            );
+            await user.click(
+                screen.getByRole('button', { name: 'Give portal access' }),
+            );
+            await user.click(
+                await screen.findByRole('button', { name: 'Send invitation' }),
+            );
+            expect(
+                await screen.findByText(
+                    'The identity provider is unavailable. Try again later.',
+                ),
+            ).toBeInTheDocument();
+            await user.click(
+                screen.getByRole('button', { name: 'Send invitation' }),
+            );
+
+            await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+            expect(request(2).key).toBe(request(1).key);
+            expect(request(2).url).toBe(`${api}/portal-invitations`);
+        });
+
+        it('shows a withdrawal whose provider half failed, and retries it with the same key', async () => {
+            respond(
+                [
+                    503,
+                    {
+                        message:
+                            'The identity provider is unavailable. Try again later.',
+                    },
+                ],
+                [200, { data: {} }],
+            );
+            const user = userEvent.setup();
+            render(<PortalAccess {...invitationProps()} />);
+
+            await user.click(screen.getByRole('button', { name: 'Withdraw' }));
+            await user.click(
+                screen.getByRole('button', { name: 'Withdraw invitation' }),
+            );
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                'The identity provider is unavailable.',
+            );
+            // Access was withdrawn locally, so the page reloads to say so.
+            expect(inertia.reload).toHaveBeenCalledOnce();
+
+            await user.click(screen.getByRole('button', { name: 'Withdraw' }));
+            await user.click(
+                screen.getByRole('button', { name: 'Withdraw invitation' }),
+            );
+            await waitFor(() =>
+                expect(inertia.reload).toHaveBeenCalledTimes(2),
+            );
+            expect(request(1).key).toBe(request(0).key);
         });
 
         it('never offers an invitation while invitations are off', async () => {
-            inertia.post.mockImplementationOnce(
-                (
-                    _url: string,
-                    _data: unknown,
-                    options: {
-                        onError: (errors: Record<string, string>) => void;
-                    },
-                ) => options.onError({ invite: 'Synthetic refusal.' }),
-            );
+            respond([
+                422,
+                {
+                    message: 'The given data was invalid.',
+                    errors: { invite: ['Synthetic refusal.'] },
+                },
+            ]);
             const user = userEvent.setup();
             render(<PortalAccess {...props()} />);
 
@@ -429,6 +663,9 @@ describe('portal access', () => {
                 screen.getByRole('button', { name: 'Give portal access' }),
             );
 
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                'Synthetic refusal.',
+            );
             expect(
                 screen.queryByRole('button', { name: 'Send invitation' }),
             ).not.toBeInTheDocument();

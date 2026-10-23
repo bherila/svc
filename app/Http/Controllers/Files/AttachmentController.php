@@ -7,9 +7,10 @@ use App\Http\Requests\Files\StoreAttachmentRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentAction;
+use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentRecordResolver;
 use App\Services\Files\AttachmentStorageService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -24,7 +25,7 @@ class AttachmentController extends Controller
         string $recordType,
         string $recordPublicId,
         AttachmentAction $action,
-    ): RedirectResponse|JsonResponse {
+    ): RedirectResponse {
         Gate::authorize('manage', $workspace);
 
         $file = $request->file('file');
@@ -34,18 +35,7 @@ class AttachmentController extends Controller
 
         $attachment = $action->store($workspace, $recordType, $recordPublicId, $file, $user);
 
-        if ($request->expectsJson()) {
-            return response()->json([
-                'id' => $attachment->public_id,
-                'record_type' => $attachment->record_type,
-                'record_id' => $attachment->record_public_id,
-                'media_type' => $attachment->media_type,
-                'bytes' => $attachment->bytes,
-                'sha256' => $attachment->sha256,
-                'status' => $attachment->lifecycle_state,
-            ], 201);
-        }
-
+        // No JSON shape of its own (#454): a program uses attachments.upload.
         return redirect()->back()->with('attachment_id', $attachment->public_id);
     }
 
@@ -55,20 +45,18 @@ class AttachmentController extends Controller
         string $clientAttachment,
         AttachmentStorageService $storage,
         AttachmentRecordResolver $recordResolver,
+        AttachmentReader $reader,
     ): StreamedResponse {
         $attachment = $storage->findForWorkspace($workspace, $clientAttachment);
         $user = $request->user();
         abort_unless($user instanceof User, 401);
+        $recordResolver->resolve($workspace, $attachment->record_type, $attachment->record_public_id);
         if ($attachment->record_type === 'expense') {
             Gate::authorize('manage', $workspace);
-            $recordResolver->resolve($workspace, 'expense', $attachment->record_public_id);
-
-            return $storage->download($attachment);
         }
 
         abort_unless(
-            Gate::forUser($user)->allows('view', $workspace)
-                || $recordResolver->portalUserCanView($user, $workspace, $attachment),
+            $reader->canView($user, $workspace, $attachment, AttachmentAudience::Native),
             403,
         );
 
@@ -79,18 +67,10 @@ class AttachmentController extends Controller
         Workspace $workspace,
         string $clientAttachment,
         AttachmentAction $action,
-        Request $request,
-    ): RedirectResponse|JsonResponse {
+    ): RedirectResponse {
         Gate::authorize('manage', $workspace);
 
-        $attachment = $action->delete($workspace, $clientAttachment);
-
-        if ($request->expectsJson()) {
-            return response()->json([
-                'id' => $attachment->public_id,
-                'status' => 'deleting',
-            ], 202);
-        }
+        $action->delete($workspace, $clientAttachment);
 
         return redirect()->back()->with('status', 'Attachment queued for deletion.');
     }

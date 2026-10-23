@@ -3,10 +3,15 @@
 namespace Tests\Feature\Models;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientCollaborationTopic;
+use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
+use App\Models\ClientInvoicePayment;
+use App\Models\ClientTask;
+use App\Models\PaymentReconciliation;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,8 +57,29 @@ final class FillableCoverageTest extends TestCase
      * @var array<class-string, array<string, string>>
      */
     private const MODEL_EXEMPT = [
+        ClientCollaborationTopic::class => [
+            'edited_at' => 'Set only by CollaborationAction through the scoped repository after an authorized text edit, using the workspace clock; callers cannot supply an edit timestamp.',
+        ],
+        ClientComment::class => [
+            'edited_at' => 'Set only by CollaborationAction through the scoped repository after an authorized text edit, using the workspace clock; callers cannot supply an edit timestamp.',
+        ],
+        ClientTask::class => [
+            'parent_task_id' => 'Reader-only organization prerequisite; no public structural writer is enabled. Future graph persistence must validate and lock the complete scoped topology.',
+            'client_task_list_id' => 'Reader-only organization prerequisite; no public list writer is enabled. Future persistence must validate the same-project root-list invariant under lock.',
+        ],
         ClientCompany::class => [
             'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
+        ],
+        ClientInvoicePayment::class => [
+            'provider_charged_at' => 'A processor settlement fact (S7). Written only by ProcessorSettlementRecorder from what Stripe or Square reports, through the query builder with the payment\'s revision; assignable through the model, a correction could invent the processor\'s own record.',
+            'provider_fee_amount' => 'Written with provider_charged_at, by the same recorder.',
+            'provider_payout_identifier' => 'Written with provider_charged_at, by the same recorder.',
+            'provider_payout_arrival_date' => 'Written with provider_charged_at, by the same recorder.',
+            'provider_payout_reported_at_ms' => 'How current the payout report behind provider_payout_identifier is; written with it, by the same recorder, which refuses an older report against it.',
+        ],
+        PaymentReconciliation::class => [
+            'review_reason' => 'Set only by InvoiceLifecycleService when a payment processor refunds or disputes the payment, and cleared by PaymentReconciliationService::upsert(); a caller-assigned value would hide a refund from review.',
+            'review_flagged_at' => 'Written with review_reason, by the same two operations.',
         ],
         User::class => [
             'email_verified_at' => 'Set by the verification flow, never by user input.',
@@ -63,6 +89,7 @@ final class FillableCoverageTest extends TestCase
             'last_client_company_id' => 'The same, for the client. Both are revalidated against current access on the way out, but a value that can only be written after authorization is one fewer thing that has to be.',
         ],
         ClientAgreement::class => [
+            'square_location_id' => 'The billed-in-Square marker\'s location (#488), written with square_series_key by SquareLinkService and the customer import only, through forceFill, for the same reason.',
             'square_series_key' => 'The billed-in-Square marker (#438). Written only by SquareLinkService through forceFill, under the agreement lock, after the version check and the one-agreement-per-series check; assignable through the model, an agreement update could switch off SVC\'s collection paths with no confirmation and no history.',
         ],
         ClientInvoice::class => [

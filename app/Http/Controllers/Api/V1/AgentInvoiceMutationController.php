@@ -4,90 +4,43 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AgentPrincipal;
-use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentInvoiceOperations;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentMutationExecutor;
+use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\IssueInvoiceAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
-use App\Services\Billing\InvoiceEmailService;
-use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
-use App\Support\Billing\InvoiceEmailDraft;
-use App\Support\Billing\InvoiceLineType;
+use App\Support\AgentApi\ReadView;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 final class AgentInvoiceMutationController extends Controller
 {
-    public function createDraft(
-        Request $request,
-        Workspace $workspace,
-        AgentAccess $access,
-        InvoiceFromTimeService $fromTime,
-        AgentInvoicePresenter $presenter,
-        AgentMutationContextFactory $contexts,
-        AgentMutationExecutor $mutations,
-    ): JsonResponse {
+    public function createDraft(Request $request, Workspace $workspace, AgentInvoiceOperations $operations, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts): JsonResponse
+    {
         $context = $contexts->from($request);
-        $ids = $mutations->run(
-            $context->user,
-            $workspace,
-            $context->oauthClientId,
-            'invoices.create_draft',
-            $context->idempotencyKey,
-            $request->all(),
-            function () use ($request, $workspace, $access, $context, $fromTime): array {
-                $data = $request->validate($this->draftRules());
-                abort_unless($access->isWorkspaceManager($context->user, $workspace), 403);
-                $company = ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $data['company_id'])->firstOrFail();
-                $invoice = $fromTime->create(
-                    $workspace,
-                    $company,
-                    Arr::only($data, ['currency', 'due_date', 'scheduled_issue_date', 'notes']),
-                    $data['time_entry_ids'] ?? [],
-                    $data['manual_lines'] ?? [],
-                );
-
-                return [$invoice->public_id];
-            },
-            fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403),
-        );
-        $invoice = $this->findInvoice($workspace, $ids[0] ?? null);
+        $invoice = $operations->createDraft($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all());
 
         return response()->json(['data' => $presenter->mutation($workspace, $invoice)], 201);
     }
 
-    public function updateDraft(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceFromTimeService $fromTime, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentMutationExecutor $mutations): JsonResponse
+    public function updateDraft(Request $request, Workspace $workspace, string $invoice, AgentInvoiceOperations $operations, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts): JsonResponse
     {
         $context = $contexts->from($request);
-        $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.update_draft', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $fromTime): array {
-            $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
-            $data = $request->validate($this->draftRules(true));
-            $record = $fromTime->updateDraft(
-                $record,
-                $workspace,
-                $data['expected_version'],
-                Arr::only($data, ['currency', 'due_date', 'scheduled_issue_date', 'notes']),
-                $data['time_entry_ids'],
-                $data['manual_lines'],
-            );
-
-            return [$record->public_id];
-        }, fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403));
-        $record = $this->findInvoice($workspace, $ids[0] ?? null);
+        $record = $operations->updateDraft($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $invoice, $request->all());
 
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
@@ -179,18 +132,26 @@ final class AgentInvoiceMutationController extends Controller
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
 
-    public function issue(Request $request, Workspace $workspace, string $invoice, IssueInvoiceAction $issue, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentTokenScopes $scopes): JsonResponse
+    public function issue(Request $request, Workspace $workspace, string $invoice, IssueInvoiceAction $issue, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentTokenScopes $scopes, AgentReadService $reads): JsonResponse
     {
         $context = $contexts->from($request);
+        $readView = ReadView::requested($request);
         $ids = $issue->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
             $context->idempotencyKey,
             $invoice,
-            $request->all(),
+            ReadView::payload($request),
             $scopes->allows($request, AgentApiScopes::PAYMENTS_RECORD),
         );
+        // The invoice exactly as invoices.get presents it, for a caller who may read invoices.
+        if ($readView && $scopes->allows($request, AgentApiScopes::BILLING_READ)) {
+            $reader = $request->user();
+            abort_unless($reader instanceof User || $reader instanceof AgentPrincipal, 401);
+
+            return response()->json(['data' => $reads->invoice($reader, $workspace, $ids[0] ?? '')]);
+        }
         $record = $this->findInvoice($workspace, $ids[0] ?? null);
 
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
@@ -201,7 +162,7 @@ final class AgentInvoiceMutationController extends Controller
         $context = $contexts->from($request);
         $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.void', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $lifecycle): array {
             $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
-            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:1000'], 'confirm' => ['required', new ExplicitConfirmation]]);
+            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:'.ClientInvoice::VOID_REASON_MAX_LENGTH], 'confirm' => ['required', new ExplicitConfirmation]]);
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
             $record = $lifecycle->void($record, $workspace, $data['reason']);
 
@@ -212,26 +173,10 @@ final class AgentInvoiceMutationController extends Controller
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
 
-    public function send(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceEmailService $email, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentMutationExecutor $mutations): JsonResponse
+    public function send(Request $request, Workspace $workspace, string $invoice, AgentInvoiceOperations $operations, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts): JsonResponse
     {
         $context = $contexts->from($request);
-        $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.send', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $email): array {
-            $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
-            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'recipients' => ['required', 'array', 'min:1', 'max:10'], 'recipients.*' => ['email'], 'confirm' => ['required', new ExplicitConfirmation]]);
-            abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
-            // Registered here and sent when this mutation's transaction
-            // commits: the receipt and the effect have to land together, and an
-            // email already gone is not something a rollback can take back.
-            $email->sendAfterCommit($record, InvoiceEmailDraft::of(
-                $data['recipients'],
-                [],
-                $email->defaultSubject($record),
-                null,
-            ), $workspace);
-
-            return [$record->public_id];
-        }, fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403));
-        $record = $this->findInvoice($workspace, $ids[0] ?? null);
+        $record = $operations->send($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $invoice, $request->all());
 
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
@@ -246,33 +191,5 @@ final class AgentInvoiceMutationController extends Controller
     private function findInvoice(Workspace $workspace, ?string $id): ClientInvoice
     {
         return ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->with('clientCompany')->firstOrFail();
-    }
-
-    /** @return array<string, list<mixed>> */
-    private function draftRules(bool $updating = false): array
-    {
-        $rules = [
-            'currency' => ['nullable', 'string', 'size:3'],
-            'due_date' => ['nullable', 'date'],
-            'scheduled_issue_date' => ['nullable', 'date_format:Y-m-d'],
-            'notes' => ['nullable', 'string', 'max:10000'],
-            'time_entry_ids' => [$updating ? 'present' : 'sometimes', 'array', 'max:100'],
-            'time_entry_ids.*' => ['uuid', 'distinct'],
-            'manual_lines' => [$updating ? 'present' : 'sometimes', 'array', 'max:100'],
-            'manual_lines.*' => ['array:project_id,type,description,quantity,unit_amount,tax_amount'],
-            'manual_lines.*.project_id' => ['nullable', 'uuid'],
-            'manual_lines.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::systemOnlyValues())],
-            'manual_lines.*.description' => ['required', 'string', 'max:10000'],
-            'manual_lines.*.quantity' => ['required'],
-            'manual_lines.*.unit_amount' => ['required', 'integer', 'min:0'],
-            'manual_lines.*.tax_amount' => ['nullable', 'integer', 'min:0'],
-        ];
-        if ($updating) {
-            $rules['expected_version'] = ['required', 'string', 'size:64'];
-        } else {
-            $rules['company_id'] = ['required', 'uuid'];
-        }
-
-        return $rules;
     }
 }

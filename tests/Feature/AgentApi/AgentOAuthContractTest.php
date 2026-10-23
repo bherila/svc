@@ -69,16 +69,22 @@ final class AgentOAuthContractTest extends TestCase
     }
 
     /** A route under /api/v1 that is not an OAuth resource keeps its plain 401. */
-    public function test_a_route_without_a_protected_resource_keeps_the_application_challenge(): void
+    /**
+     * The finance reconciliation routes were the one place under /api/v1 that
+     * named no protected resource and so kept the application's own 401. As
+     * registry operations that also admit REST OAuth tokens (#457), they name
+     * the REST resource and challenge as it does; the status is unchanged.
+     */
+    public function test_the_finance_routes_challenge_as_the_rest_resource(): void
     {
         $workspace = Workspace::query()->create(['name' => 'Challenge workspace', 'slug' => 'challenge-workspace']);
 
         $response = $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoice-payments")
             ->assertUnauthorized()
-            ->assertJsonPath('message', 'Unauthenticated.');
-        $this->assertSame(
-            sprintf('Bearer resource_metadata="%s"', url('/.well-known/oauth-protected-resource/api/v1')),
-            $response->headers->get('WWW-Authenticate'),
+            ->assertJsonPath('error', 'invalid_token');
+        $this->assertStringContainsString(
+            sprintf('resource_metadata="%s"', url('/.well-known/oauth-protected-resource/api/v1')),
+            (string) $response->headers->get('WWW-Authenticate'),
         );
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
     }

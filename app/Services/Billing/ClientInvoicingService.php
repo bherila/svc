@@ -19,6 +19,7 @@ use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
 use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\CarriedDeferredLine;
+use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
@@ -143,6 +144,7 @@ final class ClientInvoicingService
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ExpenseInvoiceAllocations $expenseAllocations = new ExpenseInvoiceAllocations,
         private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
+        private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
@@ -498,6 +500,7 @@ final class ClientInvoicingService
             return $this->summarizeGenerationResults($generated, $updated, $skipped);
         }
 
+        $handover = $this->handovers->forAgreement($agreement);
         $through = $this->retainerGenerationThroughDate($agreement, $successorAgreement);
         $billExcessImmediately = $agreement->effectiveBillingCadence() !== BillingCadence::Monthly
             && (bool) $agreement->bill_overage_interim;
@@ -528,6 +531,15 @@ final class ClientInvoicingService
                     'reason_code' => self::SKIP_REASON_ZERO_ACTIVITY,
                     'reason' => 'No retainer and no billable activity for the period; no invoice created.',
                 ];
+
+                continue;
+            }
+
+            // Bulk generation may create interim invoices before the cadence
+            // call. Refuse the conflicting period before those writes too.
+            if ($handover?->overlaps($retainerPeriod->start->toDateString(), $retainerPeriod->end->toDateString(), true)) {
+                $skipped[] = ['period' => $periodLabel, 'reason_code' => 'agreement_handover_overlap',
+                    'reason' => 'The retainer period overlaps a successor agreement; correct the dates before generating.'];
 
                 continue;
             }
@@ -746,7 +758,11 @@ final class ClientInvoicingService
 
         return DB::transaction(function () use ($company, $agreement, $periodStart, $periodEnd, $retainerMonthStart): ClientInvoice {
             BillingMaintenance::share($company->workspace_id);
-            ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();
+            $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
+                ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
+            $this->handovers->forAgreement($agreement)?->assertClear(
+                $retainerMonthStart->toDateString(), $retainerMonthStart->copy()->endOfMonth()->toDateString(), true,
+            );
 
             // Looked up under the lock, not before it. Two workers generating
             // the same month could both read `null` outside the transaction;
@@ -1191,7 +1207,9 @@ final class ClientInvoicingService
             BillingMaintenance::share($company->workspace_id);
             // The invoice rows this guards against may not exist yet, so the
             // agreement row is what serializes concurrent generation.
-            ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();
+            $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
+                ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
+            $this->handovers->forAgreement($agreement)?->assertClear($retainerStart->toDateString(), $retainerEnd->toDateString(), true);
 
             if ((bool) $agreement->bill_overage_interim) {
                 $ledger ??= $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $periodEnd, true);
@@ -1670,7 +1688,11 @@ final class ClientInvoicingService
             'quantity' => $rateAmount === 0 ? '0' : HoursQuantity::decimal($hours),
             'unit_amount' => $rateAmount,
             'tax_amount' => 0,
-            'total_amount' => $rateAmount === 0 ? 0 : MoneyService::hourlyAmount($minutes, $rateAmount),
+            'total_amount' => match ($kind) {
+                CarriedDeferredLine::Applied => 0,
+                // Priced by the rule the deferred backlog quotes it by.
+                CarriedDeferredLine::BilledOnTermination => DeferredTerminationPricing::carriedTotal($minutes, $agreement),
+            },
             'type' => $kind->lineType()->value,
             'hours' => $hours,
             'line_date' => $lineDate,

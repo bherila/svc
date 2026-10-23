@@ -108,6 +108,49 @@ final class SquarePaymentFactsTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    /**
+     * S7: Square's processing fee so far, as a fee charged. Square's payments
+     * guide reports it negative (its GetPayment example: -425) and its
+     * ProcessingFee reference positive for an assessment, so the initial
+     * fee's sign says which, and adjustments net in the same convention.
+     */
+    public function test_the_processing_fee_is_a_fee_charged_in_either_sign_convention(): void
+    {
+        $raw = $this->fixture();
+        $this->assertNull(SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        $raw['processing_fee'] = [];
+        $this->assertNull(SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        // The guide's convention: deducted money is negative, a returned fee positive.
+        $raw['processing_fee'] = [['type' => 'INITIAL', 'amount_money' => ['amount' => -425, 'currency' => 'USD']]];
+        $this->assertSame(425, SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        $raw['processing_fee'][] = ['type' => 'ADJUSTMENT', 'amount_money' => ['amount' => 25, 'currency' => 'USD']];
+        $this->assertSame(400, SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        // The reference's convention: an assessment is positive, a return negative.
+        $raw['processing_fee'] = [
+            ['type' => 'INITIAL', 'amount_money' => ['amount' => 65, 'currency' => 'USD']],
+            ['type' => 'ADJUSTMENT', 'amount_money' => ['amount' => -5, 'currency' => 'USD']],
+        ];
+        $this->assertSame(60, SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        // Without a non-zero initial fee the convention is unknown; only zero is certain.
+        $raw['processing_fee'] = [['type' => 'INITIAL', 'amount_money' => ['amount' => 0, 'currency' => 'USD']]];
+        $this->assertSame(0, SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        $raw['processing_fee'] = [['type' => 'ADJUSTMENT', 'amount_money' => ['amount' => -5, 'currency' => 'USD']]];
+        $this->assertNull(SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        foreach ([
+            [['type' => 'INITIAL', 'amount_money' => ['amount' => -65, 'currency' => 'EUR']]],
+            [['type' => 'INITIAL', 'amount_money' => ['amount' => '-65', 'currency' => 'USD']]],
+            [['type' => 'INITIAL']],
+            ['initial' => ['type' => 'INITIAL', 'amount_money' => ['amount' => -65, 'currency' => 'USD']]],
+            'INITIAL',
+        ] as $unreadable) {
+            $raw['processing_fee'] = $unreadable;
+            $facts = SquarePaymentFacts::from($raw, 'pay_fixture_1');
+            $this->assertNull($facts->processingFee, (string) json_encode($unreadable));
+            // The payment itself is still read.
+            $this->assertSame(1200, $facts->amount);
+        }
+    }
+
     private function fixture(): array
     {
         return ['id' => 'pay_fixture_1', 'status' => 'COMPLETED', 'order_id' => 'order_fixture_1', 'location_id' => 'LOCFIXTURE01', 'amount_money' => ['amount' => 1200, 'currency' => 'USD'], 'created_at' => '2030-02-01T16:00:00Z', 'source_type' => 'CARD', 'card_details' => ['card_payment_timeline' => ['captured_at' => '2030-02-01T16:00:00Z']]];

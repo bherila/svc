@@ -15,11 +15,21 @@ use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
+use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskMutationOrigin;
+use App\Services\Tasks\TaskPlanningPresenter;
+use App\Services\Tasks\TaskVisibility;
+use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentPageBudget;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\AgentApi\ChangeWindow;
+use App\Support\AgentApi\CursorPage;
 use App\Support\AgentApi\InvoiceListFilters;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
@@ -28,10 +38,13 @@ use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\WorkspaceClock;
+use BWH\Auth\OAuth\Session\ProviderBindingResolver;
+use BWH\Auth\OAuth\Session\ProviderSessionExpired;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Tenant-scoped, allowlisted read workflows shared by Agent REST and MCP.
@@ -43,6 +56,17 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
  */
 final class AgentReadService
 {
+    /**
+     * The invoices.list filters a change feed takes: those on what an invoice
+     * never changes. Every other one can stop (or start) matching an invoice
+     * when it changes - its status, its balance, its dates - or, for overdue,
+     * as the date passes without any change at all; the feed would then never
+     * deliver the change that took it out of the filter.
+     */
+    private const array INVOICE_FEED_FILTERS = ['company_id', 'invoice_kind'];
+
+    private const int PROJECT_TASK_LINK_RESERVE = 8192;
+
     public function __construct(
         private readonly AgentAccess $access,
         private readonly ProjectAccess $projects,
@@ -55,6 +79,7 @@ final class AgentReadService
         private readonly AgentTaskPresenter $taskPresenter,
         private readonly AgentTimeEntryPresenter $timeEntryPresenter,
         private readonly AgentInvoicePresenter $invoicePresenter,
+        private readonly DeferredBacklogReadService $deferredBacklogs,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -77,8 +102,10 @@ final class AgentReadService
             ->filter(fn (Workspace $workspace): bool => $this->access->canViewWorkspace($user, $workspace));
 
         return [
+            'contract_version' => AgentApiContract::VERSION,
             'id' => $user->public_id,
             'name' => $user->name,
+            'provider_subject' => $this->providerSubject($user),
             'capabilities' => AgentWriteCutover::workspaces() && $allowsScope('workspaces:create') ? ['workspaces:create'] : [],
             'withheld_tools' => app(AgentWithheldTools::class)->for($allowsScope,
                 $workspaces->contains(fn (Workspace $workspace): bool => $this->access->isWorkspaceManager($user, $workspace))),
@@ -94,6 +121,23 @@ final class AgentReadService
                 ];
             })->values()->all(),
         ];
+    }
+
+    /**
+     * The caller's subject at the trusted identity provider, so a connecting
+     * application can check it reached the account of the person who
+     * connected. A stable cross-application identifier rather than a secret,
+     * but kept to this authorized self-description: never in a public
+     * response or a log. Null for an account with no provider binding, or a
+     * binding the trusted provider does not vouch for.
+     */
+    private function providerSubject(User|AgentPrincipal $user): ?string
+    {
+        try {
+            return app(ProviderBindingResolver::class)->binding($user)?->subject;
+        } catch (ProviderSessionExpired) {
+            return null;
+        }
     }
 
     /**
@@ -127,6 +171,11 @@ final class AgentReadService
                 'collectible_balances' => $this->amountsByCurrency($collectible, 'balance_amount'),
                 'overdue_balances' => $this->amountsByCurrency($overdue, 'balance_amount'),
             ];
+            // Agreement-rate prices are a manager's to read, as the capacity
+            // ledger they sit beside is.
+            if ($this->access->isWorkspaceManager($user, $workspace)) {
+                $data['deferred_backlog'] = $this->deferredBacklogs->summary($workspace);
+            }
         }
 
         return $data;
@@ -144,75 +193,82 @@ final class AgentReadService
             $query->where('name', 'like', '%'.$search.'%');
         }
 
-        $page = $this->page($query, $workspace, 'projects|status='.($status ?? '').'|search='.($search ?? ''), $limit, $cursor);
         // Withheld from a portal client, and fail-closed for anyone who is
         // somehow both: a repository mapping names internal infrastructure, and
         // the client half of a dual identity is the half that must not see it.
         $includeRepository = ! $this->access->isWorkspaceClient($user, $workspace);
-        $data = [];
-        foreach ($page['records'] as $project) {
-            if (! $project instanceof ClientProject) {
-                continue;
-            }
-            $data[] = $this->projectPresenter->present($workspace, $project, $includeRepository);
-        }
 
-        return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
+        return CursorPage::run($workspace, 'projects|status='.($status ?? '').'|search='.($search ?? ''), $limit, $cursor,
+            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_projects.id', '>', $after))->limit($take)->get(),
+            fn (ClientProject $project): array => $this->projectPresenter->present($workspace, $project, $includeRepository),
+            maxDataBytes: AgentPageBudget::dataBytes(),
+        );
     }
 
     /** @return array<string, mixed> */
-    public function project(User|AgentPrincipal $user, Workspace $workspace, string $projectId, bool $includeTasks): array
+    public function project(User|AgentPrincipal $user, Workspace $workspace, string $projectId, bool $includeTasks, ?string $tasksCursor = null): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->projectQuery($user, $workspace)->where('public_id', $projectId)->with('clientCompany');
-        if ($includeTasks) {
-            $query->with('tasks');
-        }
-        $record = $query->firstOrFail();
+        $record = $this->projectQuery($user, $workspace)->where('public_id', $projectId)->with('clientCompany')->firstOrFail();
         $data = $this->projectPresenter->present($workspace, $record, ! $this->access->isWorkspaceClient($user, $workspace));
-        if ($record->relationLoaded('tasks')) {
-            $data['tasks'] = $record->tasks->filter(fn (ClientTask $task): bool => $this->access->canViewTask($user, $task))
-                ->map(fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task))->values()->all();
+        if ($includeTasks) {
+            // The base project's description consumes the same response budget.
+            // Reserve 8 KiB for property names and an encoded continuation URL
+            // (request cursors themselves are bounded to 2 KiB).
+            $budget = max(1, AgentPageBudget::dataBytes() - strlen(json_encode($data, JSON_THROW_ON_ERROR)) - self::PROJECT_TASK_LINK_RESERVE);
+            $page = $this->taskPage($user, $workspace, $projectId, 25, $tasksCursor, TaskMutationOrigin::Agent, $budget);
+            $data['tasks'] = $page['data'];
+            $data['tasks_next_href'] = $page['meta']['next_cursor'] === null ? null
+                : route('agent-api.v1.projects.show', ['workspace' => $workspace, 'project' => $projectId, 'tasks_cursor' => $page['meta']['next_cursor']]);
         }
 
         return $data;
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function tasks(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, int $limit, ?string $cursor): array
+    public function tasks(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, int $limit, ?string $cursor, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->taskQuery($user, $workspace)->with('project.clientCompany')->orderBy('id');
+
+        return $this->taskPage($user, $workspace, $projectId, $limit, $cursor, $origin, AgentPageBudget::dataBytes());
+    }
+
+    /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
+    private function taskPage(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, int $limit, ?string $cursor, TaskMutationOrigin $origin, int $maxDataBytes): array
+    {
+        $includePlanning = $origin === TaskMutationOrigin::Internal || ! $this->access->isWorkspaceClient($user, $workspace);
+        $manageable = $includePlanning ? app(TaskAccess::class)->manageableProjectIds($user, $workspace) : [];
+        $query = $this->taskQuery($user, $workspace, $origin)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->orderBy('id');
         if ($projectId !== null && $projectId !== '') {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
 
-        $page = $this->page($query, $workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor);
-        $data = [];
-        foreach ($page['records'] as $task) {
-            if (! $task instanceof ClientTask) {
-                continue;
-            }
-            $data[] = $this->taskPresenter->present($workspace, $task);
-        }
-
-        return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
+        return CursorPage::run($workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor,
+            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_tasks.id', '>', $after))->limit($take)->get(),
+            fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task, includePlanning: $includePlanning,
+                canManage: $manageable === null || in_array((int) $task->client_project_id, $manageable, true)),
+            maxDataBytes: $maxDataBytes,
+        );
     }
 
     /** @return array<string, mixed> */
-    public function task(User|AgentPrincipal $user, Workspace $workspace, string $taskId): array
+    public function task(User|AgentPrincipal $user, Workspace $workspace, string $taskId, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): array
     {
         $this->requireWorkspace($user, $workspace);
-        $record = $this->taskQuery($user, $workspace)->where('public_id', $taskId)->with('project.clientCompany')->firstOrFail();
+        $includePlanning = $origin === TaskMutationOrigin::Internal || ! $this->access->isWorkspaceClient($user, $workspace);
+        $manageable = $includePlanning ? app(TaskAccess::class)->manageableProjectIds($user, $workspace) : [];
+        $record = $this->taskQuery($user, $workspace, $origin)->where('public_id', $taskId)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->firstOrFail();
 
-        return $this->taskPresenter->present($workspace, $record);
+        return $this->taskPresenter->present($workspace, $record, includePlanning: $includePlanning, canManage: $manageable === null || in_array((int) $record->client_project_id, $manageable, true));
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
     public function timeEntries(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, ?string $status, ?string $from, ?string $to, int $limit, ?string $cursor, ?string $allocationState = null, ?bool $isBillable = null, bool $unallocated = false, bool $compact = false): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task'])->with(AgentTimeEntryPresenter::authorRelations($workspace))->withCapacityPlacement($workspace->id)->orderBy('id');
+        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany'])
+            ->with($this->taskReferenceRelations($user, $workspace))->with(AgentTimeEntryPresenter::authorRelations($workspace))
+            ->withCapacityPlacement($workspace->id)->orderBy('id');
         if ($projectId !== null && $projectId !== '') {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
@@ -266,7 +322,8 @@ final class AgentReadService
     {
         $this->requireWorkspace($user, $workspace);
         $entries = $this->timeQueries->visibleTo($user, $workspace)
-            ->with(['project', 'clientCompany', 'task'])->with(AgentTimeEntryPresenter::authorRelations($workspace))
+            ->with(['project', 'clientCompany'])->with($this->taskReferenceRelations($user, $workspace))
+            ->with(AgentTimeEntryPresenter::authorRelations($workspace))
             ->withCapacityPlacement($workspace->id)
             ->whereIn('public_id', $ids)
             ->get()
@@ -287,11 +344,29 @@ final class AgentReadService
         }, $ids);
     }
 
-    /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null): array
+    /**
+     * Visible invoices by id, or - when the window names `updated_since` or a
+     * watermark - newest change first inside a snapshot watermark
+     * ({@see ChangeFeedPage}). Change feeds require a workspace owner/admin;
+     * portal visibility can change without a removal record in the feed.
+     *
+     * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string, watermark?: string}}
+     */
+    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null, ?ChangeWindow $window = null): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)])->orderBy('id');
+        if ($window !== null && $window->requested()) {
+            if (! $this->access->isWorkspaceManager($user, $workspace)) {
+                throw ValidationException::withMessages([
+                    'change_feed' => 'Invoice change-feed mode (updated_since or watermark) is only supported for workspace owners and admins; request invoice snapshots without these parameters.',
+                ]);
+            }
+            ChangeWindow::refuseMutableFilters([
+                'status' => $status !== null && $status !== '',
+                ...array_fill_keys(array_keys($filters === null ? [] : $filters->values), true),
+            ], self::INVOICE_FEED_FILTERS);
+        }
+        $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)]);
         if ($status !== null && $status !== '') {
             $query->where('status', $status);
         }
@@ -340,7 +415,13 @@ final class AgentReadService
             $queryKey .= '|filters='.json_encode($values, JSON_THROW_ON_ERROR);
         }
 
-        $page = $this->page($query, $workspace, $queryKey, $limit, $cursor);
+        if ($window !== null && $window->requested()) {
+            return ChangeFeedPage::run($workspace, $queryKey, $query, $limit, $cursor, $window,
+                static function (): void {},
+                fn (ClientInvoice $invoice): array => $this->invoicePresenter->present($workspace, $invoice, $includeNotes));
+        }
+
+        $page = $this->page($query->orderBy('id'), $workspace, $queryKey, $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $invoice) {
             if (! $invoice instanceof ClientInvoice) {
@@ -358,10 +439,17 @@ final class AgentReadService
         $this->requireWorkspace($user, $workspace);
         $record = $this->invoiceQuery($user, $workspace)->where('public_id', $invoiceId)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id), 'lines' => fn ($lines) => $lines->where('workspace_id', $workspace->id), 'lines.project' => fn ($projects) => $projects->where('workspace_id', $workspace->id)])->firstOrFail();
 
-        return $this->invoicePresenter->present($workspace, $record, $this->access->isWorkspaceManager($user, $workspace)) + [
+        $manager = $this->access->isWorkspaceManager($user, $workspace);
+        // Managers only, like the delivery state: why payments.record would
+        // refuse this invoice (G6), asked the way its guard asks.
+        $collection = $manager ? app(PaymentCollectionGuard::class)->summary($record) : ['pending_payments' => null, 'collection_owner' => null];
+
+        return $this->invoicePresenter->present($workspace, $record, $manager) + [
             // Managers only, like the delivery state: who collects this invoice (#438).
-            'square' => $this->access->isWorkspaceManager($user, $workspace) ? app(SquareLinkPresenter::class)->invoice($record) : null,
-            'corrections' => $this->access->isWorkspaceManager($user, $workspace)
+            'square' => $manager ? app(SquareLinkPresenter::class)->invoice($record) : null,
+            'pending_payments' => $collection['pending_payments'],
+            'collection_owner' => $collection['collection_owner'],
+            'corrections' => $manager
                 ? app(InvoiceCorrectionReadService::class)->agentHistory($workspace, $record) : [],
             'lines' => $record->lines->map(fn ($line): array => ['id' => $line->public_id] + $this->invoicePresenter->line($line))->values()->all(),
         ];
@@ -370,40 +458,48 @@ final class AgentReadService
     /** @return Builder<ClientProject> */
     private function projectQuery(User|AgentPrincipal $user, Workspace $workspace): Builder
     {
-        $query = ClientProject::query()->where('workspace_id', $workspace->id);
+        $query = ClientProject::query()->where('workspace_id', $workspace->id)
+            ->whereHas('clientCompany', fn (Builder $companies) => $companies->where('workspace_id', $workspace->id));
+        if ($this->access->isWorkspaceClient($user, $workspace)) {
+            return $this->portalAccess->constrainProjectQuery($query->where('is_visible_to_client', true), $user);
+        }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
         }
 
-        return $query->where(function (Builder $projects) use ($user): void {
-            $projects->whereHas('members', fn (Builder $members) => $members->whereKey($user->id))
-                ->orWhere(fn (Builder $clients) => $this->portalAccess
-                    ->constrainProjectQuery($clients->where('is_visible_to_client', true), $user));
-        });
+        return $query->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
+            ->where('client_project_memberships.workspace_id', $workspace->id));
     }
 
     /** @return Builder<ClientTask> */
-    private function taskQuery(User|AgentPrincipal $user, Workspace $workspace): Builder
+    private function taskQuery(User|AgentPrincipal $user, Workspace $workspace, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): Builder
     {
-        $query = ClientTask::query()->where('workspace_id', $workspace->id);
+        $query = ClientTask::query()->where('workspace_id', $workspace->id)
+            ->whereHas('project', fn (Builder $projects): Builder => $projects->where('workspace_id', $workspace->id)
+                ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id)));
+        if ($origin === TaskMutationOrigin::Internal && $this->projects->workspaceRole($user, $workspace) === null) {
+            return $query->whereRaw('1 = 0');
+        }
+        if ($origin === TaskMutationOrigin::Agent && $this->access->isWorkspaceClient($user, $workspace)) {
+            return app(TaskVisibility::class)->constrainPortal($query, $workspace, $user);
+        }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
         }
 
-        return $query->where(function (Builder $tasks) use ($user): void {
-            $tasks->where(function (Builder $assigned) use ($user): void {
-                $assigned->whereHas('project', fn (Builder $projects) => $projects
-                    ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)))
-                    ->where(function (Builder $visibility) use ($user): void {
-                        $visibility->whereDoesntHave('project.clientCompany.portalUsers', fn (Builder $users) => $users->whereKey($user->id))
-                            ->orWhere('is_visible_to_client', true);
-                    });
-            })->orWhere(function (Builder $clientVisible) use ($user): void {
-                $clientVisible->where('is_visible_to_client', true)
-                    ->whereHas('project', fn (Builder $projects) => $this->portalAccess
-                        ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
-            });
-        });
+        return $query->whereHas('project', fn (Builder $projects) => $projects
+            ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
+                ->where('client_project_memberships.workspace_id', $workspace->id)));
+    }
+
+    /** Time visibility stands alone. Only its optional task reference is narrowed.
+     * @return array<string, Closure>
+     */
+    private function taskReferenceRelations(User|AgentPrincipal $actor, Workspace $workspace): array
+    {
+        $visible = $this->taskQuery($actor, $workspace)->select('client_tasks.id');
+
+        return ['task' => fn ($tasks) => $tasks->where('workspace_id', $workspace->id)->whereIn('client_tasks.id', $visible)];
     }
 
     /** @return Builder<ClientInvoice> */

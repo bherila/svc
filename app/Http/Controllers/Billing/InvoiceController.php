@@ -45,61 +45,24 @@ class InvoiceController extends Controller
         private readonly PortalInvoiceQuery $portalInvoices,
     ) {}
 
-    public function index(Request $request, Workspace $workspace): JsonResponse|RedirectResponse
+    public function index(Request $request, Workspace $workspace): RedirectResponse
     {
         $this->authorizeWorkspaceView($request, $workspace);
-        // The company relation is constrained to this workspace. It is
-        // unconstrained lineage, so a row migrated from before #113's composite
-        // keys can name a company in another tenant - and serializing its name
-        // here would be a cross-tenant disclosure the old Blade page never
-        // made, on a screen whose whole job is listing everything.
-        $query = ClientInvoice::query()
-            ->where('workspace_id', $workspace->id)
-            ->with(['clientCompany' => fn ($relation) => $relation->where('workspace_id', $workspace->id)]);
-        // One membership decision for the whole request. Asking twice let a
-        // revocation between the two calls skip *both* narrowings and leave the
-        // query bounded only by workspace - every invoice in it, for one
-        // request.
-        $isMember = $workspace->memberships()->where('user_id', $request->user()->id)->exists();
-
-        if (! $isMember) {
-            // Through AgentAccess so the membership's own workspace is checked too,
-            // rather than restating half the condition here.
-            $companyIds = $this->agentAccess->portalCompanyIdsIn($request->user(), $workspace);
-            $query->whereIn('client_company_id', $companyIds)
-                ->where('is_visible_to_client', true)
-                ->whereIn('status', ['issued', 'partially_paid', 'paid']);
-        }
-        // A workspace member sees the clients they reach, on the same rule the
-        // directory follows (#157). Portal users were narrowed above by the
-        // company ids their access grants, so exactly one of these two branches
-        // applies to any request.
-        $user = $request->user();
-
-        if ($isMember && $user instanceof User) {
-            $query = $this->billingAccess->constrainInvoices($query, $user, $workspace);
-        }
-
-        $invoices = $query->latest('id')->get();
-
-        if ($request->expectsJson()) {
-            return response()->json(['data' => $invoices]);
-        }
 
         // The workspace-wide screen is gone: an invoice lives inside one
         // client, and a copy of the list with no client named around it was a
         // second way to reach the same rows. The URL still resolves - through
         // the same entry point as every other way into a workspace - and lands
-        // on the Invoices tab of the client this operator was last in. The JSON
-        // branch above is untouched: an API caller asked for the whole
-        // workspace and still gets it.
+        // on the Invoices tab of the client this operator was last in. A
+        // program reads invoices through invoices.list on the versioned API,
+        // not through this page (#454).
         return redirect()->route('workspaces.enter', [
             'workspace' => $workspace,
             'module' => 'invoices',
         ]);
     }
 
-    public function store(StoreInvoiceRequest $request, Workspace $workspace, ClientCompany $clientCompany, InvoiceLifecycleService $service, InvoiceFromTimeService $fromTime): JsonResponse|RedirectResponse
+    public function store(StoreInvoiceRequest $request, Workspace $workspace, ClientCompany $clientCompany, InvoiceFromTimeService $fromTime): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $this->workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
@@ -115,28 +78,22 @@ class InvoiceController extends Controller
         // Always through the service that normalises manual lines, so a line's
         // project association does not depend on whether time happens to be
         // selected alongside it.
-        $invoice = $fromTime->create($workspace, $clientCompany, $attributes, $timeEntryIds, $lines);
+        $fromTime->create($workspace, $clientCompany, $attributes, $timeEntryIds, $lines);
 
-        return $request->expectsJson()
-            ? response()->json(['data' => $invoice], 201)
-            : redirect()->back()->with('status', 'Invoice drafted.');
+        return redirect()->back()->with('status', 'Invoice drafted.');
     }
 
     /**
      * One invoice, by its workspace-wide URL.
      *
-     * The JSON is unchanged. The HTML now goes to the invoice's own screen
-     * inside its client, where the chrome says whose invoice it is and the
-     * lifecycle actions are - rather than to a standalone Blade page that had
-     * neither, reachable from a list that no longer exists.
+     * It goes to the invoice's own screen inside its client, where the chrome
+     * says whose invoice it is and the lifecycle actions are - rather than to a
+     * standalone Blade page that had neither, reachable from a list that no
+     * longer exists. A program reads it through invoices.get (#454).
      */
-    public function show(Request $request, Workspace $workspace, ClientInvoice $clientInvoice): JsonResponse|RedirectResponse
+    public function show(Request $request, Workspace $workspace, ClientInvoice $clientInvoice): RedirectResponse
     {
         $this->authorizeInvoiceView($request, $workspace, $clientInvoice);
-
-        if ($request->expectsJson()) {
-            return response()->json(['data' => $clientInvoice->load(['lines', 'payments', 'clientCompany'])]);
-        }
 
         $company = $clientInvoice->clientCompany;
 
@@ -166,22 +123,27 @@ class InvoiceController extends Controller
         return redirect()->route('clients.invoice', [$workspace, $updated->clientCompany, $updated])->with('status', 'Time added to draft invoice.');
     }
 
-    public function issue(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
+    public function issue(Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
-        $invoice = $service->issue($clientInvoice, $workspace);
+        $service->issue($clientInvoice, $workspace);
 
-        return $this->mutationResponse($request, $invoice, 'Invoice issued.');
+        return $this->done('Invoice issued.');
     }
 
-    public function void(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
+    /**
+     * Void an invoice, saying why (#454): the reason is required here as it is
+     * by `invoices.void`, and kept on the invoice.
+     */
+    public function void(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $service->assertTenant($workspace, $clientInvoice);
-        $invoice = $service->void($clientInvoice, $workspace);
+        $reason = $request->validate(['reason' => ['required', 'string', 'max:'.ClientInvoice::VOID_REASON_MAX_LENGTH]])['reason'];
+        $service->void($clientInvoice, $workspace, trim((string) $reason));
 
-        return $this->mutationResponse($request, $invoice, 'Invoice voided.');
+        return $this->done('Invoice voided.');
     }
 
     public function correct(
@@ -189,11 +151,11 @@ class InvoiceController extends Controller
         Workspace $workspace,
         ClientInvoice $clientInvoice,
         InvoiceCorrectionService $service,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         Gate::authorize('manage', $workspace);
         $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
         $data = $request->validated();
-        $invoice = $service->correct(
+        $service->correct(
             $clientInvoice,
             $workspace,
             (int) $data['expected_revision'],
@@ -203,7 +165,7 @@ class InvoiceController extends Controller
             $data['lines'],
         );
 
-        return $this->mutationResponse($request, $invoice, 'Invoice corrected and automatic delivery held for review.');
+        return $this->done('Invoice corrected and automatic delivery held for review.');
     }
 
     public function correction(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, string $correction, InvoiceCorrectionReadService $evidence): JsonResponse
@@ -214,31 +176,29 @@ class InvoiceController extends Controller
         return response()->json(['data' => $evidence->get($workspace, $clientInvoice, $correction)]);
     }
 
-    public function holdAutomatic(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceCorrectionService $service): JsonResponse|RedirectResponse
+    public function holdAutomatic(Workspace $workspace, ClientInvoice $clientInvoice, InvoiceCorrectionService $service): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        $invoice = $service->hold($clientInvoice, $workspace);
+        $service->hold($clientInvoice, $workspace);
 
-        return $this->mutationResponse($request, $invoice, 'Automatic invoice delivery held.');
+        return $this->done('Automatic invoice delivery held.');
     }
 
-    public function releaseAutomatic(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceCorrectionService $service): JsonResponse|RedirectResponse
+    public function releaseAutomatic(Workspace $workspace, ClientInvoice $clientInvoice, InvoiceCorrectionService $service): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        $invoice = $service->release($clientInvoice, $workspace);
+        $service->release($clientInvoice, $workspace);
 
-        return $this->mutationResponse($request, $invoice, 'Automatic invoice delivery released.');
+        return $this->done('Automatic invoice delivery released.');
     }
 
-    public function payment(StorePaymentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, RecordReceivedPayment $service): JsonResponse|RedirectResponse
+    public function payment(StorePaymentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, RecordReceivedPayment $service): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        $facts = ReceivedPaymentData::from($request->validated(), requireDate: false, includeBookkeeping: true);
-        $payment = $service->record($workspace, $clientInvoice, $facts, $facts->idempotencyKey ?? $request->header('Idempotency-Key'));
+        $facts = ReceivedPaymentData::from($request->validated(), requireDate: false, includeBookkeeping: true, acceptsBodyKey: true);
+        $service->record($workspace, $clientInvoice, $facts, $facts->idempotencyKey ?? $request->header('Idempotency-Key'));
 
-        return $request->expectsJson()
-            ? response()->json(['data' => $payment], 201)
-            : redirect()->back()->with('status', 'Payment recorded.');
+        return $this->done('Payment recorded.');
     }
 
     /**
@@ -263,8 +223,9 @@ class InvoiceController extends Controller
      * described and then refused.
      *
      * Everything else about the payment is out of reach by construction:
-     * {@see CorrectPaymentDateRequest} validates one field, and
-     * {@see InvoiceLifecycleService::setPaymentReceivedOn()} writes one column.
+     * {@see CorrectPaymentDateRequest} validates one field and the reason, and
+     * {@see InvoiceLifecycleService::correctPayment()} is handed only that
+     * field.
      */
     public function correctPaymentDate(
         CorrectPaymentDateRequest $request,
@@ -272,7 +233,7 @@ class InvoiceController extends Controller
         string $clientInvoice,
         string $clientInvoicePayment,
         InvoiceLifecycleService $service,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         Gate::authorize('manage', $workspace);
 
         $invoice = ClientInvoice::query()
@@ -286,22 +247,18 @@ class InvoiceController extends Controller
             ->where('public_id', $clientInvoicePayment)
             ->firstOrFail();
 
-        $payment = $service->setPaymentReceivedOn(
+        // The general correction with one field named, so the screen records
+        // the same audited `invoice.payment_corrected` - before, after and
+        // reason - that `payments.correct` and the console command do.
+        $service->correctPayment(
             $existing,
-            (string) $request->validated('received_on'),
+            ['received_on' => (string) $request->validated('received_on')],
+            (string) $request->validated('reason'),
+            null,
             $workspace,
         );
 
-        // The invoice resolved above, handed to the model rather than loaded
-        // from it. `load('invoice')` is a `belongsTo` read on
-        // `client_invoice_id` alone - the same unscoped shape the service was
-        // corrected for - and there is nothing to look up: this is the row
-        // whose tenancy the query above already established.
-        $payment->setRelation('invoice', $invoice);
-
-        return $request->expectsJson()
-            ? response()->json(['data' => $payment])
-            : redirect()->back()->with('status', 'Payment date corrected.');
+        return $this->done('Payment date corrected.');
     }
 
     public function stripePaymentIntent(CreateStripePaymentIntentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, StripePaymentIntentService $service): JsonResponse
@@ -342,7 +299,7 @@ class InvoiceController extends Controller
      * renders as a 422 carrying its own message - so the compose dialog shows
      * the reason where it was asked for rather than a generic error page.
      */
-    public function send(SendInvoiceRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceEmailService $service): JsonResponse|RedirectResponse
+    public function send(SendInvoiceRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceEmailService $service): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
@@ -351,16 +308,14 @@ class InvoiceController extends Controller
         $recipients = $request->validated('recipients')
             ?? array_filter([$clientInvoice->clientCompany?->billing_email]);
 
-        // The sender's own address, and only theirs. See `SendInvoiceRequest`
-        // for why this is a flag rather than a field.
-        $bcc = $request->boolean('bcc_self') && $user instanceof User ? [$user->email] : [];
-
         $delivery = $service->send(
             $clientInvoice,
-            InvoiceEmailDraft::of(
-                $recipients,
-                $bcc,
-                $request->validated('subject') ?? $service->defaultSubject($clientInvoice),
+            InvoiceEmailDraft::composed(
+                array_values($recipients),
+                $user instanceof User ? (string) $user->email : null,
+                $request->boolean('bcc_self'),
+                $request->validated('subject'),
+                $service->defaultSubject($clientInvoice),
                 $request->validated('message'),
             ),
             $workspace,
@@ -372,9 +327,7 @@ class InvoiceController extends Controller
             ? 'Invoice sent to '.implode(', ', $delivery->recipients).'.'
             : 'Invoice delivery registered and will send shortly.';
 
-        return $request->expectsJson()
-            ? response()->json(['data' => $delivery], $sent ? 200 : 202)
-            : redirect()->back()->with('status', $message);
+        return $this->done($message);
     }
 
     public function pdf(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceDocumentService $documents): Response
@@ -489,10 +442,16 @@ class InvoiceController extends Controller
         return InvoiceLineDetail::CLIENT;
     }
 
-    private function mutationResponse(Request $request, ClientInvoice $invoice, string $message): JsonResponse|RedirectResponse
+    /**
+     * Every write here answers the page that made it, and only that page.
+     *
+     * There used to be a JSON branch on each, keyed on the request asking for JSON, that
+     * serialized the bare model - a third shape beside the Inertia props and the
+     * versioned API's presenters, with internal columns in it, that nothing in
+     * the browser read (#454). A program writes through `/api/v1`.
+     */
+    private function done(string $message): RedirectResponse
     {
-        return $request->expectsJson()
-            ? response()->json(['data' => $invoice])
-            : redirect()->back()->with('status', $message);
+        return redirect()->back()->with('status', $message);
     }
 }

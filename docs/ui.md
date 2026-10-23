@@ -201,6 +201,12 @@ For payment reminders, dispatch with `reminder_layout: true`: its
 oversized recipients and reasons, the send confirmation, and the client cadence
 switch on settings. Locally, `node scripts/check-layout.mjs --reminders`.
 
+For the deferred backlog on the operator agreement page (#366), run
+`node scripts/check-layout.mjs --deferred-backlog`. It seeds a separate
+synthetic client with an unbroken name, an agreement whose title has no break,
+and a shelf priced in the millions, and captures the agreement page at every
+required width.
+
 Run from a checkout without an active Vite dev server. The command refuses an
 existing `public/hot` marker and leaves it untouched. It builds current assets,
 creates a fresh synthetic SQLite database,
@@ -258,3 +264,5 @@ a new page under test must assert the invariants. Never add an application auth
 bypass or point this harness at an existing database or remote URL.
 
 The time sheet uses `/api/v1` for logging, editing, deleting, approval, withdrawal, and adding selected time to an existing draft. Each mutation uses the API client with an idempotency key and the rendered version where applicable, then reloads the page props. New invoice drafts still use the browser route. `pnpm run test:layout -- --time` checks the time sheet and draft selection at all four viewport widths.
+
+Client settings' portal access uses `/api/v1` for giving, changing and removing a contact's access and for creating, resending and withdrawing invitations, through the same operations as REST, MCP and `svc:portal:project-access`. Each contact on the page is the API's own presentation with its version; changes send that version, `confirm: true` and an idempotency key, then reload the page props. Grants and invitation sends keep one key across retries of the same attempt, so a lost answer replays instead of acting twice, and a withdrawal whose provider half failed reloads to show it while keeping its key for the retry. A new contact version remounts its row, so edits never pair stale fields with a fresh version. Only this page receives an invitation's acceptance link. `node scripts/check-layout.mjs --portal-access` checks it at all four widths.

@@ -15,7 +15,12 @@ use App\Models\User;
 use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
+use App\Services\Billing\DeferredBacklogReadService;
+use App\Services\Collaboration\CollaborationAccess;
+use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Files\AttachmentReader;
 use App\Services\Square\Mirror\SquareInvoicePage;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\AgreementTermsPayload;
@@ -155,6 +160,8 @@ class ClientPortalController extends Controller
         ClientCompany $clientCompany,
         ClientAgreement $clientAgreement,
     ): Response {
+        $fileActor = $request->user();
+        abort_unless($fileActor instanceof User, 401);
         Gate::authorize('viewPortal', $clientCompany);
 
         abort_unless(
@@ -172,6 +179,9 @@ class ClientPortalController extends Controller
             ->orderBy('id')
             ->get();
 
+        $filePage = AttachmentListing::page($clientCompany->workspace, 'agreement', $clientAgreement->public_id, false, $fileActor, app(AttachmentReader::class)->nativePortalAudience($fileActor, $clientCompany->workspace),
+            $request->integer('files_page', 1), route('portal.agreement', [$clientCompany, $clientAgreement], absolute: false));
+
         return Inertia::render('clients/agreement', [
             'company' => [
                 'id' => $clientCompany->public_id,
@@ -186,17 +196,15 @@ class ClientPortalController extends Controller
             'actions' => [
                 'update' => null,
                 'upload_file' => null,
+                'deferred_buydown' => null,
             ],
             // The files themselves are the client's to read - a countersigned
             // copy of their own agreement is the obvious one. `false` withholds
             // the removal URL; `AttachmentController` re-checks this agreement's
             // visibility, status and project scope on the way to each download.
-            'files' => AttachmentListing::for(
-                $clientCompany->workspace,
-                'agreement',
-                (string) $clientAgreement->public_id,
-                false,
-            ),
+            'files' => $filePage->files,
+            'files_next_href' => $filePage->nextHref,
+            'files_previous_href' => $filePage->previousHref,
             'agreement' => AgreementTermsPayload::for(
                 $clientAgreement,
                 // The project an agreement is scoped to is named only to a
@@ -226,6 +234,7 @@ class ClientPortalController extends Controller
                 'period_retainer_amount' => null,
                 'agreement_text' => null,
                 'is_visible_to_client' => null,
+                'show_deferred_backlog_to_client' => null,
             ],
             'recurring_items' => $items->map(fn ($item): array => [
                 'id' => $item->public_id,
@@ -238,6 +247,10 @@ class ClientPortalController extends Controller
                 'expires_on' => $item->expires_on?->toDateString(),
                 'is_active' => (bool) $item->is_active,
             ])->values()->all(),
+            // Not shown to a client until the agreement opts in (#366, a
+            // later slice). Null rather than omitted: one payload shape.
+            'deferred_backlog' => $clientAgreement->show_deferred_backlog_to_client
+                ? array_replace(app(DeferredBacklogReadService::class)->trailing($clientCompany->workspace, $clientAgreement), ['issue_detail' => null]) : null,
         ]);
     }
 
@@ -416,13 +429,19 @@ class ClientPortalController extends Controller
         $scope = $selected === null ? $projects : collect([$selected]);
         $projectNames = $projects->pluck('name', 'id');
 
-        $tasks = ClientTask::query()
-            ->where('workspace_id', $clientCompany->workspace_id)
-            ->whereIn('client_project_id', $scope->pluck('id')->all())
-            ->where('is_visible_to_client', true)
+        // Project authorization above deliberately permits native staff preview.
+        $tasks = app(TaskVisibility::class)->constrainVisibleStructure(
+            ClientTask::query()->whereIn('client_project_id', $scope->pluck('id')->all()),
+            $clientCompany->workspace, $clientCompany,
+        )
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->simplePaginate(50)->appends($selected === null ? [] : ['project' => $selected->public_id]);
+
+        $viewer = $this->viewer($request);
+        abort_unless($viewer instanceof User, 401);
+        $commentProjects = array_fill_keys(app(CollaborationAccess::class)->visibleProjects($viewer, $clientCompany->workspace, $clientCompany, CollaborationAudience::Portal)->pluck('id')->all(), true);
 
         return Inertia::render('clients/tasks', [
             'company' => [
@@ -444,7 +463,10 @@ class ClientPortalController extends Controller
                 'project' => $projectNames[$task->client_project_id] ?? null,
                 'is_visible_to_client' => true,
                 'completed_at' => $task->completed_at?->toDateString(),
+                'comment_thread_url' => isset($commentProjects[$task->client_project_id])
+                    ? route('portal.collaboration.comments.index', [$clientCompany, 'task', $task->public_id], absolute: false) : null,
             ])->values()->all(),
+            'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
     }
 

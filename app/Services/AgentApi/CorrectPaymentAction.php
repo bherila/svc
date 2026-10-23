@@ -9,6 +9,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ExplicitConfirmation;
+use App\Support\Billing\PaymentCorrection;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -17,12 +18,11 @@ use Illuminate\Support\Facades\Validator;
  * The agent door to {@see InvoiceLifecycleService::correctPayment()}, gated
  * exactly as `payments.record` is - both write cutovers, the payments:record
  * scope (on the route and the tool) and a workspace owner/admin, each
- * rechecked before a receipt is replayed. The body is a closed shape: an agent
- * may name `method`, `reference` and `received_on`, and must give the version
- * it read and a reason. `notes` is deliberately not offered here: `payments.list`
- * never returns it, because it is the operator's private note, and a field an
- * agent cannot read back is one it cannot check its own write against. The
- * operator console command and the service both accept it.
+ * rechecked before a receipt is replayed. The body is a closed shape: a caller
+ * may name `method`, `reference`, `notes` and `received_on` - the same fields
+ * the console command and the service accept - and must give the version it
+ * read and a reason. `payments.list` returns the note to the workspace
+ * managers who alone may write it, so a correction can be checked (#454).
  */
 final class CorrectPaymentAction
 {
@@ -44,19 +44,20 @@ final class CorrectPaymentAction
             function () use ($user, $workspace, $paymentId, $payload): array {
                 $this->authorize($user, $workspace);
                 $data = Validator::make(['body' => $payload], [
-                    'body' => ['required', 'array:expected_version,confirm,reason,method,reference,received_on'],
+                    'body' => ['required', 'array:expected_version,confirm,reason,method,reference,notes,received_on'],
                     'body.expected_version' => ['required', 'string', 'size:64'],
                     'body.confirm' => ['required', new ExplicitConfirmation],
-                    'body.reason' => ['required', 'string', 'max:500'],
+                    'body.reason' => ['required', 'string', 'max:'.PaymentCorrection::REASON_MAX_LENGTH],
                     'body.method' => ['sometimes', 'required', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
-                    'body.reference' => ['sometimes', 'nullable', 'string', 'max:255'],
+                    'body.reference' => ['sometimes', 'nullable', 'string', 'max:'.PaymentCorrection::REFERENCE_MAX_LENGTH],
+                    'body.notes' => ['sometimes', 'nullable', 'string', 'max:'.PaymentCorrection::NOTES_MAX_LENGTH],
                     'body.received_on' => ['sometimes', 'required', 'date_format:Y-m-d'],
                 ])->validate()['body'];
                 $payment = ClientInvoicePayment::query()
                     ->where('workspace_id', $workspace->id)
                     ->where('public_id', $paymentId)
                     ->firstOrFail();
-                $changes = array_intersect_key($data, array_flip(['method', 'reference', 'received_on']));
+                $changes = array_intersect_key($data, array_flip(PaymentCorrection::FIELDS));
                 $corrected = $this->invoices->correctPayment($payment, $changes, (string) $data['reason'], (string) $data['expected_version'], $workspace);
 
                 return [$corrected->public_id];

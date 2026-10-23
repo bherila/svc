@@ -7,8 +7,11 @@ use App\Models\AgentPrincipal;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentPaymentReadService;
+use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
 use App\Services\AgentApi\RecordPaymentAction;
+use App\Services\Authorization\AgentTokenScopes;
+use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -28,10 +31,11 @@ final class AgentPaymentController extends Controller
             (int) ($data['limit'] ?? 25), $data['cursor'] ?? null));
     }
 
-    public function store(Request $request, Workspace $workspace, AgentMutationContextFactory $contexts, RecordPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    public function store(Request $request, Workspace $workspace, AgentMutationContextFactory $contexts, RecordPaymentAction $action, AgentPaymentReadService $reads, AgentTokenScopes $scopes): JsonResponse
     {
         $context = $contexts->fromAuthenticatedClient($request);
-        $ids = $action->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all());
+        $ids = $action->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all(),
+            $scopes->allows($request, AgentApiScopes::FINANCE_RECONCILE));
 
         return response()->json($reads->result($context->user, $workspace, $ids), 201);
     }
@@ -40,6 +44,30 @@ final class AgentPaymentController extends Controller
     {
         $context = $contexts->fromAuthenticatedClient($request);
         $ids = $action->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $request->all());
+
+        return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
+    }
+
+    public function setStatus(Request $request, Workspace $workspace, string $payment, AgentMutationContextFactory $contexts, ChangeManualPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    {
+        $context = $contexts->fromAuthenticatedClient($request);
+        $ids = $action->setStatus($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $request->all());
+
+        return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
+    }
+
+    public function refund(Request $request, Workspace $workspace, string $payment, AgentMutationContextFactory $contexts, ChangeManualPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    {
+        $context = $contexts->fromAuthenticatedClient($request);
+        $ids = $action->refund($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $request->all());
+
+        return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
+    }
+
+    public function reverseRefund(Request $request, Workspace $workspace, string $payment, string $refund, AgentMutationContextFactory $contexts, ChangeManualPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    {
+        $context = $contexts->fromAuthenticatedClient($request);
+        $ids = $action->reverseRefund($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $refund, $request->all());
 
         return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
     }

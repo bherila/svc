@@ -21,6 +21,7 @@ return [
     'client_writes_enabled' => (bool) env('AGENT_API_CLIENT_WRITES_ENABLED', false),
     // Project administration and membership changes require this nested cutover.
     'project_writes_enabled' => (bool) env('AGENT_API_PROJECT_WRITES_ENABLED', false),
+    'collaboration_writes_enabled' => (bool) env('AGENT_API_COLLABORATION_WRITES_ENABLED', false),
     'workspace_writes_enabled' => (bool) env('AGENT_API_WORKSPACE_WRITES_ENABLED', false),
     'file_writes_enabled' => (bool) env('AGENT_API_FILE_WRITES_ENABLED', false),
     // Global MCP emergency stop and optional reviewed capability kill switches.
@@ -33,9 +34,9 @@ return [
     'mcp_concurrency_limit' => (int) env('AGENT_API_MCP_CONCURRENCY_LIMIT', 4),
     'mcp_concurrency_lock_seconds' => (int) env('AGENT_API_MCP_CONCURRENCY_LOCK_SECONDS', 60),
     'accept_legacy_cursors' => env('AGENT_API_ACCEPT_LEGACY_CURSORS', true),
-    'mcp_max_body_bytes' => (int) env('AGENT_API_MCP_MAX_BODY_BYTES', 262_144),
-    'mcp_max_result_bytes' => (int) env('AGENT_API_MCP_MAX_RESULT_BYTES', 262_144),
-    'mcp_max_response_body_bytes' => (int) env('AGENT_API_MCP_MAX_RESPONSE_BODY_BYTES', 1_048_576),
+    'mcp_max_body_bytes' => (int) env('AGENT_API_MCP_MAX_BODY_BYTES', 1_048_576),
+    'mcp_max_result_bytes' => (int) env('AGENT_API_MCP_MAX_RESULT_BYTES', 2_097_152),
+    'mcp_max_response_body_bytes' => (int) env('AGENT_API_MCP_MAX_RESPONSE_BODY_BYTES', 4_194_304),
     'mcp_session_ttl_seconds' => (int) env('AGENT_API_MCP_SESSION_TTL_SECONDS', 1800),
     'mcp_allowed_origins' => array_values(array_filter(array_map(
         static fn (string $origin): string => trim($origin),
@@ -45,5 +46,12 @@ return [
         static fn (string $host): string => trim($host),
         explode(',', (string) env('AGENT_API_MCP_ALLOWED_HOSTS', '')),
     ))),
-    'dynamic_client_retention_days' => (int) env('AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS', 30),
+    // OAuth client ids of first-party applications approved without a consent
+    // screen (comma-separated). Only an operator-registered, confidential,
+    // authorization-code client qualifies (App\Support\Auth\OAuthClient); register
+    // one with svc:auth:register-first-party-client.
+    'first_party_oauth_clients' => array_values(array_filter(array_map(
+        static fn (string $id): string => strtolower(trim($id)),
+        explode(',', (string) env('AGENT_API_FIRST_PARTY_OAUTH_CLIENTS', '')),
+    ))),
 ];

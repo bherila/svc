@@ -14,9 +14,14 @@ use Illuminate\Support\Facades\File;
 use LogicException;
 use Mockery;
 use PDOException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(RehearseGenerationCommand::class)]
+#[CoversClass(ReplayInvoicesCommand::class)]
+#[CoversClass(BillingMaintenanceBusy::class)]
+#[CoversClass(BillingMaintenance::class)]
 final class BillingMaintenanceProtocolTest extends TestCase
 {
     public static function modes(): iterable

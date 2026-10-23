@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Read-only host prerequisites, before maintenance, shared-path preparation or DB risk.
-# Configuration/key contents must never be opened or printed here.
+# Keys and database configuration are checked by metadata only. The incoming
+# OAuth flag is parsed without booting the app or printing configuration.
 set -euo pipefail
 
 test "$#" -eq 3
@@ -70,4 +71,108 @@ done
 require_private_file "$key_root/oauth-private.key" oauth-private.key
 require_private_file "$key_root/oauth-public.key" oauth-public.key
 
-echo 'SVC static deployment prerequisites passed (metadata only).'
+# Never enter maintenance expecting a person to re-enable issuance mid-deploy.
+# Both the incoming configuration and the currently served endpoint must be ready.
+# The action then owns the whole pause/resume via maintenance and Artisan drain.
+# Do not source deployment.env: it contains private values and is not shell code.
+# The hook itself is streamed over SSH; scripts/ is not in the default upload.
+# Feed the checker to PHP separately so it needs only the uploaded autoloader.
+if ! "$php_binary" -d display_errors=0 -d log_errors=0 -- \
+    "$account_root/$candidate_dir/vendor/autoload.php" "$account_root/.config/svc/deployment.env" \
+    >/dev/null 2>&1 <<'SVC_OAUTH_CONFIG'
+<?php
+use Dotenv\Parser\Parser;
+
+if (count($argv) !== 3) {
+    exit(2);
+}
+
+$status = 1;
+ob_start();
+try {
+    require $argv[1];
+    $contents = file_get_contents($argv[2], false, null, 0, 1048577);
+    if (is_string($contents) && strlen($contents) <= 1048576) {
+        $enabled = null;
+        $seen = 0;
+        foreach ((new Parser)->parse($contents) as $entry) {
+            if ($entry->getName() === 'AGENT_API_OAUTH_SERVER_ENABLED') {
+                $seen++;
+                $value = $entry->getValue()->getOrElse(null);
+                if ($value !== null && $value->getVars() === []) {
+                    $enabled = $value->getChars();
+                }
+            }
+        }
+        // Omitted, duplicate, interpolated and ambiguous flags fail closed.
+        $status = $seen === 1 && is_string($enabled) && in_array(strtolower($enabled), ['true', '(true)', '1'], true) ? 0 : 1;
+    }
+} catch (Throwable) {
+    // Dotenv errors may contain private values; never relay them.
+}
+ob_end_clean();
+exit($status);
+SVC_OAUTH_CONFIG
+then
+    fail 'incoming OAuth issuance is disabled or its configuration could not be verified; live service was not changed'
+fi
+if ! oauth_response=$(curl --silent --connect-timeout 5 --max-time 10 \
+    --output /dev/null --write-out '%{http_code} %{content_type}' \
+    https://svc.bherila.net/.well-known/oauth-authorization-server); then
+    fail 'live OAuth issuance could not be verified; live service was not changed'
+fi
+read -r oauth_status oauth_content_type <<<"$oauth_response"
+case "$oauth_status ${oauth_content_type,,}" in
+    '200 application/json' | '200 application/json;'*) ;;
+    *) fail 'live OAuth issuance is not ready; restore the intended configuration before deployment; live service was not changed' ;;
+esac
+
+# The shared action pauses SVC's cron lines before maintenance and replaces them after serving,
+# but it recognises a line only by `cd "$HOME/svc-laravel" ` (or the bare or expanded-home
+# spelling). An SVC line spelled any other way (~/svc-laravel, a release path, a job id alone)
+# would keep running through the migration and survive beside the canonical line, so refuse it
+# now, before anything changes. The classifier matches scripts/deploy/cron-audit.sh. Lines are
+# never printed.
+command -v crontab >/dev/null 2>&1 || fail 'crontab is unavailable'
+cron_work=$(mktemp -d)
+trap 'rm -rf -- "$cron_work"' EXIT
+if ! crontab -l >"$cron_work/current" 2>"$cron_work/error"; then
+    grep -qi 'no crontab for' "$cron_work/error" || fail 'the account crontab could not be read'
+    : >"$cron_work/current"
+fi
+# shellcheck disable=SC2016 # The literal spellings keep $HOME unexpanded, as cron sees it.
+unmanaged_cron=$(LC_ALL=C awk -v app="$stable_dir" \
+    -v quoted_literal='cd "$HOME/'"$stable_dir"'" ' -v bare_literal='cd $HOME/'"$stable_dir"' ' \
+    -v quoted_expanded="cd \"$HOME/$stable_dir\" " -v bare_expanded="cd $HOME/$stable_dir " '
+    function component(character) { return character != "" && character ~ /[A-Za-z0-9._-]/ }
+    function names_app(line,   offset, relative, start) {
+        offset = 1
+        while ((relative = index(substr(line, offset), app)) != 0) {
+            start = offset + relative - 1
+            if (!component(substr(line, start - 1, 1)) && !component(substr(line, start + length(app), 1))) return 1
+            offset = start + 1
+        }
+        return 0
+    }
+    # The scheduler job id anywhere it ends at an id boundary: trailing spaces or an annotation
+    # after it must not hide a legacy scheduler.
+    function has_job(line,   tag, offset, relative, start) {
+        tag = "JOB:" app "-scheduler"
+        offset = 1
+        while ((relative = index(substr(line, offset), tag)) != 0) {
+            start = offset + relative - 1
+            if (!component(substr(line, start + length(tag), 1))) return 1
+            offset = start + 1
+        }
+        return 0
+    }
+    /^[[:space:]]*(#|$)/ { next }
+    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ { next }
+    names_app($0) || has_job($0) {
+        if (!(index($0, quoted_literal) || index($0, bare_literal) || index($0, quoted_expanded) || index($0, bare_expanded))) unmanaged++
+    }
+    END { print unmanaged + 0 }
+' "$cron_work/current")
+test "$unmanaged_cron" = 0 || fail 'an SVC cron line is spelled so the deploy cannot pause or replace it'
+
+echo 'SVC deployment prerequisites passed; incoming and live OAuth issuance are ready.'

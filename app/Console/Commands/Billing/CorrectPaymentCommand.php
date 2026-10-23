@@ -2,13 +2,12 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
-use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use DomainException;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -21,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  * check, the no-op rule - inside a transaction that is always rolled back, so
  * what it reports is what a real run would do rather than a separate guess.
  */
-class CorrectPaymentCommand extends Command
+class CorrectPaymentCommand extends MutationCommand
 {
     protected $signature = 'svc:billing:correct-payment
         {payment : Payment public UUID}
@@ -32,7 +31,7 @@ class CorrectPaymentCommand extends Command
         {--received-on= : The day the money arrived, YYYY-MM-DD}
         {--reason= : Why the payment is being corrected (required)}
         {--expected-version= : Refuse unless the payment is still at this version}
-        {--dry-run : Report what would change and write nothing}
+        {--dry-run : Deprecated alias for the default preview}
         {--format=text : Output text or json}';
 
     protected $description = 'Correct a payment\'s method, reference, notes or received date, with a recorded reason';
@@ -40,11 +39,6 @@ class CorrectPaymentCommand extends Command
     public function handle(InvoiceLifecycleService $service): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
         $workspaceId = (string) $this->option('workspace');
         if ($workspaceId === '') {
             $this->error('The --workspace option is required.');
@@ -65,7 +59,7 @@ class CorrectPaymentCommand extends Command
             return self::INVALID;
         }
 
-        $workspace = Workspace::query()->where('public_id', $workspaceId)->first();
+        $workspace = $this->workspaceByPublicId($workspaceId);
         $payment = $workspace === null ? null : ClientInvoicePayment::query()
             ->where('workspace_id', $workspace->id)
             ->where('public_id', (string) $this->argument('payment'))
@@ -77,7 +71,7 @@ class CorrectPaymentCommand extends Command
         }
 
         $expected = $this->option('expected-version');
-        $dryRun = (bool) $this->option('dry-run');
+        $dryRun = ! $this->applying();
 
         // Reported from the row the service locked, never from the lookup
         // above: another write can land between the two, and a report built

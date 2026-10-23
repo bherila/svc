@@ -25,6 +25,16 @@ final class PaymentReconciliationService
      * Create or update one allocation identified by payment, external system,
      * and external transaction UUID.
      *
+     * An omitted (or null) `is_active` keeps an existing allocation's state and
+     * makes a new one active. It never reactivates: a delayed retry of an
+     * earlier PUT that arrives after the allocation was withdrawn must not
+     * bring it back, so only an explicit `true` does.
+     *
+     * Any change advances the payment's revision (and its `updated_at`): the
+     * finance resource embeds its allocations, so a change to one is a change
+     * to the payment a synchronizer must see. A request that changes nothing
+     * leaves the revision alone.
+     *
      * @param  array<string, mixed>  $attributes
      */
     public function upsert(
@@ -44,7 +54,7 @@ final class PaymentReconciliationService
         }
         $currency = MoneyService::currency($attributes['currency'] ?? null);
         $reconciledOn = $this->reconciliationDate($attributes['reconciled_on'] ?? null);
-        $isActive = $this->booleanAttribute($attributes['is_active'] ?? true, 'is_active');
+        $requestedActive = ($attributes['is_active'] ?? null) === null ? null : $this->booleanAttribute($attributes['is_active'], 'is_active');
 
         return DB::transaction(function () use (
             $workspace,
@@ -55,7 +65,7 @@ final class PaymentReconciliationService
             $allocatedAmount,
             $currency,
             $reconciledOn,
-            $isActive,
+            $requestedActive,
         ): PaymentReconciliation {
             $lockedPayment = ClientInvoicePayment::query()
                 ->whereKey($payment->id)
@@ -84,6 +94,7 @@ final class PaymentReconciliationService
             if ($existing !== null) {
                 $this->workspaceAuthorization->assertOwnedBy($workspace, $existing);
             }
+            $isActive = $requestedActive ?? ($existing === null || (bool) $existing->is_active);
 
             if ($isActive) {
                 $activeAllocated = (int) PaymentReconciliation::query()
@@ -108,12 +119,20 @@ final class PaymentReconciliationService
                     'currency' => $currency,
                     'reconciled_on' => $reconciledOn,
                     'is_active' => $isActive,
+                    // The finance system has written this allocation again,
+                    // against the payment as it now stands - after any refund
+                    // or dispute that flagged it - and it fits.
+                    'review_reason' => null,
+                    'review_flagged_at' => null,
                 ])->save();
+                if ($existing->wasChanged()) {
+                    $lockedPayment->advanceAgentRevision();
+                }
 
-                return $existing->fresh();
+                return $this->reloaded($workspace, $existing);
             }
 
-            return PaymentReconciliation::query()->create([
+            $created = PaymentReconciliation::query()->create([
                 'workspace_id' => $workspace->id,
                 'client_invoice_payment_id' => $lockedPayment->id,
                 'external_system_slug' => $systemSlug,
@@ -124,6 +143,9 @@ final class PaymentReconciliationService
                 'created_by_user_id' => $creator->id,
                 'is_active' => $isActive,
             ]);
+            $lockedPayment->advanceAgentRevision();
+
+            return $created;
         });
     }
 
@@ -157,10 +179,27 @@ final class PaymentReconciliationService
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
-            $reconciliation->forceFill(['is_active' => false])->save();
+            // Deactivating is how the finance system resolves a flagged
+            // allocation it no longer stands behind, including on a payment
+            // that is no longer succeeded, where an upsert is refused. An
+            // explicit current-proof acknowledgement instead keeps it active.
+            $reconciliation->forceFill(['is_active' => false, 'review_reason' => null, 'review_flagged_at' => null])->save();
+            // Withdrawing an allocation is a change to the payment, as recording one is.
+            if ($reconciliation->wasChanged()) {
+                $lockedPayment->advanceAgentRevision();
+            }
 
-            return $reconciliation->fresh();
+            return $this->reloaded($workspace, $reconciliation);
         });
+    }
+
+    /** The row as stored, read back through its workspace like every other tenant read. */
+    private function reloaded(Workspace $workspace, PaymentReconciliation $reconciliation): PaymentReconciliation
+    {
+        return PaymentReconciliation::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey($reconciliation->id)
+            ->firstOrFail();
     }
 
     private function assertCreatorBelongsToWorkspace(Workspace $workspace, User $creator): void

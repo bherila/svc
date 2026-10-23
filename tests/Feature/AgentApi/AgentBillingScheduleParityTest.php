@@ -47,6 +47,30 @@ final class AgentBillingScheduleParityTest extends TestCase
         $this->actingAsMcp($this->owner, ['mcp:use', 'billing:read', 'billing:write', 'billing:deliver']);
     }
 
+    public function test_handover_refusals_and_preflight_match_in_rest_and_mcp(): void
+    {
+        $successor = $this->agreement->replicate(['public_id']);
+        $successor->starts_on = Carbon::parse('2026-10-15');
+        $successor->save();
+        $rest = $this->postJson($this->base(), $this->body(), ['Idempotency-Key' => 'synthetic-handover-create'])->assertUnprocessable();
+        $this->assertStringContainsString($successor->public_id, $rest->json('message'));
+        $session = $this->initialize();
+        $mcp = $this->callTool($session, 'billing_schedules.create', ['workspace_id' => $this->workspace->public_id,
+            'idempotency_key' => 'synthetic-handover-mcp', ...$this->body()]);
+        $this->assertTrue($mcp['result']['isError']);
+        $this->assertStringContainsString($successor->public_id, json_encode($mcp));
+        $schedule = $this->schedule();
+        $this->postJson($this->base().'/'.$schedule->public_id.'/generate', ['expected_version' => AgentApiVersion::for($schedule), 'confirm' => true], ['Idempotency-Key' => 'synthetic-handover-generate'])->assertUnprocessable();
+        $this->assertDatabaseCount('client_invoices', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+        $path = '/api/v1/workspaces/'.$this->workspace->public_id.'/billing-audits/schedule-generation-preflight';
+        $report = $this->getJson($path)->assertOk()->json('data');
+        $this->assertSame(1, $report['would_halt']);
+        $this->assertSame(1, $report['defects_by_kind']['agreement_handover_overlap']);
+        $mcpReport = $this->callTool($session, 'billing.preflight_schedule_generation', ['workspace_id' => $this->workspace->public_id]);
+        $this->assertSame($report, $mcpReport['result']['structuredContent']['data'] ?? $mcpReport);
+    }
+
     public function test_public_agreement_revision_can_create_a_schedule_and_replay_through_mcp(): void
     {
         $path = '/api/v1/workspaces/'.$this->workspace->public_id.'/agreements/'.$this->agreement->public_id;
@@ -142,6 +166,7 @@ final class AgentBillingScheduleParityTest extends TestCase
     {
         config(['app.debug' => false]);
         $otherAgreement = $this->agreement->replicate(['public_id']);
+        $otherAgreement->starts_on = Carbon::parse('2027-01-01');
         $otherAgreement->save();
         $existing = $this->schedule(['client_agreement_id' => $otherAgreement->id]);
         ClientBillingSchedule::creating(function (ClientBillingSchedule $schedule) use ($existing): void {

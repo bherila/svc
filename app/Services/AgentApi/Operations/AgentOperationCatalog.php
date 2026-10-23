@@ -7,9 +7,13 @@ use App\Services\Mcp\AgentMcpAgreementTools;
 use App\Services\Mcp\AgentMcpBillingAuditTools;
 use App\Services\Mcp\AgentMcpBillingScheduleTools;
 use App\Services\Mcp\AgentMcpCapacityLedgerTools;
+use App\Services\Mcp\AgentMcpClientContactTools;
 use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
+use App\Services\Mcp\AgentMcpCollaborationTools;
 use App\Services\Mcp\AgentMcpContextResource;
+use App\Services\Mcp\AgentMcpDeferredBuyDownTools;
+use App\Services\Mcp\AgentMcpFinanceTools;
 use App\Services\Mcp\AgentMcpPaymentReminderTools;
 use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPortalInvitationTools;
@@ -59,6 +63,15 @@ final class AgentOperationCatalog
      * @var array<string, array{0: string, 1: string, 2: list<int>}>
      */
     private const array ROUTES = [
+        'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
+        'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
+        'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
+        'collaboration.topics.update' => ['collaboration.topics.update', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
+        'collaboration.topics.delete' => ['collaboration.topics.destroy', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
+        'collaboration.comments.list' => ['collaboration.comments.index', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}', [200]],
+        'collaboration.comments.create' => ['collaboration.comments.store', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}', [201]],
+        'collaboration.comments.update' => ['collaboration.comments.update', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{comment}', [200]],
+        'collaboration.comments.delete' => ['collaboration.comments.destroy', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{comment}', [200]],
         'agreements.activate' => ['agreements.activate', '/workspaces/{workspace}/agreements/{agreement}/activate', [200]],
         'agreements.create' => ['agreements.store', '/workspaces/{workspace}/clients/{client}/agreements', [201]],
         'agreements.get' => ['agreements.show', '/workspaces/{workspace}/agreements/{agreement}', [200]],
@@ -74,15 +87,30 @@ final class AgentOperationCatalog
         'attachments.list' => ['attachments.index', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments', [200]],
         'attachments.upload' => ['attachments.upload', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload', [201]],
         'attachments.upload_url' => ['attachments.upload-url', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload-url', [200]],
+        'billing.audit_missing_billed_overage' => ['billing-audits.missing-billed-overage', '/workspaces/{workspace}/billing-audits/missing-billed-overage', [200]],
+        'billing.audit_opening_rollover' => ['billing-audits.opening-rollover', '/workspaces/{workspace}/billing-audits/opening-rollover', [200]],
+        'billing.audit_undated_collectible_invoices' => ['billing-audits.undated-collectible-invoices', '/workspaces/{workspace}/billing-audits/undated-collectible-invoices', [200]],
+        'billing.audit_unlinked_proposal_agreements' => ['billing-audits.unlinked-proposal-agreements', '/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements', [200]],
+        'billing.audit_unplaceable_invoices' => ['billing-audits.unplaceable-invoices', '/workspaces/{workspace}/billing-audits/unplaceable-invoices', [200]],
+        'billing.preflight_schedule_generation' => ['billing-audits.schedule-generation-preflight', '/workspaces/{workspace}/billing-audits/schedule-generation-preflight', [200]],
         'billing_audit.stale_and_missing' => ['billing_audit.stale_and_missing', '/workspaces/{workspace}/billing-audits/stale-and-missing', [200]],
         'billing_schedules.create' => ['billing-schedules.store', '/workspaces/{workspace}/billing-schedules', [201]],
         'billing_schedules.generate' => ['billing-schedules.generate', '/workspaces/{workspace}/billing-schedules/{schedule}/generate', [200]],
         'billing_schedules.get' => ['billing-schedules.show', '/workspaces/{workspace}/billing-schedules/{schedule}', [200]],
         'billing_schedules.list' => ['billing-schedules.index', '/workspaces/{workspace}/billing-schedules', [200]],
+        'deferred_backlog.preview' => ['agreements.deferred-backlog.preview', '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/preview', [200]],
+        'invoices.create_deferred_buydown' => ['agreements.deferred-backlog.create', '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices', [201]],
+        'capacity_ledger.get' => ['agreements.capacity-ledger', '/workspaces/{workspace}/agreements/{agreement}/capacity-ledger', [200]],
         'clients.archive' => ['clients.archive', '/workspaces/{workspace}/clients/{client}/archive', [200]],
         'clients.create' => ['clients.store', '/workspaces/{workspace}/clients', [201]],
         'clients.get' => ['clients.show', '/workspaces/{workspace}/clients/{client}', [200]],
         'clients.list' => ['clients.index', '/workspaces/{workspace}/clients', [200]],
+        'clients.contacts.list' => ['clients.contacts.index', '/workspaces/{workspace}/clients/{client}/contacts', [200]],
+        'clients.contacts.get' => ['clients.contacts.show', '/workspaces/{workspace}/clients/{client}/contacts/{contact}', [200]],
+        'clients.contacts.create' => ['clients.contacts.store', '/workspaces/{workspace}/clients/{client}/contacts', [201]],
+        'clients.contacts.update' => ['clients.contacts.update', '/workspaces/{workspace}/clients/{client}/contacts/{contact}', [200]],
+        'clients.contacts.archive' => ['clients.contacts.archive', '/workspaces/{workspace}/clients/{client}/contacts/{contact}/archive', [200]],
+        'clients.contacts.restore' => ['clients.contacts.restore', '/workspaces/{workspace}/clients/{client}/contacts/{contact}/restore', [200]],
         'clients.portal_access.list' => ['clients.portal-access.index', '/workspaces/{workspace}/clients/{client}/portal-access', [200]],
         'clients.portal_access.grant' => ['clients.portal-access.store', '/workspaces/{workspace}/clients/{client}/portal-access', [201]],
         'clients.portal_access.update' => ['clients.portal-access.update', '/workspaces/{workspace}/clients/{client}/portal-access/{user}', [200]],
@@ -98,6 +126,7 @@ final class AgentOperationCatalog
         'companies.square_customer.clear' => ['clients.square-customer.destroy', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
         'companies.square_customer.get' => ['clients.square-customer.show', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
         'companies.square_customer.set' => ['clients.square-customer.update', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
+        'connections.disconnect' => ['connection.destroy', '/connection', [204]],
         'connections.revoke' => ['connections.destroy', '/connections/{token}', [204]],
         'context.get' => ['context', '/context', [200]],
         'expense_schedules.create' => ['expense-schedules.store', '/workspaces/{workspace}/expense-schedules', [201]],
@@ -115,6 +144,12 @@ final class AgentOperationCatalog
         'expenses.receipts.upload_url' => ['expense-receipts.upload-url', '/workspaces/{workspace}/expenses/{expense}/receipts/upload-url', [200]],
         'expenses.unapprove' => ['expenses.unapprove', '/workspaces/{workspace}/expenses/{expense}/unapprove', [200]],
         'expenses.update' => ['expenses.update', '/workspaces/{workspace}/expenses/{expense}', [200]],
+        'finance.invoice_payments.list' => ['invoice-payments.index', '/workspaces/{workspace}/invoice-payments', [200]],
+        'finance.payouts.list' => ['payouts.index', '/workspaces/{workspace}/payouts', [200]],
+        'finance.processor_movements.list' => ['processor-movements.index', '/workspaces/{workspace}/processor-movements', [200]],
+        'finance.reconciliations.acknowledge' => ['payment-reconciliations.acknowledge', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}/acknowledgement', [200]],
+        'finance.reconciliations.deactivate' => ['payment-reconciliations.destroy', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200]],
+        'finance.reconciliations.upsert' => ['payment-reconciliations.upsert', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200, 201]],
         'invoices.add_time' => ['invoices.add_time', '/workspaces/{workspace}/invoices/{invoice}/time', [200]],
         'invoices.correct' => ['invoices.correct', '/workspaces/{workspace}/invoices/{invoice}/correct', [200]],
         'invoices.create_draft' => ['invoices.store', '/workspaces/{workspace}/invoices', [201]],
@@ -133,15 +168,22 @@ final class AgentOperationCatalog
         'invoices.release_delivery' => ['invoices.release_delivery', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release', [200]],
         'invoices.send' => ['invoices.send', '/workspaces/{workspace}/invoices/{invoice}/send', [200]],
         'invoices.square_candidates' => ['invoices.square-candidates.index', '/workspaces/{workspace}/invoices/{invoice}/square-candidates', [200]],
+        'invoices.square_cover' => ['invoices.square-coverage.store', '/workspaces/{workspace}/invoices/{invoice}/square-coverage', [200]],
         'invoices.square_link' => ['invoices.square-link.store', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
+        'invoices.square_reconcile' => ['invoices.square-reconcile.store', '/workspaces/{workspace}/invoices/{invoice}/square-reconcile', [200]],
+        'invoices.square_uncover' => ['invoices.square-coverage.destroy', '/workspaces/{workspace}/invoices/{invoice}/square-coverage', [200]],
         'invoices.square_unlink' => ['invoices.square-link.destroy', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
         'invoices.update_details' => ['invoices.update_details', '/workspaces/{workspace}/invoices/{invoice}/details', [200]],
         'invoices.update_draft' => ['invoices.update', '/workspaces/{workspace}/invoices/{invoice}', [200]],
         'invoices.void' => ['invoices.void', '/workspaces/{workspace}/invoices/{invoice}/void', [200]],
         'operations.summary' => ['workspaces.summary', '/workspaces/{workspace}/summary', [200]],
+        'oauth.token.revoke' => ['oauth.token.destroy', '/oauth/token', [204]],
         'payments.correct' => ['payments.update', '/workspaces/{workspace}/payments/{payment}', [200]],
         'payments.list' => ['payments.index', '/workspaces/{workspace}/payments', [200]],
         'payments.record' => ['payments.store', '/workspaces/{workspace}/payments', [201]],
+        'payments.refund' => ['payments.refund', '/workspaces/{workspace}/payments/{payment}/refunds', [200]],
+        'payments.reverse_refund' => ['payments.refunds.reverse', '/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal', [200]],
+        'payments.set_status' => ['payments.status', '/workspaces/{workspace}/payments/{payment}/status', [200]],
         'projects.archive' => ['projects.archive', '/workspaces/{workspace}/projects/{project}/archive', [200]],
         'projects.create' => ['projects.store', '/workspaces/{workspace}/projects', [201]],
         'projects.get' => ['projects.show', '/workspaces/{workspace}/projects/{project}', [200]],
@@ -202,7 +244,7 @@ final class AgentOperationCatalog
     {
         $this->registry();
 
-        return isset($this->managerOnly[$operationId]);
+        return ($this->managerOnly[$operationId] ?? false) === true;
     }
 
     /** Whether the operation reads a system outside SVC (an MCP open-world tool). */
@@ -216,7 +258,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror());
+        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -229,9 +271,36 @@ final class AgentOperationCatalog
     }
 
     /** @return list<Operation> */
+    private function collaborationTools(): array
+    {
+        $definitions = [
+            'topics.list' => ['topicsList', 'List native topics'],
+            'topics.get' => ['topicsGet', 'Get native topic'],
+            'topics.create' => ['topicsCreate', 'Create native topic'],
+            'topics.update' => ['topicsUpdate', 'Update native topic'],
+            'topics.delete' => ['topicsDelete', 'Remove native topic'],
+            'comments.list' => ['commentsList', 'List native comments'],
+            'comments.create' => ['commentsCreate', 'Create native comment'],
+            'comments.update' => ['commentsUpdate', 'Update native comment'],
+            'comments.delete' => ['commentsDelete', 'Remove native comment'],
+        ];
+        $tools = [];
+        foreach ($definitions as $name => [$handler, $title]) {
+            $read = in_array($name, ['topics.list', 'topics.get', 'comments.list'], true);
+            $tools[] = $this->tool('collaboration.'.$name, $title,
+                ($name === 'comments.list' ? 'Ascending opaque cursor pages; limit is a maximum of 1–30 rows (default 1), and a byte budget may shorten pages. Follow meta.next_cursor or next_href until null; previous_href is null. ' : '').'Native notes, discussions and flat comments. Current staff roles, authorship, parent visibility and portal grants apply. Portal and dual identities are read-only; no history is activated and no mail is sent.',
+                [AgentMcpCollaborationTools::class, $handler], $read ? Effect::Read : (str_ends_with($name, '.delete') ? Effect::Destructive : Effect::LocalWrite), true,
+                $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::COLLABORATION]);
+        }
+
+        return $tools;
+    }
+
+    /** @return list<Operation> */
     private function tools(): array
     {
         return [
+            ...$this->collaborationTools(),
             $this->tool(
                 'context.get',
                 'Get context',
@@ -253,7 +322,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'projects.list',
                 'List projects',
-                'List authorized projects with bounded cursor pagination.',
+                'List authorized projects with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.',
                 [AgentMcpReadTools::class, 'projects'],
                 Effect::Read,
                 true,
@@ -272,7 +341,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'projects.get',
                 'Get project',
-                'Get one authorized project and its visible tasks.',
+                'Get one authorized project. When tasks:read is held, includes a bounded first task page; follow tasks_next_href or pass its tasks_cursor to continue. Long descriptions can shorten pages.',
                 [AgentMcpReadTools::class, 'project'],
                 Effect::Read,
                 true,
@@ -281,7 +350,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'tasks.list',
                 'List tasks',
-                'List authorized tasks with bounded cursor pagination.',
+                'List authorized tasks with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.',
                 [AgentMcpReadTools::class, 'tasks'],
                 Effect::Read,
                 true,
@@ -341,6 +410,9 @@ final class AgentOperationCatalog
                 true,
                 'mcp.read',
             ),
+            // MCP lists invoice snapshots for every authorized viewer. The
+            // REST-only change window is gated to workspace owners/admins by
+            // AgentReadService; it must not make this whole tool manager-only.
             $this->tool(
                 'invoices.list',
                 'List invoices',
@@ -372,7 +444,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing_audit.stale_and_missing',
                 'Audit stale drafts and missing periods',
-                'Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Flags only: nothing is issued, sent or generated.',
+                'Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Where Square serves the workspace, also flags invoices paid outside Square, billed Square series periods with no linked svc invoice, unrecorded Square payments, unlinked Square customers with an open balance, and series drift from the agreement. Also reports issued invoice coverage overlapping a successor agreement for review, without inferring whether it was prorated. Flags only: nothing is issued, sent or generated, and nothing is written to Square.',
                 [AgentMcpReadTools::class, 'billingAuditStaleAndMissing'],
                 Effect::Read,
                 true,
@@ -407,7 +479,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'attachments.list',
                 'List attachments',
-                'List up to 100 generic files on a tenant-owned record, with its parent version. Workspace managers only; expense receipts use separate tools.',
+                'List up to 100 authorized generic files on a tenant-owned record, with its parent version. Workspace managers only; dual identities use exact Portal grants and file visibility. Expense receipts use separate tools.',
                 [AgentMcpWriteTools::class, 'attachmentsList'],
                 Effect::Read,
                 true,
@@ -417,7 +489,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'attachments.get',
                 'Get attachment',
-                'Get generic file metadata and current version. Workspace managers only.',
+                'Get authorized generic file metadata and current version. Workspace managers only; dual identities use exact Portal grants and file visibility.',
                 [AgentMcpWriteTools::class, 'attachmentsGet'],
                 Effect::Read,
                 true,
@@ -776,6 +848,17 @@ final class AgentOperationCatalog
                 manager: true,
             ),
             $this->tool(
+                'deferred_backlog.preview', 'Preview deferred work settlement',
+                'Preview FIFO whole-entry settlement of deferred work at termination rates, without using retainer capacity. Choose hours or a gross amount target; round_up optionally includes the next whole entry. A discount is an explicit adjustment with a reason. Returns the backlog version required to reserve the selection as a draft. Managers only.',
+                [AgentMcpDeferredBuyDownTools::class, 'preview'], Effect::Read, true, 'mcp.read', manager: true, input: AgentInlineSchemas::deferredBuyDownPreviewInput(),
+            ),
+            $this->tool(
+                'invoices.create_deferred_buydown', 'Create deferred work settlement draft',
+                'Reserve FIFO whole deferred entries on a draft at the previewed backlog version. Discounts are explicit negative adjustments with reasons. Does not issue, send, consume retainer capacity or trigger catch-up. Void or discard releases the work. Managers only; idempotency required.',
+                [AgentMcpDeferredBuyDownTools::class, 'create'], Effect::LocalWrite, true, 'mcp.write',
+                cutovers: [AgentDeploymentFlags::INVOICES], manager: true,
+            ),
+            $this->tool(
                 'invoices.generate_period',
                 'Generate cadence period draft',
                 'Create the draft for an explicit started retainer cycle on an active recurring agreement, through the same cadence engine as invoices.preview_period. Nothing generates cadence period drafts automatically: a started period with no draft is waiting for this call, not for a scheduled job, and billing_audit.stale_and_missing lists started periods that have no non-void invoice. period_start is the retainer cycle start; service dates cover the preceding work cycle. Repeating the same idempotency key returns the same draft; a period that already has a non-void invoice is refused. Explicit confirmation and current agreement version required.',
@@ -811,7 +894,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.create_draft',
                 'Create invoice draft',
-                'Create a draft from explicit manual lines and/or explicit approved time.',
+                'Create a draft from explicit manual lines and/or explicit approved time. Optionally set the invoice number, issue date, service period and client visibility as the invoice screen does; omitted, the next number is used and the draft stays hidden until issued.',
                 [AgentMcpWriteTools::class, 'invoicesCreateDraft'],
                 Effect::LocalWrite,
                 true,
@@ -871,6 +954,28 @@ final class AgentOperationCatalog
                 manager: true,
             ),
             $this->tool(
+                'invoices.square_cover',
+                'Record Square invoice as covered',
+                'Workspace managers only. When one invoice covers what Square split into several, record another Square invoice as covered by this one, after the person confirms it. The invoice must already be linked to its primary Square invoice; a Square invoice linked or covered anywhere is refused. Not a link: SVC collects, reconciles and records nothing through it, and the billing audit stops reporting it as an unmirrored period. Nothing is sent to Square.',
+                [AgentMcpSquareLinkTools::class, 'cover'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::INVOICES],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.square_uncover',
+                'Remove Square invoice coverage',
+                'Workspace managers only. Stop recording a Square invoice as covered by this invoice, only after explicit confirmation. The record is kept as history and the Square invoice may be covered or linked again.',
+                [AgentMcpSquareLinkTools::class, 'uncover'],
+                Effect::Destructive,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::INVOICES],
+                manager: true,
+            ),
+            $this->tool(
                 'companies.square_customer.get',
                 'Get client Square customer',
                 'Workspace managers only. Read a client\'s confirmed Square customer and the client version the mapping writes require.',
@@ -905,7 +1010,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.square_series.set',
                 'Mark agreement billed in Square',
-                'Workspace managers only. Mark an agreement as billed in Square by its recurring series key, only after explicit confirmation. SVC keeps generating and issuing its invoices but never emails, charges or offers a payment link for them.',
+                'Workspace managers only. Mark an agreement as billed in Square by its recurring series key in one Square location, only after explicit confirmation. Omit location_id to take the one location the Square mirror holds the series in; a series in more than one location needs location_id. SVC keeps generating and issuing its invoices but never emails, charges or offers a payment link for them.',
                 [AgentMcpSquareLinkTools::class, 'markAgreement'],
                 Effect::LocalWrite,
                 true,
@@ -990,7 +1095,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.send',
                 'Send invoice',
-                'Queue delivery to explicit recipients only after confirmation.',
+                'Email the invoice to explicit recipients only after confirmation, optionally with a subject, a covering message and a blind copy to your own address (bcc_self).',
                 [AgentMcpWriteTools::class, 'invoicesSend'],
                 Effect::LocalWrite,
                 true,
@@ -1010,7 +1115,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'payments.record',
                 'Record received payment',
-                'Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.',
+                'Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. finance_reconciliation (external system slug, transaction UUID, allocated amount; needs finance:reconcile) also writes the payment\'s finance allocation in the same transaction. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused, and so is any payment while another on the invoice is pending or Square collects it (invoices.get shows pending_payments and collection_owner). Never charges a customer or issues a refund.',
                 [AgentMcpWriteTools::class, 'paymentsRecord'],
                 Effect::LocalWrite,
                 true,
@@ -1021,9 +1126,42 @@ final class AgentOperationCatalog
             $this->tool(
                 'payments.correct',
                 'Correct received payment',
-                'Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.',
+                'Correct the method, reference, notes or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference or note clears it. Amount, currency, status and refunds cannot be changed here; use payments.set_status or payments.refund. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.',
                 [AgentMcpWriteTools::class, 'paymentsCorrect'],
                 Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::PAYMENTS],
+                manager: true,
+            ),
+            $this->tool(
+                'payments.set_status',
+                'Set a hand-recorded payment\'s status',
+                'Mark a payment recorded by hand succeeded (it cleared), failed (it bounced or was reversed) or canceled (it was recorded in error and is withdrawn), with a reason kept in the client history and the version from payments.list. Only pending payments may succeed; pending or unrefunded succeeded payments may fail or be canceled; failed, canceled, refunded and disputed are final, so money arriving later is a new payment. The invoice balance and status are recomputed. Processor (Stripe, Square) payments are refused. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.',
+                [AgentMcpWriteTools::class, 'paymentsSetStatus'],
+                Effect::Destructive,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::PAYMENTS],
+                manager: true,
+            ),
+            $this->tool(
+                'payments.refund',
+                'Record a refund of a hand-recorded payment',
+                'Record that part or all of a succeeded payment recorded by hand was returned to the client outside SVC: amount is what was returned now, in minor units, at most what is left. A full refund makes the payment refunded; the invoice balance reopens by the amount. A reason kept in the client history and the version from payments.list are required. Processor (Stripe, Square) payments are refused. Explicit user confirmation and idempotency key required. Owner/admin only. SVC never sends the money.',
+                [AgentMcpWriteTools::class, 'paymentsRefund'],
+                Effect::Destructive,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::PAYMENTS],
+                manager: true,
+            ),
+            $this->tool(
+                'payments.reverse_refund',
+                'Reverse a refund recorded in error',
+                'Answer a refund of a hand-recorded payment that was recorded in error - the money was never returned - with a reversing entry linked to it, using the refund id and the version from payments.list. The refund stays in the history unchanged; amount reverses part of it and is omitted to reverse all of it. A refund is reversed once, never by more than it was. The money counts toward the invoice again, so a fully refunded payment succeeds again and the balance falls; refused on a void invoice or where payments would exceed the invoice total. A reason kept in the client history is required. Processor (Stripe, Square) payments are refused. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or moves money.',
+                [AgentMcpWriteTools::class, 'paymentsReverseRefund'],
+                Effect::Destructive,
                 true,
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::PAYMENTS],
@@ -1039,7 +1177,6 @@ final class AgentOperationCatalog
                 'mcp.read.agreements',
                 manager: true,
                 input: AgentInlineSchemas::agreementListInput(),
-                output: AgentInlineSchemas::agreementListOutput(),
             ),
             $this->tool(
                 'agreements.get',
@@ -1051,7 +1188,6 @@ final class AgentOperationCatalog
                 'mcp.read.agreements',
                 manager: true,
                 input: AgentInlineSchemas::agreementGetInput(),
-                output: AgentInlineSchemas::agreementOutput(),
             ),
             $this->tool(
                 'clients.list',
@@ -1116,6 +1252,58 @@ final class AgentOperationCatalog
                 input: AgentInlineSchemas::clientInput('clients.archive', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'idempotency_key'], write: true),
             ),
             $this->tool(
+                'clients.contacts.list', 'List business contacts',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'listing'], Effect::Read, true,
+                'mcp.read.clients',
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.list', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'status' => ['type' => ['string', 'null'], 'enum' => ['active', 'archived', null]], 'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25], 'cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]], ['client_id']),
+            ),
+            $this->tool(
+                'clients.contacts.get', 'Get business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'get'], Effect::Read, true,
+                'mcp.read.clients',
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.get', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid']], ['client_id', 'contact_id']),
+            ),
+            $this->tool(
+                'clients.contacts.create', 'Create business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'create'], Effect::LocalWrite, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.create', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.contacts.update', 'Update business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'update'], Effect::LocalWrite, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.update', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'contact_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.contacts.archive', 'Archive business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'archive'], Effect::Destructive, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.archive', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'contact_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.contacts.restore', 'Restore business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'restore'], Effect::LocalWrite, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.restore', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'contact_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
                 'clients.portal_access.list',
                 'List portal contacts',
                 'List portal contacts for a client as a workspace owner/admin, including scope, selected projects and finished mutation URLs.',
@@ -1129,7 +1317,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'clients.portal_access.grant',
                 'Grant portal access',
-                'Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key.',
+                'Grant portal access to an existing account found by exact email and bound to the configured identity provider. When nobody signs in with the address, invite it with clients.portal_invitations.create instead, where available. Requires explicit confirmation and an idempotency key.',
                 [AgentMcpPortalAccessTools::class, 'grant'],
                 Effect::LocalWrite,
                 true,
@@ -1280,7 +1468,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing_schedules',
                 manager: true,
                 input: AgentInlineSchemas::billingScheduleListInput(),
-                output: AgentInlineSchemas::billingScheduleListOutput(),
             ),
             $this->tool(
                 'billing_schedules.get',
@@ -1292,72 +1479,83 @@ final class AgentOperationCatalog
                 'mcp.read.billing_schedules',
                 manager: true,
                 input: AgentInlineSchemas::billingScheduleGetInput(),
-                output: AgentInlineSchemas::billingScheduleOutput(),
             ),
             $this->tool(
                 'capacity_ledger.get',
                 'Get capacity ledger',
-                'Get a bounded trailing window of the computed agreement capacity ledger.',
+                'Get a bounded trailing window of the computed agreement capacity ledger and its deferred backlog.',
                 [AgentMcpCapacityLedgerTools::class, 'get'],
                 Effect::Read,
                 true,
                 'mcp.read.capacity_ledger',
                 manager: true,
                 input: AgentInlineSchemas::capacityLedgerInput(),
-                output: AgentInlineSchemas::capacityLedgerOutput(),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_unplaceable_invoices',
                 'Audit unplaceable invoices',
-                'Get aggregate counts of invoices whose billing period or cycle cannot be placed safely.',
+                self::restDescription('billing.audit_unplaceable_invoices'),
                 [AgentMcpBillingAuditTools::class, 'unplaceableInvoices'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_unplaceable_invoices',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_unplaceable_invoices')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_undated_collectible_invoices',
                 'Audit undated collectible invoices',
-                'Get aggregate counts and per-currency balances for collectible invoices without due dates.',
+                self::restDescription('billing.audit_undated_collectible_invoices'),
                 [AgentMcpBillingAuditTools::class, 'undatedCollectibleInvoices'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_undated_collectible_invoices',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_undated_collectible_invoices')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_missing_billed_overage',
                 'Audit missing billed overage',
-                'Get aggregate counts of charged invoices missing billed-overage data.',
+                self::restDescription('billing.audit_missing_billed_overage'),
                 [AgentMcpBillingAuditTools::class, 'missingBilledOverage'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_missing_billed_overage',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_missing_billed_overage')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_opening_rollover',
                 'Audit opening rollover',
-                'Get aggregate counts of agreements whose opening rollover changes their capacity ledger.',
+                self::restDescription('billing.audit_opening_rollover'),
                 [AgentMcpBillingAuditTools::class, 'openingRollover'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_opening_rollover',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_opening_rollover')),
-                scopes: ['billing:read'],
+            ),
+            $this->tool(
+                'billing.preflight_schedule_generation',
+                'Preflight schedule generation',
+                self::restDescription('billing.preflight_schedule_generation'),
+                [AgentMcpBillingAuditTools::class, 'scheduleGenerationPreflight'],
+                Effect::Read,
+                true,
+                'mcp.read.billing.preflight_schedule_generation',
+                manager: true,
+                input: AgentInlineSchemas::billingAuditInput(),
+            ),
+            $this->tool(
+                'billing.audit_unlinked_proposal_agreements',
+                'Audit unlinked proposal agreements',
+                self::restDescription('billing.audit_unlinked_proposal_agreements'),
+                [AgentMcpBillingAuditTools::class, 'unlinkedProposalAgreements'],
+                Effect::Read,
+                true,
+                'mcp.read.billing.audit_unlinked_proposal_agreements',
+                manager: true,
+                input: AgentInlineSchemas::billingAuditInput(),
             ),
         ];
     }
@@ -1413,6 +1611,7 @@ final class AgentOperationCatalog
     private function squareMirror(): array
     {
         $this->external['square.sync'] = true;
+        $this->external['invoices.square_reconcile'] = true;
         $reads = [];
         foreach ([
             'square.mirror.invoices.list' => ['List mirrored Square invoices', 'invoices'],
@@ -1449,6 +1648,18 @@ final class AgentOperationCatalog
                 manager: true,
             ),
             $this->tool(
+                'invoices.square_reconcile',
+                'Reconcile invoice with Square',
+                self::documented('invoices.square_reconcile'),
+                [AgentMcpSquareMirrorTools::class, 'reconcileInvoice'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::WRITES],
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+            $this->tool(
                 'square.sync',
                 'Sync Square mirror',
                 self::documented('square.sync'),
@@ -1461,6 +1672,56 @@ final class AgentOperationCatalog
                 manager: true,
             ),
         ];
+    }
+
+    /**
+     * Finance reconciliation (#457): the payments a finance system reconciles
+     * against, the processor payouts that settled them (S7), and the
+     * allocations it records, for workspace managers. The
+     * same REST routes serve the Sanctum finance token, whose abilities the
+     * route gate reads as these scopes ({@see AgentPrincipalResolver}), so
+     * no write cutover gates them: they were never behind one, and the
+     * integration must not stop when agent writes are switched off. The MCP
+     * switches still withhold the tools.
+     *
+     * A write is named by its path - payment, external system, transaction -
+     * and PUT or DELETE on it is the same write however often it is sent, so
+     * it takes no idempotency key or version.
+     *
+     * @return list<Operation>
+     */
+    private function finance(): array
+    {
+        $operations = [];
+        foreach ([
+            'finance.invoice_payments.list' => ['List payments for finance reconciliation', 'list', Effect::Read, 'mcp.read'],
+            'finance.payouts.list' => ['List processor payouts for finance reconciliation', 'payouts', Effect::Read, 'mcp.read'],
+            'finance.processor_movements.list' => ['Read signed processor movements', 'movements', Effect::Read, 'mcp.read'],
+            'finance.reconciliations.upsert' => ['Set a finance reconciliation allocation', 'upsert', Effect::LocalWrite, 'mcp.write'],
+            'finance.reconciliations.acknowledge' => ['Acknowledge the current finance allocation review', 'acknowledge', Effect::LocalWrite, 'mcp.write'],
+            'finance.reconciliations.deactivate' => ['Deactivate a finance reconciliation allocation', 'deactivate', Effect::LocalWrite, 'mcp.write'],
+        ] as $id => [$title, $method, $effect, $group]) {
+            $this->managerOnly[$id] = true;
+            $documented = AgentRestDocumentation::operations()[$id];
+            $operations[] = new Operation(
+                id: $id,
+                title: $title,
+                description: self::documented($id),
+                effect: $effect,
+                requirement: new Requirement(scopes: $documented['scopes'], flags: self::mcpSwitches($group, $id)),
+                idempotent: true,
+                safety: $id === 'finance.reconciliations.acknowledge'
+                    ? new WriteSafety(expectedVersion: true, confirm: true, note: 'Conditional acknowledgement of the exact payment revision, review reason and instant. No idempotency key: stale or already-cleared reviews return 409 and require a fresh read; repeated requests never clear a newer review.')
+                    : new WriteSafety(note: $effect->readOnly() ? null : 'Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key.'),
+                rest: $this->rest($id),
+                mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
+                input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
+                output: SchemaRef::responseOf($id),
+                extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
+            );
+        }
+
+        return $operations;
     }
 
     private static function documented(string $id): string
@@ -1479,7 +1740,10 @@ final class AgentOperationCatalog
             $this->restOperation('expenses.receipts.content', 'Download expense receipt content', Effect::Download),
             $this->restOperation('expenses.receipts.upload', 'Upload expense receipt', Effect::Upload, [AgentDeploymentFlags::EXPENSES], new WriteSafety(IdempotencyKey::Header, expectedVersion: true)),
             $this->restOperation('invoices.download_pdf', 'Download invoice PDF', Effect::Download),
+            // Client credential cleanup is deliberately not exposed as an MCP tool.
+            $this->restOperation('oauth.token.revoke', 'Revoke the calling OAuth token', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling token family; repeating it is harmless.'), idempotent: true),
             $this->restOperation('connections.revoke', 'Revoke this connection', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling connection; repeating it is harmless.'), idempotent: true),
+            $this->restOperation('connections.disconnect', 'Disconnect this application', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling application\'s credentials for the calling person; repeating it is harmless.'), idempotent: true),
         ];
     }
 
@@ -1494,7 +1758,7 @@ final class AgentOperationCatalog
                 ['identity:read'], 'mcp.read.context', $closed, SchemaRef::responseOf('context.get')),
             $this->mcpOnly('resources.agreement', 'Agreement', 'Read one canonical agreement representation visible to a workspace manager.',
                 new McpBinding('agreement', [AgentMcpAgreementResource::class, 'read'], McpKind::ResourceTemplate, 'svc://workspaces/{workspace_id}/agreements/{agreement_id}'),
-                ['billing:read'], 'mcp.read.agreements', AgentInlineSchemas::agreementGetInput(), AgentInlineSchemas::agreementOutput(), manager: true),
+                ['billing:read'], 'mcp.read.agreements', AgentInlineSchemas::agreementGetInput(), SchemaRef::openApi('AgreementResponse'), manager: true),
             $this->mcpOnly('prompts.log_time_across_projects', 'Log time across projects', 'Guide an authorized client through bounded, retry-safe time logging.',
                 new McpBinding('log-time-across-projects', [AgentMcpPrompts::class, 'logTimeAcrossProjects'], McpKind::Prompt),
                 ['identity:read', 'projects:read', 'time:write'], 'mcp.prompt.log_time_across_projects', $closed, AgentInlineSchemas::promptOutput(),
@@ -1542,11 +1806,15 @@ final class AgentOperationCatalog
         }
         $write = ! $effect->readOnly();
         $hasBody = $documented && isset(AgentRestDocumentation::operations()[$id]['request']);
+        // A deprecated operation says so in the tool description an MCP
+        // client reads, as the OpenAPI document does for REST (see
+        // docs/mcp.md, "Deprecations").
+        $deprecation = $documented ? (AgentRestDocumentation::operations()[$id]['deprecation'] ?? null) : null;
 
         return new Operation(
             id: $id,
             title: $title,
-            description: $description,
+            description: $deprecation === null ? $description : "{$description}\n\nDeprecated: {$deprecation}",
             effect: $effect,
             requirement: new Requirement(
                 scopes: $scopes ?? AgentRestDocumentation::operations()[$id]['scopes'],
@@ -1560,7 +1828,8 @@ final class AgentOperationCatalog
             mcp: new McpBinding(handler: $handler),
             input: $input ?? ($write && $hasBody ? SchemaRef::requestOf($id) : null),
             output: $output ?? ($documented ? SchemaRef::responseOf($id) : null),
-            extensions: $documented ? (AgentRestDocumentation::operations()[$id]['extensions'] ?? []) : [],
+            extensions: $documented ? self::extensions($id, [...$cutovers, ...$availability], true) : [],
+            deprecation: $deprecation,
         );
     }
 
@@ -1576,13 +1845,17 @@ final class AgentOperationCatalog
             title: $title,
             description: is_string($documented['description']) ? $documented['description'] : '',
             effect: $effect,
-            requirement: new Requirement(scopes: $documented['scopes'], flags: $cutovers),
+            // No scope documented: any authenticated credential, as ending
+            // one's own connection needs no right beyond having it.
+            requirement: $documented['scopes'] === []
+                ? new Requirement(flags: $cutovers, authenticated: true)
+                : new Requirement(scopes: $documented['scopes'], flags: $cutovers),
             idempotent: $idempotent,
             safety: $safety ?? new WriteSafety,
             rest: $this->rest($id),
             // A download answers with the file itself and 204 with nothing.
             output: $effect === Effect::Download || self::ROUTES[$id][2] === [204] ? null : SchemaRef::responseOf($id),
-            extensions: $documented['extensions'] ?? [],
+            extensions: self::extensions($id, $cutovers, false),
         );
     }
 
@@ -1612,6 +1885,34 @@ final class AgentOperationCatalog
         );
     }
 
+    /**
+     * A tool described by its REST operation's prose, so the two cannot drift apart.
+     *
+     * @infection-ignore-all The refusal is for an operation documented without
+     * prose, which none is: every caller names a documented operation, and
+     * BillingAuditOperationContractTest pins each one's text.
+     */
+    private static function restDescription(string $id): string
+    {
+        $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
+
+        return is_string($description) ? $description : throw new LogicException("Operation [{$id}] documents no description.");
+    }
+
+    /**
+     * What SVC adds to each documented operation (#459 item 6), generated from
+     * the declaration rather than written beside it: the installation
+     * switches it depends on, outermost first, and the MCP tool that reaches
+     * it, if any: a tool's name is its operation's id.
+     *
+     * @param  list<string>  $flags
+     * @return array<string, mixed>
+     */
+    private static function extensions(string $id, array $flags, bool $tool): array
+    {
+        return ['x-svc-flags' => AgentDeploymentFlags::environmentSwitches($flags), ...($tool ? ['x-mcp-tool' => $id] : [])];
+    }
+
     /** @return list<string> */
     private static function mcpSwitches(string $group, string $name): array
     {
@@ -1638,10 +1939,14 @@ final class AgentOperationCatalog
             responseSchema: isset($documented['response']) ? SchemaRef::openApi($documented['response']) : null,
             responseDescriptions: isset($documented['response_description']) ? [$status => $documented['response_description']] : [],
             // A download answers with the file itself.
-            responses: isset($documented['binary']) ? [$status => [
+            responses: (isset($documented['binary']) ? [$status => [
                 'description' => $documented['binary'][1],
                 'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
-            ]] : [],
+            ]] : []) + array_map(
+                // Refusals an operation documents by status, beside the shared default.
+                static fn (string $description): array => ['description' => $description, 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Error']]]],
+                $documented['errors'] ?? [],
+            ),
         );
     }
 
@@ -1662,6 +1967,6 @@ final class AgentOperationCatalog
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
 
-        return isset($body['properties']['expected_version']);
+        return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version']);
     }
 }

@@ -255,7 +255,7 @@ final class AgentExpenseParityTest extends TestCase
                 'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic verified bytes.')],
                 ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-prepared-upload'])->assertCreated();
             $sequences = array_map(static fn (array $sequence): array => array_map(static fn ($resource): string => $resource->name, $sequence), LockOrderRecorder::sequences());
-            $this->assertContains(['AgentMutationReceipt', 'ClientExpense', 'ClientAttachment'], $sequences);
+            $this->assertContains(['AgentMutationReceipt', 'Workspace', 'ClientExpense', 'WorkspaceMembership', 'ClientCompanyMembership', 'ClientAttachment'], $sequences);
         } finally {
             LockOrderRecorder::stop();
         }

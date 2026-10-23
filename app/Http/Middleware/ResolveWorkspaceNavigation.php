@@ -4,10 +4,13 @@ namespace App\Http\Middleware;
 
 use App\Http\Controllers\WorkspaceEntryController;
 use App\Models\ClientCompany;
+use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Navigation\WorkspaceNavigationFactory;
 use App\Services\Navigation\WorkspaceReturnPoint;
+use App\Services\Tasks\TaskAccess;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -40,7 +43,7 @@ class ResolveWorkspaceNavigation
         $user = $request->user('web');
 
         if ($workspace instanceof Workspace && $user instanceof User) {
-            $company = $request->route('clientCompany');
+            $company = $this->company($request, $workspace, $user);
 
             // Bound from the route, and only when it belongs to this workspace.
             // A company id is unique across every tenant, so a pasted one
@@ -81,6 +84,26 @@ class ResolveWorkspaceNavigation
         }
 
         return $next($request);
+    }
+
+    private function company(Request $request, Workspace $workspace, User $user): ?ClientCompany
+    {
+        $company = $request->route('clientCompany');
+        if ($company instanceof ClientCompany) {
+            return $company;
+        }
+        $task = $request->route('clientTask');
+        if (! $task instanceof ClientTask || (int) $task->workspace_id !== (int) $workspace->id) {
+            return null;
+        }
+        $project = ClientProject::query()->where('workspace_id', $workspace->id)->whereKey($task->client_project_id)
+            ->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)])->first();
+        if ($project === null || ! app(TaskAccess::class)->canManage($user, $workspace, $project)) {
+            return null;
+        }
+        $company = $project->clientCompany;
+
+        return $company !== null && (int) $company->workspace_id === (int) $workspace->id ? $company : null;
     }
 
     /**

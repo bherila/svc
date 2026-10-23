@@ -11,9 +11,11 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\Balances\DeferredAllocationResult;
 use App\Services\Billing\Balances\TimeEntryFragment;
+use App\Support\Billing\DeferredTerminationPricing;
+use App\Support\Billing\FlatHourlyGroup;
+use App\Support\Billing\FlatHourlyPricing;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceLineType;
-use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -250,78 +252,48 @@ class InvoiceLineComposer
         // charge to whenever the termination happened to run - a different
         // answer on every run, and never the period the client is billed for.
         $periodEnd = $this->servicePeriodEndOrFail($invoice);
-        $ordinary = collect();
-        $flatHourly = collect();
-
-        foreach ($entries as $entry) {
-            $rawMode = $entry->getRawOriginal('subcontractor_billing_mode');
-            $mode = $rawMode === null ? null : SubcontractorBillingMode::tryFrom((string) $rawMode);
-
-            if ($rawMode !== null && ! $mode instanceof SubcontractorBillingMode) {
-                throw new RuntimeException('Deferred time has an unsupported subcontractor billing mode.');
-            }
-            if ($mode === SubcontractorBillingMode::Direct) {
-                continue;
-            }
-            if ($mode === SubcontractorBillingMode::FlatHourly) {
-                $flatHourly->push($entry);
-
-                continue;
-            }
-            if ($mode === null && $entry->subcontractor_cost_amount !== null) {
-                throw new RuntimeException('Deferred time has a subcontractor cost without a billing mode.');
-            }
-
-            $ordinary->push($entry);
-        }
-
-        $totalMinutes = (int) $ordinary->sum('minutes_worked');
-        if ($totalMinutes <= 0) {
-            $this->addFlatHourlySubcontractorEntries(
-                $invoice,
-                $flatHourly,
-                $periodEnd,
-                $sortOrder,
-            );
-
-            return;
-        }
-        $hours = round($totalMinutes / 60, 4);
-        // A null rate refuses rather than billing at zero; see
-        // {@see ClientAgreement::hourlyRateAmountOrFail()}. This line is the
-        // one that put the coercion in front of the client, describing itself
-        // as billed "@ $0.00/hr".
-        $rateAmount = $agreement->hourlyRateAmountOrFail();
-
-        $line = ClientInvoiceLine::create([
-            'workspace_id' => $invoice->workspace_id,
-            'client_invoice_id' => $invoice->id,
-            'client_agreement_id' => $agreement->id,
-            'description' => sprintf(
-                'Deferred work items billed on agreement termination (%s @ %s/hr)',
-                HoursQuantity::format($hours),
-                $this->formatMoney($rateAmount, (string) $invoice->currency),
-            ),
-            'quantity' => HoursQuantity::decimal($hours),
-            'unit_amount' => $rateAmount,
-            'tax_amount' => 0,
-            'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
-            'type' => 'additional_hours',
-            'hours' => $hours,
-            'line_date' => $invoice->service_period_end,
-            'sort_order' => $sortOrder++,
-        ]);
-
-        foreach ($ordinary as $entry) {
-            $this->attach($line, $entry);
-        }
-
-        $this->addFlatHourlySubcontractorEntries(
-            $invoice,
-            $flatHourly,
-            $periodEnd,
-            $sortOrder,
+        // Priced by the same rule the deferred-backlog quote reads, so what an
+        // admin was shown before termination is what this invoice charges.
+        $pricing = DeferredTerminationPricing::price(
+            $entries,
+            $agreement,
+            (string) $invoice->currency,
+            'invoice '.$invoice->invoice_number,
         );
+
+        if ($pricing->agreementRateUnitAmount !== null) {
+            $hours = $pricing->agreementRateHours();
+            // A null rate refused inside the pricing rather than billing at
+            // zero; see {@see ClientAgreement::hourlyRateAmountOrFail()}. This
+            // line is the one that put the coercion in front of the client,
+            // describing itself as billed "@ $0.00/hr".
+            $rateAmount = $pricing->agreementRateUnitAmount;
+
+            $line = ClientInvoiceLine::create([
+                'workspace_id' => $invoice->workspace_id,
+                'client_invoice_id' => $invoice->id,
+                'client_agreement_id' => $agreement->id,
+                'description' => sprintf(
+                    'Deferred work items billed on agreement termination (%s @ %s/hr)',
+                    HoursQuantity::format($hours),
+                    $this->formatMoney($rateAmount, (string) $invoice->currency),
+                ),
+                'quantity' => HoursQuantity::decimal($hours),
+                'unit_amount' => $rateAmount,
+                'tax_amount' => 0,
+                'total_amount' => $pricing->agreementRateTotal,
+                'type' => 'additional_hours',
+                'hours' => $hours,
+                'line_date' => $invoice->service_period_end,
+                'sort_order' => $sortOrder++,
+            ]);
+
+            foreach ($pricing->agreementRateEntries as $entry) {
+                $this->attach($line, $entry);
+            }
+        }
+
+        $this->addFlatHourlyGroups($invoice, $pricing->flatHourlyGroups, $periodEnd, $sortOrder);
     }
 
     /**
@@ -392,51 +364,28 @@ class InvoiceLineComposer
         Carbon $lineDate,
         int &$sortOrder,
     ): void {
-        $missingRate = $entries->first(
-            fn (ClientTimeEntry $entry): bool => $entry->subcontractor_cost_amount === null
-                || trim((string) $entry->subcontractor_cost_currency) === '',
+        $this->addFlatHourlyGroups(
+            $invoice,
+            FlatHourlyPricing::groups($entries, (string) $invoice->currency, 'invoice '.$invoice->invoice_number),
+            $lineDate,
+            $sortOrder,
         );
-        if ($missingRate instanceof ClientTimeEntry) {
-            throw new RuntimeException('Flat-hourly subcontractor time requires a snapshotted amount and currency.');
-        }
+    }
 
-        // Group by (user, project, snapshot rate, rate currency) so a mid-period
-        // rate change produces correctly-priced separate lines rather than one
-        // blended line. The currency belongs in the key rather than only in the
-        // refusal below: without it, two entries costed at the same number in
-        // different currencies share a group, and the check sees only the first
-        // one - so the other currency's minutes bill at this one's rate.
-        $groups = $entries->groupBy(fn (ClientTimeEntry $entry): string => implode('|', [
-            $entry->user_id,
-            $entry->client_project_id,
-            (string) $entry->subcontractor_cost_amount,
-            (string) ($entry->subcontractor_cost_currency ?? ''),
-        ]));
-
-        foreach ($groups as $groupEntries) {
-            /** @var ClientTimeEntry $sample */
-            $sample = $groupEntries->first();
-            $rateAmount = (int) $sample->subcontractor_cost_amount;
-            $totalMinutes = (int) $groupEntries->sum('minutes');
-            $hours = round($totalMinutes / 60, 4);
-            if ($hours <= 0) {
-                continue;
-            }
-
+    /**
+     * @param  list<FlatHourlyGroup>  $groups
+     */
+    private function addFlatHourlyGroups(
+        ClientInvoice $invoice,
+        array $groups,
+        Carbon $lineDate,
+        int &$sortOrder,
+    ): void {
+        foreach ($groups as $group) {
+            $hours = $group->hours();
+            $rateAmount = $group->unitAmount;
+            $sample = $group->sample();
             $name = $sample->user->name;
-
-            // The same check the recurring-item path makes, for the same
-            // reason: the cost is stored in minor units of its own currency, so
-            // billing it unconverted turns an EUR rate into that many USD cents.
-            $costCurrency = (string) ($sample->subcontractor_cost_currency ?? '');
-            if ($costCurrency !== '' && $costCurrency !== (string) $invoice->currency) {
-                throw new RuntimeException(sprintf(
-                    'Subcontractor time is costed in %s but invoice %s is in %s; convert it before billing.',
-                    $costCurrency,
-                    (string) $invoice->invoice_number,
-                    (string) $invoice->currency,
-                ));
-            }
 
             $line = ClientInvoiceLine::create([
                 'workspace_id' => $invoice->workspace_id,
@@ -452,14 +401,14 @@ class InvoiceLineComposer
                 'quantity' => HoursQuantity::decimal($hours),
                 'unit_amount' => $rateAmount,
                 'tax_amount' => 0,
-                'total_amount' => MoneyService::hourlyAmount($totalMinutes, $rateAmount),
+                'total_amount' => $group->totalAmount,
                 'type' => InvoiceLineType::Subcontractor->value,
                 'hours' => $hours,
                 'line_date' => $lineDate,
                 'sort_order' => $sortOrder++,
             ]);
 
-            foreach ($groupEntries as $entry) {
+            foreach ($group->entries as $entry) {
                 $this->attach($line, $entry);
             }
         }
@@ -525,7 +474,7 @@ class InvoiceLineComposer
             // client was billed for minutes this invoice could not show the
             // work for. Failing to attribute revenue must not silently keep it.
             //
-            // `svc:billing:audit-tenant-foreign-keys` is still where such rows
+            // `svc:schema:audit-tenant-fks` is still where such rows
             // are meant to surface in bulk; this is the guard for the one that
             // reaches a charge anyway.
             if (! $entry) {

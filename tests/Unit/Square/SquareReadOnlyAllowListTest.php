@@ -27,6 +27,13 @@ final class SquareReadOnlyAllowListTest extends TestCase
         'orders.get' => ['GET', '/v2/orders/{id}'],
         'payments.list' => ['GET', '/v2/payments'],
         'payments.get' => ['GET', '/v2/payments/{id}'],
+        'refunds.get' => ['GET', '/v2/refunds/{id}'],
+        'disputes.list' => ['GET', '/v2/disputes'],
+        'disputes.get' => ['GET', '/v2/disputes/{id}'],
+        // Settlement (S7): the seller's payouts and what each settled.
+        'payouts.list' => ['GET', '/v2/payouts'],
+        'payouts.get' => ['GET', '/v2/payouts/{id}'],
+        'payouts.entries.list' => ['GET', '/v2/payouts/{id}/payout-entries'],
     ];
 
     /** Path words of Square's write endpoints; none may appear in an allowed path. */
@@ -73,8 +80,8 @@ final class SquareReadOnlyAllowListTest extends TestCase
         sort($public);
 
         $this->assertSame([
-            'getInvoice', 'getPayment', 'listCustomers', 'listInvoices', 'listLocations', 'listPayments',
-            'retrieveCustomer', 'retrieveOrder', 'searchCustomers', 'searchInvoices',
+            'getDispute', 'getInvoice', 'getPayment', 'getPaymentRefund', 'getPayout', 'listCustomers', 'listDisputes', 'listInvoices', 'listLocations', 'listPayments',
+            'listPayoutEntries', 'listPayouts', 'retrieveCustomer', 'retrieveOrder', 'searchCustomers', 'searchInvoices',
         ], $public);
         $this->assertCount(count(SquareEndpoint::cases()), $public);
     }

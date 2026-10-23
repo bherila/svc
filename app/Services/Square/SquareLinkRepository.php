@@ -9,6 +9,8 @@ use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceCoverage;
+use App\Models\SquareInvoiceSnapshot;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
@@ -24,6 +26,9 @@ use Illuminate\Support\Collection;
  */
 final class SquareLinkRepository
 {
+    /** Square invoices one svc invoice may be recorded as covering besides its linked one. */
+    public const int MAX_COVERAGES = 50;
+
     public function activeLink(ClientInvoice $invoice): ?InvoiceSquareLink
     {
         return InvoiceSquareLink::query()
@@ -41,6 +46,47 @@ final class SquareLinkRepository
             ->where('workspace_id', $workspaceId)
             ->where('active_square_invoice_slot', $squareInvoiceId)
             ->first();
+    }
+
+    /**
+     * The active link as committed now, read under a share lock: a current
+     * read, so a re-link committed after this transaction's snapshot is seen.
+     * Taken after the invoice lock.
+     */
+    public function currentActiveLinkForSquareInvoice(int $workspaceId, string $squareInvoiceId): ?InvoiceSquareLink
+    {
+        return InvoiceSquareLink::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('active_square_invoice_slot', $squareInvoiceId)
+            ->tap(Locks::forShare())
+            ->first();
+    }
+
+    /** The svc invoice recorded as covering this Square invoice in the workspace, if any (#487). */
+    public function activeCoverage(int $workspaceId, string $squareInvoiceId): ?SquareInvoiceCoverage
+    {
+        return SquareInvoiceCoverage::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('active_square_invoice_slot', $squareInvoiceId)
+            ->first();
+    }
+
+    /**
+     * The Square invoices this invoice is recorded as covering besides its
+     * linked one, oldest first.
+     *
+     * @return Collection<int, SquareInvoiceCoverage>
+     */
+    public function activeCoveragesOf(ClientInvoice $invoice): Collection
+    {
+        return SquareInvoiceCoverage::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->whereNotNull('active_square_invoice_slot')
+            ->orderBy('covered_at')
+            ->orderBy('id')
+            ->limit(self::MAX_COVERAGES)
+            ->get();
     }
 
     public function activeCustomer(ClientCompany $company): ?CompanySquareCustomer
@@ -175,13 +221,41 @@ final class SquareLinkRepository
                 ->orWhere(fn (Builder $unclaimed): Builder => $unclaimed->whereNull('claimed_at')->where('queued_at', '>=', $since)));
     }
 
-    /** The agreement holding this series as its billed-in-Square marker, if any. */
-    public function agreementForSeries(int $workspaceId, string $seriesKey): ?ClientAgreement
+    /**
+     * The agreement already holding this series in this location as its
+     * billed-in-Square marker, if any (#488): one marking the prefix in the
+     * same location, or a marker from before markers named a location, which
+     * still holds the prefix in every location.
+     */
+    public function agreementForSeries(int $workspaceId, string $seriesKey, string $locationId, ?int $exceptAgreementId = null): ?ClientAgreement
     {
         return ClientAgreement::query()
             ->where('workspace_id', $workspaceId)
             ->where('square_series_key', $seriesKey)
+            ->when($exceptAgreementId !== null, static fn (Builder $others): Builder => $others->whereKeyNot($exceptAgreementId))
+            ->where(static fn (Builder $location): Builder => $location->where('square_location_id', $locationId)->orWhereNull('square_location_id'))
+            ->orderBy('id')
             ->first();
+    }
+
+    /**
+     * The Square locations the mirror holds this series' live invoices in,
+     * a member naming no location as null, in a stable order.
+     *
+     * @return list<string|null>
+     */
+    public function seriesLocations(int $workspaceId, string $seriesKey): array
+    {
+        $locations = SquareInvoiceSnapshot::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('series_key', $seriesKey)
+            ->distinct()
+            ->orderBy('square_location_id')
+            ->limit(10)
+            ->pluck('square_location_id')
+            ->all();
+
+        return array_values(array_map(static fn (mixed $location): ?string => is_string($location) ? $location : null, $locations));
     }
 
     /**

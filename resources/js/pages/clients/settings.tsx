@@ -1,6 +1,10 @@
 import { Head, useForm } from '@inertiajs/react';
 import { PaymentReminderCadenceCard } from '@/components/billing/payment-reminders';
 import type { CompanyRemindersState } from '@/components/billing/payment-reminders';
+import { ClientContacts } from '@/components/clients/client-contacts';
+import type { ClientContact } from '@/components/clients/client-contacts';
+import { CompanyProfile } from '@/components/clients/company-profile';
+import type { CompanyProfileData } from '@/components/clients/company-profile';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
 import { Badge } from '@/components/ui/badge';
@@ -525,9 +529,17 @@ export default function ClientManage({
     assignable,
     portal,
     payment_reminders: paymentReminders = null,
+    company_profile: companyProfile,
+    profile_action: profileAction,
+    contacts = [],
+    contact_create_action: contactCreateAction,
 }: {
     workspace: { id: string };
     company: ManagedCompany;
+    company_profile?: CompanyProfileData;
+    profile_action?: string;
+    contacts?: ClientContact[];
+    contact_create_action?: string;
     projects: ManagedProject[];
     assignable: AssignableMember[];
     portal: PortalAccessProps['portal'];
@@ -559,6 +571,33 @@ export default function ClientManage({
                         />
                     </CardContent>
                 </Card>
+
+                {companyProfile && profileAction && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Company details</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <CompanyProfile
+                                profile={companyProfile}
+                                action={profileAction}
+                            />
+                        </CardContent>
+                    </Card>
+                )}
+                {contactCreateAction && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>People</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <ClientContacts
+                                contacts={contacts}
+                                createAction={contactCreateAction}
+                            />
+                        </CardContent>
+                    </Card>
+                )}
 
                 <Card>
                     <CardHeader>

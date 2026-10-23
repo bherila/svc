@@ -19,9 +19,24 @@ use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientCompany::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientProject::class)]
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(User::class)]
+#[CoversClass(Workspace::class)]
+#[CoversClass(ClosingBalance::class)]
+#[CoversClass(MonthSummary::class)]
+#[CoversClass(OpeningBalance::class)]
+#[CoversClass(BillingCycleResolver::class)]
+#[CoversClass(InvoiceLedgerBuilder::class)]
+#[CoversClass(ReplayHistoryBasis::class)]
+#[CoversClass(BillingCadence::class)]
 class InvoiceLedgerBuilderTest extends TestCase
 {
     use RefreshDatabase;

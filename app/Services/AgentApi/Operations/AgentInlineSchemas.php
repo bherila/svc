@@ -2,8 +2,9 @@
 
 namespace App\Services\AgentApi\Operations;
 
-use App\Services\Mcp\AgentMcpAgreementSchema;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Support\Billing\PeriodRefusalReason;
+use App\Support\Billing\ScheduleDefect;
 
 /**
  * Schemas declared inline for the operations the OpenAPI document does not
@@ -13,6 +14,25 @@ use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
  */
 final class AgentInlineSchemas
 {
+    /**
+     * The preview takes the creation request's selection, without its write version.
+     *
+     * @return array<string, mixed>
+     */
+    public static function deferredBuyDownPreviewInput(): array
+    {
+        $schema = AgentApiResponseSchemaCatalog::schema('DeferredBuyDownCreateRequest');
+        unset($schema['properties']['expected_backlog_version']);
+        $schema['required'] = ['workspace_id', 'agreement_id'];
+        $schema['properties'] = [
+            'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
+            'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
+            ...$schema['properties'],
+        ];
+
+        return $schema;
+    }
+
     /** @return array<string, mixed> */
     public static function agreementListInput(): array
     {
@@ -40,17 +60,6 @@ final class AgentInlineSchemas
                 'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
                 'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
             ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function agreementOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => ['data' => AgentMcpAgreementSchema::dto()],
         ];
     }
 
@@ -85,17 +94,6 @@ final class AgentInlineSchemas
     }
 
     /** @return array<string, mixed> */
-    public static function billingScheduleOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => ['data' => self::billingScheduleDto()],
-        ];
-    }
-
-    /** @return array<string, mixed> */
     public static function capacityLedgerInput(): array
     {
         return [
@@ -106,28 +104,6 @@ final class AgentInlineSchemas
                 'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
                 'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
                 'months' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 60, 'default' => 12],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function capacityLedgerOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => [
-                'data' => [
-                    'type' => 'object',
-                    'additionalProperties' => false,
-                    'required' => ['agreement_id', 'through', 'months'],
-                    'properties' => [
-                        'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
-                        'through' => ['type' => 'string', 'format' => 'date'],
-                        'months' => ['type' => 'array', 'maxItems' => 60, 'items' => self::capacityLedgerMonth()],
-                    ],
-                ],
             ],
         ];
     }
@@ -150,100 +126,9 @@ final class AgentInlineSchemas
     }
 
     /**
-     * @param  array<string, array<string, mixed>>  $properties
-     * @return array<string, mixed>
-     */
-    public static function billingAuditOutput(array $properties): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => [
-                'data' => [
-                    'type' => 'object',
-                    'additionalProperties' => false,
-                    'required' => array_keys($properties),
-                    'properties' => $properties,
-                ],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function agreementListOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data', 'meta'],
-            'properties' => [
-                'data' => ['type' => 'array', 'maxItems' => 100, 'items' => AgentMcpAgreementSchema::dto()],
-                'meta' => [
-                    'type' => 'object',
-                    'additionalProperties' => false,
-                    'required' => ['next_cursor'],
-                    'properties' => ['next_cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]],
-                ],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function billingScheduleListOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data', 'meta'],
-            'properties' => [
-                'data' => ['type' => 'array', 'maxItems' => 100, 'items' => self::billingScheduleDto()],
-                'meta' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['next_cursor'], 'properties' => ['next_cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]]],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function billingScheduleDto(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['id', 'agreement_id', 'version', 'cadence', 'next_run_on', 'is_active'],
-            'properties' => [
-                'id' => ['type' => 'string', 'format' => 'uuid'],
-                'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
-                'version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64],
-                'cadence' => ['type' => 'string', 'maxLength' => 32],
-                'next_run_on' => ['type' => 'string', 'format' => 'date'],
-                'is_active' => ['type' => 'boolean'],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function capacityLedgerMonth(): array
-    {
-        $numbers = [
-            'retainer_hours', 'hours_worked', 'opening_retainer_hours', 'opening_rollover_hours',
-            'opening_expired_hours', 'opening_available_hours', 'hours_used_from_retainer',
-            'hours_used_from_rollover', 'unused_hours', 'excess_hours', 'negative_hours',
-            'signed_available_hours', 'remaining_rollover_hours',
-        ];
-        $properties = [
-            'period' => ['type' => 'string', 'pattern' => '^\\d{4}-\\d{2}$'],
-            'cycle_start' => ['type' => ['string', 'null'], 'format' => 'date'],
-            'bill_excess_immediately' => ['type' => 'boolean'],
-        ];
-        foreach ($numbers as $name) {
-            $properties[$name] = ['type' => 'number'];
-        }
-
-        return ['type' => 'object', 'additionalProperties' => false, 'required' => array_keys($properties), 'properties' => $properties];
-    }
-
-    /**
-     * The aggregate counts each billing audit reports.
+     * The aggregate counts each billing audit reports: the `data` of its
+     * response component in the checked OpenAPI document, which
+     * BillingAuditOperationContractTest holds to exactly this.
      *
      * @return array<string, array<string, mixed>>
      */
@@ -290,8 +175,45 @@ final class AgentInlineSchemas
                 'capacity_at_stake_minutes' => ['type' => 'integer', 'minimum' => 0],
                 'longest_rollover_months' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 120],
             ],
+            'billing.preflight_schedule_generation' => [
+                'schedules' => ['type' => 'integer', 'minimum' => 0],
+                'schedules_due' => ['type' => 'integer', 'minimum' => 0],
+                'periods_classified' => ['type' => 'integer', 'minimum' => 0],
+                'complete' => ['type' => 'boolean'],
+                'would_halt' => ['type' => 'integer', 'minimum' => 0],
+                'halted_by_a_refusal' => ['type' => 'integer', 'minimum' => 0],
+                'halted_by_a_pending_draft' => ['type' => 'integer', 'minimum' => 0],
+                'halted_by_a_schedule_defect' => ['type' => 'integer', 'minimum' => 0],
+                'schedules_truncated' => ['type' => 'integer', 'minimum' => 0],
+                'refusals_by_reason' => self::countsByCase(array_map(static fn (PeriodRefusalReason $reason): string => $reason->value, PeriodRefusalReason::cases())),
+                'defects_by_kind' => self::countsByCase(array_map(static fn (ScheduleDefect $defect): string => $defect->value, ScheduleDefect::cases())),
+            ],
+            'billing.audit_unlinked_proposal_agreements' => [
+                'proposals' => ['type' => 'integer', 'minimum' => 0],
+                'sent_without_a_linked_agreement' => ['type' => 'integer', 'minimum' => 0],
+                'with_an_unlinked_agreement_on_the_company' => ['type' => 'integer', 'minimum' => 0],
+                'with_an_active_unlinked_agreement' => ['type' => 'integer', 'minimum' => 0],
+                'accepted_without_a_linked_agreement' => ['type' => 'integer', 'minimum' => 0],
+                'unlinked_agreements' => ['type' => 'integer', 'minimum' => 0],
+            ],
             default => throw new \LogicException("Unknown billing audit: {$audit}"),
         };
+    }
+
+    /**
+     * A count for every case of an enum, keyed by its value.
+     *
+     * @param  list<string>  $cases
+     * @return array<string, mixed>
+     */
+    private static function countsByCase(array $cases): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => $cases,
+            'properties' => array_fill_keys($cases, ['type' => 'integer', 'minimum' => 0]),
+        ];
     }
 
     /**

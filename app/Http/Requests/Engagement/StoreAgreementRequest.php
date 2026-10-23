@@ -24,6 +24,7 @@ class StoreAgreementRequest extends FormRequest
             'ends_on' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:starts_on'],
             'agreement_text' => ['nullable', 'string', 'max:30000'],
             'is_visible_to_client' => ['sometimes', 'boolean'],
+            'show_deferred_backlog_to_client' => ['sometimes', 'boolean'],
             'billing_cadence' => ['sometimes', Rule::in(['one_time', 'monthly', 'quarterly', 'semi_annual', 'annual'])],
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'hourly_rate_amount' => ['nullable', 'integer', 'min:0'],

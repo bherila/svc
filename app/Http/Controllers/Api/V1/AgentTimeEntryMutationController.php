@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
+use App\Models\AgentPrincipal;
 use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentMutationExecutor;
+use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\LogTimeEntriesAction;
 use App\Services\AgentApi\TimeEntryMutationService;
@@ -16,6 +19,7 @@ use App\Services\Authorization\AgentTokenScopes;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\ReadView;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -28,16 +32,26 @@ final class AgentTimeEntryMutationController extends Controller
         AgentTimeEntryPresenter $presenter,
         AgentMutationContextFactory $contexts,
         AgentTokenScopes $scopes,
+        AgentReadService $reads,
     ): JsonResponse {
         $context = $contexts->from($request);
+        $readView = ReadView::requested($request);
         $ids = $logTime->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
             $context->idempotencyKey,
-            $request->all(),
+            ReadView::payload($request),
             $scopes->allows($request, AgentApiScopes::TIME_APPROVE),
         );
+        // The rows exactly as time_entries.list presents them, rate and
+        // status included, for a caller who may read time.
+        if ($readView && $scopes->allows($request, AgentApiScopes::TIME_READ)) {
+            $reader = $request->user();
+            abort_unless($reader instanceof User || $reader instanceof AgentPrincipal, 401);
+
+            return response()->json(['data' => $reads->timeEntriesByIds($reader, $workspace, $ids)], 201);
+        }
         $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->with(AgentTimeEntryPresenter::authorRelations($workspace))->withCapacityPlacement($workspace->id)->get()->keyBy('public_id');
         $entries = collect($ids)->map(function (string $id) use ($entriesById): ClientTimeEntry {
             $entry = $entriesById->get($id);

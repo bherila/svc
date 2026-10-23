@@ -16,12 +16,14 @@ use App\Services\AgentApi\AgentReadService;
 use App\Services\Billing\CapacityLedgerInputs;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBillingAllocator;
+use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLineComposer;
 use App\Services\Billing\RolloverCalculator;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\DeferredWorkDisposition;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -103,6 +105,21 @@ final class DeferredSettlementCapacityTest extends TestCase
         $this->assertSame([$settled->id], $line->timeEntries()->pluck('client_time_entries.id')->all(), 'Cadence readers retain the settlement reservation');
     }
 
+    public function test_a_buy_down_leaves_the_backlog_as_billed_never_as_outstanding(): void
+    {
+        $settled = $this->entry(2400, true);
+        $before = app(AgentCapacityLedgerReadService::class)->get($this->user, $this->workspace, $this->agreement->public_id, 4)['deferred_backlog'];
+        $this->allocate($settled, 'deferred_buydown');
+        $after = app(AgentCapacityLedgerReadService::class)->get($this->user, $this->workspace, $this->agreement->public_id, 4)['deferred_backlog'];
+
+        $this->assertEquals(40, $before['hours']);
+        $this->assertEquals(0, $after['hours']);
+        $this->assertSame(0.0, array_sum(array_column($before['trend'], 'hours_billed')));
+        $this->assertEquals(40, array_sum(array_column($after['trend'], 'hours_billed')));
+        $this->assertSame(array_column($before['trend'], 'hours_added'), array_column($after['trend'], 'hours_added'));
+        $this->assertSame(0.0, array_sum(array_column($after['trend'], 'hours_applied')));
+    }
+
     public function test_waiting_applied_and_termination_entries_keep_their_existing_capacity_behavior(): void
     {
         $waiting = $this->entry(60, true);
@@ -121,6 +138,35 @@ final class DeferredSettlementCapacityTest extends TestCase
         $entry = ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->withCapacityPlacement($this->workspace->id)->findOrFail($terminal->id);
         $this->assertTrue($entry->countsTowardsRetainerCapacity());
         $this->assertFalse($entry->drawsAsDeferred(), 'Termination keeps its ordinary-work disposition');
+    }
+
+    #[DataProvider('readers')]
+    public function test_every_capacity_reader_also_ignores_a_settlement_created_by_the_shared_writer(string $reader): void
+    {
+        if (in_array($reader, ['quarterly-invoice', 'interim'], true)) {
+            $this->agreement->update(['billing_cadence' => 'quarterly', 'bill_overage_interim' => true, 'period_retainer_minutes' => 1800]);
+        } elseif ($reader === 'period-ledger') {
+            $this->agreement->update(['period_retainer_minutes' => 600]);
+        }
+        $before = $this->observe($reader);
+        $settled = $this->entry(2400, true);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 40]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $invoice = $billing->create($this->workspace, $this->agreement, $request, $preview->version);
+        $after = $this->observe($reader);
+        if ($reader === 'agent') {
+            // This operational counter includes every draft reservation; it
+            // measures claims, not retainer usage. The capacity payload must
+            // still match in full.
+            $this->assertSame(0, $before[1]['time']['allocated_to_draft_minutes']);
+            $this->assertSame(2400, $after[1]['time']['allocated_to_draft_minutes']);
+            unset($before[1]['time']['allocated_to_draft_minutes'], $after[1]['time']['allocated_to_draft_minutes']);
+        }
+        $this->assertSame(json_encode($before, JSON_THROW_ON_ERROR), json_encode($after, JSON_THROW_ON_ERROR));
+        $line = $settled->invoiceLines()->firstOrFail();
+        $this->assertSame($invoice->id, $line->client_invoice_id);
+        $this->assertSame($this->agreement->id, $line->client_agreement_id);
     }
 
     /** @return iterable<string, array{string}> */
@@ -171,6 +217,24 @@ final class DeferredSettlementCapacityTest extends TestCase
         $this->assertSame([$entry->id], $line->timeEntries()->pluck('client_time_entries.id')->all());
     }
 
+    /**
+     * The ledger response without its deferred backlog's trend. The trend is
+     * not capacity: it reports a buy-down as hours billed at rate on purpose
+     * (see test_a_buy_down_leaves_the_backlog_as_billed_never_as_outstanding).
+     *
+     * @param  array<string, mixed>  $ledger
+     * @return array<string, mixed>
+     */
+    private function capacityOnly(array $ledger): array
+    {
+        $backlog = $ledger['deferred_backlog'];
+        $this->assertIsArray($backlog);
+        unset($backlog['trend'], $backlog['net_hours_per_month']);
+        $ledger['deferred_backlog'] = $backlog;
+
+        return $ledger;
+    }
+
     private function observe(string $reader): mixed
     {
         $entries = fn () => ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->withCapacityPlacement($this->workspace->id)->get();
@@ -183,7 +247,7 @@ final class DeferredSettlementCapacityTest extends TestCase
                 ...CapacityLedgerInputs::monthRow(app(CapacityLedgerInputs::class)->byMonth($this->company, $this->agreement, $entries(), Carbon::parse('2026-01-31')), '2026-01'),
             ]], 1),
             'agent' => [
-                app(AgentCapacityLedgerReadService::class)->get($this->user, $this->workspace, $this->agreement->public_id, 4),
+                $this->capacityOnly(app(AgentCapacityLedgerReadService::class)->get($this->user, $this->workspace, $this->agreement->public_id, 4)),
                 app(AgentReadService::class)->summary($this->user, $this->workspace, fn (string $scope): bool => $scope === AgentApiScopes::TIME_READ),
             ],
             'directory' => (new ReflectionMethod(ClientDirectoryController::class, 'usedMinutes'))->invoke(app(ClientDirectoryController::class), $this->workspace, [

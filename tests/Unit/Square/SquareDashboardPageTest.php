@@ -11,6 +11,7 @@ final class SquareDashboardPageTest extends TestCase
     {
         $this->assertSame('https://squareup.com/dashboard/invoices/inv%3A0-fixture1', SquareDashboardPage::invoice('production', 'inv:0-fixture1'));
         $this->assertSame('https://squareupsandbox.com/dashboard/invoices/inv_fixture_1', SquareDashboardPage::invoice('sandbox', 'inv_fixture_1'));
+        $this->assertSame('https://squareup.com/dashboard/invoices/_SyntheticLegacy%3D%3D', SquareDashboardPage::invoice('production', '_SyntheticLegacy=='));
         $this->assertNull(SquareDashboardPage::invoice('invalid', 'inv_fixture_1'));
         $this->assertNull(SquareDashboardPage::invoice('production', 'invalid/path'));
     }

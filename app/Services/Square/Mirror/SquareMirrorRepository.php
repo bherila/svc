@@ -51,10 +51,13 @@ final class SquareMirrorRepository
     }
 
     /**
-     * Invoices whose payment ids have not been read for their current status
-     * and paid amount, oldest change first.
+     * Invoices whose payment ids have not been read for their current status,
+     * paid amount and Square version, oldest change first.
      *
-     * @return list<array{square_invoice_id: string, square_order_id: string, basis: string}>
+     * `read` is what the row held when it was queued; writes for that lookup
+     * apply only while it still does ({@see SquarePaymentIdsRead}).
+     *
+     * @return list<array{square_invoice_id: string, square_order_id: string, square_location_id: string|null, basis: string, read: SquarePaymentIdsRead}>
      */
     public function invoicesNeedingPaymentIds(Workspace $workspace, int $limit): array
     {
@@ -65,18 +68,31 @@ final class SquareMirrorRepository
             ->where('workspace_id', $workspace->id)
             ->whereNull('deleted_at')
             ->whereNotNull('square_order_id')
-            ->where('paid_amount', '>', 0)
+            ->where(static fn (Builder $paid) => $paid->where('paid_amount', '>', 0)
+                ->orWhere(static fn (Builder $unknown) => $unknown->whereNull('paid_amount')->whereIn('status', SquareSnapshotMapper::PAYMENT_STATUSES)))
+            // Current and unresolvable rows are left out by the database, so
+            // the read is bounded by the limit, not by the paid history.
+            ->where(static fn (Builder $due) => $due->whereNull('payment_ids_basis')
+                ->orWhereRaw('payment_ids_basis not in ('.self::basisSql().', '.self::basisSql("'|x'").')'))
+            // Orders awaiting an authorization go after everything else.
+            ->orderByRaw('case when payment_ids_basis = '.self::basisSql("'|p'").' or payment_ids_basis = '.self::basisSql("'|r'").' then 1 else 0 end')
             ->orderBy('synced_at')
             ->orderBy('id')
-            ->select(['square_invoice_id', 'square_order_id', 'status', 'paid_amount', 'payment_ids_basis'])
-            ->lazy(min($limit, 100));
+            ->limit(min($limit, 100))
+            ->get(['square_invoice_id', 'square_order_id', 'square_location_id', 'status', 'paid_amount', 'square_version', 'payment_ids_basis', 'payment_ids', 'synced_at']);
         $due = [];
         foreach ($rows as $row) {
-            $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $row->paid_amount === null ? null : (int) $row->paid_amount);
-            if ($row->payment_ids_basis === $basis) {
+            $paid = $row->paid_amount === null ? null : (int) $row->paid_amount;
+            $version = $row->square_version === null ? null : (int) $row->square_version;
+            $stamped = $row->payment_ids_basis === null ? null : (string) $row->payment_ids_basis;
+            // A read with no known amount is current but read again in turn.
+            if ((SquareSnapshotMapper::paymentIdsCurrent((string) $row->status, $paid, $version, (string) $row->square_order_id, $stamped) && $stamped !== SquareSnapshotMapper::rereadBasis((string) $row->status, $version))
+                || $stamped === SquareSnapshotMapper::unresolvableBasis((string) $row->status, $paid, $version)) {
                 continue;
             }
-            $due[] = ['square_invoice_id' => (string) $row->square_invoice_id, 'square_order_id' => (string) $row->square_order_id, 'basis' => $basis];
+            $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $paid, $version);
+            $due[] = ['square_invoice_id' => (string) $row->square_invoice_id, 'square_order_id' => (string) $row->square_order_id, 'square_location_id' => $row->square_location_id === null ? null : (string) $row->square_location_id, 'basis' => $basis,
+                'read' => new SquarePaymentIdsRead((string) $row->synced_at, $stamped, $row->payment_ids === null ? null : (string) $row->payment_ids)];
             if (count($due) >= $limit) {
                 break;
             }
@@ -86,25 +102,81 @@ final class SquareMirrorRepository
     }
 
     /**
-     * Records payment ids against the status and paid amount they were read
-     * for. An invoice that changed again in between keeps waiting for the next
-     * sync rather than taking ids from an older state.
+     * Records payment ids against the status, paid amount and version they
+     * were read for. An invoice that changed again in between keeps waiting
+     * for the next sync rather than taking ids from an older state.
      *
      * @param  list<string>  $paymentIds
      */
-    public function storePaymentIds(Workspace $workspace, string $invoiceId, string $basis, array $paymentIds): bool
+    public function storePaymentIds(Workspace $workspace, string $invoiceId, string $basis, array $paymentIds, ?CarbonImmutable $rereadAfter = null, ?SquarePaymentIdsRead $read = null): bool
     {
-        [$status, $paid] = explode('|', $basis, 2);
+        [$status, $paid, $version] = explode('|', $basis, 4);
 
-        return DB::table('square_invoice_snapshots')
+        return self::inState(DB::table('square_invoice_snapshots')
             ->where('workspace_id', $workspace->id)
             ->where('square_invoice_id', $invoiceId)
-            ->whereNull('deleted_at')
-            ->where('status', $status)
-            ->when($paid === '', static fn (Builder $query) => $query->whereNull('paid_amount'), static fn (Builder $query) => $query->where('paid_amount', (int) $paid))
+            ->whereNull('deleted_at'), $status, $paid, $version)
+            ->when($read !== null, static fn (Builder $query) => $read?->guard($query))
             ->update([
                 'payment_ids' => json_encode($paymentIds, JSON_THROW_ON_ERROR),
-                'payment_ids_basis' => $basis,
+                // An unknown amount is read again in turn (rereadBasis()).
+                'payment_ids_basis' => $paid === '' ? SquareSnapshotMapper::rereadBasis($status, $version === '' ? null : (int) $version) : $basis,
+                ...($paid === '' && $rereadAfter !== null ? ['synced_at' => $rereadAfter->utc()->format('Y-m-d H:i:s')] : []),
+            ]) > 0;
+    }
+
+    /**
+     * The row still in the state a basis names: its status, paid amount and
+     * Square version, an empty one being unknown.
+     */
+    private static function inState(Builder $query, string $status, string $paid, string $version): Builder
+    {
+        return $query->where('status', $status)
+            ->when($paid === '', static fn (Builder $unknown) => $unknown->whereNull('paid_amount'), static fn (Builder $known) => $known->where('paid_amount', (int) $paid))
+            ->when($version === '', static fn (Builder $unknown) => $unknown->whereNull('square_version'), static fn (Builder $known) => $known->where('square_version', (int) $version));
+    }
+
+    /**
+     * {@see SquareSnapshotMapper::paymentIdsBasis()} in SQL, for the row's own
+     * status, paid amount and Square version, followed by `$suffix`.
+     *
+     * @param  literal-string  $suffix
+     * @return literal-string
+     */
+    private static function basisSql(string $suffix = "''"): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "(status || '|' || coalesce(cast(paid_amount as char), '') || '|' || coalesce(cast(square_version as char), '') || '|".SquareSnapshotMapper::TENDER_RULES."' || ".$suffix.')'
+            : "concat(status, '|', coalesce(cast(paid_amount as char), ''), '|', coalesce(cast(square_version as char), ''), '|".SquareSnapshotMapper::TENDER_RULES."', ".$suffix.')';
+    }
+
+    /**
+     * Stamps an invoice whose order could not be read into payment ids for
+     * the state named by `$basis`. Its payment ids stay unresolved. An
+     * oversized order is skipped until the invoice changes; with `$retryAfter`
+     * (an authorization that may yet settle) it is retried after the
+     * invoices never read, behind the other pending ones.
+     */
+    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis, ?CarbonImmutable $retryAfter = null, ?SquarePaymentIdsRead $read = null): bool
+    {
+        [$status, $paid, $version] = explode('|', $basis, 4);
+
+        return self::inState(DB::table('square_invoice_snapshots')
+            ->where('workspace_id', $workspace->id)
+            ->where('square_invoice_id', $invoiceId)
+            ->whereNull('deleted_at'), $status, $paid, $version)
+            ->when($read !== null, static fn (Builder $query) => $read?->guard($query))
+            // Never over ids another sync has just resolved for this state.
+            // Without the lookup's own read to compare, never over ids already
+            // resolved for this state - a reread stamp included, for the
+            // unknown amount it was read under. With it, the read decides.
+            ->when($read === null, static fn (Builder $unguarded) => $unguarded->where(static fn (Builder $query) => $query->whereNull('payment_ids_basis')
+                ->orWhereNotIn('payment_ids_basis', $paid === '' ? [$basis, SquareSnapshotMapper::rereadBasis($status, $version === '' ? null : (int) $version)] : [$basis])))
+            ->update([
+                'payment_ids' => null,
+                'payment_ids_basis' => $basis.($retryAfter !== null ? '|p' : '|x'),
+                // A retried order goes behind the others it waits with.
+                ...($retryAfter !== null ? ['synced_at' => $retryAfter->utc()->format('Y-m-d H:i:s')] : []),
             ]) > 0;
     }
 

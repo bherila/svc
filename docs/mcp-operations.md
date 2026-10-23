@@ -6,16 +6,20 @@ customer data. Preserve those constraints in incident tickets and logs.
 
 ## Immediate containment
 
-1. Set `AGENT_API_MCP_ENABLED=false` in the protected deployment environment.
-   Deploy the configuration change and clear Laravel's configuration cache using
-   the normal deployment workflow. Authenticated POST and DELETE requests then
+1. Set `AGENT_API_MCP_ENABLED=false` in both the protected deployment environment
+   (`~/.config/svc/deployment.env`) and the selected release's `.env`. Rebuild
+   that release's configuration cache with the production PHP binary. Apply
+   containment directly; normal deployment requires its authenticated smoke
+   checks to pass. Authenticated POST and DELETE requests then
    receive a no-store `503` with `Retry-After: 60`; no server or session is
    constructed. `OPTIONS` remains available for browser preflight. Existing
    sessions cannot recover a capability on a subsequent request.
 2. To stop new OAuth metadata discovery, client registration, authorization,
    token exchange, and refresh without invalidating an already-issued bound
-   credential, set `AGENT_API_OAUTH_SERVER_ENABLED=false`, deploy, and clear the
-   configuration cache. Those issuance routes return non-cacheable 404 responses.
+   credential, set `AGENT_API_OAUTH_SERVER_ENABLED=false` in both environment
+   files and rebuild the selected release's configuration cache. Those issuance
+   routes return non-cacheable 404 responses. Normal deployment refuses paused
+   OAuth before maintenance; it never turns this containment flag back on.
    This is not credential revocation and does not replace the MCP kill switch.
 3. For a single capability, set its named entry in
    `agent_api.mcp_feature_flags` to `false`. The stable feature-flag name in
@@ -31,21 +35,107 @@ customer data. Preserve those constraints in incident tickets and logs.
 ## Credential containment
 
 MCP authentication is Passport OAuth, not a separate MCP password or API-key
-store. Revoke the affected OAuth connection through the authenticated
-`DELETE /api/v1/connections/{token}` workflow where the affected user can do
-so. The endpoint transaction revokes the refresh credential attached to that
-access token before revoking the access token itself, and the MCP principal
-resolver rereads the persisted access-token row on every request, so a revoked,
-expired, wrong-audience, or wrong-client credential is rejected before
-discovery and execution.
+store. A connector the affected user still controls can disconnect itself
+through the authenticated `DELETE /api/v1/connections/{token}` workflow; it
+revokes only the calling connection. Otherwise use the emergency revocation
+below. Both go through the same revoker (`CredentialRevoker`): one transaction
+that locks the access-token rows and revokes their refresh credentials before
+the access tokens themselves, and the MCP principal resolver rereads the
+persisted access-token row on every request, so a revoked, expired,
+wrong-audience, or wrong-client credential is rejected before discovery and
+execution.
 
-For a suspected client-wide compromise, first globally disable MCP, then use
-the established OAuth administration procedure to revoke the affected access
-and refresh-token family. Do not rotate the OAuth signing keys as a first
-response: the deployment workflow deliberately refuses automatic partial key
-rotation, and a key rotation is a separate authorization-server incident.
+Do not rotate the OAuth signing keys as a first response: the deployment
+workflow deliberately refuses automatic partial key rotation, and a key
+rotation is a separate authorization-server incident.
+
+### Emergency revocation of a person's agent connections
+
+For a compromised connector, a lost device, or a person who must be cut off
+now, an operator with shell access on the host runs:
+
+```bash
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --apply
+# or only the credentials issued to one OAuth client:
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_ID --apply
+```
+
+1. For a suspected client-wide or deployment-wide compromise, first globally
+   disable MCP (`AGENT_API_MCP_ENABLED=false`) and stop new issuance and
+   refresh (`AGENT_API_OAUTH_SERVER_ENABLED=false`), as under
+   [Immediate containment](#immediate-containment). With issuance off, no
+   connection can refresh between the revocation and the next request.
+2. Name the person by exact public UUID; an internal id, email address or
+   partial match is refused (exit 2), and an unknown UUID or client id fails
+   (exit 1) without revoking anything. `--client` takes the OAuth client id
+   recorded in the audit metadata.
+3. The command revokes, in one transaction, every pending authorization code,
+   every refresh token (including one whose expired access token Passport has
+   already purged) and then every access token the person holds - OAuth and
+   MCP connections, operator-issued agent tokens and personal API tokens alike -
+   or only those issued to `--client` (in any letter case). A refresh token of
+   the person's that records no client and whose access token is gone cannot be
+   told apart by client, so a `--client` run revokes it too rather than miss
+   it. Rows are revoked, never deleted, so they
+   remain for the investigation. Another person's credentials are never
+   selected, even for the same client.
+4. The auth package's durable lineage guard serializes revocation with
+   authorization-code, access-token and refresh-token persistence on Passport's
+   connection. A grant already validated before revocation cannot persist a live
+   replacement, even after an arbitrarily long pause. OAuth refuses it with
+   `invalid_grant`; it does not return a new dead credential. A fresh
+   authorization after revocation is allowed immediately, although issuance
+   stays off during containment until the operator deliberately enables it.
+   Self-disconnect through `connections.revoke` ends only that connection's
+   lineage and every tracked rotation; same-client sibling connections survive.
+   The guard is stored in database tables, so cache outages/flushes do not lift
+   it. Database failure fails the revocation rather than claiming success.
+5. It prints one JSON line, for example
+   `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0,"unattributed_refresh_tokens":0}`,
+   and logs `agent_token.revoked` with `actor: console`, the person's public
+   UUID, `selection: connections`, the client id when given, the counts and
+   SHA-256 fingerprints of the revoked access-token ids. It prints and logs no
+   bearer value, token id or email address.
+6. `unattributed_refresh_tokens` counts live refresh tokens, anyone's, that no
+   revocation by person can reach: issued before refresh tokens recorded their
+   owner, with their access token since purged. The
+   `2026_10_18_120000_backfill_oauth_refresh_token_owners` migration records
+   the owner of every such token whose access token still exists, so this is
+   normally zero. If it is not and the compromise could involve one of them,
+   turn OAuth issuance off (step 1; the command refuses `--unattributed`
+   otherwise, since old unattributed rows cannot name an owner safely) and rerun with `--unattributed`.
+   Issuance must be off on the serving tier, deployed and with its
+   configuration cache cleared, not only in the shell running the command:
+   the command can check only its own process's configuration, so an
+   `AGENT_API_OAUTH_SERVER_ENABLED=false` set just for the CLI passes the
+   check while the web servers keep refreshing. Confirm that
+   `/.well-known/oauth-authorization-server` answers 404 first. It
+   revokes every one of them, for whoever holds it, reports `unattributed_refresh_tokens_revoked`, and logs
+   `agent_token.unattributed_refresh_tokens_revoked`. Their connectors must
+   authorize again.
+7. Run it again. It is idempotent, and a second run reporting zeros confirms
+   nothing was minted in between. Then re-enable issuance and MCP as described
+   under [Recovery and rollback](#recovery-and-rollback); the person reconnects
+   through a fresh consent.
+
+The finance integration's Sanctum tokens are a separate credential store and
+are not touched; revoke those by name with `svc:auth:revoke-token` (see
+`docs/finance-api.md`).
 
 ## Recovery and rollback
+
+Production deploys use a dedicated cPanel account and an account-specific SSH key.
+The stable application directory is `~/svc-laravel`; `~/public_html` points to its
+`public` directory. That primary webroot is provisioned once outside the release
+action; stable-directory activation preserves its target without replacing it.
+Account-specific configuration is stored under `~/.config/svc`.
+Absolute runtime paths and database ownership must be verified when moving accounts;
+preserve application and OAuth keys rather than regenerating them.
+
+`retain-releases: '0'` keeps prior code during the deployment and any recovery,
+then removes inactive code once finalization proves the selected application is
+serving. Incomplete transactions and persistent storage are preserved. To roll back
+after a completed deployment, redeploy a previously verified source commit.
 
 1. Confirm the affected capability's feature flag remains false while the
    incident is investigated.
@@ -87,12 +177,113 @@ delete OAuth rows merely to recover the endpoint.
    smoke credential issuer establishes the resource before Passport signs the
    JWT; never patch `resource_uri` after token issuance.
 
-Passport may purge an expired access-token row while its longer-lived refresh
-credential remains valid. Because Passport's refresh table does not retain the
-client identifier independently, dynamic-client pruning conservatively defers
-all deletions while any such active, unattributed refresh credential exists.
-This favors connection continuity over cleanup; pruning resumes after the
-credential expires or is revoked.
+A manual `passport:purge` with Passport's defaults can delete an expired or
+revoked access-token row while its longer-lived refresh credential remains
+valid; the scheduled purge never does (see [Token retention](#token-retention)).
+Because a legacy refresh row may record neither owner nor client, dynamic-client
+pruning conservatively defers all deletions while any such active, unattributed
+refresh credential exists. This favors connection continuity over cleanup;
+pruning resumes after the credential expires or is revoked.
+
+## Token retention
+
+The scheduler runs `passport:purge --expired --hours=744` daily
+(`routes/console.php`; the deployment's one `schedule:run` cron line runs it, no
+queue worker is involved). It deletes access tokens, refresh tokens and
+authorization codes 31 days after their own expiry, revoked or not, which
+removes the rows each deployment smoke mints and revokes.
+
+It is deliberately not Passport's default (revoked rows at any age, expired rows
+after a week):
+
+- An access token, revoked or merely expired, can be the only record of who
+  holds a live refresh token issued with it. Revocation by person
+  (`svc:auth:revoke-connections`) and the owner backfill find a legacy refresh
+  token through that row; deleting it turns the token into one of the
+  `unattributed_refresh_tokens`, and any such token defers every dynamic-client
+  prune. Refresh tokens live 30 days, so 744 hours (30 days and one spare) past
+  an access token's expiry every refresh token issued with it has expired too.
+  A test fails if the refresh lifetime grows past the retention.
+- Revoked rows are evidence: a revocation keeps them for the investigation, and
+  the purge leaves them for 31 days past expiry.
+
+The durable guard tables (`oauth_credential_revocations`,
+`oauth_credential_lineages`, `oauth_credential_members`) are independent of
+Passport's purgeable rows. Do not purge these tables or remove their completion
+marker. They retain credential IDs and owner/client associations, never bearer
+secrets. Their migration deliberately preserves them on rollback. Keep
+`passport:purge --expired --hours=744` and dynamic-client pruning unchanged.
+
+### Durable revocation rollout (#474)
+
+SVC uses the released `bherila/auth-laravel` v0.27.0 (`^0.27.0`, exact
+reference committed in `composer.lock`). Normal deployments pause new HTTP
+issuance through the action's maintenance step and drain Artisan before
+migration, then resume HTTP when the selected release is served. A coordinated web-grant
+drain is not required: late old-process credentials stay unregistered and
+require fresh authorization. The migration registers existing identifiable
+code/access/refresh rows in bounded batches, including attributable refreshes
+whose access rows were already purged, at sequence zero. It records completion
+once and never enrolls later rows on replay. New package repositories register
+all subsequent credentials atomically with persistence. SVC enables the guard
+in `bherila-auth.oauth_server.revocation.enabled`.
+
+Do not set the OAuth flag to false as a normal deployment step. Read-only
+preflight requires the incoming `deployment.env` to contain exactly one explicit,
+literal enabled OAuth setting (`true`, `(true)` or `1`, case-insensitive) and
+requires live OAuth metadata to return 200 JSON before maintenance or cron pause.
+Missing, duplicate, interpolated, disabled or ambiguous settings are refused;
+configuration contents and parser errors are never printed. An operator's
+deliberate shutdown stays unchanged. Resolve the incident and restore the
+intended configuration before retrying a normal deploy.
+
+Once the new release is serving, live verification checks OAuth immediately,
+then issues the smoke credentials, runs all authenticated MCP checks and revokes
+them. There is no wait for a person to edit configuration during deployment.
+Late unregistered old-process grants require fresh authorization. Check the
+website integration and any affected clients after a guard upgrade.
+
+An older process's late, unregistered writes are refused by the new guard,
+rather than adopted as a new connection. Unknown legacy owners/clients also
+require fresh authorization. Rotations completed before registration cannot be
+reconstructed; each existing access/refresh family is registered independently.
+Serve the new repositories/revoker through the selected release before resuming HTTP.
+Containment continues to start by turning issuance off; no cache fence or
+application refresh-token decoder remains.
+
+### Deployment failures and recovery
+
+A failed deploy reports the selected release, commit and state, and probes `/`
+in its Actions summary. `/up` is exempt from Laravel maintenance and can return
+200 while the site returns 503; it does not prove restored service. Monitoring
+must also probe a normal route (the external monitor uses `/__status-probe`,
+which returns 404 when serving and 503 in maintenance).
+
+Before database risk, the action restores the prior serving and cron state.
+After database risk, the workflow's `failure-policy: rollback` restores the
+retained prior code and scheduler entries and verifies that prior release is
+serving. Database changes are not rolled back: migrations must preserve prior-code
+compatibility. If rollback cannot prove safe restoration, maintenance and recovery
+evidence remain for the operator. A retry refuses an app already in maintenance;
+it does not silently run `artisan up`.
+
+1. Read the failed run and identify its exact selected release/commit and the
+   migration outcome. Resolve a failed or partially applied migration before
+   serving any code; do not assume the prior release is schema-compatible.
+2. Confirm the finalizer's exact selected release and serving state. If rollback
+   succeeded, leave the restored prior release serving, correct the failure and
+   redeploy the reviewed candidate. If restoring OAuth after containment, update
+   both environment files and rebuild the selected release's configuration cache
+   with the production PHP binary. Deployment never changes an operator's
+   containment flag automatically.
+3. If automatic restoration failed and maintenance remains, verify schema
+   compatibility and the exact selected code before any explicit restoration.
+   `recovery-release-id` resumes an interrupted transaction/lock through the
+   reviewed recovery path; it is not permission to bypass maintenance or serve
+   an unverified release. Require an operator decision before manual `artisan up`.
+4. Require `Committed healthy release` for the exact retry, authenticated MCP
+   smoke success, exactly one canonical scheduler cron line, `/` 200, `/login`
+   302 and OAuth discovery 200 JSON. Check affected clients for reauthorization.
 
 ## Per-endpoint resources and provider identity cutover
 

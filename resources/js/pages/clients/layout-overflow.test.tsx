@@ -1,6 +1,7 @@
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import ClientAgreementDetail from '@/pages/clients/agreement';
 import ExpenseSchedules from '@/pages/clients/expense-schedules';
 import ClientHome from '@/pages/clients/home';
 import ClientInvoiceDetail from '@/pages/clients/invoice';
@@ -8,6 +9,7 @@ import ClientInvoices from '@/pages/clients/invoices';
 import ClientProposalDetail from '@/pages/clients/proposal';
 import ClientSettings from '@/pages/clients/settings';
 import ClientTasks from '@/pages/clients/tasks';
+import Operations from '@/pages/operations';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { clientOption, workspaceNavigation } from '@/test/workspace-navigation';
@@ -94,6 +96,98 @@ const LONG_REPOSITORY =
 const company = { id: 'company-1', name: LONG_NAME };
 
 describe('client screens under data that does not fit', () => {
+    it('keeps the Operations workspace title in content and all existing navigation available', () => {
+        const workspaceName = 'SyntheticUnbrokenWorkspace'.repeat(10);
+        const { container } = render(
+            <Operations
+                workspace={{
+                    id: 'synthetic-workspace',
+                    name: workspaceName,
+                    clients: [],
+                    timezone: 'UTC',
+                }}
+            />,
+        );
+
+        expect(screen.getByRole('main')).toContainElement(
+            screen.getByRole('heading', { level: 1, name: workspaceName }),
+        );
+        expect(screen.getByRole('banner')).not.toContainElement(
+            screen.getByRole('main'),
+        );
+        expect(
+            screen.getByRole('link', { name: '← Workspaces' }),
+        ).toHaveAttribute('href', '/app');
+        expect(
+            screen.getByRole('navigation', { name: 'Workspace operations' }),
+        ).toContainElement(screen.getByRole('link', { name: 'Clients' }));
+        expect(screen.getByRole('link', { name: 'Clients' })).toHaveAttribute(
+            'href',
+            '/workspaces/synthetic-workspace/clients',
+        );
+        expect(
+            screen.getByRole('link', { name: 'Time sheet' }),
+        ).toHaveAttribute('href', '/workspaces/synthetic-workspace/time');
+        expect(
+            screen.getByRole('combobox', { name: 'Appearance' }),
+        ).toBeVisible();
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
+    it('keeps the full agreement project and unstated terms inside their term rows', () => {
+        const project = 'SyntheticUnbrokenProject'.repeat(10);
+        const { container } = render(
+            <ClientAgreementDetail
+                company={company}
+                home_href="/synthetic-client"
+                audience="operator"
+                actions={{ update: null, upload_file: null }}
+                files={[]}
+                recurring_items={[]}
+                deferred_backlog={null}
+                agreement={{
+                    id: 'synthetic-agreement',
+                    title: 'Synthetic agreement',
+                    status: 'active',
+                    currency: 'USD',
+                    billing_cadence: 'one_time',
+                    effective_billing_cadence: 'one_time',
+                    effective_first_cycle_proration: null,
+                    is_recurring: false,
+                    starts_on: '2026-10-01',
+                    ends_on: null,
+                    signed_at: null,
+                    retainer_minutes_per_period: null,
+                    retainer_minutes_per_month: null,
+                    retainer_amount_per_period: null,
+                    hourly_rate_amount: null,
+                    rollover_months: null,
+                    project,
+                    rollover_policy: null,
+                    catch_up_threshold_minutes: null,
+                    first_cycle_proration: null,
+                    bill_overage_interim: null,
+                    activated_at: null,
+                    terminated_at: null,
+                    signer_name: null,
+                    signer_title: null,
+                    retainer_minutes: null,
+                    retainer_amount: null,
+                    period_retainer_minutes: null,
+                    period_retainer_amount: null,
+                    agreement_text: null,
+                    is_visible_to_client: false,
+                }}
+            />,
+        );
+
+        expect(screen.getByText(project)).toHaveTextContent(project);
+        expect(
+            screen.getByText('Defaults to one hour, capped at the retainer'),
+        ).toBeVisible();
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
     it('keeps a proposal and its acceptance form inside the window', () => {
         const { container } = render(
             <ClientProposalDetail
@@ -226,11 +320,20 @@ describe('client screens under data that does not fit', () => {
                         project: LONG_NAME,
                         is_visible_to_client: true,
                         completed_at: null,
+                        comment_thread_url: '/synthetic/task-comments',
                     },
                 ]}
+                pagination={{
+                    previous_href: '/synthetic/tasks?page=1',
+                    next_href: '/synthetic/tasks?page=3',
+                }}
             />,
         );
 
+        expect(screen.getByRole('link', { name: 'Comments' })).toHaveAttribute(
+            'href',
+            '/synthetic/task-comments',
+        );
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
@@ -281,19 +384,29 @@ describe('client screens under data that does not fit', () => {
                 assignable={[{ id: 'user-1', name: LONG_NAME }]}
                 portal={{
                     add_url:
-                        '/workspaces/workspace-1/clients/company-1/portal-access',
+                        '/api/v1/workspaces/workspace-1/clients/company-1/portal-access',
                     members: [
                         {
                             id: 'contact-1',
                             name: LONG_NAME,
                             email: `${LONG_NAME}@example.test`,
                             scope: 'projects',
-                            projects: ['project-1'],
-                            url: '/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
+                            projects: [
+                                {
+                                    id: 'project-1',
+                                    name: LONG_NAME,
+                                    href: '/api/v1/workspaces/workspace-1/projects/project-1',
+                                },
+                            ],
+                            version: 'a'.repeat(64),
+                            update_href:
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
+                            revoke_href:
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
                         },
                     ],
                     invite_url:
-                        '/workspaces/workspace-1/clients/company-1/portal-invitations',
+                        '/api/v1/workspaces/workspace-1/clients/company-1/portal-invitations',
                     invitations: [
                         {
                             id: 'invitation-1',
@@ -306,9 +419,9 @@ describe('client screens under data that does not fit', () => {
                             email_sent: false,
                             link: `https://identity.example.test/invitations/${LONG_NAME}`,
                             resend_url:
-                                '/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1/resend',
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1/resend',
                             revoke_url:
-                                '/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1',
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1',
                         },
                     ],
                 }}
@@ -363,7 +476,7 @@ describe('client screens under data that does not fit', () => {
                         id: 'line-1',
                         type: 'service',
                         description: LONG_DESCRIPTION,
-                        quantity: 1,
+                        quantity: '1.0000',
                         hours: 40,
                         line_date: '2026-08-30',
                         unit_amount: 375000,
@@ -440,6 +553,14 @@ describe('client screens under data that does not fit', () => {
                         linked_at: '2026-10-08T12:00:00Z',
                         linked_by: LONG_NAME,
                     },
+                    covers: [
+                        {
+                            square_invoice_id: `${LONG_SQUARE_ID}-covered`,
+                            square_invoice_number: LONG_SQUARE_ID,
+                            covered_at: '2026-10-09T12:00:00Z',
+                            covered_by: LONG_NAME,
+                        },
+                    ],
                     agreement_series_key: '000001',
                     square_collects: true,
                     payment_mismatch: {

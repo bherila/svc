@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\OAuthSecurityHeaders;
+use App\Http\Middleware\RefuseClientCredentialsGrant;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
 
 return [
@@ -22,6 +23,8 @@ return [
     // ceilings (self-registered and person-registered clients alike).
     'middleware' => AgentOAuthServer::passportMiddleware([
         OAuthSecurityHeaders::class,
+        // Every credential acts for a person: no secret alone mints one.
+        RefuseClientCredentialsGrant::class,
     ]),
 
     /*

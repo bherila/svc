@@ -106,11 +106,15 @@ final class AgentMcpReadTools
     }
 
     /** @return array<string, mixed> */
-    public function project(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id): array
+    public function project(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(maxLength: 2048)] ?string $tasks_cursor = null): array
     {
         $context = $this->workspace($workspace_id, 'projects:read');
 
-        return ['data' => $this->reads->project($context->principal->subject, $context->workspace, $project_id, $context->principal->hasScope('tasks:read'))];
+        try {
+            return ['data' => $this->reads->project($context->principal->subject, $context->workspace, $project_id, $context->principal->hasScope('tasks:read'), $tasks_cursor)];
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */
@@ -181,7 +185,7 @@ final class AgentMcpReadTools
         #[Schema(minimum: 1, maximum: 100)] int $limit = 25,
         #[Schema(maxLength: 2048)] ?string $cursor = null,
         #[Schema(format: 'uuid')] ?string $company_id = null,
-        #[Schema(enum: ['cadence_period', 'interim_overage', 'terminal', 'ad_hoc'])] ?string $invoice_kind = null,
+        #[Schema(enum: ['cadence_period', 'interim_overage', 'terminal', 'ad_hoc', 'deferred_buydown'])] ?string $invoice_kind = null,
         #[Schema(format: 'date')] ?string $issue_date_from = null,
         #[Schema(format: 'date')] ?string $issue_date_to = null,
         #[Schema(format: 'date')] ?string $due_date_from = null,

@@ -48,9 +48,9 @@ final class PortalInvitationOperationContractTest extends TestCase
                     $kind === 'list' ? AgentDeploymentFlags::PORTAL_INVITATIONS : AgentDeploymentFlags::PORTAL_INVITATION_WRITES,
                     'mcp', 'mcp.switch:'.($kind === 'list' ? 'mcp.read.clients' : 'mcp.write.clients'), 'mcp.switch:'.$id,
                 ], $operation->requirement->flags);
-                $this->assertSame(['x-mcp-tool' => $id, 'x-svc-flags' => $kind === 'list'
+                $this->assertSame(['x-svc-flags' => $kind === 'list'
                     ? ['SVC_PORTAL_INVITATIONS_ENABLED']
-                    : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED']], $operation->extensions);
+                    : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED'], 'x-mcp-tool' => $id], $operation->extensions);
                 $this->assertSame($kind === 'list' ? IdempotencyKey::None : IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey);
                 $this->assertFalse($operation->safety->expectedVersion, $id);
 

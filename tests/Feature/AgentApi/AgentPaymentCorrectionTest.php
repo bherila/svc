@@ -26,6 +26,8 @@ use Tests\TestCase;
  * Gated like `payments.record` - both write cutovers, the payments:record
  * scope, a workspace owner/admin and the MCP kill switch - with the version
  * the agent read and a reason required, and every gate rechecked on replay.
+ * The version comes from `payments.list`, so payments:read is required too
+ * (#473), as it is for `payments.set_status` and `payments.refund`.
  */
 final class AgentPaymentCorrectionTest extends TestCase
 {
@@ -94,6 +96,25 @@ final class AgentPaymentCorrectionTest extends TestCase
         $this->assertSame('ach', $payment->fresh()?->method);
     }
 
+    /** The note is offered as it is to the console command, and read back by payments.list (#454). */
+    #[DataProvider('transports')]
+    public function test_the_note_can_be_corrected_and_cleared(string $transport): void
+    {
+        [$user, $workspace, $payment] = $this->fixture();
+        $body = ['confirm' => true, 'expected_version' => AgentApiVersion::for($payment), 'reason' => 'Synthetic note', 'notes' => 'Synthetic: deposited at the synthetic branch.'];
+
+        $corrected = $this->correct($transport, $user, $workspace, $payment->public_id, $body, 'synthetic-note');
+        $this->assertIsArray($corrected);
+        $this->assertSame('Synthetic: deposited at the synthetic branch.', $corrected['notes']);
+        $this->assertSame('wire', $payment->fresh()?->method);
+
+        $cleared = $this->correct($transport, $user, $workspace, $payment->public_id, [...$body, 'notes' => null, 'expected_version' => $corrected['version']], 'synthetic-note-clear');
+        $this->assertIsArray($cleared);
+        $this->assertNull($cleared['notes']);
+        $this->assertNull($payment->fresh()?->notes);
+        $this->assertSame(2, ClientCompanyActivity::query()->where('action', 'invoice.payment_corrected')->count());
+    }
+
     /** @return iterable<string, array{array<string, mixed>}> */
     public static function refusedBodies(): iterable
     {
@@ -102,7 +123,7 @@ final class AgentPaymentCorrectionTest extends TestCase
         yield 'status' => [['status' => 'refunded']];
         yield 'refunded amount' => [['refunded_amount' => 1]];
         yield 'invoice' => [['invoice_id' => '00000000-0000-4000-8000-000000000000']];
-        yield 'notes are not offered to agents' => [['notes' => 'Synthetic private note']];
+        yield 'notes longer than their column' => [['notes' => str_repeat('n', 10001)]];
         yield 'no reason' => [['reason' => null]];
         yield 'blank reason' => [['reason' => '   ']];
         yield 'no version' => [['expected_version' => null]];
@@ -193,6 +214,37 @@ final class AgentPaymentCorrectionTest extends TestCase
         $this->assertUnchanged($payment);
     }
 
+    /** The version it checks comes from payments.list, so the record scope alone is not enough either (#473). */
+    public function test_the_read_scope_is_required_as_well_as_the_record_scope(): void
+    {
+        [$user, $workspace, $payment] = $this->fixture();
+        $this->assertSame(['payments:record', 'payments:read'], $this->agentOperation('payments.correct')->requirement->scopes);
+        $this->assertSame(['payments:record', 'payments:read'], AgentApiResponseSchemaCatalog::scopesForOperation('payments.correct'));
+
+        $this->actingAsMcp($user, ['payments:record']);
+        $this->withHeader('Idempotency-Key', 'synthetic-record-only')
+            ->patchJson($this->url($workspace, $payment->public_id), $this->body($payment))
+            ->assertForbidden()
+            ->assertJsonPath('operation', 'payments.correct')
+            ->assertJsonPath('reason', 'missing_scope')
+            ->assertJsonPath('detail', 'payments:read')
+            ->assertHeader('WWW-Authenticate', 'Bearer error="insufficient_scope", scope="payments:read"');
+
+        $this->actingAsMcp($user, ['mcp:use', 'payments:record', 'billing:read']);
+        $headers = $this->initialize();
+        $names = array_column($this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'], $headers)->assertOk()->json('result.tools'), 'name');
+        $this->assertNotContains('payments.correct', $names);
+        $this->assertContains('payments.record', $names);
+        $this->assertUnchanged($payment);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+
+        $this->actingAsMcp($user, ['payments:record', 'payments:read']);
+        $this->withHeader('Idempotency-Key', 'synthetic-record-and-read')
+            ->patchJson($this->url($workspace, $payment->public_id), $this->body($payment))
+            ->assertOk();
+        $this->assertSame('ach', $payment->fresh()?->method);
+    }
+
     #[DataProvider('transports')]
     public function test_members_are_refused_and_a_revoked_role_cannot_replay(string $transport): void
     {
@@ -222,7 +274,7 @@ final class AgentPaymentCorrectionTest extends TestCase
     public function test_the_whole_request_scopes_every_tenant_read_and_write(): void
     {
         [$user, $workspace, $payment] = $this->fixture();
-        $this->actingAsMcp($user, ['payments:record']);
+        $this->actingAsMcp($user, ['payments:record', 'payments:read']);
         $queries = [];
         DB::listen(function (QueryExecuted $event) use (&$queries): void {
             $sql = str_replace(['"', '`'], '', strtolower($event->sql));
@@ -285,7 +337,7 @@ final class AgentPaymentCorrectionTest extends TestCase
 
         foreach (['REST body' => [$request, []], 'MCP input' => [$input, $tooling]] as $label => [$schema, $extra]) {
             $this->assertNotSame([], $validator->validateAgainstJsonSchema(json_decode((string) json_encode([...$base, ...$extra])), $schema), $label.': nothing to correct');
-            foreach (['method' => 'ach', 'reference' => null, 'received_on' => '2026-08-01'] as $field => $value) {
+            foreach (['method' => 'ach', 'reference' => null, 'notes' => null, 'received_on' => '2026-08-01'] as $field => $value) {
                 $this->assertSame(
                     [],
                     $validator->validateAgainstJsonSchema(json_decode((string) json_encode([...$base, ...$extra, $field => $value])), $schema),

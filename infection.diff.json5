@@ -22,11 +22,20 @@
     tmpDir: "storage/framework/cache/infection-diff",
     logs: {
         summaryJson: "storage/framework/cache/infection-diff/summary.json",
+        text: "storage/framework/cache/infection-diff/mutations.log",
     },
     ignoreMsiWithNoMutations: true,
     timeoutsAsEscaped: true,
     mutators: {
         "@default": true,
+        // A positive whole-minute value and a binary float at that magnitude
+        // differ by a multiple of its binary spacing. That difference cannot
+        // equal the binary representation of decimal 0.00001, so > and >= are
+        // equivalent at this boundary. Only this comparison is excluded; the
+        // rounding, subtraction, bounds and refusal branches remain mutated.
+        GreaterThan: {
+            ignore: ["App\\Support\\Billing\\DeferredBuyDownRequest::exceedsMinuteTolerance"],
+        },
         // A `(float)` that satisfies a declared `float` return type in a file
         // without strict_types is equivalent by construction: the return type
         // coerces the same value with or without it, so no test can tell the
@@ -67,6 +76,10 @@
         IncrementInteger: {
             ignore: [
                 "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
+                // A larger serialization allowance yields smaller complete
+                // pages; it cannot violate the actual protocol ceiling. The
+                // decrement remains live and is killed by escaped-text cases.
+                "App\\Support\\AgentApi\\AgentPageBudget::dataBytes",
             ],
         },
         // `select(DB::raw(1))` inside a `WHERE EXISTS` subquery. The value is

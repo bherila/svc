@@ -4,6 +4,7 @@ use App\Exceptions\InvalidAgentApiCursor;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
+use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\LogRejectedBearer;
 use App\Support\Billing\RetryableConflict;
@@ -40,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [LogRejectedBearer::class]);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, McpHttpSecurityMiddleware::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectSelfRevokingOAuthResource::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, AuthenticateFirstPartySession::class);
         // An agent operation's route checks run in this order: a workspace
         // the caller cannot see answers 404 exactly as a missing one does,
@@ -86,8 +88,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // A route that declared its protected resource (ExpectOAuthResource:<name>)
         // challenges with that resource's own metadata document, from
         // configuration rather than the request's host (RFC 9728 section 5.1).
-        // Anything else under /api/v1 - the Sanctum finance routes - keeps the
-        // plain JSON 401, pointing at the REST resource it sits under.
+        // Anything else under /api/v1 keeps the plain JSON 401, pointing at
+        // the REST resource it sits under. Every route there names its
+        // resource today, the finance reconciliation routes included (#457).
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
             $challenge = OAuthProtectedResource::unauthenticated($request);
             if ($challenge !== null) {

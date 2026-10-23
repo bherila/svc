@@ -11,24 +11,22 @@ use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
- * The workspace-wide invoice list.
+ * The workspace-wide invoice URLs.
  *
- * It sits above any one client, so it renders outside the client chrome - a
- * switcher naming a client would be lying about where the reader is. What it
- * must not do is widen what a scoped member can see: it reads the same
- * reachability rule the directory does, since otherwise the one screen that
- * lists every invoice would be the way around #157.
+ * The list is gone: the URL redirects into a client, for a browser and a JSON
+ * request alike, so it lists nothing and cannot widen what a scoped member
+ * sees (#157). A program lists invoices through invoices.list (#454). The
+ * direct invoice URL still authorizes before it redirects, by the same
+ * reachability rule the directory follows.
  *
  * Fixtures are synthetic throughout.
  */
 class WorkspaceInvoiceListTest extends TestCase
 {
-    use AssertsSurfaceIsolation;
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
@@ -42,10 +40,11 @@ class WorkspaceInvoiceListTest extends TestCase
         $this->invoice($workspace, $first, 'SYN-LIST-1');
         $this->invoice($workspace, $second, 'SYN-LIST-2');
 
+        // No JSON list of its own any more (#454): a program lists invoices
+        // through invoices.list, so a JSON request is sent where a browser is.
         $this->actingAs($manager)
             ->getJson("/workspaces/{$workspace->public_id}/invoices")
-            ->assertOk()
-            ->assertJsonCount(2, 'data');
+            ->assertRedirect("/workspaces/{$workspace->public_id}?module=invoices");
 
         // The screen is gone - an invoice lives inside one client, and a
         // workspace-wide copy of the list named no client around the rows. The
@@ -91,15 +90,14 @@ class WorkspaceInvoiceListTest extends TestCase
             'role' => 'contributor',
         ]);
 
+        // The URL lists nothing at all now (#454), so it cannot list more than
+        // the directory: whatever the request asks for, it is a redirect.
         $response = $this->actingAs($member)
             ->getJson("/workspaces/{$workspace->public_id}/invoices")
-            ->assertOk();
-
-        $response->assertJsonCount(1, 'data');
-        $this->assertJsonPayloadOmits($response, [
-            'THEIRS-LIST-9999',
-            'Unreachable List Client',
-        ], 'MINE-LIST-1');
+            ->assertRedirect("/workspaces/{$workspace->public_id}?module=invoices");
+        foreach (['THEIRS-LIST-9999', 'Unreachable List Client', 'MINE-LIST-1'] as $text) {
+            $this->assertStringNotContainsString($text, (string) $response->getContent());
+        }
     }
 
     /**
@@ -130,14 +128,10 @@ class WorkspaceInvoiceListTest extends TestCase
 
         $response = $this->actingAs($manager)
             ->getJson("/workspaces/{$workspace->public_id}/invoices")
-            ->assertOk();
-
-        $response->assertJsonCount(2, 'data');
-        $this->assertJsonPayloadOmits(
-            $response,
-            ['Foreign Lineage Client Name', 'Foreign Lineage Tenant'],
-            'LOCAL-LINEAGE-1',
-        );
+            ->assertRedirect("/workspaces/{$workspace->public_id}?module=invoices");
+        foreach (['Foreign Lineage Client Name', 'Foreign Lineage Tenant', 'STRAY-LINEAGE-9999'] as $text) {
+            $this->assertStringNotContainsString($text, (string) $response->getContent());
+        }
 
         // And it has no client screen to be opened on: the redirect that
         // replaced the workspace-wide detail page refuses rather than sending
@@ -170,11 +164,6 @@ class WorkspaceInvoiceListTest extends TestCase
             'public_id' => (string) Str::uuid(),
             'role' => 'client',
         ]);
-
-        $this->actingAs($client)
-            ->getJson("/workspaces/{$workspace->public_id}/invoices")
-            ->assertOk()
-            ->assertJsonCount(1, 'data');
 
         $this->actingAs($client)
             ->get("/workspaces/{$workspace->public_id}/invoices")
@@ -221,10 +210,10 @@ class WorkspaceInvoiceListTest extends TestCase
             'role' => 'contributor',
         ]);
 
-        // Their own client's invoice is fine.
+        // Their own client's invoice is fine: it opens on its client's screen.
         $this->actingAs($member)
             ->getJson("/workspaces/{$workspace->public_id}/invoices/{$ours->public_id}")
-            ->assertOk();
+            ->assertRedirect(route('clients.invoice', [$workspace, $mine, $ours], absolute: false));
 
         // The other client's is not - by id, and by PDF, which shares the check.
         $this->actingAs($member)
@@ -246,7 +235,7 @@ class WorkspaceInvoiceListTest extends TestCase
 
         $this->actingAs($manager)
             ->getJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}")
-            ->assertOk();
+            ->assertRedirect(route('clients.invoice', [$workspace, $company, $invoice], absolute: false));
     }
 
     /**
@@ -282,14 +271,15 @@ class WorkspaceInvoiceListTest extends TestCase
 
         $response = $this->actingAs($member)
             ->getJson("/workspaces/{$workspace->public_id}/invoices")
-            ->assertOk();
-
-        $response->assertJsonCount(1, 'data');
-        $this->assertJsonPayloadOmits($response, [
-            'SIB-THEIRS-9999',
-            'SIB-MIXED-8888',
-            'SIB-UNSCOPED-7777',
-        ], 'SIB-MINE-1');
+            ->assertRedirect("/workspaces/{$workspace->public_id}?module=invoices");
+        foreach (['SIB-THEIRS-9999', 'SIB-MIXED-8888', 'SIB-UNSCOPED-7777', 'SIB-MINE-1'] as $text) {
+            $this->assertStringNotContainsString($text, (string) $response->getContent());
+        }
+        // By id, the refusals still hold.
+        foreach (['SIB-THEIRS-9999', 'SIB-MIXED-8888', 'SIB-UNSCOPED-7777'] as $number) {
+            $refused = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('invoice_number', $number)->sole();
+            $this->actingAs($member)->getJson("/workspaces/{$workspace->public_id}/invoices/{$refused->public_id}")->assertNotFound();
+        }
     }
 
     /** And the same three refusals by id, not only in the list. */
@@ -313,7 +303,7 @@ class WorkspaceInvoiceListTest extends TestCase
 
         $this->actingAs($member)
             ->getJson("/workspaces/{$workspace->public_id}/invoices/{$ours->public_id}")
-            ->assertOk();
+            ->assertRedirect(route('clients.invoice', [$workspace, $company, $ours], absolute: false));
 
         foreach ([$sibling, $unscoped] as $refused) {
             $this->actingAs($member)

@@ -10,6 +10,10 @@ final class AgentApiScopes
 
     public const string PROJECTS_WRITE = 'projects:write';
 
+    public const string COLLABORATION_READ = 'collaboration:read';
+
+    public const string COLLABORATION_WRITE = 'collaboration:write';
+
     public const string TASKS_READ = 'tasks:read';
 
     public const string TASKS_WRITE = 'tasks:write';
@@ -33,6 +37,12 @@ final class AgentApiScopes
     public const string PAYMENTS_READ = 'payments:read';
 
     public const string PAYMENTS_RECORD = 'payments:record';
+
+    /** The finance reconciliation surface (#457); a Sanctum finance.read token holds it there. */
+    public const string FINANCE_READ = 'finance:read';
+
+    /** The finance reconciliation surface (#457); a Sanctum finance.reconcile token holds it there. */
+    public const string FINANCE_RECONCILE = 'finance:reconcile';
 
     public const string CLIENTS_READ = 'clients:read';
 
@@ -90,6 +100,8 @@ final class AgentApiScopes
             self::IDENTITY_READ => 'Read your SVC identity and available workspaces',
             self::PROJECTS_READ => 'Read authorized projects',
             self::PROJECTS_WRITE => 'Create, edit and archive projects and manage project member access as a workspace owner or admin',
+            self::COLLABORATION_READ => 'Read authorized native notes, discussions and comments; portal identities receive only client-visible content',
+            self::COLLABORATION_WRITE => 'Create, edit, publish or remove native collaboration within current staff roles; never grants access or sends mail',
             self::TASKS_READ => 'Read authorized tasks',
             self::TASKS_WRITE => 'Create and update authorized tasks',
             self::TIME_READ => 'Read authorized time entries',
@@ -102,6 +114,8 @@ final class AgentApiScopes
             self::EXPENSES_WRITE => 'Record, edit and delete draft expenses as a workspace manager',
             self::PAYMENTS_READ => 'Read received payments on authorized invoices',
             self::PAYMENTS_RECORD => 'Record money already received and correct a recorded payment\'s method, reference or date; never initiate a charge',
+            self::FINANCE_READ => 'Read received payments with their finance reconciliation allocations, and the processor payouts that settled them, as a workspace owner or admin',
+            self::FINANCE_RECONCILE => 'Record and withdraw finance reconciliation allocations against received payments as a workspace owner or admin; never moves money',
             self::CLIENTS_READ => 'Read client companies as a workspace manager',
             self::CLIENTS_WRITE => 'Create, edit and archive client companies and their agreements as a workspace manager',
             self::PROPOSALS_READ => 'Read authorized proposals and their commercial terms',

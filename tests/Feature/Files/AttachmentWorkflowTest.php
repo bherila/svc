@@ -106,7 +106,13 @@ class AttachmentWorkflowTest extends TestCase
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $attachment->fresh()->lifecycle_state);
     }
 
-    public function test_json_upload_and_delete_return_redacted_metadata(): void
+    /**
+     * The browser routes answer the page, never a metadata body of their own
+     * (#454): even a JSON request is redirected, so nothing about the stored
+     * object - its key, its filename - can leak through this response. A
+     * program reads attachment metadata through the versioned API.
+     */
+    public function test_json_upload_and_delete_redirect_without_a_metadata_body(): void
     {
         [$owner, $workspace, $company] = $this->companyWorkspace();
 
@@ -118,17 +124,25 @@ class AttachmentWorkflowTest extends TestCase
             'file' => UploadedFile::fake()->createWithContent('private.txt', 'synthetic'),
         ]);
 
-        $upload->assertCreated()
-            ->assertJsonPath('record_type', 'company')
-            ->assertJsonPath('status', ClientAttachment::STATE_AVAILABLE)
-            ->assertJsonMissingPath('object_key')
-            ->assertJsonMissingPath('original_filename');
+        $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
+        $upload->assertRedirect()->assertSessionHas('attachment_id', $attachment->public_id);
+        $this->assertStringNotContainsString($attachment->object_key, (string) $upload->getContent());
+        $this->assertStringNotContainsString('private.txt', (string) $upload->getContent());
+        $this->assertSame('company', $attachment->record_type);
+        $this->assertSame($company->public_id, $attachment->record_public_id);
+        $this->assertSame(ClientAttachment::STATE_AVAILABLE, $attachment->lifecycle_state);
 
-        $attachment = ClientAttachment::query()->sole();
-        $this->actingAs($owner)->deleteJson(route('svc.files.destroy', [
+        $delete = $this->actingAs($owner)->deleteJson(route('svc.files.destroy', [
             'workspace' => $workspace,
             'clientAttachment' => $attachment->public_id,
-        ]))->assertStatus(202)->assertJsonPath('status', 'deleting');
+        ]));
+
+        $delete->assertRedirect()->assertSessionHas('status', 'Attachment queued for deletion.');
+        $this->assertStringNotContainsString($attachment->object_key, (string) $delete->getContent());
+        $this->assertSame(
+            ClientAttachment::STATE_DELETING,
+            ClientAttachment::query()->where('workspace_id', $workspace->id)->sole()->lifecycle_state,
+        );
     }
 
     public function test_portal_user_can_download_only_from_visible_records(): void

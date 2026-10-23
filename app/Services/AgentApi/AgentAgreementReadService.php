@@ -85,6 +85,9 @@ final class AgentAgreementReadService
             'project_id' => $agreement->project?->public_id,
             // Billed in Square (#438): SVC issues but never collects its invoices.
             'square_series_key' => $agreement->square_series_key,
+            'show_deferred_backlog_to_client' => (bool) $agreement->show_deferred_backlog_to_client,
+            // The series' Square location (#488); null for a marker from before markers named one.
+            'square_location_id' => $agreement->square_location_id,
         ];
     }
 }

@@ -8,12 +8,20 @@ use App\Models\SquareInvoiceSnapshot;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
+use App\Support\Square\SquareDisputeFacts;
 use App\Support\Square\SquarePaymentFacts;
 use App\Support\WorkspaceClock;
 
 /** Webhooks and the sweep share exactly the same synchronous refetch operation. */
 final class SquarePaymentReconciler
 {
+    /** Local bounds, not provider page-size promises; an incomplete sweep must fail. */
+    private const int DISPUTE_MAX_PAGES = 100;
+
+    private const int DISPUTE_MAX_RECORDS_PER_PAGE = 100;
+
+    private const int DISPUTE_MAX_KNOWN_PAYMENTS = 10_000;
+
     public function __construct(
         private readonly SquareClient $client,
         private readonly SquareLinkRepository $links,
@@ -21,9 +29,24 @@ final class SquarePaymentReconciler
         private readonly SquareMirrorRepository $mirror,
         private readonly SquarePaymentRecorder $payments,
         private readonly WorkspaceClock $clock,
+        private readonly SquareSettlementSync $settlements,
     ) {}
 
     public function invoice(Workspace $workspace, string $squareInvoiceId): void
+    {
+        $refetched = $this->refetch($workspace, $squareInvoiceId);
+        if ($refetched !== null) {
+            $this->apply($workspace, $refetched);
+        }
+    }
+
+    /**
+     * The read half: Square's invoice, order and payments re-read and
+     * checked, and the mirror refreshed. No ledger write, and no database
+     * transaction is held across the Square calls. Null when the Square
+     * invoice was never linked here.
+     */
+    public function refetch(Workspace $workspace, string $squareInvoiceId): ?SquareInvoiceRefetch
     {
         if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
             throw SquareRequestFailed::notConnected();
@@ -31,7 +54,7 @@ final class SquarePaymentReconciler
         $link = $this->links->activeLinkForSquareInvoice($workspace->id, $squareInvoiceId);
         $historical = $link ?? InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', $squareInvoiceId)->orderByDesc('id')->first();
         if ($historical === null) {
-            return;
+            return null;
         }
         $invoice = $this->client->getInvoice($squareInvoiceId)['invoice'] ?? null;
         $row = is_array($invoice) ? $this->mapper->invoice($invoice) : null;
@@ -66,10 +89,24 @@ final class SquarePaymentReconciler
             }
         }
         $this->mirror->storeInvoices($workspace, [$row], $this->clock->now()->utc());
-        foreach ($facts as $fact) {
-            if (! $this->payments->refundExisting($workspace, $fact) && $link !== null) {
-                $this->payments->record($workspace, $link, $fact);
+
+        return new SquareInvoiceRefetch($link, array_values($facts));
+    }
+
+    /**
+     * The write half: refunds applied to payments already recorded, and new
+     * completed payments recorded against the active link, if there is one.
+     * Makes no Square call.
+     */
+    public function apply(Workspace $workspace, SquareInvoiceRefetch $refetched): void
+    {
+        foreach ($refetched->payments as $fact) {
+            if (! $this->payments->refundExisting($workspace, $fact) && $refetched->activeLink !== null) {
+                $this->payments->record($workspace, $refetched->activeLink, $fact);
             }
+            // Its capture time and Square's fee so far (S7), on the payment
+            // just recorded or already there; nothing when svc has none.
+            $this->settlements->recordCharge($workspace, $fact);
         }
     }
 
@@ -84,6 +121,8 @@ final class SquarePaymentReconciler
             return;
         }
         if ($this->payments->refundExisting($workspace, $facts)) {
+            $this->settlements->recordCharge($workspace, $facts);
+
             return;
         }
         // Only trusted, refetched order identity selects a workspace's links.
@@ -91,6 +130,99 @@ final class SquarePaymentReconciler
         if ($snapshot !== null) {
             $this->invoice($workspace, $snapshot->square_invoice_id);
         }
+    }
+
+    /** A notification selects its payment, whose complete current dispute group is applied. */
+    public function dispute(Workspace $workspace, string $disputeId): void
+    {
+        if (preg_match(SquareClient::ID_PATTERN, $disputeId) !== 1) {
+            throw SquareRequestFailed::unreadable();
+        }
+        $snapshot = $this->disputeSnapshot($workspace);
+        $paymentId = $snapshot->paymentByDispute[$disputeId] ?? null;
+        if ($paymentId === null) {
+            throw SquareRequestFailed::notFound();
+        }
+        if (isset($snapshot->paymentVersions[$paymentId])) {
+            $this->payments->recordDisputes($workspace, $paymentId, $snapshot->groups[$paymentId], $snapshot->paymentVersions[$paymentId]);
+        }
+    }
+
+    /** Recover notifications only after the sweep has recorded its payments. */
+    public function disputes(Workspace $workspace): void
+    {
+        $snapshot = $this->disputeSnapshot($workspace);
+        foreach ($snapshot->groups as $paymentId => $disputes) {
+            if (isset($snapshot->paymentVersions[$paymentId])) {
+                $this->payments->recordDisputes($workspace, (string) $paymentId, $disputes, $snapshot->paymentVersions[$paymentId]);
+            }
+        }
+    }
+
+    /**
+     * Square lists all states with no changed-since filter. Read and validate
+     * every bounded page before writing, so an incomplete set cannot release
+     * another dispute's hold. Local revisions are captured before HTTP: the
+     * maximum update time of distinct disputes cannot order whole snapshots.
+     *
+     * @see https://developer.squareup.com/reference/square/disputes-api/list-disputes
+     */
+    private function disputeSnapshot(Workspace $workspace): SquareDisputeSnapshot
+    {
+        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+            throw SquareRequestFailed::notConnected();
+        }
+        $known = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
+            ->where('provider', 'square')->whereNotNull('provider_payment_identifier')
+            ->orderBy('id')->limit(self::DISPUTE_MAX_KNOWN_PAYMENTS + 1)->get(['provider_payment_identifier', 'lock_version']);
+        if ($known->count() > self::DISPUTE_MAX_KNOWN_PAYMENTS) {
+            throw SquareRequestFailed::unreadable();
+        }
+        $versions = [];
+        foreach ($known as $payment) {
+            $id = $payment->provider_payment_identifier;
+            if (! is_string($id) || preg_match(SquareClient::ID_PATTERN, $id) !== 1) {
+                throw SquareRequestFailed::unreadable();
+            }
+            $versions[$id] = $payment->lock_version;
+        }
+        unset($known);
+        $groups = [];
+        $paymentByDispute = [];
+        $cursor = null;
+        $seen = [];
+        for ($page = 0; $page < self::DISPUTE_MAX_PAGES; $page++) {
+            $response = $this->client->listDisputes($cursor);
+            $records = array_key_exists('disputes', $response) ? $response['disputes'] : [];
+            if (! is_array($records) || ! array_is_list($records) || count($records) > self::DISPUTE_MAX_RECORDS_PER_PAGE || ! empty($response['errors'])) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
+            }
+            foreach ($records as $record) {
+                if (! is_array($record) || ! is_string($record['id'] ?? null)) {
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
+                }
+                $facts = SquareDisputeFacts::from($record, $record['id']);
+                if (isset($paymentByDispute[$facts->id])) {
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
+                }
+                $paymentByDispute[$facts->id] = $facts->paymentId;
+                $groups[$facts->paymentId][] = $facts;
+            }
+            $next = $response['cursor'] ?? null;
+            if ($next === null || $next === '') {
+                return new SquareDisputeSnapshot($versions, $groups, $paymentByDispute);
+            }
+            if (! is_string($next) || preg_match(SquareClient::CURSOR_PATTERN, $next) !== 1) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::InvalidCursor);
+            }
+            if (isset($seen[$next])) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::RepeatedCursor);
+            }
+            $seen[$next] = true;
+            $cursor = $next;
+        }
+
+        throw SquareRequestFailed::unreadable();
     }
 
     /** @return iterable<InvoiceSquareLink> */

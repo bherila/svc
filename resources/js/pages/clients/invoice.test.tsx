@@ -247,11 +247,27 @@ describe('correcting a recorded payment date', () => {
         expect(field).toHaveValue('2026-08-20');
 
         fireEvent.change(field, { target: { value: '2026-08-18' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        // A reason is required, as payments.correct requires it: Save waits
+        // for one, and a blank one is not a reason.
+        const save = screen.getByRole('button', { name: 'Save' });
+        expect(save).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Reason for the correction'), {
+            target: { value: '   ' },
+        });
+        expect(save).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Reason for the correction'), {
+            target: { value: ' Bank statement shows the 18th ' },
+        });
+        expect(save).toBeEnabled();
+        fireEvent.click(save);
 
         expect(inertia.post).toHaveBeenCalledWith(
             '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
-            { received_on: '2026-08-18' },
+            {
+                received_on: '2026-08-18',
+                reason: 'Bank statement shows the 18th',
+            },
             expect.anything(),
         );
     });
@@ -301,12 +317,19 @@ describe('correcting a recorded payment date', () => {
             screen.getByLabelText('Corrected date for the $40.00 payment'),
             { target: { value: '2026-08-18' } },
         );
+        fireEvent.change(screen.getByLabelText('Reason for the correction'), {
+            target: { value: 'Synthetic statement' },
+        });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
         open(1);
         expect(
             screen.getByLabelText('Corrected date for the $25.00 payment'),
         ).toHaveValue('2026-08-05');
+        // And the reason given for the first row does not carry over.
+        expect(screen.getByLabelText('Reason for the correction')).toHaveValue(
+            '',
+        );
 
         // Abandoned on the second row, which is the sharper case: nothing was
         // submitted, so nothing else had a reason to clear the field.
@@ -340,6 +363,160 @@ describe('correcting a recorded payment date', () => {
     });
 });
 
+describe("a payment's deep link", () => {
+    /**
+     * `/finance-links/payments/{id}` redirects here with `#payment-{id}`;
+     * the row has to carry that anchor or the link lands at the top of the
+     * page with nothing to say which payment it meant.
+     */
+    it('anchors each payment row at its public id', () => {
+        const { container } = render(
+            <ClientInvoiceDetail
+                {...props({
+                    payments: [
+                        {
+                            id: 'payment-uuid-1',
+                            status: 'succeeded',
+                            method: 'wire',
+                            reference: null,
+                            received_on: '2026-08-20',
+                            correct_date_href: null,
+                            amount: 4000,
+                            refunded_amount: 0,
+                            currency: 'USD',
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        const row = container.querySelector('#payment-payment-uuid-1');
+        expect(row?.tagName).toBe('TR');
+        expect(row).toHaveTextContent('$40.00');
+    });
+});
+
+describe('a payment reconciled in finance', () => {
+    function paymentWith(
+        finance_reconciliation: { hrefs: string[] } | null,
+    ): Props['payments'][number] {
+        return {
+            id: 'payment-1',
+            status: 'succeeded',
+            method: 'wire',
+            reference: null,
+            received_on: '2026-08-20',
+            correct_date_href: null,
+            amount: 4000,
+            refunded_amount: 0,
+            currency: 'USD',
+            finance_reconciliation,
+        };
+    }
+
+    it('links the badge to the transaction URL the server sent', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    payments: [
+                        paymentWith({
+                            hrefs: ['https://finance.example.test/t/abc'],
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        const link = screen.getByRole('link', {
+            name: 'Reconciled in finance',
+        });
+        expect(link).toHaveAttribute(
+            'href',
+            'https://finance.example.test/t/abc',
+        );
+        expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    });
+
+    it('shows the badge without a link when no link was configured', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({ payments: [paymentWith({ hrefs: [] })] })}
+            />,
+        );
+
+        expect(screen.getByText('Reconciled in finance')).toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: /finance/i })).toBeNull();
+    });
+
+    it('links each transaction of a split payment', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    payments: [
+                        paymentWith({
+                            hrefs: [
+                                'https://finance.example.test/t/one',
+                                'https://finance.example.test/t/two',
+                            ],
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByRole('link', { name: 'Finance transaction 1 of 2' }),
+        ).toHaveAttribute('href', 'https://finance.example.test/t/one');
+        expect(
+            screen.getByRole('link', { name: 'Finance transaction 2 of 2' }),
+        ).toHaveAttribute('href', 'https://finance.example.test/t/two');
+    });
+
+    it('shows nothing for a payment the server sent no reconciliation for', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({ payments: [paymentWith(null)] })}
+            />,
+        );
+
+        expect(screen.queryByText('Reconciled in finance')).toBeNull();
+    });
+});
+
+describe('voiding an invoice', () => {
+    it('requires a reason and sends it with the void', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    actions: {
+                        ...props().actions,
+                        void: '/workspaces/w-1/invoices/invoice-1/void',
+                    },
+                })}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Void' }));
+        const confirm = within(screen.getByRole('alertdialog')).getByRole(
+            'button',
+            { name: 'Void' },
+        );
+        expect(confirm).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('Reason'), {
+            target: { value: ' Issued to the wrong client ' },
+        });
+        expect(confirm).toBeEnabled();
+        fireEvent.click(confirm);
+
+        expect(inertia.post).toHaveBeenCalledWith(
+            '/workspaces/w-1/invoices/invoice-1/void',
+            { reason: 'Issued to the wrong client' },
+            expect.anything(),
+        );
+    });
+});
+
 describe('reviewing and correcting an issued invoice', () => {
     it('uses server-supplied correction capabilities and posts a revisioned audit request', () => {
         render(
@@ -361,7 +538,7 @@ describe('reviewing and correcting an issued invoice', () => {
                             id: 'line-1',
                             type: 'retainer',
                             description: 'Original wording',
-                            quantity: 1,
+                            quantity: '1.0000',
                             hours: null,
                             line_date: null,
                             unit_amount: 10000,
@@ -424,7 +601,7 @@ describe('reviewing and correcting an issued invoice', () => {
                             id: 'line-1',
                             type: 'adjustment',
                             description: 'First revision',
-                            quantity: 1,
+                            quantity: '1.0000',
                             hours: null,
                             line_date: null,
                             unit_amount: 10000,
@@ -458,7 +635,7 @@ describe('reviewing and correcting an issued invoice', () => {
                             id: 'line-1',
                             type: 'adjustment',
                             description: 'Committed second revision',
-                            quantity: 2,
+                            quantity: '2.0000',
                             hours: null,
                             line_date: null,
                             unit_amount: 12500,
@@ -678,6 +855,7 @@ describe('the Square link on an invoice', () => {
         invoice_id: 'invoice-1',
         invoice_version: version,
         link: null,
+        covers: [],
         agreement_series_key: null,
         square_collects: false,
         payment_mismatch: null,

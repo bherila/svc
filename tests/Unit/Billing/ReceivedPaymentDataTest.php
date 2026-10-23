@@ -7,10 +7,14 @@ use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /** Pure request facts: neither models nor a database are needed to parse money received. */
+#[CoversClass(RecordReceivedPayment::class)]
+#[CoversClass(InvoicePaymentStatus::class)]
+#[CoversClass(ReceivedPaymentData::class)]
 final class ReceivedPaymentDataTest extends TestCase
 {
     public function test_agent_facts_are_succeeded_and_optional_web_facts_remain_available_only_to_web_callers(): void
@@ -49,15 +53,39 @@ final class ReceivedPaymentDataTest extends TestCase
     {
         $input = ['amount' => 1200, 'currency' => 'USD', 'method' => 'Synthetic wire', 'received_on' => null,
             'reference' => null, 'notes' => null, 'status' => null, 'external_finance_transaction_uuid' => null, 'idempotency_key' => null];
-        $facts = ReceivedPaymentData::from($input, requireDate: false, includeBookkeeping: true);
+        $facts = ReceivedPaymentData::from($input, requireDate: false, includeBookkeeping: true, acceptsBodyKey: true);
         $this->assertSame(['amount' => 1200, 'currency' => 'USD', 'received_on' => null, 'method' => 'Synthetic wire',
             'reference' => null, 'status' => 'succeeded', 'notes' => null, 'external_finance_transaction_uuid' => null, 'idempotency_key' => null], $facts->attributes());
         $this->assertSame('synthetic-adapter-key', $facts->attributes('synthetic-adapter-key')['idempotency_key']);
         $bookkeeping = ['reference' => 'SYNTHETIC-REFERENCE', 'notes' => 'Synthetic private notes', 'status' => 'pending',
             'external_finance_transaction_uuid' => '11111111-1111-4111-8111-111111111111', 'idempotency_key' => 'synthetic-web-key'];
-        $populated = ReceivedPaymentData::from($bookkeeping + $input, requireDate: false, includeBookkeeping: true);
+        $populated = ReceivedPaymentData::from($bookkeeping + $input, requireDate: false, includeBookkeeping: true, acceptsBodyKey: true);
         $this->assertSame(array_replace($facts->attributes(), $bookkeeping), $populated->attributes());
         $this->assertSame('synthetic-adapter-key', $populated->attributes('synthetic-adapter-key')['idempotency_key']);
+    }
+
+    /**
+     * Recorded as pending or succeeded only; failed, refunded, disputed and
+     * canceled are where a recorded payment ends up, by transition.
+     */
+    public function test_bookkeeping_records_only_pending_or_succeeded_and_a_body_key_only_when_asked(): void
+    {
+        $input = ['amount' => 1200, 'currency' => 'USD', 'method' => 'Synthetic wire'];
+        foreach (['pending', 'succeeded'] as $status) {
+            $this->assertSame($status, ReceivedPaymentData::from(['status' => $status] + $input, requireDate: false, includeBookkeeping: true)->status->value);
+        }
+        foreach (['failed', 'refunded', 'disputed', 'canceled', 'paid'] as $status) {
+            try {
+                ReceivedPaymentData::from(['status' => $status] + $input, requireDate: false, includeBookkeeping: true);
+                $this->fail($status.' must not be recordable.');
+            } catch (ValidationException $exception) {
+                $this->assertSame(['status'], array_keys($exception->errors()));
+            }
+        }
+        $this->assertSame(['pending', 'succeeded'], ReceivedPaymentData::recordableStatusValues());
+        $this->assertArrayNotHasKey('idempotency_key', ReceivedPaymentData::rules(includeBookkeeping: true));
+        $this->assertArrayHasKey('idempotency_key', ReceivedPaymentData::rules(includeBookkeeping: true, acceptsBodyKey: true));
+        $this->assertNull(ReceivedPaymentData::from(['idempotency_key' => 'synthetic-ignored'] + $input, requireDate: false, includeBookkeeping: true)->idempotencyKey);
     }
 
     public function test_nested_payment_validation_keeps_its_transport_error_prefix(): void

@@ -8,18 +8,25 @@ use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Access\PortalInvitations;
+use App\Support\Access\AccessMutationContext;
+use App\Support\Access\PortalAccessScope;
 use BWH\Auth\OAuth\Invitations\ApplicationInvitationError;
 use BWH\Auth\Testing\FakeApplicationInvitations;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\BuildsAccessFixtures;
 use Tests\TestCase;
 
 /**
  * Portal invitations from a client's settings page (#430): offered when
  * nobody signs in with the address, listed with a copyable link for managers,
- * and sent again or withdrawn - all through the invitation boundary.
+ * and sent again or withdrawn. The page sends each through the `/api/v1`
+ * operation agents use, on its session (#385); only the page ever receives
+ * the link.
  */
 final class ClientPortalInvitationScreenTest extends TestCase
 {
@@ -40,7 +47,9 @@ final class ClientPortalInvitationScreenTest extends TestCase
     {
         parent::setUp();
 
-        config(['bherila-auth.oauth_client.provider' => 'example', 'svc.portal_invitations.enabled' => true]);
+        // Agent writes switched off: the website does not depend on them.
+        config(['bherila-auth.oauth_client.provider' => 'example', 'svc.portal_invitations.enabled' => true,
+            'agent_api.writes_enabled' => false, 'agent_api.client_writes_enabled' => false]);
         $this->provider = FakeApplicationInvitations::swap();
         $this->workspace = Workspace::query()->create(['name' => 'Portal', 'slug' => 'portal']);
         $this->admin = User::factory()->create(['oauth_provider' => 'example', 'oauth_subject' => '501']);
@@ -51,14 +60,13 @@ final class ClientPortalInvitationScreenTest extends TestCase
 
     public function test_an_unknown_address_is_offered_an_invitation_and_invited(): void
     {
-        $this->actingAs($this->admin)->from($this->settings())->post($this->base('portal-access'), ['email' => 'new@client.example.test', 'scope' => 'company'])
-            ->assertRedirect($this->settings())
-            ->assertSessionHasErrors(['invite' => 'Nobody signs in with that address yet. Send them an invitation, and they get this access when they first sign in.']);
+        $this->send($this->admin, 'POST', $this->base('portal-access'), ['email' => 'new@client.example.test', 'scope' => 'company', 'confirm' => true])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.invite', ['Nobody signs in with that address yet. Send them an invitation, and they get this access when they first sign in.']);
         $this->provider->assertNothingRequested();
 
-        $this->actingAs($this->admin)->from($this->settings())
-            ->post($this->base('portal-invitations'), ['email' => 'New@client.example.test', 'scope' => 'projects', 'projects' => [$this->alpha->public_id]])
-            ->assertRedirect($this->settings())->assertSessionHas('status', 'Invitation sent.');
+        $this->send($this->admin, 'POST', $this->base('portal-invitations'), ['email' => 'New@client.example.test', 'scope' => 'projects', 'projects' => [$this->alpha->public_id], 'confirm' => true])
+            ->assertCreated()->assertJsonMissingPath('data.link');
 
         $this->provider->assertCreated('new@client.example.test', actor: '501');
         $invitation = ClientPortalInvitation::query()->sole();
@@ -109,15 +117,15 @@ final class ClientPortalInvitationScreenTest extends TestCase
         $invitation = ClientPortalInvitation::query()->sole();
         $url = $this->base('portal-invitations').'/'.$invitation->public_id;
 
-        $this->actingAs($this->admin)->from($this->settings())->post($url.'/resend')->assertRedirect($this->settings())->assertSessionHas('status', 'Invitation sent again.');
+        $this->send($this->admin, 'POST', $url.'/resend', ['confirm' => true])->assertOk()->assertJsonMissingPath('data.link');
         $this->provider->assertResent(1, actor: '501');
 
-        $this->actingAs($this->admin)->from($this->settings())->delete($url)->assertRedirect($this->settings())->assertSessionHas('status', 'Invitation withdrawn.');
+        $this->send($this->admin, 'DELETE', $url, ['confirm' => true])->assertOk()->assertJsonPath('data.status', 'revoked');
         $this->provider->assertRevoked(1, actor: '501');
         $this->assertSame('revoked', $invitation->fresh()->status);
 
-        $this->actingAs($this->admin)->from($this->settings())->delete($url)
-            ->assertSessionHasErrors(['invitation.'.$invitation->public_id => 'That invitation was already accepted or withdrawn.']);
+        $this->send($this->admin, 'DELETE', $url, ['confirm' => true])
+            ->assertConflict()->assertJsonPath('message', 'That invitation was already accepted or withdrawn.');
     }
 
     public function test_every_open_invitation_remains_manageable_beyond_the_first_page(): void
@@ -153,8 +161,8 @@ final class ClientPortalInvitationScreenTest extends TestCase
     {
         $this->provider->refuseNext('create', ApplicationInvitationError::Unavailable);
 
-        $this->actingAs($this->admin)->from($this->settings())->post($this->base('portal-invitations'), ['email' => 'new@client.example.test', 'scope' => 'company'])
-            ->assertSessionHasErrors(['invite' => 'The identity provider is unavailable. Try again later.']);
+        $this->send($this->admin, 'POST', $this->base('portal-invitations'), ['email' => 'new@client.example.test', 'scope' => 'company', 'confirm' => true])
+            ->assertServiceUnavailable()->assertJsonPath('message', 'The identity provider is unavailable. Try again later.');
 
         $this->assertSame(0, ClientPortalInvitation::query()->count());
         $this->assertSame(0, AccessAuditEvent::query()->count());
@@ -167,10 +175,10 @@ final class ClientPortalInvitationScreenTest extends TestCase
         $url = $this->base('portal-invitations').'/'.$invitation->public_id;
         $this->provider->refuseNext('revoke', ApplicationInvitationError::Unavailable);
 
-        $this->actingAs($this->admin)->from($this->settings())->delete($url)->assertSessionHasErrors();
+        $this->send($this->admin, 'DELETE', $url, ['confirm' => true], 'synthetic-withdrawal')->assertServiceUnavailable();
         $this->assertSame('revoked', $invitation->fresh()->status);
         $this->assertTrue($invitation->fresh()->provider_revocation_pending);
-        $this->get($this->settings())->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($this->admin)->get($this->settings())->assertInertia(fn (Assert $page) => $page
             ->has('portal.invitations', 1)
             ->where('portal.invitations.0.status', 'revoked')
             ->where('portal.invitations.0.link', null)
@@ -178,17 +186,19 @@ final class ClientPortalInvitationScreenTest extends TestCase
             ->where('portal.invitations.0.revoke_url', $url)
             ->where('portal.invitations.0.reason', 'Portal access is withdrawn. The identity provider withdrawal has not finished; try again.'));
 
-        $this->from($this->settings())->delete($url)->assertSessionHasNoErrors()->assertRedirect($this->settings());
+        // The page retries an unanswered withdrawal with the same key, which
+        // finishes it without restoring access.
+        $this->send($this->admin, 'DELETE', $url, ['confirm' => true], 'synthetic-withdrawal')->assertOk()->assertJsonPath('data.status', 'revoked');
         $this->assertFalse($invitation->fresh()->provider_revocation_pending);
-        $this->get($this->settings())->assertInertia(fn (Assert $page) => $page->where('portal.invitations', []));
+        $this->actingAs($this->admin)->get($this->settings())->assertInertia(fn (Assert $page) => $page->where('portal.invitations', []));
     }
 
     public function test_an_address_that_signs_in_is_added_rather_than_invited(): void
     {
         User::factory()->create(['email' => 'known@client.example.test', 'oauth_provider' => 'example', 'oauth_subject' => '777']);
 
-        $this->actingAs($this->admin)->from($this->settings())->post($this->base('portal-invitations'), ['email' => 'known@client.example.test', 'scope' => 'company'])
-            ->assertSessionHasErrors(['invite' => 'That person already signs in here; add them as a contact instead.']);
+        $this->send($this->admin, 'POST', $this->base('portal-invitations'), ['email' => 'known@client.example.test', 'scope' => 'company', 'confirm' => true])
+            ->assertUnprocessable()->assertJsonPath('message', 'That person already signs in here; add them as a contact instead.');
 
         $this->provider->assertNothingRequested();
     }
@@ -202,40 +212,71 @@ final class ClientPortalInvitationScreenTest extends TestCase
 
         $this->actingAs($this->admin)->get($this->settings())->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('portal.invite_url', null)->where('portal.invitations', []));
-        $this->actingAs($this->admin)->post($this->base('portal-invitations'), ['email' => 'new@client.example.test', 'scope' => 'company'])->assertNotFound();
-        $this->actingAs($this->admin)->post($url.'/resend')->assertNotFound();
-        $this->actingAs($this->admin)->delete($url)->assertNotFound();
-        $this->actingAs($this->admin)->from($this->settings())->post($this->base('portal-access'), ['email' => 'new@client.example.test', 'scope' => 'company'])
-            ->assertSessionHasErrors(['email' => 'Nobody signs in with that address yet. Ask them to sign in once, then add them.']);
+        $this->send($this->admin, 'POST', $this->base('portal-invitations'), ['email' => 'new@client.example.test', 'scope' => 'company', 'confirm' => true])->assertNotFound();
+        $this->send($this->admin, 'POST', $url.'/resend', ['confirm' => true])->assertNotFound();
+        $this->send($this->admin, 'DELETE', $url, ['confirm' => true])->assertNotFound();
+        $this->send($this->admin, 'POST', $this->base('portal-access'), ['email' => 'new@client.example.test', 'scope' => 'company', 'confirm' => true])
+            ->assertUnprocessable()->assertJsonPath('errors.email', ['Nobody signs in with that address yet. Ask them to sign in once, then add them.']);
 
         $this->assertSame('pending', $invitation->fresh()->status);
         $this->assertSame(1, count($this->provider->calls()));
     }
 
-    public function test_members_strangers_and_other_clients_reach_no_invitation(): void
+    /** @return array<string, array{0: string, 1: int}> */
+    public static function outsiders(): array
     {
-        $this->invite('person@client.example.test');
+        // A member is refused; a stranger cannot see the workspace at all.
+        return ['member' => ['member', 403], 'stranger' => ['stranger', 404]];
+    }
+
+    #[DataProvider('outsiders')]
+    public function test_members_and_strangers_reach_no_invitation(string $who, int $status): void
+    {
+        $this->invitedDirectly('person@client.example.test');
         $invitation = ClientPortalInvitation::query()->sole();
         $url = $this->base('portal-invitations').'/'.$invitation->public_id;
+        $actor = $who === 'member' ? $this->staff($this->workspace, 'member') : User::factory()->create();
 
-        foreach ([$this->staff($this->workspace, 'member'), User::factory()->create()] as $actor) {
-            $this->actingAs($actor)->post($this->base('portal-invitations'), ['email' => 'new@client.example.test', 'scope' => 'company'])->assertForbidden();
-            $this->actingAs($actor)->post($url.'/resend')->assertForbidden();
-            $this->actingAs($actor)->delete($url)->assertForbidden();
-        }
-
-        $other = $this->company($this->workspace, 'other-client');
-        $foreign = "/workspaces/{$this->workspace->public_id}/clients/{$other->public_id}/portal-invitations/{$invitation->public_id}";
-        $this->actingAs($this->admin)->post($foreign.'/resend')->assertNotFound();
-        $this->actingAs($this->admin)->delete($foreign)->assertNotFound();
+        $this->send($actor, 'POST', $this->base('portal-invitations'), ['email' => 'new@client.example.test', 'scope' => 'company', 'confirm' => true])->assertStatus($status);
+        $this->send($actor, 'POST', $url.'/resend', ['confirm' => true])->assertStatus($status);
+        $this->send($actor, 'DELETE', $url, ['confirm' => true])->assertStatus($status);
 
         $this->assertSame('pending', $invitation->fresh()->status);
         $this->assertSame(1, count($this->provider->calls()));
+    }
+
+    public function test_another_clients_invitation_is_not_found(): void
+    {
+        $this->invite('person@client.example.test');
+        $invitation = ClientPortalInvitation::query()->sole();
+        $other = $this->company($this->workspace, 'other-client');
+        $foreign = "/api/v1/workspaces/{$this->workspace->public_id}/clients/{$other->public_id}/portal-invitations/{$invitation->public_id}";
+
+        $this->send($this->admin, 'POST', $foreign.'/resend', ['confirm' => true])->assertNotFound();
+        $this->send($this->admin, 'DELETE', $foreign, ['confirm' => true])->assertNotFound();
+
+        $this->assertSame('pending', $invitation->fresh()->status);
+        $this->assertSame(1, count($this->provider->calls()));
+    }
+
+    /** @param array<string, mixed> $body */
+    private function send(User $actor, string $method, string $url, array $body, ?string $key = null): TestResponse
+    {
+        // A browser request: the session cookie, not a bearer token. One
+        // actor per test: the test process keeps the API guard's user.
+        return $this->actingAs($actor)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', $key ?? 'synthetic-'.Str::uuid())->json($method, $url, $body);
     }
 
     private function invite(string $email): void
     {
-        $this->actingAs($this->admin)->post($this->base('portal-invitations'), ['email' => $email, 'scope' => 'company'])->assertSessionHasNoErrors();
+        $this->send($this->admin, 'POST', $this->base('portal-invitations'), ['email' => $email, 'scope' => 'company', 'confirm' => true])->assertCreated();
+    }
+
+    /** An invitation made without a request, for tests acting as someone else. */
+    private function invitedDirectly(string $email): void
+    {
+        app(PortalInvitations::class)->invite(AccessMutationContext::user($this->admin), $this->company, $email, PortalAccessScope::Company);
     }
 
     private function settings(): string
@@ -245,6 +286,6 @@ final class ClientPortalInvitationScreenTest extends TestCase
 
     private function base(string $path): string
     {
-        return "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/{$path}";
+        return "/api/v1/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/{$path}";
     }
 }

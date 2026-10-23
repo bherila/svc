@@ -19,10 +19,10 @@ use Carbon\Carbon;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
+use Tests\Support\OwnTables;
 use Tests\TestCase;
 
 /**
@@ -309,8 +309,7 @@ final class AgentInvoicePeriodPreviewTest extends TestCase
     private function databaseFingerprint(array $ignore = []): array
     {
         $fingerprint = [];
-        foreach (Schema::getTables() as $table) {
-            $name = $table['name'];
+        foreach (OwnTables::names() as $name) {
             if (in_array($name, $ignore, true)) {
                 continue;
             }

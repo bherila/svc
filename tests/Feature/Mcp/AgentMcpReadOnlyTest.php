@@ -85,7 +85,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertIsString($session);
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
-        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.members.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.pdf', 'invoices.preview_period', 'billing_audit.stale_and_missing', 'invoices.corrections.get', 'invoices.get', 'search', 'companies.square_customer.get', 'invoices.reminders.list', 'companies.payment_reminders.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover'], array_column($tools, 'name'));
+        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.members.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.pdf', 'invoices.preview_period', 'billing_audit.stale_and_missing', 'invoices.corrections.get', 'invoices.get', 'search', 'deferred_backlog.preview', 'companies.square_customer.get', 'invoices.reminders.list', 'companies.payment_reminders.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover', 'billing.preflight_schedule_generation', 'billing.audit_unlinked_proposal_agreements'], array_column($tools, 'name'));
         foreach ($tools as $tool) {
             $this->assertTrue($tool['annotations']['readOnlyHint']);
             $this->assertFalse($tool['annotations']['destructiveHint']);
@@ -1335,8 +1335,8 @@ final class AgentMcpReadOnlyTest extends TestCase
         WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->delete();
 
         $replay = $this->mcp(['jsonrpc' => '2.0', 'id' => 8, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'mcp-log-1', 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-08-23', 'minutes' => 30, 'description' => 'MCP work']]]]], $session)->assertOk();
-        $this->assertNull($replay->json('result'));
-        $this->assertIsArray($replay->json('error'));
+        $this->assertTrue($replay->json('result.isError'));
+        $this->assertSame('The SVC API request could not be completed.', $replay->json('result.content.0.text'));
         $this->assertDatabaseCount('client_time_entries', 1);
     }
 }

@@ -22,6 +22,12 @@ type FormattedActivity = CompanyActivity & {
 };
 
 const actionTitles: Record<string, string> = {
+    'collaboration.topic_created': 'Note or discussion added',
+    'collaboration.topic_updated': 'Note or discussion updated',
+    'collaboration.topic_deleted': 'Note or discussion removed',
+    'collaboration.comment_created': 'Comment added',
+    'collaboration.comment_updated': 'Comment updated',
+    'collaboration.comment_deleted': 'Comment removed',
     'company.updated': 'Company updated',
     'agreement.created': 'Agreement created',
     'agreement.activated': 'Agreement activated',
@@ -43,6 +49,7 @@ const actionTitles: Record<string, string> = {
     'invoice.payment_canceled': 'Payment canceled',
     'invoice.payment_disputed': 'Payment disputed',
     'invoice.payment_refunded': 'Payment refunded',
+    'invoice.payment_refund_reversed': 'Refund reversed',
     'invoice.payment_date_corrected': 'Payment date corrected',
     'invoice.payment_corrected': 'Payment corrected',
     'payment_method.added': 'Payment method added',
@@ -51,6 +58,12 @@ const actionTitles: Record<string, string> = {
 };
 
 const meaningfulActions = new Set([
+    'collaboration.topic_created',
+    'collaboration.topic_updated',
+    'collaboration.topic_deleted',
+    'collaboration.comment_created',
+    'collaboration.comment_updated',
+    'collaboration.comment_deleted',
     'company.updated',
     'agreement.created',
     'agreement.activated',
@@ -70,6 +83,9 @@ const meaningfulActions = new Set([
     'invoice.payment_canceled',
     'invoice.payment_disputed',
     'invoice.payment_refunded',
+    // A refund the processor reported as failed or canceled: money back on
+    // the payment, which a reader of the history must not take for a refund.
+    'invoice.payment_refund_reversed',
     // A correction, not noise. The whole reason a date-only edit is allowed at
     // all is that the change is recorded, and an audit record hidden behind
     // "show system activity" is not one.

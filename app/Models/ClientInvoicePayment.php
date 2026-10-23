@@ -8,6 +8,7 @@ use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Finance\ProcessorSettlementRecorder;
 use App\Support\Billing\InvoicePaymentStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -18,18 +19,30 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property CarbonImmutable|null $received_on
+ * @property int|null $disputed_amount
+ * @property int|null $provider_dispute_updated_at_ms
  * @property int $lock_version
+ * @property CarbonImmutable|null $provider_charged_at
+ * @property int|null $provider_fee_amount
+ * @property string|null $provider_payout_identifier
+ * @property CarbonImmutable|null $provider_payout_arrival_date
+ * @property int|null $provider_payout_reported_at_ms
  *
  * `lock_version` is maintained by {@see IncrementsAgentRevision} on every
  * Eloquent save, so any write to the row - a status transition, a refund, a
  * correction - moves the opaque version an agent read.
+ *
+ * The processor settlement facts - `provider_charged_at`, `provider_fee_amount`,
+ * `provider_payout_identifier`, `provider_payout_arrival_date` - are not
+ * fillable: only the processor's reports set them
+ * ({@see ProcessorSettlementRecorder}).
  */
 #[Fillable([
-    'workspace_id', 'client_invoice_id', 'status', 'amount', 'refunded_amount', 'currency', 'received_on',
+    'workspace_id', 'client_invoice_id', 'status', 'amount', 'refunded_amount', 'disputed_amount', 'currency', 'received_on',
     'method', 'reference', 'notes', 'provider', 'provider_payment_identifier',
-    'provider_event_created_at', 'provider_event_id', 'external_finance_transaction_uuid', 'idempotency_key',
+    'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version'])]
+#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version', 'provider_charged_at', 'provider_fee_amount', 'provider_payout_identifier', 'provider_payout_arrival_date', 'provider_payout_reported_at_ms'])]
 class ClientInvoicePayment extends Model implements WorkspaceOwned
 {
     /**
@@ -46,9 +59,36 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
         return [
             'amount' => 'integer',
             'refunded_amount' => 'integer',
+            'disputed_amount' => 'integer',
             'received_on' => DateOnly::class,
             'provider_event_created_at' => 'integer',
+            'provider_dispute_updated_at_ms' => 'integer',
+            'provider_charged_at' => 'immutable_datetime',
+            'provider_fee_amount' => 'integer',
+            'provider_payout_arrival_date' => DateOnly::class,
+            'provider_payout_reported_at_ms' => 'integer',
         ];
+    }
+
+    /**
+     * What this payment adds to its invoice's paid amount.
+     *
+     * A succeeded payment adds what was not refunded. A disputed one adds what
+     * its dispute does not hold back: a processor withholds only the amount it
+     * contests, and the rest is still the business's. `disputed_amount` null
+     * is the whole payment - every dispute recorded before the amount was. An
+     * unreadable status adds nothing here; the recomputation refuses it first.
+     */
+    public function paidContribution(): int
+    {
+        $net = max(0, (int) $this->amount - (int) $this->refunded_amount);
+
+        return match (InvoicePaymentStatus::tryFrom((string) $this->getAttribute('status'))) {
+            InvoicePaymentStatus::Succeeded => $net,
+            InvoicePaymentStatus::Disputed => $this->disputed_amount === null ? 0 : max(0, $net - (int) $this->disputed_amount),
+            InvoicePaymentStatus::Pending, InvoicePaymentStatus::Failed, InvoicePaymentStatus::Refunded,
+            InvoicePaymentStatus::Canceled, null => 0,
+        };
     }
 
     /**
@@ -90,6 +130,17 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
     public function workspace(): BelongsTo
     {
         return $this->belongsTo(Workspace::class);
+    }
+
+    /**
+     * The refunds of a payment recorded by hand and their reversals (#472),
+     * immutable and in the order they were recorded.
+     *
+     * @return HasMany<ClientInvoicePaymentRefund, $this>
+     */
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(ClientInvoicePaymentRefund::class, 'client_invoice_payment_id');
     }
 
     /** @return HasMany<PaymentReconciliation, $this> */

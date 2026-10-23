@@ -1,9 +1,13 @@
 <?php
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientContact;
 use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceReminderLog;
 use App\Models\User;
@@ -17,15 +21,22 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Services\Files\AttachmentStorageService;
+use App\Services\Finance\PaymentReconciliationService;
+use App\Services\History\HistoricalLibraryRepository;
+use App\Services\History\HistoricalRecordRepository;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquareLinkService;
+use App\Services\Tasks\TaskCreateData;
+use App\Services\WorkspaceTaskMutationAction;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
+use App\Support\History\HistoryDocument;
+use App\Support\History\HistoryKind;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use App\Support\WorkspaceClock;
@@ -91,9 +102,30 @@ $invoice = $service->issue($service->createDraft($workspace, $company, [
     'quantity' => '2', 'unit_amount' => 5000, 'tax_amount' => 0, 'sort_order' => 1,
 ]]), $workspace);
 $date = app(WorkspaceClock::class)->today($workspace)->subDay()->toDateString();
-$service->applyPayment($invoice, [
+$layoutPayment = $service->applyPayment($invoice, [
     'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => $date,
 ], $workspace);
+// Reconciled in finance, split across two transactions: the badge and both
+// numbered links share the status cell.
+foreach (['5f0d7c1e-0000-4000-8000-000000000001', '5f0d7c1e-0000-4000-8000-000000000002'] as $transaction) {
+    app(PaymentReconciliationService::class)->upsert($workspace, $layoutPayment, $owner, [
+        'external_system_slug' => 'finance', 'external_transaction_uuid' => $transaction,
+        'allocated_amount' => 500, 'currency' => 'USD', 'is_active' => true,
+    ]);
+}
+$company->forceFill([
+    'billing_address' => str_repeat('SyntheticAddressWithoutBreaks', 12),
+    'phone' => '+1 555 0100', 'website_url' => 'https://client.example.test',
+    'tax_id' => str_repeat('SyntheticTaxIdentifier', 8), 'currency' => 'USD',
+    'notes' => str_repeat('SyntheticCompanyNotesWithoutBreaks', 16),
+])->save();
+ClientContact::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+    'first_name' => str_repeat('SyntheticContact', 6), 'last_name' => 'Example',
+    'title' => str_repeat('SyntheticRole', 12), 'email' => 'contact@example.test',
+    'phone' => '555-0101', 'notes' => str_repeat('SyntheticContactNotesWithoutBreaks', 12),
+    'is_archived' => true,
+]);
 $company->forceFill([
     'billing_email' => 'billing-notifications@synthetic-layout.example.test',
     'automatic_invoice_email_enabled' => true,
@@ -123,6 +155,32 @@ $project = ClientProject::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'name' => str_repeat('SyntheticProject', 10), 'status' => 'active',
 ]);
+$planningTask = null;
+if (getenv('SVC_LAYOUT_TASKS') === '1') {
+    $taskAssignees = [];
+    for ($index = 0; $index < 28; $index++) {
+        $staff = User::factory()->create([
+            'name' => str_repeat('SyntheticAssigneeWithoutBreaks', 7).str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            'email' => 'synthetic-task-staff-'.$index.'@example.test',
+        ]);
+        $workspace->memberships()->create(['user_id' => $staff->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $staff->id, 'role' => 'contributor']);
+        if ($index < 10) {
+            $taskAssignees[] = $staff->public_id;
+        }
+    }
+    $planningTask = app(WorkspaceTaskMutationAction::class)->create($owner, $workspace, $project->public_id, TaskCreateData::fromValidated([
+        'title' => str_repeat('SyntheticTaskWithoutBreaks', 9),
+        'description' => str_repeat('Synthetic task description with planning context and enough prose to wrap. ', 24),
+        'is_visible_to_client' => true, 'starts_on' => '2026-10-20', 'due_on' => '2026-10-30', 'assignee_ids' => $taskAssignees,
+    ]));
+    for ($index = 0; $index < 53; $index++) {
+        ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+            'title' => 'ZZZ Synthetic paginated task '.str_repeat('UnbrokenTitle', 8).' '.str_pad((string) $index, 3, '0', STR_PAD_LEFT),
+            'status' => 'open', 'is_visible_to_client' => true]);
+    }
+}
+
 // Portal contacts on the settings page: one reaching the whole client, one limited to the
 // project above, both with a name and an address that will not break on their own.
 foreach ([PortalAccessScope::Company, PortalAccessScope::Projects] as $index => $scope) {
@@ -245,6 +303,9 @@ $squareRow = app(SquareSnapshotMapper::class)->invoice([
 app(SquareMirrorRepository::class)->storeInvoices($workspace, [$squareRow], CarbonImmutable::now('UTC'));
 app(SquareLinkService::class)->link($workspace, $squareInvoice, $owner, AgentApiVersion::for($squareInvoice),
     new SquareInvoiceReference('inv_fixture_layout', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
+// A Square invoice it covers besides (#487), numbered with no break in it.
+app(SquareLinkService::class)->cover($workspace, $squareInvoice->refresh(), $owner, AgentApiVersion::for($squareInvoice),
+    new SquareInvoiceReference('inv_fixture_layout_covered', 'SYNTHETICCOVERED'.str_repeat('X', 120), 'USD', SquareMatchMethod::Manual));
 app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPaymentData::from([
     'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
 ]));
@@ -272,7 +333,86 @@ foreach ([
     ]);
 }
 
+// The agreement page's deferred backlog (#366): its own client, so no other
+// fixture's capacity or invoices change. Oversized on purpose - an unbroken
+// client and agreement name, and a shelf priced in the millions.
+$backlogAgreementPath = null;
+$backlogCreatePath = null;
+if (getenv('SVC_LAYOUT_DEFERRED_BACKLOG') === '1') {
+    $backlogCompany = ClientCompany::query()->create([
+        'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticBacklog', 5),
+        'slug' => 'synthetic-layout-backlog-client',
+    ]);
+    $backlogProject = ClientProject::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,
+        'name' => str_repeat('SyntheticBacklogProject', 4),
+    ]);
+    $backlogAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,
+        'title' => str_repeat('SyntheticRetainerAgreement', 4), 'status' => 'active', 'currency' => 'USD',
+        'billing_cadence' => 'monthly', 'starts_on' => CarbonImmutable::parse($date)->subMonthsNoOverflow(8)->startOfMonth()->toDateString(),
+        'retainer_minutes' => 1200, 'hourly_rate_amount' => 987_654,
+    ]);
+    // Billed in Square from a location whose id has no break in it (#488).
+    $backlogAgreement->forceFill(['square_series_key' => '000999', 'square_location_id' => 'LOC'.str_repeat('SYNTHETICLAYOUT', 12)])->save();
+    foreach ([3, 2, 1, 0] as $monthsAgo) {
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,
+            'client_project_id' => $backlogProject->id, 'user_id' => $owner->id,
+            'worked_on' => CarbonImmutable::parse($date)->subMonthsNoOverflow($monthsAgo)->startOfMonth()->toDateString(),
+            'minutes' => 4_170 + 30 * $monthsAgo, 'description' => str_repeat('SyntheticDeferredBacklogWork', 6),
+            'is_billable' => true, 'is_deferred' => true, 'status' => 'approved',
+            'billing_rate_amount' => 987_654, 'currency' => 'USD',
+        ]);
+    }
+    $backlogAgreementPath = route('clients.agreement', [$workspace, $backlogCompany, $backlogAgreement], absolute: false);
+    $backlogCreatePath = route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $backlogAgreement], absolute: false);
+}
+
+$historyRecords = app(HistoricalRecordRepository::class);
+$historySource = $historyRecords->source($workspace, 'synthetic', hash('sha256', 'synthetic-layout-history'), 'Synthetic history');
+$historyProjectRecord = $historyRecords->remember($workspace, $historySource, 'projects', '1', ['name' => 'Synthetic historical project']);
+$historyProject = app(HistoricalLibraryRepository::class)->publish($workspace, $historyProjectRecord,
+    new HistoryDocument(HistoryKind::Project, 'Synthetic historical project', 'Preserved project description'), $company);
+$historyDiscussionRecord = $historyRecords->remember($workspace, $historySource, 'discussions', '1', ['title' => 'Synthetic discussion']);
+$historyDiscussion = app(HistoricalLibraryRepository::class)->publish($workspace, $historyDiscussionRecord,
+    new HistoryDocument(HistoryKind::Discussion, str_repeat('SyntheticHistoricalDiscussion', 12), str_repeat('SyntheticHistoricalBodyWithoutBreaks', 25)."\n<script>Displayed as text only</script>",
+        str_repeat('SyntheticHistoricalAuthor', 8), '2020-03-04 12:34:56', [['label' => 'Original project', 'value' => str_repeat('SyntheticHistoricalProject', 12)]]), $company, $historyProjectRecord);
+foreach ([HistoryKind::Comment, HistoryKind::Note] as $historyKind) {
+    $historyRecord = $historyRecords->remember($workspace, $historySource, $historyKind->value.'s', '1', ['body' => 'Synthetic preserved content']);
+    app(HistoricalLibraryRepository::class)->publish($workspace, $historyRecord,
+        new HistoryDocument($historyKind, str_repeat('SyntheticHistorical'.$historyKind->label(), 12), 'Synthetic preserved content', 'Casey Example', '2020-03-05'), $company, $historyDiscussionRecord);
+}
+$historyInvoiceRecord = $historyRecords->remember($workspace, $historySource, 'invoices', '1', ['total' => '2.99', 'discount' => '0.01']);
+$historyInvoice = app(HistoricalLibraryRepository::class)->publish($workspace, $historyInvoiceRecord,
+    new HistoryDocument(HistoryKind::Invoice, 'SYNTHETIC-HISTORICAL-'.str_repeat('INVOICE', 35), 'Original invoice note', 'Casey Example', '2020-03-04', [
+        ['label' => 'Original billing name', 'value' => str_repeat('SyntheticOriginalBillTo', 12)],
+        ['label' => 'Subtotal', 'value' => 'USD 3.00'], ['label' => 'Discount', 'value' => 'USD 0.01'],
+        ['label' => 'Total', 'value' => 'USD 2.99'], ['label' => 'Paid', 'value' => 'USD 2.99'], ['label' => 'Original balance', 'value' => 'USD 0.00'],
+    ], [
+        ['label' => 'Invoice items', 'columns' => ['Description', 'Quantity', 'Unit cost', 'Original discount', 'Gross total'], 'rows' => array_fill(0, 3, [str_repeat('SyntheticHistoricalLineDescription', 16), '1.00', '1.00', '0.00400', '1.00'])],
+        ['label' => 'Payments', 'columns' => ['Method', 'Date', 'Amount'], 'rows' => [['Historical manual receipt', '2020-03-10', 'USD 2.99']]],
+    ]), $company);
+
+$taskViewer = $owner;
+if ($planningTask !== null) {
+    $taskViewer = User::factory()->create(['name' => 'Synthetic Project Manager', 'email' => 'layout-project-manager@example.test']);
+    $workspace->memberships()->create(['user_id' => $taskViewer->id, 'role' => 'member']);
+    ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),
+    'task_list' => route('clients.tasks', [$workspace, $company], absolute: false),
+    'task_project' => route('clients.project', [$workspace, $company, $project], absolute: false),
+    'task_portal' => route('portal.tasks', $company, absolute: false),
+    'task_create' => $planningTask === null ? null : route('tasks.store', [$workspace, $project], absolute: false),
+    'task_update' => $planningTask === null ? null : route('tasks.update', [$workspace, $planningTask], absolute: false),
+    'history_index' => route('history.index', $workspace, absolute: false),
+    'history_discussion' => route('history.show', [$workspace, $historyDiscussion], absolute: false),
+    'history_invoice' => route('history.show', [$workspace, $historyInvoice], absolute: false),
+    'agreement' => $backlogAgreementPath,
+    'buydown_create' => $backlogCreatePath,
     'reminder_invoice' => route('clients.invoice', [$workspace, $company, $reminderInvoice], absolute: false),
     'square_explore' => route('square.explore', $workspace, absolute: false),
     'square_invoice' => route('clients.invoice', [$workspace, $company, $squareInvoice], absolute: false),
@@ -291,7 +431,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
         'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
-    'user_id' => $owner->id, 'date' => $date,
+    'user_id' => $taskViewer->id, 'date' => $date,
     'expense_schedule_store' => route('svc.expense-schedules.store', [$workspace, $company], absolute: false),
     'expense_schedule_prefix' => '/workspaces/'.$workspace->public_id.'/expense-schedules/',
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),

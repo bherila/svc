@@ -80,6 +80,41 @@ final class SquareCandidateImportApiTest extends TestCase
         $this->assertCount($calls, Http::recorded());
     }
 
+    /** An agreement's series is its prefix in its own Square location (#488); a marker naming none takes it anywhere. */
+    public function test_candidates_from_a_billed_series_come_from_its_location(): void
+    {
+        $company = $this->company();
+        $agreement = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic located series', 'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'retainer_amount' => 12_345]);
+        $agreement->forceFill(['square_series_key' => '000001', 'square_location_id' => 'LOCFIXTURE01'])->save();
+        $invoice = $this->invoice($company);
+        $invoice->forceFill(['client_agreement_id' => $agreement->id])->save();
+        SquareInvoiceSnapshot::query()->where('workspace_id', $this->workspace->id)->where('square_invoice_id', 'inv_fixture_2')->update(['square_location_id' => 'LOCFIXTURE02']);
+
+        $located = $this->getJson($this->candidatesUrl($invoice))->assertOk()->assertJsonPath('meta.series_key', '000001')
+            ->assertJsonPath('data.*.square_invoice_id', ['inv_fixture_1']);
+        // A cadence needs two members of the series in its own location: the
+        // member billed from another location is another series.
+        $this->assertSame([], array_values(array_filter((array) $located->json('data.0.reasons'), static fn (string $reason): bool => str_contains($reason, 'Series cadence'))));
+        $agreement->forceFill(['square_location_id' => null])->save();
+        $this->getJson($this->candidatesUrl($invoice))->assertOk()->assertJsonPath('data.*.square_invoice_id', ['inv_fixture_1', 'inv_fixture_2']);
+    }
+
+    /** A Square invoice recorded as covered (#487) is never offered to link, not even to the invoice covering it. */
+    public function test_candidates_exclude_covered_square_invoices(): void
+    {
+        $company = $this->company();
+        $invoice = $this->invoice($company);
+        $links = app(SquareLinkService::class);
+        $links->setCustomer($this->workspace, $company, $this->owner, AgentApiVersion::for($company), 'cust_fixture_a');
+        $links->link($this->workspace, $invoice, $this->owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv_fixture_1', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
+        $links->cover($this->workspace, $invoice->refresh(), $this->owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv_fixture_2', '000001-R-0002', 'USD', SquareMatchMethod::Manual));
+
+        $this->getJson($this->candidatesUrl($invoice))->assertOk()
+            ->assertJsonPath('data.*.square_invoice_id', ['inv_fixture_1'])
+            ->assertJsonPath('meta.excluded.linked_elsewhere.0.square_invoice_id', 'inv_fixture_2')
+            ->assertJsonPath('meta.excluded.linked_elsewhere.0.linked_to_invoice_id', $invoice->public_id);
+    }
+
     public function test_candidates_exclude_canceled_other_currency_and_linked_elsewhere_and_validate_queries(): void
     {
         $company = $this->company();
@@ -169,7 +204,7 @@ final class SquareCandidateImportApiTest extends TestCase
         $this->assertSchema('square.import_customer', $first);
         $company = ClientCompany::query()->where('workspace_id', $this->workspace->id)->where('public_id', $first['data']['company_id'])->firstOrFail();
         $agreement = ClientAgreement::query()->where('workspace_id', $this->workspace->id)->where('public_id', $first['data']['agreement_id'])->firstOrFail();
-        $this->assertSame(['draft', 'monthly', 'USD', 12_345, '000001'], [$agreement->status, $agreement->billing_cadence, $agreement->currency, $agreement->retainer_amount, $agreement->square_series_key]);
+        $this->assertSame(['draft', 'monthly', 'USD', 12_345, '000001', 'LOCFIXTURE01'], [$agreement->status, $agreement->billing_cadence, $agreement->currency, $agreement->retainer_amount, $agreement->square_series_key, $agreement->square_location_id]);
         $this->assertSame($company->id, $agreement->client_company_id);
         $this->assertSame('billing@imported.example.test', $company->billing_email);
         $this->assertSame(1, CompanySquareCustomer::query()->where('workspace_id', $this->workspace->id)->where('square_customer_id', 'cust_fixture_a')->count());
@@ -189,6 +224,16 @@ final class SquareCandidateImportApiTest extends TestCase
         $this->assertNull($result['result']['structuredContent']['data']['agreement_id']);
         $this->assertSame(0, ClientAgreement::query()->count());
         $this->assertSame(1, ClientCompany::query()->count());
+    }
+
+    /** One prefix in two Square locations is two series (#488): neither is imported as the agreement's. */
+    public function test_import_refuses_a_series_billed_from_more_than_one_location(): void
+    {
+        SquareInvoiceSnapshot::query()->where('workspace_id', $this->workspace->id)->where('square_invoice_id', 'inv_fixture_2')->update(['square_location_id' => 'LOCFIXTURE02']);
+
+        $this->postJson($this->squareUrl('customers/cust_fixture_a/import'), ['confirm' => true, 'series_key' => '000001'], ['Idempotency-Key' => 'synthetic-two-locations'])
+            ->assertStatus(422)->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'more than one Square location'));
+        $this->assertSame([0, 0, 0], [ClientCompany::query()->count(), CompanySquareCustomer::query()->count(), ClientAgreement::query()->count()]);
     }
 
     public function test_import_refuses_a_series_of_another_customer_and_rolls_back_all_records(): void

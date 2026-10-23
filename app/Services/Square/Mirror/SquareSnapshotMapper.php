@@ -4,6 +4,8 @@ namespace App\Services\Square\Mirror;
 
 use App\Services\Square\SquareClient;
 use App\Services\Square\SquarePresenter;
+use App\Services\Square\SquareRequestFailed;
+use App\Support\Square\SquareIdentifiers;
 use Carbon\CarbonImmutable;
 use Throwable;
 
@@ -26,6 +28,33 @@ final class SquareSnapshotMapper
 
     private const string STATUS = '/^[A-Z][A-Z_]{0,31}$/D';
 
+    /** Tenders read per order at most, as the payment reconciler bounds them. */
+    private const int MAX_TENDERS = 100;
+
+    /** Invoice statuses under which Square may hold a payment. */
+    public const array PAYMENT_STATUSES = ['PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'PAYMENT_PENDING'];
+
+    /** The tender rules payment ids are read by; see {@see paymentIds()}. */
+    public const string TENDER_RULES = 't3';
+
+    /** How invoice amounts are derived; see money(). */
+    private const string INVOICE_DERIVATION = 'd2';
+
+    /** The default state of a tender whose type carries none. */
+    private const string CAPTURED = 'CAPTURED';
+
+    /** The tender type that records opening the register, not a payment. */
+    private const string NO_SALE = 'NO_SALE';
+
+    /** Tender details that carry a status, by tender type. */
+    private const array TENDER_DETAILS = ['card_details', 'bank_account_details', 'buy_now_pay_later_details', 'square_account_details'];
+
+    /** Tender states in which money has moved. */
+    private const array SETTLED_TENDER_STATES = ['CAPTURED', 'COMPLETED'];
+
+    /** Tender states that may still settle, or not. */
+    private const array OPEN_TENDER_STATES = ['AUTHORIZED', 'PENDING'];
+
     public function __construct(private readonly SquarePresenter $presenter) {}
 
     /**
@@ -35,14 +64,17 @@ final class SquareSnapshotMapper
     public function invoice(array $invoice): ?array
     {
         $presented = $this->presenter->invoice($invoice);
-        $id = self::id($presented['id']);
+        $id = is_string($presented['id']) && SquareIdentifiers::isInvoiceId($presented['id']) ? $presented['id'] : null;
         $status = is_string($presented['status']) && preg_match(self::STATUS, $presented['status']) === 1 ? $presented['status'] : null;
         if ($id === null || $status === null) {
             return null;
         }
         /** @var list<array<string, mixed>> $requests */
         $requests = $presented['payment_requests'];
-        $money = self::money($requests, $presented['next_payment_amount_money']);
+        // A request the presenter dropped - malformed, or past its cap -
+        // leaves the totals unknown rather than a partial sum.
+        $raw = $invoice['payment_requests'] ?? [];
+        $money = self::money($requests, $presented['next_payment_amount_money'], is_array($raw) && count($raw) !== count($requests));
         $recipient = is_array($presented['primary_recipient']) ? $presented['primary_recipient'] : [];
 
         return [
@@ -67,7 +99,9 @@ final class SquareSnapshotMapper
             'public_url' => $presented['public_url'],
             'autopay' => array_any($requests, static fn (array $request): bool => ($request['automatic_payment_source'] ?? null) === 'CARD_ON_FILE'),
             'payment_requests' => json_encode($requests, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            'fingerprint' => self::fingerprint($presented),
+            // The derivation version is part of an invoice's fingerprint, so a
+            // change to how amounts are derived rewrites every row once.
+            'fingerprint' => self::fingerprint([...$presented, '_derivation' => self::INVOICE_DERIVATION]),
         ];
     }
 
@@ -122,27 +156,193 @@ final class SquareSnapshotMapper
     }
 
     /**
-     * The payment ids resolved for an invoice are good while its status and
-     * paid amount are what they were then; either changing means a payment or
-     * refund happened since and the order is read again.
+     * The payment ids resolved for an invoice are good while its status, paid
+     * amount and Square version are what they were then; any of them changing
+     * means a payment or refund may have happened since and the order is read
+     * again. The version is what catches a refund and an equal recapture
+     * between two syncs (#489): status and amount end where they began, but
+     * Square advances the invoice's version for each, and the tender set has
+     * changed. An invoice Square sent without a version is read by status and
+     * amount alone. The basis also names the rules tenders were read by, so a
+     * change to those rules re-reads every order once.
      */
-    public static function paymentIdsBasis(string $status, ?int $paidAmount): string
+    public static function paymentIdsBasis(string $status, ?int $paidAmount, ?int $version): string
     {
-        return $status.'|'.($paidAmount ?? '');
+        return $status.'|'.($paidAmount ?? '').'|'.($version ?? '').'|'.self::TENDER_RULES;
+    }
+
+    /**
+     * The basis an invoice is stamped with when its order could not be read
+     * into payment ids for this state - more tenders than the reconciler
+     * accepts. It is never current, so the audit stays incomplete, but the
+     * lookup queue skips it until the invoice changes, so one such order
+     * cannot take every lookup slot of every run.
+     */
+    public static function unresolvableBasis(string $status, ?int $paidAmount, ?int $version): string
+    {
+        return self::paymentIdsBasis($status, $paidAmount, $version).'|x';
+    }
+
+    /**
+     * Whether a mirrored invoice's payment ids are resolved for what it is
+     * now. An invoice with nothing paid has none to resolve; one whose paid
+     * amount is unknown may hold a payment when its status says so, and is
+     * read like any other; and one that may hold a payment but has no order
+     * cannot be resolved at all.
+     */
+    public static function paymentIdsCurrent(string $status, ?int $paidAmount, ?int $version, ?string $orderId, ?string $basis): bool
+    {
+        // Without an order there is nothing to read the payments from, so one
+        // that may hold a payment stays unresolved rather than counted empty.
+        // With no known amount nothing shows a later payment, so a read is
+        // current but stamped to be read again (see rereadBasis()).
+        return ! self::mayHoldPayment($status, $paidAmount) || ($orderId !== null && $basis === ($paidAmount === null ? self::rereadBasis($status, $version) : self::paymentIdsBasis($status, $paidAmount, $version)));
+    }
+
+    /**
+     * Whether Square may hold a payment for an invoice in this state: a paid
+     * amount above zero, or an unknown amount under a payment-bearing status.
+     * One that cannot has no payments, whatever ids an older read cached.
+     */
+    public static function mayHoldPayment(string $status, ?int $paidAmount): bool
+    {
+        return $paidAmount === null ? in_array($status, self::PAYMENT_STATUSES, true) : $paidAmount > 0;
+    }
+
+    /**
+     * The basis a read of an invoice with no known paid amount is stamped
+     * with: current, but read again in turn after invoices never read, since
+     * a further payment would change neither its status nor its amount, and
+     * a version Square did not send would not show it either.
+     */
+    public static function rereadBasis(string $status, ?int $version): string
+    {
+        return self::paymentIdsBasis($status, null, $version).'|r';
+    }
+
+    /**
+     * The basis an invoice is stamped with when its order holds an open
+     * authorization and its paid amount is unknown: not current, and retried
+     * after invoices never read, since the authorization may yet settle
+     * without the invoice changing.
+     */
+    public static function pendingBasis(string $status, ?int $paidAmount, ?int $version): string
+    {
+        return self::paymentIdsBasis($status, $paidAmount, $version).'|p';
+    }
+
+    /**
+     * Whether an order has more tenders than the reconciler accepts: it can
+     * never be read.
+     *
+     * @param  array<mixed>  $order
+     */
+    public function exceedsTenderBound(array $order): bool
+    {
+        return is_array($order['tenders'] ?? null) && count($order['tenders']) > self::MAX_TENDERS;
+    }
+
+    /**
+     * Whether an order holds a card tender that is still only authorized.
+     *
+     * @param  array<mixed>  $order
+     */
+    public function holdsAuthorization(array $order): bool
+    {
+        foreach (is_array($order['tenders'] ?? null) ? $order['tenders'] : [] as $tender) {
+            if (is_array($tender) && in_array(self::tenderState($tender), self::OPEN_TENDER_STATES, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A tender's state, from whichever status-bearing details its type
+     * carries - card, bank account, buy now pay later, Square account. A
+     * tender without one (cash, external, other) took its money outright.
+     *
+     *
+     * @param  array<mixed>  $tender
+     *
+     * @throws SquareRequestFailed when such details are unreadable
+     */
+    private static function tenderState(array $tender): string
+    {
+        // A no-sale tender opened the register; it took no money.
+        if (($tender['type'] ?? null) === self::NO_SALE) {
+            return self::NO_SALE;
+        }
+        foreach (self::TENDER_DETAILS as $details) {
+            if (! array_key_exists($details, $tender)) {
+                continue;
+            }
+            // Details in an unreadable shape, or a status that is not one,
+            // make the order unreadable rather than a payment by default.
+            // Square documents the status as optional; absent, the tender is
+            // read as settled, as one without such details is.
+            $detail = $tender[$details];
+            if (! is_array($detail) || (array_key_exists('status', $detail) && ! is_string($detail['status']))) {
+                throw SquareRequestFailed::unreadable();
+            }
+
+            return $detail['status'] ?? self::CAPTURED;
+        }
+
+        return self::CAPTURED;
     }
 
     /**
      * Payment ids from an order's tenders, as Square sent the order.
      *
+     * A tender names its payment in `payment_id`, or only by its own `id` -
+     * the reconciler reads both the same way. A card tender counts once it is
+     * captured: an authorization may still be voided without the invoice
+     * changing, and a voided or failed tender took no money. A capture moves
+     * the invoice's paid amount, so the order is read again then.
+     *
+     * Null when the order has more tenders than the reconciler accepts, or
+     * holds an open authorization while the invoice's paid amount is unknown
+     * (`$amountKnown` false): the ids stay unresolved rather than recorded
+     * short. A tender list that is
+     * not a list, or a tender without a readable id, is unreadable, as the
+     * reconciler finds it, and the sync fails and retries rather than
+     * recording it short or empty.
+     *
      * @param  array<mixed>  $order
-     * @return list<string>
+     * @return list<string>|null
+     *
+     * @throws SquareRequestFailed when the tenders are not a list of readable tenders
      */
-    public function paymentIds(array $order): array
+    public function paymentIds(array $order, bool $amountKnown = true): ?array
     {
         $ids = [];
-        foreach ($this->presenter->order($order)['tenders'] as $tender) {
-            $id = self::id($tender['payment_id'] ?? null);
-            if ($id !== null && ! in_array($id, $ids, true)) {
+        $tenders = $order['tenders'] ?? [];
+        if (! is_array($tenders) || ! array_is_list($tenders)) {
+            throw SquareRequestFailed::unreadable();
+        }
+        if (count($tenders) > self::MAX_TENDERS) {
+            return null;
+        }
+        foreach ($tenders as $tender) {
+            // As the reconciler reads them: a tender that is not one, or has
+            // no readable id, makes the order unreadable rather than shorter.
+            $id = is_array($tender) ? (self::id($tender['payment_id'] ?? null) ?? self::id($tender['id'] ?? null)) : null;
+            if ($id === null) {
+                throw SquareRequestFailed::unreadable();
+            }
+            $state = self::tenderState($tender);
+            // A later capture is seen by the paid amount changing; with no
+            // known amount nothing would ever show it, so an open
+            // authorization leaves the ids unresolved.
+            if (in_array($state, self::OPEN_TENDER_STATES, true) && ! $amountKnown) {
+                return null;
+            }
+            if (! in_array($state, self::SETTLED_TENDER_STATES, true)) {
+                continue;
+            }
+            if (! in_array($id, $ids, true)) {
                 $ids[] = $id;
             }
         }
@@ -159,21 +359,30 @@ final class SquareSnapshotMapper
      * @param  array{amount: int, currency: string}|null  $next
      * @return array{currency: string|null, total_amount: int|null, paid_amount: int|null, next_payment_amount: int|null}
      */
-    private static function money(array $requests, ?array $next): array
+    private static function money(array $requests, ?array $next, bool $requestsDropped): array
     {
         $currencies = [];
         $total = null;
         $paid = null;
+        $totalUnreadable = $requestsDropped;
+        $paidUnreadable = $requestsDropped;
         foreach ($requests as $request) {
             $computed = self::amount($request['computed_amount_money'] ?? null);
             if ($computed !== null) {
                 $currencies[] = $computed[1];
                 $total = ($total ?? 0) + $computed[0];
+            } else {
+                // A request whose amount cannot be read leaves the total
+                // unknown, not the sum of the others.
+                $totalUnreadable = true;
             }
             $completed = self::amount($request['total_completed_amount_money'] ?? null);
             if ($completed !== null) {
                 $currencies[] = $completed[1];
                 $paid = ($paid ?? 0) + $completed[0];
+            } else {
+                // Likewise for what has been paid against it.
+                $paidUnreadable = true;
             }
         }
         if ($next !== null) {
@@ -186,8 +395,8 @@ final class SquareSnapshotMapper
 
         return [
             'currency' => $currencies[0] ?? null,
-            'total_amount' => $total,
-            'paid_amount' => $paid,
+            'total_amount' => $totalUnreadable ? null : $total,
+            'paid_amount' => $paidUnreadable ? null : $paid,
             'next_payment_amount' => $next['amount'] ?? null,
         ];
     }

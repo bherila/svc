@@ -7,6 +7,7 @@ use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoicePayment;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -132,13 +133,14 @@ class BillingWorkflowTest extends TestCase
             ->getJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}")
             ->assertForbidden();
 
+        // Issued, it opens - on the client's own screen, which the URL now
+        // sends everyone to. There is no JSON copy of the model any more
+        // (#454), so its internal columns and note cannot leak through one.
         $service->issue($invoice, $workspace);
-        $this->actingAs($client)
+        $response = $this->actingAs($client)
             ->getJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}")
-            ->assertOk()
-            ->assertJsonMissingPath('data.id')
-            ->assertJsonMissingPath('data.workspace_id')
-            ->assertJsonMissingPath('data.notes');
+            ->assertRedirect();
+        $this->assertStringNotContainsString('Internal synthetic note', (string) $response->getContent());
     }
 
     public function test_tenant_mismatch_is_not_visible_or_mutable(): void
@@ -284,6 +286,9 @@ class BillingWorkflowTest extends TestCase
         $schedules = collect(['First', 'Second'])->map(function (string $name) use ($workspace, $company): ClientBillingSchedule {
             $agreement = ClientAgreement::query()->create([
                 'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => "Synthetic {$name} agreement",
+                // Concurrent retainers cover independent projects, not replacements.
+                'client_project_id' => ClientProject::query()->create(['workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id, 'name' => "Synthetic {$name} project"])->id,
                 'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
             ]);
 
@@ -490,6 +495,9 @@ class BillingWorkflowTest extends TestCase
         $schedules = collect(['First', 'Second'])->map(function (string $name) use ($workspace, $company): ClientBillingSchedule {
             $agreement = ClientAgreement::query()->create([
                 'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => "Synthetic {$name} agreement",
+                // Concurrent retainers cover independent projects, not replacements.
+                'client_project_id' => ClientProject::query()->create(['workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id, 'name' => "Synthetic {$name} project"])->id,
                 'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
             ]);
 
@@ -1196,11 +1204,15 @@ class BillingWorkflowTest extends TestCase
         ]);
         $url = route('svc.billing.schedules.generate', [$workspace, $schedule]);
 
+        $billed = fn (): int => ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_billing_schedule_id', $schedule->id)->count();
+
         $this->travelTo(CarbonImmutable::parse('2026-10-01 03:00:00 UTC'));
-        $this->actingAs($owner)->postJson($url)->assertOk()->assertJsonCount(0, 'data');
+        $this->actingAs($owner)->post($url)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(0, $billed());
 
         $this->travelTo(CarbonImmutable::parse('2026-10-01 20:00:00 UTC'));
-        $this->actingAs($owner)->postJson($url)->assertOk()->assertJsonCount(1, 'data');
+        $this->actingAs($owner)->post($url)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(1, $billed());
         $this->assertSame('2026-10-01', ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->sole()->issue_date?->toDateString());
     }
 
@@ -1800,30 +1812,31 @@ class BillingWorkflowTest extends TestCase
         $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
         $service->issue($invoice, $workspace);
 
-        $this->artisan('svc:billing:payment', [
+        $this->artisan('svc:billing:payment', ['--apply' => true,
             'invoice' => $invoice->public_id, 'amount' => '1000', 'currency' => 'USD', 'method' => 'wire',
             '--workspace' => $workspace->public_id, '--format' => 'json', '--idempotency-key' => 'command-payment-1',
         ])->expectsOutputToContain('"invoice_public_id":"'.$invoice->public_id.'"')->assertSuccessful();
         $this->assertDatabaseCount('client_invoice_payments', 1);
     }
 
-    public function test_authenticated_json_routes_accept_the_exact_primary_payload_names(): void
+    public function test_the_screens_writes_accept_the_exact_primary_payload_names(): void
     {
         [$owner, $workspace, $company] = $this->tenant();
-        $response = $this->actingAs($owner)->postJson(
+        $this->actingAs($owner)->post(
             "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices",
             ['invoice_number' => 'INV-SYNTH-001', 'currency' => 'USD', 'issue_date' => '2026-08-15', 'due_date' => '2026-09-14', 'lines' => [$this->line()]],
-        );
-        $response->assertCreated()->assertJsonPath('data.invoice_number', 'INV-SYNTH-001');
-        $invoice = ClientInvoice::query()->sole();
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertOk();
-        $payment = $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
+        )->assertRedirect()->assertSessionHasNoErrors();
+        $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame('INV-SYNTH-001', $invoice->invoice_number);
+        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertRedirect()->assertSessionHasNoErrors();
+        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
             'amount' => 1000, 'currency' => 'USD', 'received_on' => '2026-08-15', 'method' => 'wire', 'reference' => 'SYNTH-REF', 'notes' => 'Synthetic', 'status' => 'succeeded',
-        ]);
-        $payment->assertCreated()->assertJsonPath('data.currency', 'USD');
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
-            'amount' => 500, 'currency' => 'USD', 'received_on' => '2026-08-15', 'method' => 'wire', 'status' => 'canceled',
-        ])->assertCreated()->assertJsonPath('data.status', 'canceled');
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
+            'amount' => 500, 'currency' => 'USD', 'received_on' => '2026-08-15', 'method' => 'wire', 'status' => 'pending',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $payments = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->orderBy('id')->get();
+        $this->assertSame([['succeeded', 'USD', 'Synthetic'], ['pending', 'USD', null]], $payments->map(fn (ClientInvoicePayment $payment): array => [$payment->status, $payment->currency, $payment->notes])->all());
         $this->assertSame('partially_paid', $invoice->fresh()->status);
     }
 
@@ -1846,8 +1859,8 @@ class BillingWorkflowTest extends TestCase
             );
         // 200 rather than 202: the send happens in the request now, so the
         // answer is what happened rather than what was promised.
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
-            ->assertOk();
+        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
+            ->assertRedirect()->assertSessionHas('status', 'Invoice sent to billing@synthetic.test.');
         $this->assertDatabaseHas('client_invoice_email_deliveries', ['status' => 'sent']);
     }
 
@@ -1964,6 +1977,8 @@ class BillingWorkflowTest extends TestCase
     {
         return ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => $title.' agreement',
+            'client_project_id' => ClientProject::query()->create(['workspace_id' => $workspace->id,
+                'client_company_id' => $company->id, 'name' => $title.' agreement scope '.Str::uuid()])->id,
             'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
         ]);
     }

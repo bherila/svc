@@ -1,12 +1,15 @@
 <?php
 
 use App\Http\Controllers\ClientCompanyController;
+use App\Http\Controllers\ClientContactController;
 use App\Http\Controllers\ClientDirectoryController;
-use App\Http\Controllers\ClientPortalAccessController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
+use App\Http\Controllers\CompanyProfileController;
+use App\Http\Controllers\Finance\FinancePaymentLinkController;
+use App\Http\Controllers\HistoricalLibraryController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
@@ -59,6 +62,14 @@ Route::middleware('auth')->group(function (): void {
         ->middleware('throttle:120,1')
         ->name('search');
 
+    // A payment's permanent address for an external finance system: the
+    // payment's public UUID and nothing else, redirected to whichever screen
+    // shows it today. Anything this reader may not open is the same 404 as a
+    // payment that does not exist. Throttled so it cannot be used to probe.
+    Route::get('/finance-links/payments/{payment}', FinancePaymentLinkController::class)
+        ->middleware('throttle:60,1')
+        ->name('finance-links.payments.show');
+
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
 
     // Opening a workspace, as its own step. Which client to open depends on
@@ -80,6 +91,10 @@ Route::middleware('auth')->group(function (): void {
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
+        Route::get('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'show'])->name('tasks.show');
+        Route::get('/workspaces/{workspace}/projects/{clientProject}/task-assignees', [ClientTaskController::class, 'assignees'])->name('tasks.assignees');
+        Route::get('/workspaces/{workspace}/history', [HistoricalLibraryController::class, 'index'])->name('history.index');
+        Route::get('/workspaces/{workspace}/history/{historicalEntry}', [HistoricalLibraryController::class, 'show'])->name('history.show');
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');
         Route::get('/workspaces/{workspace}/square', SquareExploreController::class)->name('square.explore');
         Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
@@ -125,24 +140,17 @@ Route::middleware('auth')->group(function (): void {
             ->name('portal.proposal');
     });
 
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/profile', [CompanyProfileController::class, 'update'])->name('clients.profile.update');
+    Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
+    Route::post('/workspaces/{workspace}/clients/{clientCompany}/contacts', [ClientContactController::class, 'store'])->name('contacts.store');
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/contacts/{clientContact}', [ClientContactController::class, 'update'])->name('contacts.update');
+
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])
         ->name('clients.update');
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientProjectController::class, 'update'])
         ->name('projects.update');
     Route::put('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access', [ClientProjectAccessController::class, 'update'])
         ->name('projects.access.update');
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/portal-access', [ClientPortalAccessController::class, 'store'])
-        ->name('clients.portal-access.store');
-    Route::put('/workspaces/{workspace}/clients/{clientCompany}/portal-access/{user}', [ClientPortalAccessController::class, 'update'])
-        ->name('clients.portal-access.update');
-    Route::delete('/workspaces/{workspace}/clients/{clientCompany}/portal-access/{user}', [ClientPortalAccessController::class, 'destroy'])
-        ->name('clients.portal-access.destroy');
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/portal-invitations', [ClientPortalAccessController::class, 'invite'])
-        ->name('clients.portal-invitations.store');
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/portal-invitations/{invitation}/resend', [ClientPortalAccessController::class, 'resendInvitation'])
-        ->name('clients.portal-invitations.resend');
-    Route::delete('/workspaces/{workspace}/clients/{clientCompany}/portal-invitations/{invitation}', [ClientPortalAccessController::class, 'revokeInvitation'])
-        ->name('clients.portal-invitations.destroy');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');
@@ -157,3 +165,4 @@ require __DIR__.'/expenses.php';
 require __DIR__.'/expenses.php';
 require __DIR__.'/billing.php';
 require __DIR__.'/files.php';
+require __DIR__.'/collaboration.php';

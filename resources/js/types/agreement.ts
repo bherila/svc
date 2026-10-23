@@ -32,11 +32,18 @@ export type AgreementTerms = CompanyAgreement & {
     period_retainer_amount: number | null;
     agreement_text: string | null;
     is_visible_to_client: boolean | null;
+    show_deferred_backlog_to_client?: boolean | null;
     /**
      * Billed in Square (#438): the Square series that bills this agreement,
      * or null. Operators only - absent on the client's own copy.
      */
     square_series_key?: string | null;
+    /**
+     * The Square location that series bills from (#488), or null for a
+     * marker set before markers named one: it then matches the series in
+     * every location. Operators only.
+     */
+    square_location_id?: string | null;
 };
 
 /**
@@ -49,6 +56,7 @@ export type AgreementTerms = CompanyAgreement & {
 export type AgreementActions = {
     update: string | null;
     upload_file: string | null;
+    deferred_buydown?: { preview: string; create: string } | null;
 };
 
 /** One file stored against the agreement. */

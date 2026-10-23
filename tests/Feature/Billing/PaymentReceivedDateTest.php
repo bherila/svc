@@ -163,20 +163,17 @@ final class PaymentReceivedDateTest extends TestCase
         try {
             [, $workspace, $invoice] = $this->issuedInvoice();
 
-            foreach (['next friday', '2015-08-29', '2026-08-30'] as $refused) {
-                try {
-                    $this->artisan('svc:billing:payment', [
-                        'invoice' => $invoice->public_id,
-                        'amount' => '1000',
-                        'currency' => 'USD',
-                        'method' => 'wire',
-                        '--workspace' => $workspace->public_id,
-                        '--received-on' => $refused,
-                    ])->run();
-                    $this->fail('The command accepted "'.$refused.'" as a payment date.');
-                } catch (DomainException $exception) {
-                    $this->assertStringContainsString('Nothing has been changed.', $exception->getMessage());
-                }
+            // Not a calendar day: refused by the shared rules before anything
+            // is looked up. A day outside the window: refused by the service.
+            foreach (['next friday' => 2, '2015-08-29' => 1, '2026-08-30' => 1] as $refused => $exit) {
+                $this->artisan('svc:billing:payment', ['--apply' => true,
+                    'invoice' => $invoice->public_id,
+                    'amount' => '1000',
+                    'currency' => 'USD',
+                    'method' => 'wire',
+                    '--workspace' => $workspace->public_id,
+                    '--received-on' => $refused,
+                ])->assertExitCode($exit);
             }
 
             $this->assertDatabaseCount('client_invoice_payments', 0);

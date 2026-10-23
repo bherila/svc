@@ -1,4 +1,4 @@
-# Both database lanes run the PHP suite with four ParaTest workers. Laravel gives
+# Both database lanes use four independent shards, with four ParaTest workers each. Laravel gives
 # each MariaDB worker an isolated `svc_testing_test_<token>` schema, created
 # automatically by the root CI connection inside the ephemeral service container.
 name: tests
@@ -207,7 +207,8 @@ jobs:
           path: test-results/layout/
           retention-days: 7
 
-  ci:
+  checks:
+    name: Static and frontend checks
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -233,10 +234,27 @@ jobs:
           corepack enable
           corepack prepare pnpm@12.11.2 --activate
 
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Authorize private MCP bridge dependency
         uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      # Cache downloaded archives only, never Composer auth or private VCS clones.
+      - name: Cache Composer downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
 
       - name: Setup Application
         run: composer setup
@@ -244,15 +262,32 @@ jobs:
       - name: Test Codex setup decisions
         run: bash codex/setup.test.sh
 
+      # The deploy job's pinned action, so the cron tests prove its installer's output is the
+      # line cron-audit.sh accepts. DeploymentSafetyTest keeps this ref equal to the `uses:` pin.
+      - name: Checkout the pinned shared deployment action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bherila/shared-cpanel-deployment
+          ref: 46a47522ad977c008a1251b0f67e73807a8bfb10
+          path: .shared-cpanel-deployment
+          persist-credentials: false
+
       - name: Test deployment hooks
+        env:
+          SHARED_DEPLOY_ACTION_PATH: .shared-cpanel-deployment
         run: |
           for hook in scripts/deploy/*.sh tests/Deployment/*.sh; do bash -n "$hook"; done
           tests/Deployment/test-deploy-hooks.sh
           bash tests/Deployment/test-preflight.sh
+          bash tests/Deployment/test-oauth-lifecycle.sh
+          bash tests/Deployment/test-failure-report.sh
+          bash tests/Deployment/test-mutation-scope.sh
+          bash tests/Deployment/test-cron-audit.sh
+          rm -rf .shared-cpanel-deployment
           node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs
 
       - name: Run CI Checks
-        run: composer ci:check
+        run: composer ci:checks
 
       - name: Upload frontend build artifact
         if: ${{ github.event_name != 'pull_request' }}
@@ -262,9 +297,65 @@ jobs:
           path: public/build/
           retention-days: 2
 
-  mariadb:
-    name: Tests on MariaDB
+  sqlite:
+    name: SQLite shard ${{ matrix.shard }}/4
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_EXPECT_DRIVER: sqlite
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      # Cache downloaded archives only, never Composer auth or private VCS clones.
+      - name: Cache Composer downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
+
+      # No --prefer-dist: the private bridge dependency is authorised by the SSH
+      # agent above, and a dist install would fetch it from the GitHub API
+      # zipball instead, which that key does not authenticate.
+      - name: Install Composer dependencies
+        run: |
+          composer install --no-interaction
+          test -f .env || cp .env.example .env
+
+      - name: Run the SQLite shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml"
+
+  mariadb-tests:
+    name: MariaDB shard ${{ matrix.shard }}/4
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     # The default suite runs on in-memory SQLite; production is MariaDB 10.6
     # reached through Laravel's `mariadb` driver. SQLite stores whatever it is
@@ -273,7 +364,7 @@ jobs:
     # tests. Every schema difference between the two engines is invisible until
     # the suite runs on the engine that ships.
     #
-    # This job is deliberately separate from `ci` rather than replacing its
+    # This lane is deliberately separate from SQLite rather than replacing its
     # database: SQLite keeps the local and CI feedback loop fast, and this run
     # is the one that has to be true.
     services:
@@ -327,6 +418,13 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
+      # Cache downloaded archives only, never Composer auth or private VCS clones.
+      - name: Cache Composer downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
+
       # No --prefer-dist: the private bridge dependency is authorised by the SSH
       # agent above, and a dist install would fetch it from the GitHub API
       # zipball instead, which that key does not authenticate.
@@ -335,10 +433,14 @@ jobs:
           composer install --no-interaction
           test -f .env || cp .env.example .env
 
-      # No lint or static analysis here; `ci` already runs those and they say
+      # No lint or static analysis here; `checks` runs those and they say
       # nothing about the engine. This job exists for the database alone.
-      - name: Run the test suite against MariaDB
-        run: php artisan test --parallel --processes=4
+      - name: Run the MariaDB shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml"
 
   mcp-smoke:
     name: MCP SDK streamable HTTP smoke
@@ -494,11 +596,54 @@ jobs:
             fi
           fi
 
+
+      - name: Preserve mutation diagnostics
+        if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-diagnostics
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            storage/framework/cache/infection-diff/summary.json
+            storage/framework/cache/infection-diff/mutations.log
+            storage/framework/cache/infection-diff/junit.xml
+            storage/framework/cache/infection-diff/coverage-xml/**/*.xml
+
+  mariadb:
+    name: Tests on MariaDB
+    needs: [mariadb-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require every MariaDB shard
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/ci/require-success.sh
+
+  ci:
+    needs: [checks, sqlite, mariadb, mcp-smoke]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require all required CI lanes
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/ci/require-success.sh
+
   deploy:
-    name: Deploy empty alpha to web1
+    name: Deploy SVC to web1
     needs: [ci, mariadb, mcp-smoke]
-    # Keep production deploys explicitly disabled while the cPanel vhost requires
-    # the configured application directory itself to remain a real directory.
+    # The operator can pause deployment during account cutover. Stable-directory activation
+    # preserves the real application path required by cPanel/LiteSpeed.
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && vars.ATOMIC_DEPLOY_ENABLED == 'true' && needs.ci.result == 'success' && needs.mariadb.result == 'success' && needs.mcp-smoke.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     environment: web1
@@ -549,31 +694,36 @@ jobs:
           path: public/build/
 
       # Shared deploy for Laravel on a cPanel account: https://github.com/bherila/shared-cpanel-deployment
-      # (its README lists every input and what each guard refuses). Pinned to a commit because this job
-      # holds a key that reaches every application on the account.
+      # (its README lists every input and what each guard refuses). Pin the action to a reviewed
+      # commit; its deployment key belongs only to this application's cPanel account.
       #
       # v2.1.2 builds and validates a versioned candidate before selecting it beneath a real cPanel
       # application directory, keeps the previous release, and records the exact selected commit.
-      # A migration or live OAuth/MCP verification failure leaves the selected release in maintenance
-      # for an explicit operator decision.
+      # A migration or live OAuth/MCP verification failure restores the retained prior release
+      # and its scheduler entries; migrations must remain compatible with prior code.
       #
       # All of storage is shared across releases, including authoritative svc-blobs and the OAuth key
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@76e914604ae1e7d07d045f5412371b6634178e47 # v2.3.2
+        id: deploy
+        uses: bherila/shared-cpanel-deployment@46a47522ad977c008a1251b0f67e73807a8bfb10 # reviewed rollback recovery
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
           deploy-dir: svc-laravel
+          # The dedicated account's primary public_html link is provisioned separately.
+          # Stable-directory activation preserves its target; never ask the action to replace it.
           site-url: https://svc.bherila.net
           deployment-mode: atomic
           atomic-layout: stable-directory
           persistent-paths: storage
-          retain-releases: '3'
-          failure-policy: maintenance
+          # Keep rollback material until finalization; discard inactive code once serving is proven.
+          retain-releases: '0'
+          # Preserve previous-code compatibility when adding migrations; rollback keeps shared data.
+          failure-policy: rollback
           initial-live-commit: f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a
           # Normally empty. Set only to the exact owner reported by a failed atomic
           # run; recovery finalizes it and proves the selected app serves before retrying.
@@ -583,8 +733,23 @@ jobs:
           artisan-memory-limit: 1G
           operational-audit: 'true'
           runtime-audit: 'true'
+          # The action owns SVC's one scheduler line (owner decision on #327): it pauses it before
+          # maintenance, replaces any legacy `cd "$HOME/svc-laravel"` line and installs the canonical
+          # 1G `schedule:run` line once serving is proven. There is no queue worker, so no extra lines.
+          # verify-live.sh then requires exactly one canonical line before the release is healthy.
+          install-cron: 'true'
+          cron-memory-limit: 1G
           preflight-script: scripts/deploy/preflight.sh
           quiesce-script: scripts/deploy/quiesce.sh
           pre-migrate-script: scripts/deploy/pre-migrate.sh
           post-deploy-script: scripts/deploy/post-deploy.sh
           verification-script: scripts/deploy/verify-live.sh
+          post-finalize-script: scripts/deploy/post-finalize.sh
+
+      - name: Report failed deployment and public service state
+        if: ${{ failure() && steps.deploy.outcome == 'failure' }}
+        env:
+          DEPLOY_LIVE_RELEASE: ${{ steps.deploy.outputs.live-release }}
+          DEPLOY_LIVE_COMMIT: ${{ steps.deploy.outputs.live-commit }}
+          DEPLOY_LIVE_STATE: ${{ steps.deploy.outputs.live-state }}
+        run: bash scripts/deploy/report-failure.sh

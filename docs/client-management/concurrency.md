@@ -279,13 +279,12 @@ gets a follow-up rather than an inline fix.
 | `InvoiceFromTimeService::addTime()` — an existing ad-hoc draft gains only unallocated time | Locks the target invoice, verifies its version and draft kind, then locks selected entries in ID order and reads their allocation pivots with a current locking read. Existing lines are retained; totals increment from the locked invoice state. A two-process MariaDB test covers an allocation committed after an older transaction snapshot |
 | `TimeEntryMutationService::unapprove()` — billed time keeps its approval | The same agreement, invoice, entry and allocation-pivot locks as `update()`. Snapshot pivot membership must match the current read, and invoice status comes from the locked invoice model, so an `issue()` that commits first leaves the entry `invoiced` (refused) and one that waits finds it already returned to draft and the draft rebuilt without it |
 | `PaymentReconciliationService::upsert()` — active allocations do not exceed the payment net of refunds | Locks the payment, the existing reconciliation, and the sibling active rows it sums, all before the write; `pr_payment_system_transaction_unique` behind it |
-| `UndatedCollectibleInvoiceRepairer::repair()` — the set repaired is the set counted | Counts under the lock and refuses if the count differs from the operator's stated expectation |
 | `OAuthLoginController::resolveUser()` — one account per provider subject and per email | Locks by provider subject, then by email; `users.email` unique behind it |
 | `ProposalWorkflow::accept()` — a proposal is accepted once | The proposal row lock, then the company; `client_agreements.source_proposal_id` unique behind it |
 | `WorkspaceExpenses::approve()` / `unapprove()` — only a status the lifecycle allows may move | The expense row lock, taken through the workspace-scoped query so the lock statement itself carries the tenant predicate; the status is then re-read from the **locked** row, never from the model the caller passed in |
 | `WorkspaceExpenses::update()` — only a draft's facts may be rewritten | The same expense row lock and the same re-read. An approved expense is refused, so the amount a manager passed is the amount that is billed |
 | `WorkspaceExpenses::discard()` — an invoiced expense is not withdrawn | The same lock, and `ExpenseStatus::hasBeenInvoicedValue()`, which answers yes to a status it does not recognise |
-| `AgentConnectionController::destroy()` — an unrevoked connection is revoked once | The access-token row lock, taken before the refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write |
+| `CredentialRevoker::revoke()` — an unrevoked agent credential is revoked once, whether a connection disconnects itself, an operator revokes a named token or every connection a person holds, or the deployment smoke ends its own | The selected access-token row locks, taken before any refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write; refresh tokens and authorization codes are then revoked before the access tokens themselves |
 
 ### The two cadence generators exclude each other on the agreement
 
@@ -615,3 +614,57 @@ after the invitation was sent leaves it `not_applied` or the project dropped.
 
 `LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
 assertions run on one connection and prove ordering, not contention.
+
+### Square payout entries waiting for a payment (#495)
+
+Payout webhooks and payout backfills store waiting facts in a short producer transaction that
+locks only `square_pending_settlements`; it commits before attempting delivery. Delivery takes
+the existing billing-maintenance share lock, the workspace's invoice payment, then its pending
+settlement. The pending read is current even inside invoice reconciliation's outer transaction.
+The recorder re-enters the already-held payment lock. A missing payment leaves the entry durable;
+otherwise applying and consuming it commit together. Producers never hold a pending row while
+waiting for a payment, so invoice reconciliation's retained billing locks cannot form the reverse
+cycle. `SquarePendingSettlement` follows the billing resources and precedes the final Square-link
+read in the lock registry.
+
+### Deferred buy-down reservation
+
+`DeferredBuyDownAction::create` follows the enforced registry, whose agreement
+lock precedes numbering, time entries and pivot claims. The company is scoped
+and read here, not locked before the agreement: the current registry places
+company locks after billing rows. The agreement lock is the serialisation point
+shared with cadence regeneration. Selected entries are locked in id order, their
+revisions are rechecked, and a current locking pivot read refuses allocation-only
+changes even under REPEATABLE READ. Draft discard takes that agreement lock too.
+The interleaving tests cover both reservation orders, and the existing lock-order
+recorder checks the new writer's acquisition order. These single-connection tests
+establish refusal/reservation semantics and lock order, not an independent
+multi-process database stress test.
+
+### Processor movement facts
+
+The movement recorder takes the existing billing-maintenance share lock, re-reads the
+workspace-owned payment under its row lock, then locks the provider/account/entry tuple in
+`processor_movements`. The new child resource follows the late billing resources; recording
+a movement takes no invoice lock and does not return to payment or invoice mutations after
+locking the child. The payment lock serializes delivery for the same payment, and the unique
+workspace/provider/account/entry index refuses a second binding to a different payment.
+This preserves the existing order rather than changing any existing lock's rank.
+
+## Historical sources and contacts
+
+`historical_sources` serializes source-key reservations before native business
+locks. HistoricalRecordRepository takes the source lock before checking or creating
+a snapshot, so concurrent attempts cannot overwrite or retarget the same original.
+Future import transactions must claim that source before native mutation, not
+append a source lock after holding a billing/company lock.
+
+`client_contacts` follows company/project locks. Contact creation locks the company;
+editing locks the contact alone after a workspace/company-scoped lookup. No contact
+operation creates or locks authentication, invitation, or billing records.
+
+Historical library publication and blob metadata creation use that same source
+lock after re-reading the source record in its workspace. Entries and file
+metadata are immutable, so replay compares fingerprints/digests and never takes
+an entry lock followed by a source lock. Private content-addressed file copies
+can be repaired without changing the original source record.

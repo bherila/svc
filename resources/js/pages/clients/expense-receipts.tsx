@@ -4,6 +4,7 @@ import {
     AgreementFileUpload,
     formatBytes,
 } from '@/components/agreements/agreement-editor';
+import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -33,12 +34,16 @@ type Props = {
         status: string;
     };
     files: AgreementFile[];
+    files_next_href?: string | null;
+    files_previous_href?: string | null;
     upload_href: string;
 };
 
 export default function ExpenseReceipts({
     expense,
     files,
+    files_next_href: nextFilesHref = null,
+    files_previous_href: previousFilesHref = null,
     upload_href,
 }: Props) {
     const [removing, setRemoving] = useState<AgreementFile | null>(null);
@@ -53,7 +58,7 @@ export default function ExpenseReceipts({
             >
                 <Card>
                     <CardHeader>
-                        <CardTitle>Expense receipts</CardTitle>
+                        <CardTitle id="files">Expense receipts</CardTitle>
                     </CardHeader>
                     <CardContent className="grid min-w-0 grid-cols-1 gap-4">
                         <p className="wrap-anywhere">{expense.description}</p>
@@ -74,7 +79,11 @@ export default function ExpenseReceipts({
                             </p>
                         )}
                         {files.length === 0 ? (
-                            <p>No receipts attached.</p>
+                            <p>
+                                {previousFilesHref
+                                    ? 'No receipts on this page.'
+                                    : 'No receipts attached.'}
+                            </p>
                         ) : (
                             <ul className="grid grid-cols-1 gap-3">
                                 {files.map((file) => (
@@ -106,6 +115,10 @@ export default function ExpenseReceipts({
                                 ))}
                             </ul>
                         )}
+                        <AttachmentPageLinks
+                            nextHref={nextFilesHref}
+                            previousHref={previousFilesHref}
+                        />
                         <AgreementFileUpload uploadHref={upload_href} />
                     </CardContent>
                 </Card>

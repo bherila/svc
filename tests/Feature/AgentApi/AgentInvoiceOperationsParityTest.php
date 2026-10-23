@@ -374,7 +374,8 @@ final class AgentInvoiceOperationsParityTest extends TestCase
         $this->assertTrue($result['stale_draft_ids_truncated']);
         $this->assertTrue($result['missing_periods_truncated']);
         $invoiceQueries = array_filter($queries, fn (array $query): bool => str_contains($query['query'], 'from "client_invoices"'));
-        $this->assertLessThanOrEqual(5, count($invoiceQueries));
+        // The issued handover audit adds one bounded invoice scan, even when empty.
+        $this->assertLessThanOrEqual(6, count($invoiceQueries));
     }
 
     /** @return iterable<string, array{array<string, mixed>, string}> */

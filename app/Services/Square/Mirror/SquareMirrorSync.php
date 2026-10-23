@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
+use App\Services\Square\SquareReadFailureReason;
 use App\Services\Square\SquareRequestFailed;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
@@ -96,14 +97,23 @@ final class SquareMirrorSync
         }
 
         $tally = new SquareSyncTally;
+        $stage = 'locations';
         try {
             $locations = $this->locations($workspace, $run, $configuration, $tally);
+            $stage = 'customers';
             $this->customers($workspace, $run, $configuration, $tally);
+            $stage = 'invoices';
             foreach ($locations as $locationId) {
                 $this->invoices($workspace, $run, $configuration, $tally, $locationId);
             }
+            $stage = 'payment_ids';
             $this->paymentIds($workspace, $tally, $run->trigger === SquareSyncRun::TRIGGER_SCHEDULE ? self::PAYMENT_LOOKUPS_PER_RUN : self::PAYMENT_LOOKUPS_PER_REQUESTED_RUN);
         } catch (SquareRequestFailed $failure) {
+            Log::warning('Square mirror sync failed', [
+                'stage' => $stage,
+                'reason' => $failure->reason->value ?? self::errorCode($failure),
+            ]);
+
             return $this->finish($workspace, $run, $tally, self::errorCode($failure));
         } catch (Throwable $exception) {
             $this->finish($workspace, $run, $tally, 'INTERNAL');
@@ -146,10 +156,10 @@ final class SquareMirrorSync
     {
         $response = $this->client->listLocations();
         $records = self::records($response, 'locations', 300);
-        $this->logBatch($workspace, $run, $configuration, 'locations', null, 1, count($records));
+        $this->logBatch($workspace, $run, $configuration, 'locations', 1, count($records));
         $rows = array_values(array_filter(array_map($this->mapper->location(...), $records)));
         if (count($rows) !== count($records)) {
-            throw SquareRequestFailed::unreadable();
+            throw SquareRequestFailed::unreadable(SquareReadFailureReason::MappingRejected);
         }
         $this->mirror->storeLocations($workspace, $rows, $this->now(), $run->id);
         $tally->locationsSeen += count($rows);
@@ -165,10 +175,10 @@ final class SquareMirrorSync
             self::CUSTOMER_PAGE_SIZE,
             $tally,
             function (array $records, int $page) use ($workspace, $run, $configuration, $tally): void {
-                $this->logBatch($workspace, $run, $configuration, 'customers', null, $page, count($records));
+                $this->logBatch($workspace, $run, $configuration, 'customers', $page, count($records));
                 $rows = array_values(array_filter(array_map($this->mapper->customer(...), $records)));
                 if (count($rows) !== count($records)) {
-                    throw SquareRequestFailed::unreadable();
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MappingRejected);
                 }
                 $tally->customersSeen += count($rows);
                 $tally->customersChanged += $this->mirror->storeCustomers($workspace, $rows, $this->now(), $run->id);
@@ -184,11 +194,11 @@ final class SquareMirrorSync
             'invoices',
             self::INVOICE_PAGE_SIZE,
             $tally,
-            function (array $records, int $page) use ($workspace, $run, $configuration, $tally, $locationId): void {
-                $this->logBatch($workspace, $run, $configuration, 'invoices', $locationId, $page, count($records));
+            function (array $records, int $page) use ($workspace, $run, $configuration, $tally): void {
+                $this->logBatch($workspace, $run, $configuration, 'invoices', $page, count($records));
                 $rows = array_values(array_filter(array_map($this->mapper->invoice(...), $records)));
                 if (count($rows) !== count($records)) {
-                    throw SquareRequestFailed::unreadable();
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MappingRejected);
                 }
                 $tally->invoicesSeen += count($rows);
                 $tally->invoicesChanged += $this->mirror->storeInvoices($workspace, $rows, $this->now(), $run->id);
@@ -201,10 +211,25 @@ final class SquareMirrorSync
     {
         foreach ($this->mirror->invoicesNeedingPaymentIds($workspace, $limit) as $invoice) {
             $order = $this->client->retrieveOrder($invoice['square_order_id'])['order'] ?? null;
-            if (! is_array($order)) {
+            // As the reconciler checks it: the order must be the one asked
+            // for, at the invoice's location when the mirror knows it.
+            if (! is_array($order) || ($order['id'] ?? null) !== $invoice['square_order_id']
+                || ($invoice['square_location_id'] !== null && ($order['location_id'] ?? null) !== $invoice['square_location_id'])) {
                 throw SquareRequestFailed::unreadable();
             }
-            if ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $this->mapper->paymentIds($order))) {
+            // An order with more tenders than the reconciler accepts stays
+            // unresolved, and the billing audit says it is incomplete; it is
+            // stamped so the next runs move on to other invoices.
+            // The basis is STATUS|PAID|VERSION|rules; an empty PAID is an unknown amount.
+            $ids = $this->mapper->paymentIds($order, explode('|', $invoice['basis'], 3)[1] !== '');
+            if ($ids === null) {
+                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'],
+                    retryAfter: ! $this->mapper->exceedsTenderBound($order) && $this->mapper->holdsAuthorization($order) ? $this->now() : null, read: $invoice['read']);
+            } elseif ($ids === []) {
+                // Every queued invoice may hold a payment; an order showing no
+                // settled tender yet is retried, not taken as having none.
+                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'], retryAfter: $this->now(), read: $invoice['read']);
+            } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids, rereadAfter: $this->now(), read: $invoice['read'])) {
                 $tally->paymentsResolved++;
             }
         }
@@ -229,8 +254,11 @@ final class SquareMirrorSync
             if ($next === null || $next === '') {
                 return;
             }
-            if (! is_string($next) || preg_match(SquareClient::CURSOR_PATTERN, $next) !== 1 || isset($seen[$next])) {
-                throw SquareRequestFailed::unreadable();
+            if (! is_string($next) || preg_match(SquareClient::CURSOR_PATTERN, $next) !== 1) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::InvalidCursor);
+            }
+            if (isset($seen[$next])) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::RepeatedCursor);
             }
             $seen[$next] = true;
             $cursor = $next;
@@ -247,11 +275,11 @@ final class SquareMirrorSync
         // Square omits an empty list rather than sending [].
         $records = $response[$key] ?? [];
         if (! is_array($records) || ! array_is_list($records) || count($records) > $max) {
-            throw SquareRequestFailed::unreadable();
+            throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
         }
 
         if (count(array_filter($records, 'is_array')) !== count($records)) {
-            throw SquareRequestFailed::unreadable();
+            throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
         }
 
         return $records;
@@ -281,13 +309,12 @@ final class SquareMirrorSync
         return SquareSyncRun::query()->where('workspace_id', $workspace->id)->whereKey($run->getKey())->firstOrFail();
     }
 
-    private function logBatch(Workspace $workspace, SquareSyncRun $run, SquareConfiguration $configuration, string $resource, ?string $locationId, int $page, int $records): void
+    private function logBatch(Workspace $workspace, SquareSyncRun $run, SquareConfiguration $configuration, string $resource, int $page, int $records): void
     {
         Log::info('Square mirror sync batch', [
             'workspace' => $workspace->public_id,
             'run' => $run->public_id,
             'resource' => $resource,
-            'location' => $locationId,
             'page' => $page,
             'records' => $records,
             'square_version' => $configuration->version,

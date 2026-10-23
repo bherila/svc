@@ -205,6 +205,38 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /**
+     * The in-memory counterpart of {@see scopeForAgreementScope()}, with the
+     * workspace and company keys that query's callers apply around it.
+     */
+    public function isWithinAgreementScope(ClientAgreement $agreement): bool
+    {
+        return (int) $this->workspace_id === (int) $agreement->workspace_id
+            && (int) $this->client_company_id === (int) $agreement->client_company_id
+            && ($agreement->client_project_id === null
+                || (int) $this->client_project_id === (int) $agreement->client_project_id);
+    }
+
+    /**
+     * Deferred work still on the shelf: billable, flagged deferred and linked
+     * to no invoice line at all.
+     *
+     * The predicate both deferred readers share - the cadence allocator's
+     * candidates, the termination collection, and the backlog that quotes the
+     * termination collection before it happens (#366). Unscoped on purpose,
+     * exactly as the allocator always read it: any link reserves the entry.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeAwaitingDeferredBilling(Builder $query): Builder
+    {
+        return $query
+            ->where('is_billable', true)
+            ->where('is_deferred', true)
+            ->whereDoesntHave('invoiceLines');
+    }
+
+    /**
      * Work whose hours have actually drawn on the retainer.
      *
      * Deferred work draws only once the allocator bills it, so a deferred entry
@@ -326,6 +358,25 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
 
         if ($this->deferredDisposition() === DeferredWorkDisposition::SettledOutsideRetainer) {
             throw new LogicException('Deferred work settled outside the retainer has no capacity date.');
+        }
+
+        return $this->allocatedOn();
+    }
+
+    /**
+     * The day the line that took this work off the shelf is dated.
+     *
+     * The absorbing line's date, else its invoice's work-period end, else the
+     * day worked - and never earlier than the day worked. For work that draws
+     * on capacity this is {@see capacityDate()}; for work settled outside the
+     * retainer it is only when it left the backlog. Requires
+     * {@see scopeWithCapacityPlacement()}: a lazy load would cross tenants.
+     */
+    public function allocatedOn(): CarbonImmutable
+    {
+        $workedOn = $this->worked_on;
+        if (! $this->relationLoaded('invoiceLines')) {
+            throw new LogicException('Load time entries withCapacityPlacement() before reading their allocation date.');
         }
 
         $line = $this->invoiceLines->first();

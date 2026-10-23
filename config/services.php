@@ -64,6 +64,8 @@ return [
         'retry_base_milliseconds' => (int) env('SQUARE_RETRY_BASE_MILLISECONDS', 250),
         // svc's own budget of pass-through reads per workspace per minute.
         'rate_limit_per_minute' => (int) env('SQUARE_RATE_LIMIT_PER_MINUTE', 60),
+        // Non-invoice sales may never acquire a local payment; retain waiting settlement facts for 30 days.
+        'pending_settlement_retention_days' => (int) env('SQUARE_PENDING_SETTLEMENT_RETENTION_DAYS', 30),
     ],
 
     'brevo' => [

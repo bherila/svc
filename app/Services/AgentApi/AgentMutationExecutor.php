@@ -30,6 +30,7 @@ final class AgentMutationExecutor
      * @param  callable(): list<string>  $callback
      * @param  (callable(list<string>): void)|null  $replayGuard
      * @param  (callable(list<string>): array<string, mixed>)|null  $responseSnapshot
+     * @param  (callable(string, list<string>): list<string>)|null  $auditIds  the ids each operation's audit row names, from the stored result; all of them when null
      * @return list<string>
      */
     public function run(
@@ -43,11 +44,12 @@ final class AgentMutationExecutor
         ?callable $replayGuard = null,
         ?string $additionalAuditOperation = null,
         ?callable $responseSnapshot = null,
+        ?callable $auditIds = null,
     ): array {
         $digest = hash('sha256', json_encode($this->canonicalize($payload), JSON_THROW_ON_ERROR));
 
         try {
-            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard, $additionalAuditOperation, $responseSnapshot): array {
+            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard, $additionalAuditOperation, $responseSnapshot, $auditIds): array {
                 app(LegacyAgentReceiptNamespace::class)->reserve($user, $workspace, $clientId, $operation, $key);
                 // Keep the compatibility reservation when replaying an existing receipt.
                 // createOrFirst isolates a duplicate insert in a savepoint, not this transaction.
@@ -69,9 +71,9 @@ final class AgentMutationExecutor
                     if ($replayGuard !== null) {
                         $replayGuard($ids);
                     }
-                    $this->audit($user, $workspace, $clientId, $operation, $ids, 'replay');
+                    $this->audit($user, $workspace, $clientId, $operation, $this->auditedIds($auditIds, $operation, $ids), 'replay');
                     if ($additionalAuditOperation !== null) {
-                        $this->audit($user, $workspace, $clientId, $additionalAuditOperation, $ids, 'replay');
+                        $this->audit($user, $workspace, $clientId, $additionalAuditOperation, $this->auditedIds($auditIds, $additionalAuditOperation, $ids), 'replay');
                     }
 
                     return $ids;
@@ -83,9 +85,9 @@ final class AgentMutationExecutor
                     'response_snapshot' => $responseSnapshot === null ? null : $responseSnapshot($ids),
                     'completed_at' => $this->clock->now($workspace),
                 ])->save();
-                $this->audit($user, $workspace, $clientId, $operation, $ids, 'success');
+                $this->audit($user, $workspace, $clientId, $operation, $this->auditedIds($auditIds, $operation, $ids), 'success');
                 if ($additionalAuditOperation !== null) {
-                    $this->audit($user, $workspace, $clientId, $additionalAuditOperation, $ids, 'success');
+                    $this->audit($user, $workspace, $clientId, $additionalAuditOperation, $this->auditedIds($auditIds, $additionalAuditOperation, $ids), 'success');
                 }
 
                 return $ids;
@@ -98,6 +100,42 @@ final class AgentMutationExecutor
 
             throw $exception;
         }
+    }
+
+    /**
+     * An audited write with no receipt, for an operation whose path is its
+     * identity - a PUT or DELETE on a natural key (#457) - so repeating it is
+     * the same write and there is nothing to replay. The write and its
+     * success audit commit together; a refusal is audited as failed, with the
+     * same categories {@see self::run()} records.
+     *
+     * @param  callable(): list<string>  $callback  the write, returning the public ids it touched
+     * @return list<string>
+     */
+    public function runIdempotentByPath(User $user, Workspace $workspace, string $clientId, string $operation, callable $callback): array
+    {
+        try {
+            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $callback): array {
+                $ids = $callback();
+                $this->audit($user, $workspace, $clientId, $operation, $ids, 'success');
+
+                return $ids;
+            });
+        } catch (Throwable $exception) {
+            $this->auditFailure($user, $workspace, $clientId, $operation, $exception);
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param  (callable(string, list<string>): list<string>)|null  $auditIds
+     * @param  list<string>  $ids
+     * @return list<string>
+     */
+    private function auditedIds(?callable $auditIds, string $operation, array $ids): array
+    {
+        return $auditIds === null ? $ids : $auditIds($operation, $ids);
     }
 
     private function canonicalize(mixed $value): mixed

@@ -15,6 +15,6 @@ class StorePaymentRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        return ReceivedPaymentData::rules(requireDate: false, includeBookkeeping: true);
+        return ReceivedPaymentData::rules(requireDate: false, includeBookkeeping: true, acceptsBodyKey: true);
     }
 }

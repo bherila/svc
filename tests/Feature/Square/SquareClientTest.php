@@ -28,6 +28,44 @@ final class SquareClientTest extends TestCase
         $this->connectSquare(null, ['workspace' => 'synthetic-workspace']);
     }
 
+    public function test_invoice_id_shapes_are_resource_specific_and_never_repaired(): void
+    {
+        Http::fake(['*' => Http::response(['ok' => true])]);
+        $client = app(SquareClient::class);
+        foreach (['_synthetic_legacy_invoice', 'SyntheticLegacyInvoice==', '_'.str_repeat('x', 188).'=='] as $id) {
+            $client->getInvoice($id);
+            Http::assertSent(static fn (Request $request): bool => $request->url() === self::SQUARE_BASE.'/v2/invoices/'.rawurlencode($id));
+            foreach ([$client->retrieveCustomer(...), $client->retrieveOrder(...), $client->getPayment(...)] as $read) {
+                try {
+                    $read($id);
+                    $this->fail('Invoice-only shapes must not broaden other resource ids.');
+                } catch (InvalidArgumentException) {
+                    $this->addToAssertionCount(1);
+                }
+            }
+        }
+        foreach ([' synthetic', 'synthetic ', 'synthetic%3D', 'synthetic/path', 'synthetic?query', 'synthetic#fragment', "synthetic\n", str_repeat('x', 192)] as $id) {
+            try {
+                $client->getInvoice($id);
+                $this->fail('Invalid ids must be refused without normalization.');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        Http::assertSentCount(3);
+    }
+
+    public function test_a_payment_refund_is_retrieved_with_a_read_only_id_bound_request(): void
+    {
+        Http::fake([self::SQUARE_BASE.'/v2/refunds/refund_synthetic' => Http::response(['refund' => ['id' => 'refund_synthetic', 'payment_id' => 'payment_synthetic']])]);
+        $result = app(SquareClient::class)->getPaymentRefund('refund_synthetic');
+        $this->assertSame('payment_synthetic', $result['refund']['payment_id']);
+        Http::assertSent(static fn (Request $request): bool => $request->method() === 'GET'
+            && $request->url() === self::SQUARE_BASE.'/v2/refunds/refund_synthetic'
+            && $request->header('Square-Version') === ['2026-09-16']);
+        Http::assertSentCount(1);
+    }
+
     public function test_every_read_sends_the_pinned_version_and_credential_to_an_allow_listed_endpoint_only(): void
     {
         Http::fake([self::SQUARE_BASE.'/*' => Http::response(['ok' => true])]);
@@ -43,6 +81,12 @@ final class SquareClientTest extends TestCase
         $client->retrieveOrder('order_fixture_1');
         $client->listPayments('2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z', 'LOCFIXTURE01', false, null, 500);
         $client->getPayment('pay_fixture_1');
+        $client->getDispute('dispute_fixture_1');
+        $client->listDisputes('dispute-cursor-fixture');
+        $client->listPayouts('LOCFIXTURE01', '2026-01-01T00:00:00Z', 'cursor-fixture', 500);
+        $client->getPayout('po_fixture_1');
+        $client->listPayoutEntries('po_fixture_1', null, 500);
+        $client->getPaymentRefund('refund_synthetic');
 
         $allowed = [];
         foreach (SquareEndpoint::cases() as $endpoint) {
@@ -50,7 +94,7 @@ final class SquareClientTest extends TestCase
         }
         $pattern = '~^(?:'.str_replace('\{id\}', '[^/?]+', implode('|', $allowed)).')(?:\?.*)?$~';
         $recorded = Http::recorded();
-        $this->assertCount(10, $recorded);
+        $this->assertCount(16, $recorded);
         foreach ($recorded as [$request]) {
             /** @var Request $request */
             $this->assertStringStartsWith(self::SQUARE_BASE.'/v2/', $request->url());
@@ -73,6 +117,12 @@ final class SquareClientTest extends TestCase
         $this->assertSame(self::SQUARE_BASE.'/v2/invoices/inv%3A0-fixture1', $recorded[6][0]->url());
         $this->assertStringContainsString('sort_order=ASC', $recorded[8][0]->url());
         $this->assertStringContainsString('limit=100', $recorded[8][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/disputes?cursor=dispute-cursor-fixture', $recorded[11][0]->url());
+        // Payouts: newest first, a page of at most 100, from the day given.
+        $this->assertSame(self::SQUARE_BASE.'/v2/payouts?location_id=LOCFIXTURE01&begin_time=2026-01-01T00%3A00%3A00Z&sort_order=DESC&cursor=cursor-fixture&limit=100', $recorded[12][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/payouts/po_fixture_1', $recorded[13][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/payouts/po_fixture_1/payout-entries?sort_order=ASC&limit=100', $recorded[14][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/refunds/refund_synthetic', $recorded[15][0]->url());
     }
 
     public function test_reads_retry_429_and_5xx_with_backoff_then_succeed(): void

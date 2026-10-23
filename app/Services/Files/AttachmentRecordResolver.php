@@ -5,6 +5,8 @@ namespace App\Services\Files;
 use App\Contracts\WorkspaceOwned;
 use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
+use App\Models\ClientCollaborationTopic;
+use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
@@ -13,14 +15,13 @@ use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\Authorization\PortalAccess;
+use App\Services\Collaboration\CollaborationRepository;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 final class AttachmentRecordResolver
 {
-    public function __construct(private readonly PortalAccess $portalAccess) {}
-
     /** @var array<string, class-string<Model>> */
     private const RECORD_CLASSES = [
         'company' => ClientCompany::class,
@@ -30,12 +31,31 @@ final class AttachmentRecordResolver
         'proposal' => 'App\\Models\\ClientProposal',
         'agreement' => 'App\\Models\\ClientAgreement',
         'invoice' => 'App\\Models\\ClientInvoice',
+        'topic' => ClientCollaborationTopic::class,
+        'comment' => ClientComment::class,
     ];
 
     /** @return list<string> */
     public static function allowedTypes(): array
     {
+        return self::uploadableTypes();
+    }
+
+    /** Reader support does not authorize creation of new parent types.
+     * @return list<string>
+     */
+    public static function readableTypes(): array
+    {
         return array_keys(self::RECORD_CLASSES);
+    }
+
+    /** @return list<string> */
+    public static function uploadableTypes(): array
+    {
+        $types = array_diff(self::readableTypes(), ['topic', 'comment']);
+
+        // @infection-ignore-all Equivalent reindex: the closed readable list removes only its final two entries, so array_diff already has consecutive keys; array_values states the list type for static analysis.
+        return array_values($types);
     }
 
     public function resolve(Workspace $workspace, string $recordType, string $recordPublicId): Model&WorkspaceOwned
@@ -51,72 +71,49 @@ final class AttachmentRecordResolver
             ->where('public_id', $recordPublicId)
             ->firstOrFail();
 
-        if ($record instanceof ClientExpense) {
-            ClientCompany::query()->where('workspace_id', $workspace->id)
+        if ($record instanceof ClientCollaborationTopic || $record instanceof ClientComment) {
+            $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($record->client_company_id)->firstOrFail();
+            $repository = app(CollaborationRepository::class);
+            if ($record instanceof ClientComment) {
+                $repository->commentParent($workspace, $company, $record);
+            } else {
+                $repository->topicProject($workspace, $company, $record);
+            }
+        } elseif ($record instanceof ClientTask) {
+            $record->setRelation('project', $this->projectIn($workspace, $record->client_project_id));
+        } elseif ($record instanceof ClientProject || $record instanceof ClientExpense
+            || $record instanceof ClientProposal || $record instanceof ClientAgreement || $record instanceof ClientInvoice) {
+            $company = ClientCompany::query()->where('workspace_id', $workspace->id)
                 ->whereKey($record->client_company_id)->firstOrFail();
+            $record->setRelation('clientCompany', $company);
+            if (($record instanceof ClientProposal || $record instanceof ClientAgreement) && $record->client_project_id !== null) {
+                $record->setRelation('project', $this->projectIn($workspace, $record->client_project_id, $company->id));
+            }
         }
 
         return $record;
     }
 
-    public function portalUserCanView(User $user, Workspace $workspace, ClientAttachment $attachment): bool
+    private function projectIn(Workspace $workspace, int $projectId, ?int $companyId = null): ClientProject
     {
-        $record = $this->resolve($workspace, $attachment->record_type, $attachment->record_public_id);
-        $company = match (true) {
-            $record instanceof ClientCompany => $record,
-            $record instanceof ClientProject => $record->clientCompany,
-            $record instanceof ClientTask => $record->project->clientCompany,
-            $record instanceof ClientProposal => $record->clientCompany,
-            $record instanceof ClientAgreement => $record->clientCompany,
-            $record instanceof ClientInvoice => $record->clientCompany,
-            default => null,
-        };
-
-        if ($company === null || ! $company->portalUsers()->whereKey($user->id)->exists()) {
-            return false;
-        }
-
-        return match (true) {
-            $record instanceof ClientCompany => false,
-            // Visibility is not enough: a project-scoped user must also have been
-            // granted this project, or a held attachment URL still resolves.
-            $record instanceof ClientProject => $record->is_visible_to_client
-                && $this->portalAccess->canViewProject($user, $record),
-            $record instanceof ClientTask => $record->is_visible_to_client
-                && $record->project->is_visible_to_client
-                && $this->portalAccess->canViewProject($user, $record->project),
-            // A proposal or agreement scoped to a project is reachable only by
-            // someone granted that project; one with no project belongs to the
-            // company and stays company-wide.
-            $record instanceof ClientProposal => $record->is_visible_to_client
-                && in_array($record->status, ['sent', 'accepted'], true)
-                && $this->portalCanReachProjectOf($user, $record->clientCompany, $record->client_project_id),
-            $record instanceof ClientAgreement => $record->is_visible_to_client
-                && in_array($record->status, ['active', 'paused', 'terminated', 'expired'], true)
-                && $this->portalCanReachProjectOf($user, $record->clientCompany, $record->client_project_id),
-            $record instanceof ClientInvoice => $record->is_visible_to_client
-                && in_array($record->status, ['issued', 'partially_paid', 'paid'], true),
-        };
+        return ClientProject::query()->where('workspace_id', $workspace->id)->whereKey($projectId)
+            ->when($companyId !== null, fn (Builder $projects): Builder => $projects->where('client_company_id', $companyId))
+            ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id))
+            ->with('clientCompany')->firstOrFail();
     }
 
-    /**
-     * Can this portal user reach a record tied to this project?
-     *
-     * Null project means the record belongs to the company rather than to any
-     * one project, and stays visible to every portal user of that company.
-     */
-    private function portalCanReachProjectOf(?User $user, ?ClientCompany $company, ?int $projectId): bool
+    public function portalUserCanView(User $user, Workspace $workspace, ClientAttachment $attachment): bool
     {
-        if ($projectId === null) {
-            return true;
-        }
+        $this->resolve($workspace, $attachment->record_type, $attachment->record_public_id);
 
-        if (! $company instanceof ClientCompany) {
-            return false;
-        }
+        return app(AttachmentReader::class)->canView($user, $workspace, $attachment, AttachmentAudience::Portal);
+    }
 
-        $allowed = $this->portalAccess->visibleProjectIds($company, $user);
+    /** A held file URL carries no authority beyond its current parent and flag. */
+    public function userCanView(User $user, Workspace $workspace, ClientAttachment $attachment): bool
+    {
+        $this->resolve($workspace, $attachment->record_type, $attachment->record_public_id);
 
-        return $allowed === null || in_array($projectId, $allowed, true);
+        return app(AttachmentReader::class)->canView($user, $workspace, $attachment, AttachmentAudience::Native);
     }
 }

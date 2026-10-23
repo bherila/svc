@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
-use App\Models\ClientCompanyMembership;
+use App\Models\ClientContact;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -22,17 +22,26 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Access\PortalInvitations;
+use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
+use App\Services\Clients\CompanyProfile;
+use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentFilePage;
+use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
+use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskEditorPresenter;
 use App\Services\WorkspaceAuthorization;
-use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -43,9 +52,7 @@ use App\Support\Files\AttachmentListing;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -231,6 +238,8 @@ class ClientDirectoryController extends Controller
         BillingRecordAccess $billing,
         InvoiceEmailService $emails,
         InvoiceCorrectionService $corrections,
+        AgentInvoicePresenter $invoices,
+        AgentPaymentPresenter $payments,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -253,10 +262,12 @@ class ClientDirectoryController extends Controller
                 ->where('workspace_id', $workspace->id)
                 ->orderBy('sort_order')
                 ->orderBy('id'),
+            'lines.project' => fn ($query) => $query->where('workspace_id', $workspace->id),
             'payments' => fn ($query) => $query
                 ->where('workspace_id', $workspace->id)
                 ->orderByDesc('received_on')
                 ->orderByDesc('id'),
+            'payments.refunds' => AgentPaymentPresenter::with($workspace)['refunds'],
         ]);
         $clientInvoice->loadExists([
             'emailDeliveries as send_has_blocking_delivery' => fn (Builder $query): Builder => $query
@@ -297,6 +308,12 @@ class ClientDirectoryController extends Controller
         // Square (#438): its collection actions are not offered at all.
         $square = $manages ? app(SquareLinkPresenter::class)->invoice($clientInvoice) : null;
         $squareCollects = $square !== null && $square['square_collects'] === true;
+        // "Reconciled in finance", for a manager: reconciliation is an owner's
+        // or admin's act, and the finance pointer is withheld from everyone
+        // else (AgentPaymentPresenter), so the badge is too.
+        $financeBadges = $manages
+            ? app(FinanceReconciliationBadges::class)->forPayments($workspace, $clientInvoice->payments)
+            : [];
 
         return Inertia::render('clients/invoice', [
             'company' => [
@@ -389,24 +406,17 @@ class ClientDirectoryController extends Controller
             // it, so a client reading "Deferred work items applied to retainer
             // (12.50 hrs)" had no way to ask which work.
             'line_detail' => InvoiceLineDetail::forInvoice($clientInvoice, InvoiceLineDetail::OPERATOR),
-            'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => [
-                'id' => $line->public_id,
-                'type' => $line->type,
-                'description' => $line->description,
-                'quantity' => (float) $line->quantity,
+            // Each line and payment exactly as the API presents it (#454): the
+            // same presenter, so the screen and invoices.get / payments.list
+            // cannot drift. The screen only adds what is its own - the hours
+            // and day a line carries for the appendix, and the finished URLs
+            // of what this viewer may do.
+            'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => ['id' => $line->public_id] + $invoices->line($line) + [
                 'hours' => $line->hours === null ? null : (float) $line->hours,
                 'line_date' => $line->line_date?->toDateString(),
-                'unit_amount' => (int) $line->unit_amount,
-                'tax_amount' => (int) $line->tax_amount,
-                'total_amount' => (int) $line->total_amount,
                 'money_correctable' => in_array($line->public_id, $moneyCorrectable, true),
             ])->values()->all(),
-            'payments' => $clientInvoice->payments->map(fn (ClientInvoicePayment $payment): array => [
-                'id' => $payment->public_id,
-                'status' => $payment->status,
-                'method' => $payment->method,
-                'reference' => $payment->reference,
-                'received_on' => $payment->received_on?->toDateString(),
+            'payments' => $clientInvoice->payments->map(fn (ClientInvoicePayment $payment): array => $payments->present($payment, $clientInvoice, $manages) + [
                 // A finished URL, and null for a viewer who cannot manage the
                 // workspace - the browser assembles nothing and interprets no
                 // boolean. It corrects the date and only the date; what a
@@ -415,9 +425,10 @@ class ClientDirectoryController extends Controller
                 'correct_date_href' => $manages
                     ? $base.'/payments/'.$payment->public_id.'/received-on'
                     : null,
-                'amount' => (int) $payment->amount,
-                'refunded_amount' => (int) $payment->refunded_amount,
-                'currency' => $payment->currency,
+                // Null unless the finance system holds an active allocation of
+                // this payment; then the finished links to its transactions,
+                // empty when no link template is configured.
+                'finance_reconciliation' => $financeBadges[(int) $payment->id] ?? null,
             ])->values()->all(),
         ]);
     }
@@ -447,6 +458,7 @@ class ClientDirectoryController extends Controller
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
         BillingRecordAccess $billing,
+        DeferredBacklogReadService $deferredBacklogs,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -482,6 +494,15 @@ class ClientDirectoryController extends Controller
         // assemble - and every endpoint behind one authorizes again.
         $manages = Gate::forUser($user)->allows('manage', $workspace);
         $attachmentBase = "/workspaces/{$workspace->public_id}/attachments";
+        // Legacy malformed project references remain inspectable as terms,
+        // without resolving another company's name or authorizing its files.
+        $validFileParent = $clientAgreement->client_project_id === null || $projectNames->has((int) $clientAgreement->client_project_id)
+            || ClientProject::query()->where('workspace_id', $workspace->id)->where('client_company_id', $clientCompany->id)
+                ->whereKey($clientAgreement->client_project_id)->exists();
+        $filePage = $validFileParent
+            ? AttachmentListing::page($workspace, 'agreement', $clientAgreement->public_id, $manages, $user, AttachmentAudience::Native,
+                $request->integer('files_page', 1), route('clients.agreement', [$workspace, $clientCompany, $clientAgreement], absolute: false))
+            : new AttachmentFilePage([], null, null);
 
         return Inertia::render('clients/agreement', [
             'company' => [
@@ -497,11 +518,17 @@ class ClientDirectoryController extends Controller
                 'update' => $manages
                     ? route('svc.engagement.agreements.update', [$workspace, $clientAgreement], absolute: false)
                     : null,
-                'upload_file' => $manages
+                'deferred_buydown' => $manages ? [
+                    'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
+                    'create' => route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $clientAgreement], absolute: false),
+                ] : null,
+                'upload_file' => $manages && $validFileParent
                     ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
                     : null,
             ],
-            'files' => AttachmentListing::for($workspace, 'agreement', (string) $clientAgreement->public_id, $manages),
+            'files' => $filePage->files,
+            'files_next_href' => $filePage->nextHref,
+            'files_previous_href' => $filePage->previousHref,
             'agreement' => $this->agreements->present($clientAgreement, $projectNames->get((int) $clientAgreement->client_project_id)) + [
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero
@@ -539,8 +566,10 @@ class ClientDirectoryController extends Controller
                     : (int) $clientAgreement->period_retainer_amount,
                 'agreement_text' => $clientAgreement->agreement_text,
                 'is_visible_to_client' => (bool) $clientAgreement->is_visible_to_client,
+                'show_deferred_backlog_to_client' => (bool) $clientAgreement->show_deferred_backlog_to_client,
                 // Billed in Square (#438): SVC issues, Square collects.
                 'square_series_key' => $clientAgreement->square_series_key,
+                'square_location_id' => $clientAgreement->square_location_id,
             ],
             'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
                 'id' => $item->public_id,
@@ -553,6 +582,9 @@ class ClientDirectoryController extends Controller
                 'expires_on' => $item->expires_on?->toDateString(),
                 'is_active' => (bool) $item->is_active,
             ])->values()->all(),
+            // What termination would collect and charge today (#366), priced
+            // at the agreement's rate, so a manager's alone.
+            'deferred_backlog' => $manages ? $deferredBacklogs->trailing($workspace, $clientAgreement) : null,
         ]);
     }
 
@@ -645,7 +677,12 @@ class ClientDirectoryController extends Controller
             ->where('client_project_id', $clientProject->id)
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->limit(26)->get();
+        $moreTasks = $tasks->count() > 25;
+        if ($moreTasks) {
+            $tasks->pop();
+        }
 
         // One grouped query rather than one per status, so the cost does not
         // follow the number of statuses anyone invents later.
@@ -667,8 +704,13 @@ class ClientDirectoryController extends Controller
 
         $projectNames = collect([$clientProject->id => $clientProject->name]);
 
+        $canManageTasks = app(TaskAccess::class)->canManage($user, $workspace, $clientProject);
+
         return Inertia::render('clients/project', [
             'workspace' => ['id' => $workspace->public_id],
+            'task_management' => $canManageTasks
+                ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject)]]
+                : null,
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -686,7 +728,12 @@ class ClientDirectoryController extends Controller
                 'status' => $task->status,
                 'is_visible_to_client' => (bool) $task->is_visible_to_client,
                 'completed_at' => $task->completed_at?->toDateString(),
+                'starts_on' => $task->starts_on?->toDateString(),
+                'due_on' => $task->due_on?->toDateString(),
+                'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
+            'tasks_next_href' => $moreTasks ? route('clients.tasks', [$workspace, $clientCompany, 'project' => $clientProject->public_id]) : null,
             'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
                 'status' => (string) $row->status,
                 'minutes' => (int) $row->getAttribute('total_minutes'),
@@ -766,7 +813,22 @@ class ClientDirectoryController extends Controller
             ->map(fn (mixed $membership): ?User => $membership->user)
             ->filter(fn (?User $member): bool => $member instanceof User);
 
+        $contacts = ClientContact::query()->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->orderBy('is_archived')->orderBy('last_name')->orderBy('first_name')->get();
+
         return Inertia::render('clients/settings', [
+            'company_profile' => app(CompanyProfile::class)->read($clientCompany),
+            'profile_action' => route('clients.profile.update', [$workspace, $clientCompany]),
+            'contact_create_action' => route('contacts.store', [$workspace, $clientCompany]),
+            'contacts' => $contacts->map(fn (ClientContact $contact): array => [
+                'id' => $contact->public_id,
+                'first_name' => $contact->first_name, 'last_name' => $contact->last_name,
+                'title' => $contact->title, 'email' => $contact->email,
+                'phone' => $contact->phone, 'notes' => $contact->notes,
+                'is_archived' => $contact->is_archived, 'lock_version' => $contact->lock_version,
+                'update_action' => route('contacts.update', [$workspace, $clientCompany, $contact]),
+            ])->all(),
             'workspace' => ['id' => $workspace->public_id],
             'company' => [
                 'id' => $clientCompany->public_id,
@@ -843,48 +905,21 @@ class ClientDirectoryController extends Controller
 
     /**
      * Who can use this client's portal, and what each of them reaches, with
-     * the finished URLs the settings page posts to. Three queries: the
-     * memberships, their people, and every project limit at once - and, with
-     * portal invitations on, one more for the open and not-applied ones.
+     * the finished `/api/v1` URLs the settings page sends its changes to
+     * (#385). Each contact is the API's own presentation, carrying the version
+     * a change or removal must name; with portal invitations on, one more
+     * query for the open and not-applied invitations.
      *
      * @return array{add_url: string, members: list<array<string, mixed>>, invite_url: string|null, invitations: list<array<string, mixed>>, invitation_pagination: array{next_url: string|null, previous_url: string|null}}
      */
     private function portalAccess(Workspace $workspace, ClientCompany $clientCompany): array
     {
-        $memberships = ClientCompanyMembership::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->with('user')
-            ->orderBy('id')
-            ->get();
-
-        $limits = DB::table('client_portal_project_access')
-            ->join('client_projects', function (JoinClause $join): void {
-                $join->on('client_projects.id', '=', 'client_portal_project_access.client_project_id')
-                    ->on('client_projects.workspace_id', '=', 'client_portal_project_access.workspace_id');
-            })
-            ->where('client_portal_project_access.workspace_id', $workspace->id)
-            ->whereIn('client_portal_project_access.client_company_membership_id', $memberships->pluck('id')->all())
-            ->orderBy('client_projects.name')
-            ->get(['client_portal_project_access.client_company_membership_id as membership_id', 'client_projects.public_id'])
-            ->groupBy('membership_id');
-
-        $base = '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-access';
+        $client = [$workspace, $clientCompany->public_id];
 
         return [
-            'add_url' => $base,
-            'members' => array_values($memberships
-                ->filter(fn (ClientCompanyMembership $membership): bool => $membership->user instanceof User)
-                ->map(fn (ClientCompanyMembership $membership): array => [
-                    'id' => $membership->user->public_id,
-                    'name' => $membership->user->name,
-                    'email' => $membership->user->email,
-                    // Anything but `projects` reaches the whole client, as PortalAccess reads it.
-                    'scope' => $membership->access_scope === PortalAccessScope::Projects->value ? PortalAccessScope::Projects->value : PortalAccessScope::Company->value,
-                    'projects' => $limits->get($membership->id, collect())->pluck('public_id')->map(strval(...))->values()->all(),
-                    'url' => $base.'/'.$membership->user->public_id,
-                ])->all()),
-            'invite_url' => PortalInvitations::enabled() ? '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-invitations' : null,
+            'add_url' => route('agent-api.v1.clients.portal-access.store', $client, absolute: false),
+            'members' => app(AgentPortalContactReadService::class)->all($workspace, $clientCompany),
+            'invite_url' => PortalInvitations::enabled() ? route('agent-api.v1.clients.portal-invitations.store', $client, absolute: false) : null,
             ...(PortalInvitations::enabled() ? $this->portalInvitations($workspace, $clientCompany) : [
                 'invitations' => [],
                 'invitation_pagination' => ['next_url' => null, 'previous_url' => null],
@@ -903,7 +938,6 @@ class ClientDirectoryController extends Controller
      */
     private function portalInvitations(Workspace $workspace, ClientCompany $clientCompany): array
     {
-        $base = '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-invitations/';
         $invitations = ClientPortalInvitation::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $clientCompany->id)
@@ -918,8 +952,9 @@ class ClientDirectoryController extends Controller
             ->whereIn('id', $invitations->flatMap(static fn (ClientPortalInvitation $invitation): array => $invitation->projectIds())->unique()->values()->all())
             ->pluck('public_id', 'id');
 
-        $rows = array_values($invitations->getCollection()->map(static function (ClientPortalInvitation $invitation) use ($base, $projects): array {
+        $rows = array_values($invitations->getCollection()->map(static function (ClientPortalInvitation $invitation) use ($workspace, $clientCompany, $projects): array {
             $status = $invitation->currentStatus();
+            $route = [$workspace, $clientCompany->public_id, $invitation->public_id];
 
             return [
                 'id' => $invitation->public_id,
@@ -933,8 +968,8 @@ class ClientDirectoryController extends Controller
                 'expires_at' => $invitation->expires_at?->toIso8601String(),
                 'email_sent' => $invitation->email_sent,
                 'link' => $status === PortalInvitationStatus::Pending ? $invitation->link : null,
-                'resend_url' => $status->isOpen() ? $base.$invitation->public_id.'/resend' : null,
-                'revoke_url' => $base.$invitation->public_id,
+                'resend_url' => $status->isOpen() ? route('agent-api.v1.clients.portal-invitations.resend', $route, absolute: false) : null,
+                'revoke_url' => route('agent-api.v1.clients.portal-invitations.destroy', $route, absolute: false),
             ];
         })->all());
 
@@ -994,9 +1029,14 @@ class ClientDirectoryController extends Controller
             ->whereIn('client_project_id', $scope->pluck('id')->all())
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->simplePaginate(50)->appends($selected === null ? [] : ['project' => $selected->public_id]);
 
         $projectNames = $projects->pluck('name', 'id');
+
+        $manageable = app(TaskAccess::class)->manageableProjectIds($user, $workspace);
+        $taskProjects = $projects->filter(fn (ClientProject $project): bool => $manageable === null || in_array((int) $project->id, $manageable, true))->values();
+        $taskProjectIds = array_fill_keys($taskProjects->modelKeys(), true);
 
         return Inertia::render('clients/tasks', [
             'company' => [
@@ -1007,6 +1047,9 @@ class ClientDirectoryController extends Controller
             // disclosure, which is meaningless on the copy of this screen the
             // client is reading.
             'audience' => 'operator',
+            'task_management' => $taskProjects->isNotEmpty()
+                ? ['projects' => $taskProjects->map(fn (ClientProject $project): array => app(TaskEditorPresenter::class)->project($workspace, $project))->values()->all()]
+                : null,
             'filters' => [
                 'project_id' => $selected?->public_id,
             ],
@@ -1021,7 +1064,12 @@ class ClientDirectoryController extends Controller
                 'project' => $projectNames[$task->client_project_id] ?? null,
                 'is_visible_to_client' => (bool) $task->is_visible_to_client,
                 'completed_at' => $task->completed_at?->toDateString(),
+                'starts_on' => $task->starts_on?->toDateString(),
+                'due_on' => $task->due_on?->toDateString(),
+                'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
+            'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
     }
 
