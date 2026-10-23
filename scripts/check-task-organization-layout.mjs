@@ -334,11 +334,13 @@ try {
                 await page.keyboard.press('Escape');
                 await expect(page.getByRole('dialog')).toHaveCount(0);
             }
+
             const staffQueries = [];
             const staffPath = new URL(fixture.advisory_assignees_page, origin)
                 .pathname;
             page.on('request', (request) => {
                 const url = new URL(request.url());
+
                 if (url.origin === origin && url.pathname === staffPath) {
                     staffQueries.push(url.searchParams.get('q'));
                 }
@@ -351,6 +353,7 @@ try {
             const search = page.getByLabel('Find staff with project access');
             const staffResponse = page.waitForResponse((response) => {
                 const actual = new URL(response.url());
+
                 return (
                     actual.origin === origin &&
                     actual.pathname === staffPath &&
