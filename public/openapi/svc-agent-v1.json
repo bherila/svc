@@ -11758,6 +11758,1157 @@
                 "x-mcp-tool": "square.sync"
             }
         },
+        "/workspaces/{workspace}/projects/{project}/task-organization": {
+            "get": {
+                "operationId": "task_organization.get",
+                "description": "Read current lists, task containment and opaque graph/container versions. Internal project managers only; Portal and dual Agent identities are refused. Up to 1,000 retained tasks, 100 retained lists and 100 siblings; unsupported sizes fail explicitly. Request container=true with nullable parent_id/list_id for one complete sibling group.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "container",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    {
+                        "name": "parent_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "list_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_organization.get",
+                "x-svc-flags": [
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.get"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-organization/lists/{list}": {
+            "delete": {
+                "operationId": "task_organization.lists.archive",
+                "description": "After explicit confirmation, archive a list using current list and graph versions. Tasks remain in place and are hidden from clients while archived.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationListArchiveRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "list",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "task_organization.lists.archive",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.lists.archive"
+            },
+            "patch": {
+                "operationId": "task_organization.lists.update",
+                "description": "Update a list name or client visibility using current list and graph versions. Tasks retain their own sharing choices; publishing a containing list can reveal already-shared tasks.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationListUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "list",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_organization.lists.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.lists.update"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-organization/lists": {
+            "post": {
+                "operationId": "task_organization.lists.create",
+                "description": "Create an internal task list using the current graph version. Client visibility is false when omitted.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationListCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_organization.lists.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.lists.create"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-organization/lists/order": {
+            "put": {
+                "operationId": "task_organization.lists.reorder",
+                "description": "Supply every active list ID exactly once with the rendered lists_version as expected_container_version. Archived lists are excluded.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationListOrderRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_organization.lists.reorder",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.lists.reorder"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-organization/lists/{list}/restore": {
+            "post": {
+                "operationId": "task_organization.lists.restore",
+                "description": "Restore a list using current list and graph versions. Saved list and task sharing choices are preserved.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationListRestoreRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "list",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_organization.lists.restore",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.lists.restore"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-organization/tasks": {
+            "post": {
+                "operationId": "task_organization.tasks.create",
+                "description": "Create a task in the supplied nullable parent/list container using the current graph version. New tasks are internal by default. Assignment grants no access.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationTaskCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_organization.tasks.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.tasks.create"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-organization/tasks/{task}/container": {
+            "patch": {
+                "operationId": "task_organization.tasks.move",
+                "description": "Move one task and its descendants within this project using current task and graph versions. Cycles, excessive depth and incompatible containers are refused. Sharing flags and billing facts remain unchanged.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationTaskMoveRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/TaskId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_organization.tasks.move",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.tasks.move"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-organization/tasks/order": {
+            "put": {
+                "operationId": "task_organization.tasks.reorder",
+                "description": "Supply every current sibling task ID exactly once with the rendered container version. Omitted, duplicate, foreign and stale IDs are refused.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskOrganizationTaskOrderRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskOrganizationMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or record is unavailable, or task organization is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A supplied opaque version is stale or the idempotency key was used for another request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, container, complete order, confirmation or supported size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_organization.tasks.reorder",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_ORGANIZATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "task_organization.tasks.reorder"
+            }
+        },
         "/workspaces/{workspace}/projects/{project}/tasks": {
             "post": {
                 "operationId": "tasks.create",
@@ -24515,6 +25666,13 @@
                             }
                         },
                         "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
+                    },
+                    "completion_advisory": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks."
                     }
                 }
             },
@@ -24583,6 +25741,446 @@
                     },
                     "meta": {
                         "$ref": "#/components/schemas/PaginationMeta"
+                    }
+                }
+            },
+            "TaskOrganizationListArchiveRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_graph_version",
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "TaskOrganizationListCreateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_graph_version",
+                    "name"
+                ],
+                "properties": {
+                    "expected_graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                }
+            },
+            "TaskOrganizationListOrderRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_container_version",
+                    "ordered_ids"
+                ],
+                "properties": {
+                    "expected_container_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "ordered_ids": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "uniqueItems": true,
+                        "items": {
+                            "$ref": "#/components/schemas/Uuid"
+                        }
+                    }
+                }
+            },
+            "TaskOrganizationListRestoreRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_graph_version",
+                    "expected_version"
+                ],
+                "properties": {
+                    "expected_graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    }
+                }
+            },
+            "TaskOrganizationListUpdateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_graph_version",
+                    "expected_version"
+                ],
+                "properties": {
+                    "expected_graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "TaskOrganizationMutationResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "affected_ids"
+                        ],
+                        "properties": {
+                            "affected_ids": {
+                                "type": "array",
+                                "maxItems": 1000,
+                                "items": {
+                                    "$ref": "#/components/schemas/Uuid"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "TaskOrganizationResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "project_id",
+                            "graph_version",
+                            "lists_version",
+                            "lists",
+                            "tree",
+                            "container"
+                        ],
+                        "properties": {
+                            "project_id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "graph_version": {
+                                "$ref": "#/components/schemas/Version"
+                            },
+                            "lists_version": {
+                                "$ref": "#/components/schemas/Version"
+                            },
+                            "lists": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "name",
+                                        "is_visible_to_client",
+                                        "archived",
+                                        "version"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "$ref": "#/components/schemas/Uuid"
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 255
+                                        },
+                                        "is_visible_to_client": {
+                                            "type": "boolean"
+                                        },
+                                        "archived": {
+                                            "type": "boolean"
+                                        },
+                                        "version": {
+                                            "$ref": "#/components/schemas/Version"
+                                        }
+                                    }
+                                }
+                            },
+                            "tree": {
+                                "type": "array",
+                                "maxItems": 1000,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "parent_id",
+                                        "list_id",
+                                        "position",
+                                        "version"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "$ref": "#/components/schemas/Uuid"
+                                        },
+                                        "parent_id": {
+                                            "anyOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/Uuid"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "list_id": {
+                                            "anyOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/Uuid"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "position": {
+                                            "type": "integer"
+                                        },
+                                        "version": {
+                                            "$ref": "#/components/schemas/Version"
+                                        }
+                                    }
+                                }
+                            },
+                            "container": {
+                                "anyOf": [
+                                    {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "parent_id",
+                                            "list_id",
+                                            "version",
+                                            "tasks"
+                                        ],
+                                        "properties": {
+                                            "parent_id": {
+                                                "anyOf": [
+                                                    {
+                                                        "$ref": "#/components/schemas/Uuid"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "list_id": {
+                                                "anyOf": [
+                                                    {
+                                                        "$ref": "#/components/schemas/Uuid"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "version": {
+                                                "$ref": "#/components/schemas/Version"
+                                            },
+                                            "tasks": {
+                                                "type": "array",
+                                                "maxItems": 100,
+                                                "items": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "id",
+                                                        "title",
+                                                        "status",
+                                                        "is_visible_to_client",
+                                                        "version"
+                                                    ],
+                                                    "properties": {
+                                                        "id": {
+                                                            "$ref": "#/components/schemas/Uuid"
+                                                        },
+                                                        "title": {
+                                                            "type": "string",
+                                                            "maxLength": 255
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "open",
+                                                                "in_progress",
+                                                                "completed"
+                                                            ]
+                                                        },
+                                                        "is_visible_to_client": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "version": {
+                                                            "$ref": "#/components/schemas/Version"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "TaskOrganizationTaskCreateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_graph_version",
+                    "parent_id",
+                    "list_id",
+                    "task"
+                ],
+                "properties": {
+                    "expected_graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "parent_id": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "list_id": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "task": {
+                        "$ref": "#/components/schemas/TaskCreateRequest"
+                    }
+                }
+            },
+            "TaskOrganizationTaskMoveRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_graph_version",
+                    "expected_version",
+                    "parent_id",
+                    "list_id"
+                ],
+                "properties": {
+                    "expected_graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "parent_id": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "list_id": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                }
+            },
+            "TaskOrganizationTaskOrderRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_container_version",
+                    "parent_id",
+                    "list_id",
+                    "ordered_ids"
+                ],
+                "properties": {
+                    "expected_container_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "parent_id": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "list_id": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "ordered_ids": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "uniqueItems": true,
+                        "items": {
+                            "$ref": "#/components/schemas/Uuid"
+                        }
                     }
                 }
             },

@@ -56,6 +56,7 @@ export default function ClientProjectDetail({
     agreements,
     task_management = null,
     tasks_next_href = null,
+    organization_href = null,
 }: {
     workspace: { id: string };
     company: { id: string; name: string };
@@ -69,6 +70,7 @@ export default function ClientProjectDetail({
     tasks: ProjectTask[];
     task_management?: { projects: TaskEditorProject[] } | null;
     tasks_next_href?: string | null;
+    organization_href?: string | null;
     time: TimeByStatus[];
     agreements: CompanyAgreement[];
 }) {
@@ -153,6 +155,17 @@ export default function ClientProjectDetail({
                     <CardHeader>
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <CardTitle>Tasks</CardTitle>
+                            {organization_href !== null && (
+                                <Link
+                                    href={organization_href}
+                                    className={buttonVariants({
+                                        variant: 'outline',
+                                        size: 'sm',
+                                    })}
+                                >
+                                    Organize tasks
+                                </Link>
+                            )}
                             {task_management !== null && (
                                 <TaskCreateDialog
                                     projects={task_management.projects}
