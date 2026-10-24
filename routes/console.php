@@ -32,6 +32,11 @@ Schedule::command('svc:billing:dispatch-invoice-emails --apply --limit=50')->eve
 // Payment reminder cadences (#438), off until enabled per client. Each step is
 // claimed once per invoice, so an overlapping or repeated run sends nothing twice.
 Schedule::command('svc:billing:send-payment-reminders --apply --limit=50')->everyFifteenMinutes()->withoutOverlapping(30);
+// Cadence-period drafts for recurring agreements whose current period has
+// started with no invoice, withheld until svc.billing.scheduled_cadence_drafts
+// is on. Hourly, so the first of the month is reached in every workspace's own
+// time zone; drafts only - issuing and sending stay an operator's.
+Schedule::command('svc:billing:generate-cadence-drafts --apply --limit=50')->hourly()->when(static fn (): bool => (bool) config('svc.billing.scheduled_cadence_drafts'))->withoutOverlapping(30);
 // The read-only Square mirror (#438): no more often than every 15 minutes.
 // The lock expires well before a day so a crashed run cannot stall the next.
 Schedule::command('svc:square:sync --apply')->everyFifteenMinutes()->withoutOverlapping(30);

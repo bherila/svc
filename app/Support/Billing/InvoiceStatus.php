@@ -145,4 +145,17 @@ enum InvoiceStatus: string
 
         return $status === null || $status->hasCharged();
     }
+
+    /**
+     * Does a stored status keep its cadence period from being generated again?
+     *
+     * Every status but void, and an unrecognised value answers yes. This
+     * guards against billing a period twice, so a status this code does not
+     * understand must block rather than be read as absent - which is what
+     * enumerating {@see live()} in the query would do.
+     */
+    public static function claimsPeriod(mixed $value): bool
+    {
+        return $value !== self::Void->value;
+    }
 }
