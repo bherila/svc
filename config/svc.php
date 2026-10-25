@@ -30,6 +30,16 @@ return [
         'scheduled_apply' => (bool) env('SVC_PROCESSOR_MOVEMENTS_SCHEDULED_APPLY', false),
     ],
 
+    // The hourly scheduled `svc:billing:generate-cadence-drafts --apply`: a
+    // draft for each recurring agreement whose current period has started with
+    // no invoice. Drafts only - nothing is issued or sent. Off by default so a
+    // deployment previews the command first; read when each run is due, so
+    // turning it on or off needs a config re-cache, not a deploy. Manual runs
+    // of the command are unaffected.
+    'billing' => [
+        'scheduled_cadence_drafts' => (bool) env('SVC_BILLING_SCHEDULED_CADENCE_DRAFTS', false),
+    ],
+
     // The external finance system that reconciles payments, as SVC shows it.
     // A payment with an active allocation from `external_system` is badged
     // "Reconciled in finance" on its invoice screen, linked to each
