@@ -5,7 +5,6 @@ namespace App\Console\Commands\Billing;
 use App\Console\Commands\MutationCommand;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
-use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\CadencePeriodGuard;
@@ -104,8 +103,7 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
             try {
                 [$company, $record, $start] = $guard->lock($workspace, $agreement->public_id, $cycle->start->toDateString(), null);
                 $draft = $cadence->generateCadencePeriod($company, $record, $start);
-                $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($draft->id)
-                    ->with(['lines.timeEntries' => fn ($entries) => $entries->where('is_billable', true)->select('client_time_entries.id'), 'lines.tasks:id,client_invoice_line_id'])->firstOrFail();
+                $draft = EmptyCadenceDraft::load($workspace, $draft);
                 if (EmptyCadenceDraft::billsNothing($draft)) {
                     $skipped[] = $period;
 
