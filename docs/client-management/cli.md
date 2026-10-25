@@ -215,6 +215,18 @@ php artisan svc:billing:rehearse-generation --workspace=<workspace public id> --
 
 A company with no agreement in force, ended, or starting within the month is listed as skipped, not failed.
 
+## Generate Cadence Drafts
+
+Creates the draft for every active recurring agreement whose current cadence period has started with no non-void invoice — the periods `billing_audit.stale_and_missing` reports missing — through the same guard and engine as `invoices.generate_period`. It only creates drafts: nothing is issued or sent. Agreements with an active billing schedule are skipped, because their schedule issues their invoices, and older gaps are left for an operator to look at.
+
+```bash
+php artisan svc:billing:generate-cadence-drafts                      # list what it would create
+php artisan svc:billing:generate-cadence-drafts --apply              # create the drafts
+php artisan svc:billing:generate-cadence-drafts --workspace=<workspace public id> --limit=10 --apply
+```
+
+Each period commits on its own. A refusal is logged, reported with its reason, retried on the next run, and makes the command exit non-zero. `--limit` caps the drafts created, not the periods attempted, so a period that keeps being refused never holds back the agreements after it. The scheduler runs it hourly with `--apply` once `SVC_BILLING_SCHEDULED_CADENCE_DRAFTS=true` (`svc.billing.scheduled_cadence_drafts`). Running it by hand works whether or not the flag is on.
+
 ## Retired client-management commands
 
 The old `client-management:*` commands documented here no longer exist. Use the
