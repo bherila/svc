@@ -6,12 +6,12 @@ use App\Console\Commands\MutationCommand;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
-use App\Models\ClientInvoiceLine;
 use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\CadencePeriodGuard;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\UncoveredCadencePeriods;
+use App\Support\Billing\EmptyCadenceDraft;
 use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -106,7 +106,7 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
                 $draft = $cadence->generateCadencePeriod($company, $record, $start);
                 $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($draft->id)
                     ->with(['lines.timeEntries' => fn ($entries) => $entries->where('is_billable', true)->select('client_time_entries.id'), 'lines.tasks:id,client_invoice_line_id'])->firstOrFail();
-                if (self::billsNothing($draft)) {
+                if (EmptyCadenceDraft::billsNothing($draft)) {
                     $skipped[] = $period;
 
                     continue;
@@ -154,18 +154,5 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
         }
 
         return $failed === [] ? self::SUCCESS : self::FAILURE;
-    }
-
-    /**
-     * Would this draft ask the client for nothing at all? A $0 retainer with no
-     * priced line, no billable time and no milestone is a draft an operator
-     * would only have to discard; billable time at a $0 rate still counts as
-     * something billed, and non-billable time alone does not.
-     */
-    private static function billsNothing(ClientInvoice $draft): bool
-    {
-        return (int) $draft->total_amount === 0 && $draft->lines->every(
-            static fn (ClientInvoiceLine $line): bool => $line->total_amount === 0 && $line->timeEntries->isEmpty() && $line->tasks->isEmpty(),
-        );
     }
 }
