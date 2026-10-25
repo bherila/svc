@@ -46,7 +46,8 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $preview = $this->run_([]);
         $this->assertSame(0, $preview['exit']);
         $this->assertTrue($preview['dry_run']);
-        $this->assertSame([['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'period_start' => '2026-10-01', 'period_end' => '2026-10-31']], $preview['would_generate']);
+        $this->assertCount(1, $preview['would_generate']);
+        $this->assertSame(['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'period_start' => '2026-10-01', 'period_end' => '2026-10-31'], array_diff_key($preview['would_generate'][0], ['total_amount' => true, 'currency' => true]));
         $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
 
         $applied = $this->run_(['--apply' => true]);
@@ -54,6 +55,7 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $this->assertCount(1, $applied['generated']);
         $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->sole();
         $this->assertSame($draft->public_id, $applied['generated'][0]['invoice_id']);
+        $this->assertSame((int) $draft->total_amount, $preview['would_generate'][0]['total_amount'], 'The preview ran the engine it previews.');
         $this->assertSame('draft', $draft->status);
         $this->assertSame('cadence_period', $draft->invoice_kind);
         $this->assertSame('2026-10-01', $draft->cycle_start->toDateString());
@@ -85,7 +87,7 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $this->assertCount(2, $missing);
 
         $preview = $this->run_([]);
-        $this->assertEqualsCanonicalizing($missing, array_map(static fn (array $row): array => array_diff_key($row, ['workspace_id' => true]), $preview['would_generate']));
+        $this->assertEqualsCanonicalizing($missing, array_map(static fn (array $row): array => array_diff_key($row, ['workspace_id' => true, 'total_amount' => true, 'currency' => true]), $preview['would_generate']));
 
         $this->run_(['--apply' => true]);
         $this->assertSame([], $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/billing-audits/stale-and-missing')->assertOk()->json('data.missing_periods'));
@@ -141,7 +143,9 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         // An inactive schedule bills nothing, so its agreement is the command's again.
         $schedule->forceFill(['is_active' => false])->save();
         $billed[0]->forceFill(['status' => 'void'])->save();
-        $this->assertContains($scheduled->public_id, array_column($this->run_([])['would_generate'], 'agreement_id'));
+        // It has no retainer, so with nothing billed in September it is the
+        // command's to report rather than to create.
+        $this->assertContains($scheduled->public_id, array_column($this->run_([])['nothing_to_bill'], 'agreement_id'));
     }
 
     public function test_one_refusal_neither_blocks_nor_undoes_another_agreement_and_fails_the_run(): void
@@ -158,6 +162,35 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $this->assertSame([$healthy->public_id], array_column($applied['generated'], 'agreement_id'));
         $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)->count());
         $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $healthy->id)->where('status', 'draft')->count());
+    }
+
+    /**
+     * A $0 retainer with nothing billable in its period would be a draft for an
+     * operator to discard, so it is reported and not created - until billable
+     * work arrives, even at a $0 rate. Non-billable work alone bills nothing.
+     */
+    public function test_a_period_with_nothing_to_bill_is_reported_and_not_created(): void
+    {
+        // The empty period comes first in the run order.
+        [$workspace, , $hourly, $zero, $project] = $this->fixture();
+        $zero->forceFill(['retainer_minutes' => 0, 'retainer_amount' => 0])->save();
+        $retainer = $this->agreement($workspace, $this->client($workspace, 'retainer'));
+        $this->entry($workspace, $hourly, $project, '2026-09-10', 30)->forceFill(['is_billable' => false])->save();
+
+        foreach ([[], ['--apply' => true]] as $options) {
+            $run = $this->run_($options + ['--limit' => 1]);
+            $this->assertSame(0, $run['exit']);
+            $this->assertSame([$zero->public_id], array_column($run['nothing_to_bill'], 'agreement_id'));
+            $this->assertSame([$retainer->public_id], array_column($run[$options === [] ? 'would_generate' : 'generated'], 'agreement_id'), 'Nothing to bill takes no --limit slot.');
+        }
+        $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $zero->id)->count());
+        $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->count(), 'Rolling the empty draft back left the other agreement\'s draft committed.');
+
+        $this->entry($workspace, $hourly, $project, '2026-09-11', 60)->forceFill(['billing_rate_amount' => 0])->save();
+        $priced = $this->run_(['--apply' => true]);
+        $this->assertSame([], $priced['nothing_to_bill']);
+        $this->assertSame([$zero->public_id], array_column($priced['generated'], 'agreement_id'), 'Billable time at a $0 rate is still something billed.');
+        $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $zero->id)->where('status', 'draft')->count());
     }
 
     public function test_a_refused_period_does_not_use_a_limit_slot(): void

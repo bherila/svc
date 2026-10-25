@@ -1254,7 +1254,10 @@ Where a deployment turns on `SVC_BILLING_SCHEDULED_CADENCE_DRAFTS`
 every active recurring agreement whose *current* period has started with no
 non-void invoice, through the same guard and engine as
 `invoices.generate_period`, and skips any agreement with an active billing
-schedule, which issues its own invoices. It only creates drafts: issuing and
+schedule, which issues its own invoices. A period whose draft would bill
+nothing - a $0 retainer with no priced line, billable time or milestone - is
+rolled back and reported rather than created, and stays in the audit's missing
+periods. It only creates drafts: issuing and
 sending stay an operator's. It does not reach back for older gaps. A refusal is
 logged and retried on the next run. With the flag off, or for an older period,
 a started period without a draft is waiting for an agent or operator to call

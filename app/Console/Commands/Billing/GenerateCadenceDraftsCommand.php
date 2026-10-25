@@ -5,6 +5,8 @@ namespace App\Console\Commands\Billing;
 use App\Console\Commands\MutationCommand;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\CadencePeriodGuard;
@@ -35,6 +37,11 @@ use Throwable;
  * billing it, and the schedule halts on a pending draft. Only the period
  * containing today is considered; an older gap may have been settled off the
  * books and is an operator's to reopen.
+ *
+ * A period whose draft would bill nothing - a $0 retainer with no priced line,
+ * billable time or milestone - is rolled back and reported, not created: it
+ * would only be a draft for an operator to discard. The audit still reports
+ * the period, and the next run looks again in case billable work arrives.
  *
  * Every period commits or rolls back on its own, so one agreement's refusal
  * neither undoes nor blocks another's draft. A refusal is logged, makes the
@@ -76,6 +83,7 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
         }
 
         $generated = [];
+        $skipped = [];
         $failed = [];
         $remaining = 0;
         foreach ($due as $position => [$workspace, $agreement, $cycle]) {
@@ -88,18 +96,26 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
                 break;
             }
             $period = ['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'period_start' => $cycle->start->toDateString(), 'period_end' => $cycle->end->toDateString()];
-            if (! $this->applying()) {
-                $generated[] = $period;
-
-                continue;
-            }
+            // A preview generates too and always rolls back, as
+            // invoices.preview_period does, so it reports the refusals and
+            // the drafts billing nothing that an applied run would.
+            DB::beginTransaction();
+            $committed = false;
             try {
-                $draft = DB::transaction(function () use ($guard, $cadence, $workspace, $agreement, $cycle) {
-                    [$company, $record, $start] = $guard->lock($workspace, $agreement->public_id, $cycle->start->toDateString(), null);
+                [$company, $record, $start] = $guard->lock($workspace, $agreement->public_id, $cycle->start->toDateString(), null);
+                $draft = $cadence->generateCadencePeriod($company, $record, $start);
+                $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($draft->id)
+                    ->with(['lines.timeEntries' => fn ($entries) => $entries->where('is_billable', true)->select('client_time_entries.id'), 'lines.tasks:id,client_invoice_line_id'])->firstOrFail();
+                if (self::billsNothing($draft)) {
+                    $skipped[] = $period;
 
-                    return $cadence->generateCadencePeriod($company, $record, $start);
-                });
-                $generated[] = $period + ['invoice_id' => $draft->public_id, 'invoice_number' => $draft->invoice_number, 'total_amount' => (int) $draft->total_amount, 'currency' => $draft->currency];
+                    continue;
+                }
+                if ($this->applying()) {
+                    DB::commit();
+                    $committed = true;
+                }
+                $generated[] = $period + ($committed ? ['invoice_id' => $draft->public_id, 'invoice_number' => $draft->invoice_number] : []) + ['total_amount' => (int) $draft->total_amount, 'currency' => $draft->currency];
             } catch (Throwable $refused) {
                 // Covered between the read and the lock - an operator or agent
                 // generated it first. That is the outcome this run wanted.
@@ -108,12 +124,16 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
                 }
                 Log::warning('A scheduled cadence draft was not generated.', $period + ['exception' => $refused::class, 'reason' => $refused->getMessage()]);
                 $failed[] = $period + ['reason' => $refused->getMessage()];
+            } finally {
+                if (! $committed) {
+                    DB::rollBack();
+                }
             }
         }
 
         $key = $this->applying() ? 'generated' : 'would_generate';
         if ($this->option('format') === 'json') {
-            $this->json(['dry_run' => ! $this->applying(), $key => $generated, 'failed' => $failed, 'not_reached' => $remaining]);
+            $this->json(['dry_run' => ! $this->applying(), $key => $generated, 'nothing_to_bill' => $skipped, 'failed' => $failed, 'not_reached' => $remaining]);
 
             return $failed === [] ? self::SUCCESS : self::FAILURE;
         }
@@ -121,15 +141,31 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
         foreach ($generated as $row) {
             $this->components->twoColumnDetail($row['agreement_id'].' '.$row['period_start'], $row['invoice_number'] ?? 'would generate');
         }
+        foreach ($skipped as $row) {
+            $this->components->twoColumnDetail($row['agreement_id'].' '.$row['period_start'], 'nothing to bill');
+        }
         foreach ($failed as $row) {
             $this->components->twoColumnDetail($row['agreement_id'].' '.$row['period_start'], '<fg=red>'.$row['reason'].'</>');
         }
         $verb = $this->applying() ? 'Generated' : 'Would generate';
-        $this->components->info("{$verb} ".count($generated).' cadence draft(s); '.count($failed).' refused; '.$remaining.' beyond --limit.');
+        $this->components->info("{$verb} ".count($generated).' cadence draft(s); '.count($skipped).' with nothing to bill; '.count($failed).' refused; '.$remaining.' beyond --limit.');
         if (! $this->applying()) {
             $this->info('Dry run: nothing written. Re-run with --apply to create the drafts.');
         }
 
         return $failed === [] ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Would this draft ask the client for nothing at all? A $0 retainer with no
+     * priced line, no billable time and no milestone is a draft an operator
+     * would only have to discard; billable time at a $0 rate still counts as
+     * something billed, and non-billable time alone does not.
+     */
+    private static function billsNothing(ClientInvoice $draft): bool
+    {
+        return (int) $draft->total_amount === 0 && $draft->lines->every(
+            static fn (ClientInvoiceLine $line): bool => $line->total_amount === 0 && $line->timeEntries->isEmpty() && $line->tasks->isEmpty(),
+        );
     }
 }
