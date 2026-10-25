@@ -37,8 +37,9 @@ use Throwable;
  * books and is an operator's to reopen.
  *
  * Every period commits or rolls back on its own, so one agreement's refusal
- * neither undoes nor blocks another's draft. A refusal is logged and makes the
- * run exit non-zero; the next run tries that period again.
+ * neither undoes nor blocks another's draft. A refusal is logged, makes the
+ * run exit non-zero and does not use a `--limit` slot; the next run tries that
+ * period again.
  */
 final class GenerateCadenceDraftsCommand extends MutationCommand
 {
@@ -65,24 +66,27 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
 
         /** @var list<array{Workspace, ClientAgreement, BillingCycle}> $due */
         $due = [];
-        $remaining = 0;
         foreach ($workspaces->lazyById(100) as $workspace) {
             $scheduled = ClientBillingSchedule::query()->where('workspace_id', $workspace->id)->where('is_active', true)->pluck('client_agreement_id')->flip();
-            $uncovered->each($workspace, $clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($workspace, $scheduled, $limit, &$due, &$remaining): void {
-                if ($scheduled->has($agreement->id)) {
-                    return;
-                }
-                if (count($due) < $limit) {
+            $uncovered->each($workspace, $clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($workspace, $scheduled, &$due): void {
+                if (! $scheduled->has($agreement->id)) {
                     $due[] = [$workspace, $agreement, $cycle];
-                } else {
-                    $remaining++;
                 }
             });
         }
 
         $generated = [];
         $failed = [];
-        foreach ($due as [$workspace, $agreement, $cycle]) {
+        $remaining = 0;
+        foreach ($due as $position => [$workspace, $agreement, $cycle]) {
+            // The limit counts drafts, not attempts: a refused period keeps its
+            // place in the order every run, and counting it would let the same
+            // refusals hold every later agreement's slot indefinitely.
+            if (count($generated) >= $limit) {
+                $remaining = count($due) - $position;
+
+                break;
+            }
             $period = ['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'period_start' => $cycle->start->toDateString(), 'period_end' => $cycle->end->toDateString()];
             if (! $this->applying()) {
                 $generated[] = $period;

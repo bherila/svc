@@ -160,6 +160,28 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $healthy->id)->where('status', 'draft')->count());
     }
 
+    public function test_a_refused_period_does_not_use_a_limit_slot(): void
+    {
+        [$workspace, , $company, $agreement] = $this->fixture();
+        $next = $this->agreement($workspace, $this->client($workspace, 'second'));
+        $last = $this->agreement($workspace, $this->client($workspace, 'third'));
+        ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYNTHETIC-OVERLAP', 'invoice_kind' => 'cadence_period', 'status' => 'issued', 'currency' => 'USD', 'total_amount' => 0, 'balance_amount' => 0, 'service_period_start' => '2026-09-10', 'service_period_end' => '2026-09-15']);
+
+        // The refused agreement comes first in every run's order.
+        foreach ([$next, $last] as $expected) {
+            $run = $this->run_(['--limit' => 1, '--apply' => true]);
+            $this->assertSame([$agreement->public_id], array_column($run['failed'], 'agreement_id'));
+            $this->assertSame([$expected->public_id], array_column($run['generated'], 'agreement_id'));
+        }
+        $this->assertSame(0, $run['not_reached']);
+
+        $this->agreement($workspace, $this->client($workspace, 'fourth'));
+        $this->agreement($workspace, $this->client($workspace, 'fifth'));
+        $bounded = $this->run_(['--limit' => 1, '--apply' => true]);
+        $this->assertCount(1, $bounded['generated'], 'The limit still bounds the drafts created.');
+        $this->assertSame(1, $bounded['not_reached']);
+    }
+
     public function test_workspace_option_and_limit_bound_the_run_and_nothing_is_issued_or_sent(): void
     {
         Mail::fake();
