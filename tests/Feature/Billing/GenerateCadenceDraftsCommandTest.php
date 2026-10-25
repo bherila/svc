@@ -6,18 +6,23 @@ use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\EmptyCadenceDraft;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Tests\Concerns\CallsMcp;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -30,6 +35,7 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
 {
     use CallsMcp;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     protected function setUp(): void
     {
@@ -46,7 +52,8 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $preview = $this->run_([]);
         $this->assertSame(0, $preview['exit']);
         $this->assertTrue($preview['dry_run']);
-        $this->assertSame([['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'period_start' => '2026-10-01', 'period_end' => '2026-10-31']], $preview['would_generate']);
+        $this->assertCount(1, $preview['would_generate']);
+        $this->assertSame(['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'period_start' => '2026-10-01', 'period_end' => '2026-10-31'], array_diff_key($preview['would_generate'][0], ['total_amount' => true, 'currency' => true]));
         $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
 
         $applied = $this->run_(['--apply' => true]);
@@ -54,6 +61,7 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $this->assertCount(1, $applied['generated']);
         $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->sole();
         $this->assertSame($draft->public_id, $applied['generated'][0]['invoice_id']);
+        $this->assertSame((int) $draft->total_amount, $preview['would_generate'][0]['total_amount'], 'The preview ran the engine it previews.');
         $this->assertSame('draft', $draft->status);
         $this->assertSame('cadence_period', $draft->invoice_kind);
         $this->assertSame('2026-10-01', $draft->cycle_start->toDateString());
@@ -85,7 +93,7 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $this->assertCount(2, $missing);
 
         $preview = $this->run_([]);
-        $this->assertEqualsCanonicalizing($missing, array_map(static fn (array $row): array => array_diff_key($row, ['workspace_id' => true]), $preview['would_generate']));
+        $this->assertEqualsCanonicalizing($missing, array_map(static fn (array $row): array => array_diff_key($row, ['workspace_id' => true, 'total_amount' => true, 'currency' => true]), $preview['would_generate']));
 
         $this->run_(['--apply' => true]);
         $this->assertSame([], $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/billing-audits/stale-and-missing')->assertOk()->json('data.missing_periods'));
@@ -141,7 +149,9 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         // An inactive schedule bills nothing, so its agreement is the command's again.
         $schedule->forceFill(['is_active' => false])->save();
         $billed[0]->forceFill(['status' => 'void'])->save();
-        $this->assertContains($scheduled->public_id, array_column($this->run_([])['would_generate'], 'agreement_id'));
+        // It has no retainer, so with nothing billed in September it is the
+        // command's to report rather than to create.
+        $this->assertContains($scheduled->public_id, array_column($this->run_([])['nothing_to_bill'], 'agreement_id'));
     }
 
     public function test_one_refusal_neither_blocks_nor_undoes_another_agreement_and_fails_the_run(): void
@@ -158,6 +168,64 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
         $this->assertSame([$healthy->public_id], array_column($applied['generated'], 'agreement_id'));
         $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)->count());
         $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $healthy->id)->where('status', 'draft')->count());
+    }
+
+    /**
+     * A $0 retainer with nothing billable in its period would be a draft for an
+     * operator to discard, so it is reported and not created - until billable
+     * work arrives, even at a $0 rate. Non-billable work alone bills nothing.
+     */
+    public function test_a_period_with_nothing_to_bill_is_reported_and_not_created(): void
+    {
+        // The empty period comes first in the run order.
+        [$workspace, , $hourly, $zero, $project] = $this->fixture();
+        $zero->forceFill(['retainer_minutes' => 0, 'retainer_amount' => 0])->save();
+        $retainer = $this->agreement($workspace, $this->client($workspace, 'retainer'));
+        $this->entry($workspace, $hourly, $project, '2026-09-10', 30)->forceFill(['is_billable' => false])->save();
+
+        foreach ([[], ['--apply' => true]] as $options) {
+            $run = $this->run_($options + ['--limit' => 1]);
+            $this->assertSame(0, $run['exit']);
+            $this->assertSame([$zero->public_id], array_column($run['nothing_to_bill'], 'agreement_id'));
+            $this->assertSame([$retainer->public_id], array_column($run[$options === [] ? 'would_generate' : 'generated'], 'agreement_id'), 'Nothing to bill takes no --limit slot.');
+        }
+        $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $zero->id)->count());
+        $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->count(), 'Rolling the empty draft back left the other agreement\'s draft committed.');
+
+        $this->entry($workspace, $hourly, $project, '2026-09-11', 60)->forceFill(['billing_rate_amount' => 0])->save();
+        $priced = $this->run_(['--apply' => true]);
+        $this->assertSame([], $priced['nothing_to_bill']);
+        $this->assertSame([$zero->public_id], array_column($priced['generated'], 'agreement_id'), 'Billable time at a $0 rate is still something billed.');
+        $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $zero->id)->where('status', 'draft')->count());
+    }
+
+    /**
+     * Each relation the classification reads is held to the draft's workspace
+     * on its own. Every malformed row below would alone make the draft look
+     * billable if its scope were missing.
+     */
+    public function test_nothing_to_bill_reads_only_the_drafts_own_workspace(): void
+    {
+        [$workspace, , $company, , $project] = $this->fixture();
+        [$foreign, , $foreignCompany, , $foreignProject] = $this->fixture();
+        $draft = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYNTHETIC-EMPTY', 'invoice_kind' => 'cadence_period', 'status' => 'draft', 'currency' => 'USD', 'total_amount' => 0, 'balance_amount' => 0]);
+        $line = $this->line($workspace, $draft, 0);
+        $home = $this->entry($workspace, $company, $project, '2026-09-10', 30);
+        $away = $this->entry($foreign, $foreignCompany, $foreignProject, '2026-09-10', 30);
+        $this->writingLegacyCrossTenantRows(function () use ($workspace, $foreign, $foreignProject, $draft, $line, $home, $away): void {
+            $this->line($foreign, $draft, 5000);
+            DB::table('client_invoice_line_time_entries')->insert([
+                ['workspace_id' => $workspace->id, 'client_invoice_line_id' => $line->id, 'client_time_entry_id' => $away->id, 'created_at' => now(), 'updated_at' => now()],
+                ['workspace_id' => $foreign->id, 'client_invoice_line_id' => $line->id, 'client_time_entry_id' => $home->id, 'created_at' => now(), 'updated_at' => now()],
+            ]);
+            ClientTask::query()->create(['workspace_id' => $foreign->id, 'client_project_id' => $foreignProject->id, 'title' => 'Synthetic foreign milestone', 'status' => 'pending', 'is_visible_to_client' => false])
+                ->forceFill(['client_invoice_line_id' => $line->id])->save();
+        });
+
+        $this->assertTrue(EmptyCadenceDraft::billsNothing(EmptyCadenceDraft::load($workspace, $draft)));
+
+        $line->timeEntries()->attach($this->entry($workspace, $company, $project, '2026-09-11', 30)->id, ['workspace_id' => $workspace->id]);
+        $this->assertFalse(EmptyCadenceDraft::billsNothing(EmptyCadenceDraft::load($workspace, $draft)), 'The draft\'s own billable time still counts.');
     }
 
     public function test_a_refused_period_does_not_use_a_limit_slot(): void
@@ -251,6 +319,11 @@ final class GenerateCadenceDraftsCommandTest extends TestCase
     private function agreement(Workspace $workspace, ClientCompany $company, array $terms = []): ClientAgreement
     {
         return ClientAgreement::query()->create($terms + ['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic Retainer', 'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000, 'retainer_minutes' => 600, 'retainer_amount' => 100000]);
+    }
+
+    private function line(Workspace $workspace, ClientInvoice $invoice, int $amount): ClientInvoiceLine
+    {
+        return ClientInvoiceLine::query()->create(['workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'type' => 'retainer', 'description' => 'Synthetic line', 'quantity' => 1, 'unit_amount' => $amount, 'tax_amount' => 0, 'total_amount' => $amount, 'sort_order' => 0]);
     }
 
     private function entry(Workspace $workspace, ClientCompany $company, ClientProject $project, string $date, int $minutes): ClientTimeEntry

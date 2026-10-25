@@ -225,6 +225,8 @@ php artisan svc:billing:generate-cadence-drafts --apply              # create th
 php artisan svc:billing:generate-cadence-drafts --workspace=<workspace public id> --limit=10 --apply
 ```
 
+A period whose draft would bill nothing (a $0 retainer with no priced line, no billable time and no milestone) is reported under `nothing_to_bill` and not created; the audit still lists it, and the next run looks again. Billable time at a $0 rate counts as something billed, and non-billable time alone does not. The preview runs the same generation and rolls it back, so it reports totals, refusals and empty periods exactly as `--apply` would.
+
 Each period commits on its own. A refusal is logged, reported with its reason, retried on the next run, and makes the command exit non-zero. `--limit` caps the drafts created, not the periods attempted, so a period that keeps being refused never holds back the agreements after it. The scheduler runs it hourly with `--apply` once `SVC_BILLING_SCHEDULED_CADENCE_DRAFTS=true` (`svc.billing.scheduled_cadence_drafts`). Running it by hand works whether or not the flag is on.
 
 ## Retired client-management commands
