@@ -21,7 +21,7 @@ final class EmptyCadenceDraft
 {
     public static function billsNothing(ClientInvoice $draft): bool
     {
-        return (int) $draft->total_amount === 0 && $draft->lines->every(
+        return $draft->total_amount === 0 && $draft->lines->every(
             static fn (ClientInvoiceLine $line): bool => $line->total_amount === 0 && $line->timeEntries->isEmpty() && $line->tasks->isEmpty(),
         );
     }
