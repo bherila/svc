@@ -150,6 +150,13 @@ final class InvoiceStatusVocabularyTest extends TestCase
         $this->assertTrue(InvoiceStatus::isSettledValue('void'));
         $this->assertFalse(InvoiceStatus::hasChargedValue('void'));
         $this->assertTrue(InvoiceStatus::hasChargedValue('partially_paid'));
+
+        // Only a void invoice gives its cadence period back.
+        $this->assertTrue(InvoiceStatus::claimsPeriod('something_new'));
+        $this->assertTrue(InvoiceStatus::claimsPeriod(null));
+        foreach (InvoiceStatus::all() as $status) {
+            $this->assertSame($status !== 'void', InvoiceStatus::claimsPeriod($status), $status);
+        }
     }
 
     /**

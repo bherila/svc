@@ -16,6 +16,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { statusLabel } from '@/lib/labels';
 
 export type TaskAssignee = { id: string; name: string };
+export type TaskAssigneeOptions = {
+    data: TaskAssignee[];
+    has_more: boolean;
+};
 export type EditableTask = {
     id: string;
     title: string;
@@ -28,6 +32,7 @@ export type EditableTask = {
     version: string;
     update_action: string;
     assignees_action: string;
+    assignee_options?: TaskAssigneeOptions | null;
     completion_advisory?: string | null;
 };
 export type TaskEditorProject = {
@@ -35,6 +40,7 @@ export type TaskEditorProject = {
     name: string;
     create_action: string;
     assignees_action: string;
+    assignee_options?: TaskAssigneeOptions | null;
 };
 
 const statuses = ['open', 'in_progress', 'completed'].map((value) => ({
@@ -44,19 +50,40 @@ const statuses = ['open', 'in_progress', 'completed'].map((value) => ({
 
 function AssigneePicker({
     action,
+    initialOptions,
     selected,
     onChange,
 }: {
     action: string;
+    initialOptions: TaskAssigneeOptions | null;
     selected: TaskAssignee[];
     onChange: (next: TaskAssignee[]) => void;
 }) {
     const searchId = useId();
     const [search, setSearch] = useState('');
-    const [options, setOptions] = useState<TaskAssignee[]>([]);
-    const [hasMore, setHasMore] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [lookup, setLookup] = useState<{
+        search: string;
+        options: TaskAssigneeOptions;
+        error: string | null;
+    } | null>(null);
+    const hasInitialOptions = initialOptions !== null;
+    const showInitialOptions = search === '' && hasInitialOptions;
+    const currentLookup = lookup?.search === search ? lookup : null;
+    const options = showInitialOptions
+        ? initialOptions.data
+        : (currentLookup?.options.data ?? []);
+    const hasMore = showInitialOptions
+        ? initialOptions.has_more
+        : (currentLookup?.options.has_more ?? false);
+    const error = showInitialOptions ? null : currentLookup?.error;
+
     useEffect(() => {
+        // An empty seeded page is a complete initial answer too. Further
+        // requests belong to typed searches or a newly selected unseeded project.
+        if (search === '' && hasInitialOptions) {
+            return;
+        }
+
         const abort = new AbortController();
         const timer = setTimeout(async () => {
             try {
@@ -72,17 +99,18 @@ function AssigneePicker({
                     throw new Error('lookup');
                 }
 
-                const data: { data: TaskAssignee[]; has_more: boolean } =
-                    await response.json();
+                const data: TaskAssigneeOptions = await response.json();
 
                 if (!abort.signal.aborted) {
-                    setOptions(data.data);
-                    setHasMore(data.has_more);
-                    setError(null);
+                    setLookup({ search, options: data, error: null });
                 }
             } catch {
                 if (!abort.signal.aborted) {
-                    setError('Staff could not be loaded. Try another search.');
+                    setLookup({
+                        search,
+                        options: { data: [], has_more: false },
+                        error: 'Staff could not be loaded. Try another search.',
+                    });
                 }
             }
         }, 200);
@@ -91,7 +119,7 @@ function AssigneePicker({
             clearTimeout(timer);
             abort.abort();
         };
-    }, [action, search]);
+    }, [action, search, hasInitialOptions]);
 
     return (
         <fieldset className="grid min-w-0 grid-cols-1 gap-2">
@@ -203,6 +231,10 @@ export function TaskEditor({
     });
     const action = task?.update_action ?? project?.create_action;
     const assigneesAction = task?.assignees_action ?? project?.assignees_action;
+    const assigneeOptions =
+        task === null
+            ? (project?.assignee_options ?? null)
+            : (task.assignee_options ?? null);
 
     if (!action || !assigneesAction) {
         return null;
@@ -339,7 +371,9 @@ export function TaskEditor({
                 </div>
             )}
             <AssigneePicker
+                key={assigneesAction}
                 action={assigneesAction}
+                initialOptions={assigneeOptions}
                 selected={selected}
                 onChange={(next) => {
                     setSelected(next);

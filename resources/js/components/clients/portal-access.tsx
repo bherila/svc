@@ -1,4 +1,4 @@
-import { Link, router } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import {
     AlertDialog,
@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiResult, ApiSchema } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 
 export type PortalScope = ApiSchema<'PortalContact'>['scope'];
 
@@ -85,9 +86,8 @@ async function change(
         return result;
     }
 
-    await new Promise<void>((resolve) =>
-        router.reload({ onFinish: () => resolve() }),
-    );
+    // Grants and invitations are one projection; staff/project/profile data is independent.
+    await refreshPageProps({ only: ['portal'] });
 
     return result.ok ? null : result;
 }

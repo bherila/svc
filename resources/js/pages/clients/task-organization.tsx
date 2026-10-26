@@ -1,4 +1,4 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { SHELL_CONTAINER } from '@/lib/layout';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { cn } from '@/lib/utils';
 import type {
     TaskOrganizationList,
@@ -74,11 +75,8 @@ function useOrganizationMutation() {
 
             keys.current.delete(signature);
             saved?.();
-            await new Promise<void>((resolve) => {
-                router.reload({
-                    onFinish: () => resolve(),
-                });
-            });
+            // Refresh graph, container tokens and capabilities together after every change.
+            await refreshPageProps({ only: ['organization'] });
         } finally {
             inFlight.current = false;
             setPending(false);
@@ -789,7 +787,7 @@ export default function TaskOrganizationPage({
     const reloadCurrent = () => {
         mutation.clearError();
         close();
-        router.reload();
+        void refreshPageProps({ only: ['organization'] });
     };
     const dialogTitle =
         dialog?.kind === 'new-task'
