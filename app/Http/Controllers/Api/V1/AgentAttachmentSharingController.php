@@ -50,6 +50,7 @@ final class AgentAttachmentSharingController extends Controller
     public function downloadUrl(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId, string $attachment): JsonResponse
     {
         $actor = $this->actor($request);
+        abort_unless($this->body($request) === [], 422, 'Download URL preparation has no request fields.');
 
         return response()->json($this->files->downloadUrl($actor, $workspace, $this->reference($client, $recordType, $recordPublicId),
             $attachment, $this->reader->agentAudience($actor, $workspace)));
@@ -57,6 +58,7 @@ final class AgentAttachmentSharingController extends Controller
 
     public function download(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId, string $attachment): StreamedResponse
     {
+        abort_unless($request->hasValidRelativeSignature(), 403);
         $actor = $this->actor($request);
 
         return $this->files->download($actor, $workspace, $this->reference($client, $recordType, $recordPublicId),
@@ -66,6 +68,7 @@ final class AgentAttachmentSharingController extends Controller
     public function uploadUrl(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): JsonResponse
     {
         $actor = $this->actor($request);
+        abort_unless($this->body($request) === [], 422, 'Upload URL preparation has no request fields.');
 
         return response()->json($this->files->uploadUrl(User::query()->findOrFail($actor->id), $workspace,
             $this->reference($client, $recordType, $recordPublicId), AttachmentMutationOrigin::Agent));
@@ -73,12 +76,13 @@ final class AgentAttachmentSharingController extends Controller
 
     public function upload(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): JsonResponse
     {
+        abort_unless($request->hasValidRelativeSignature(), 403);
         $context = $this->contexts->from($request);
         $file = $request->file('file');
         abort_unless($file instanceof UploadedFile, 422);
 
         return response()->json($this->files->upload($context->user, $workspace, $this->reference($client, $recordType, $recordPublicId),
-            $file, $request->all(), $context->oauthClientId, $context->idempotencyKey, AttachmentMutationOrigin::Agent));
+            $file, $this->body($request), $context->oauthClientId, $context->idempotencyKey, AttachmentMutationOrigin::Agent));
     }
 
     public function visibilityUpdate(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId, string $attachment): JsonResponse
@@ -103,6 +107,13 @@ final class AgentAttachmentSharingController extends Controller
         abort_unless($actor instanceof AgentPrincipal, 401);
 
         return $actor;
+    }
+
+    /** Signed URL query fields are transport authentication, never mutation body fields.
+     * @return array<string,mixed> */
+    private function body(Request $request): array
+    {
+        return [...($request->isJson() ? $request->json()->all() : $request->request->all()), ...$request->allFiles()];
     }
 
     private function reference(string $client, string $type, string $id): AttachmentParentReference

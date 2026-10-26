@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Files;
 
+use App\Http\Controllers\Api\V1\AgentAttachmentSharingController;
+use App\Models\AgentPrincipal;
 use App\Models\ClientAttachment;
 use App\Models\ClientCollaborationTopic;
 use App\Models\ClientComment;
@@ -25,12 +27,14 @@ use App\Services\Files\CollaborationAttachmentPreview;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Laravel\Passport\AccessToken;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\Concerns\BuildsSyntheticExpenses;
 use Tests\TestCase;
@@ -307,6 +311,35 @@ final class AttachmentSharingTransportTest extends TestCase
         $this->assertNull($reader['files'][0]['delete_href']);
         $this->assertNull($reader['legacy_upload_href']);
         $this->assertRefused(404, fn () => $native->legacy($owner, $workspace, new AttachmentParentReference('invoice', $company->public_id)));
+    }
+
+    public function test_controller_prepared_upload_uses_signed_query_separately_from_closed_multipart_body(): void
+    {
+        [$workspace, $company, , , $publisher, $topic] = $this->fixture();
+        $principal = AgentPrincipal::query()->findOrFail($publisher->id)->withAccessToken(new AccessToken([
+            'oauth_access_token_id' => 'synthetic-token', 'oauth_client_id' => 'synthetic-signed-client']));
+        $controller = app(AgentAttachmentSharingController::class);
+        $preparation = Request::create('/synthetic/prepare', 'POST');
+        $preparation->setUserResolver(fn () => $principal);
+        $data = $controller->uploadUrl($preparation, $workspace, $company->public_id, 'topic', $topic->public_id)->getData(true)['data'];
+        $this->assertStringContainsString('signature=', $data['url']);
+        $request = Request::create($data['url'], 'POST', ['expected_version' => $data['expected_version']], files: ['file' => $this->upload()],
+            server: ['HTTP_IDEMPOTENCY_KEY' => 'synthetic-signed-upload']);
+        $request->setUserResolver(fn () => $principal);
+        $this->assertTrue($request->hasValidRelativeSignature());
+        $created = $controller->upload($request, $workspace, $company->public_id, 'topic', $topic->public_id)->getData(true);
+        $this->assertFalse($created['data']['is_visible_to_client']);
+        $this->assertDatabaseCount('client_attachments', 1);
+        $unsigned = Request::create('/synthetic/unsigned', 'POST', ['expected_version' => $data['expected_version']], files: ['file' => $this->upload()],
+            server: ['HTTP_IDEMPOTENCY_KEY' => 'synthetic-unsigned-upload']);
+        $unsigned->setUserResolver(fn () => $principal);
+        $this->assertRefused(403, fn () => $controller->upload($unsigned, $workspace, $company->public_id, 'topic', $topic->public_id));
+        $unsupported = Request::create('/synthetic/prepare', 'POST', ['origin' => 'native']);
+        $unsupported->setUserResolver(fn () => $principal);
+        $this->assertRefused(422, fn () => $controller->uploadUrl($unsupported, $workspace, $company->public_id, 'topic', $topic->public_id));
+        config(['svc.attachments.sharing_writes_enabled' => false]);
+        $this->assertRefused(404, fn () => $controller->upload($request, $workspace, $company->public_id, 'topic', $topic->public_id));
+        $this->assertDatabaseCount('client_attachments', 1);
     }
 
     /** @return array{Workspace,ClientCompany,ClientProject,User,User,ClientCollaborationTopic} */
