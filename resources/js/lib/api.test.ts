@@ -48,6 +48,29 @@ describe('apiRequest refusals', () => {
         });
     });
 
+    it('sends multipart bytes with the same XSRF and retry headers without overriding the boundary', async () => {
+        document.cookie = 'XSRF-TOKEN=synthetic%3Dtoken';
+        const body = new FormData();
+        body.set('file', new File(['Synthetic bytes'], 'synthetic.txt'));
+        body.set('expected_version', 'v'.repeat(64));
+        respond(200, { data: { id: 'synthetic-file' } });
+        await apiRequest(
+            'POST',
+            '/synthetic/native-upload',
+            body,
+            'synthetic-retry',
+        );
+        const [destination, init] = vi.mocked(fetch).mock.calls[0];
+        expect(destination).toBe('/synthetic/native-upload');
+        expect(init?.body).toBe(body);
+        expect(init?.headers).not.toHaveProperty('Content-Type');
+        expect(init?.headers).toMatchObject({
+            'Idempotency-Key': 'synthetic-retry',
+            'X-XSRF-TOKEN': 'synthetic=token',
+        });
+        document.cookie = 'XSRF-TOKEN=; Max-Age=0';
+    });
+
     it.each([
         [401, { message: 'Unauthenticated.' }],
         [419, { message: 'CSRF token mismatch.' }],
