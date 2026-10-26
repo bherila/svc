@@ -49,7 +49,8 @@ final class AttachmentSharingPresenter
     public function state(ClientAttachment $file, AttachmentSharingView $view): array
     {
         return ['id' => $file->public_id, 'is_visible_to_client' => $file->is_visible_to_client,
-            'effective_visible_to_client' => $file->is_visible_to_client && $view->parentVisibleToClient,
+            'effective_visible_to_client' => $file->lifecycle_state === ClientAttachment::STATE_AVAILABLE
+                && $file->is_visible_to_client && $view->parentVisibleToClient,
             'sharing_note' => $view->parentVisibleToClient ? null : 'The parent is not currently visible to clients.',
             'version' => AgentApiVersion::for($file), 'parent_version' => AgentApiVersion::for($view->parent)];
     }

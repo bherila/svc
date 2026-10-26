@@ -129,17 +129,26 @@ final class AttachmentSharingTransportTest extends TestCase
     public function test_delete_receipt_replays_after_physical_purge_but_not_after_revocation(): void
     {
         [$workspace, $company, $project, $owner, $publisher, $topic] = $this->fixture();
+        $project->update(['is_visible_to_client' => true]);
+        $topic->update(['is_visible_to_client' => true]);
         $service = app(AttachmentSharingTransport::class);
         $scope = new AttachmentParentReference('topic', $topic->public_id, $company->public_id);
         $created = $service->upload($publisher, $workspace, $scope, $this->upload(), ['expected_version' => AgentApiVersion::for($topic)],
             'synthetic-client', 'upload-delete', AttachmentMutationOrigin::Agent);
-        $payload = ['confirm' => true, 'expected_version' => $created['data']['version'], 'expected_parent_version' => AgentApiVersion::for($topic)];
+        $shared = $service->updateVisibility($publisher, $workspace, $scope, $created['data']['id'], ['is_visible_to_client' => true,
+            'expected_version' => $created['data']['version'], 'expected_parent_version' => AgentApiVersion::for($topic)],
+            'synthetic-client', 'share-before-delete', AttachmentMutationOrigin::Agent);
+        $this->assertTrue($shared['data']['effective_visible_to_client']);
+        $payload = ['confirm' => true, 'expected_version' => $shared['data']['version'], 'expected_parent_version' => AgentApiVersion::for($topic)];
         $deleted = $service->delete($publisher, $workspace, $scope, $created['data']['id'], $payload, 'synthetic-client', 'delete-one', AttachmentMutationOrigin::Agent);
         $this->assertSame(ClientAttachment::STATE_DELETING, $deleted['data']['status']);
+        $this->assertTrue($deleted['data']['is_visible_to_client']);
+        $this->assertFalse($deleted['data']['effective_visible_to_client']);
         $this->travel(8)->days();
         $this->assertSame(1, app(AttachmentStorageService::class)->repair(true)['purged_rows']);
         $replay = $service->delete($publisher, $workspace, $scope, $created['data']['id'], $payload, 'synthetic-client', 'delete-one', AttachmentMutationOrigin::Agent);
         $this->assertSame(ClientAttachment::STATE_DELETED, $replay['data']['status']);
+        $this->assertFalse($replay['data']['effective_visible_to_client']);
         $this->assertSame([], Storage::disk('svc_files')->allFiles());
         $company->portalUsers()->attach($publisher, ['role' => 'client']);
         $this->assertRefused(403, fn () => $service->delete($publisher, $workspace, $scope, $created['data']['id'], $payload,
