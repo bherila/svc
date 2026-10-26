@@ -59,12 +59,10 @@ final class CollaborationAttachmentPreview
                 }
                 $sharing = $portal ? null : $this->presenter->nativeControl($file, $view,
                     route('svc.files.collaboration.visibility.update', [...$parameters, 'attachment' => $file->public_id], absolute: false), $audience);
-                $files[] = ['id' => $file->public_id, 'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
-                    'uploaded_at' => $file->created_at?->toIso8601String(),
-                    'download_href' => $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $file->public_id], absolute: false)
+                $files[] = AttachmentMetadata::native($file,
+                    $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $file->public_id], absolute: false)
                         : route('svc.files.download', [$workspace, $file->public_id], absolute: false),
-                    'delete_href' => $sharing === null ? null : route('svc.files.collaboration.destroy', [...$parameters, 'attachment' => $file->public_id], absolute: false),
-                    'sharing' => $sharing];
+                    $sharing === null ? null : route('svc.files.collaboration.destroy', [...$parameters, 'attachment' => $file->public_id], absolute: false), $sharing);
             }
             $canWrite = ! $agent && $audience === AttachmentAudience::Internal && $publisher && AttachmentSharingGate::available();
             $page = $agent ? route('agent-api.v1.collaboration.attachments.index', $parameters, absolute: false)

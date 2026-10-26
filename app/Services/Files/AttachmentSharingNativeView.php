@@ -35,12 +35,10 @@ final class AttachmentSharingNativeView
             }
             $sharing = $portal ? null : $this->presenter->nativeControl($file, $view,
                 route('svc.files.collaboration.visibility.update', [...$parameters, 'attachment' => $id], absolute: false), $audience);
-            $files[] = ['id' => $id, 'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
-                'uploaded_at' => $file->created_at?->toIso8601String(),
-                'download_href' => $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $id], absolute: false)
+            $files[] = AttachmentMetadata::native($file,
+                $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $id], absolute: false)
                     : route('svc.files.download', [$workspace, $id], absolute: false),
-                'delete_href' => $sharing === null ? null : route('svc.files.collaboration.destroy', [...$parameters, 'attachment' => $id], absolute: false),
-                'sharing' => $sharing];
+                $sharing === null ? null : route('svc.files.collaboration.destroy', [...$parameters, 'attachment' => $id], absolute: false), $sharing);
         }
         $canWrite = $audience === AttachmentAudience::Internal && $view->canPublish && AttachmentSharingGate::available();
         $cursor = $result['meta']['next_cursor'];
@@ -62,12 +60,10 @@ final class AttachmentSharingNativeView
             ->orderByDesc('id')->simplePaginate(100, ['*'], 'page', $page);
         $files = [];
         foreach ($rows->items() as $file) {
-            $files[] = ['id' => $file->public_id, 'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
-                'uploaded_at' => $file->created_at?->toIso8601String(),
-                'download_href' => route('svc.files.download', [$workspace, $file->public_id], absolute: false),
-                'delete_href' => $view->canPublish ? route('svc.files.destroy', [$workspace, $file->public_id], absolute: false) : null,
-                'sharing' => $this->presenter->nativeControl($file, $view, route('svc.files.visibility.update', [
-                    'workspace' => $workspace, 'attachment' => $file->public_id], absolute: false), AttachmentAudience::Internal)];
+            $files[] = AttachmentMetadata::native($file, route('svc.files.download', [$workspace, $file->public_id], absolute: false),
+                $view->canPublish ? route('svc.files.destroy', [$workspace, $file->public_id], absolute: false) : null,
+                $this->presenter->nativeControl($file, $view, route('svc.files.visibility.update', [
+                    'workspace' => $workspace, 'attachment' => $file->public_id], absolute: false), AttachmentAudience::Internal));
         }
         $parameters = ['workspace' => $workspace, 'recordType' => $reference->type, 'recordPublicId' => $reference->publicId];
 

@@ -60,9 +60,7 @@ final class AttachmentSharingPresenter
     {
         $state = $this->state($file, $view);
 
-        return ['id' => $file->public_id, 'record_type' => $file->record_type, 'record_id' => $file->record_public_id,
-            'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
-            'sha256' => $file->sha256, 'status' => $file->lifecycle_state, 'version' => $state['version'],
+        return [...AttachmentMetadata::for($file),
             'is_visible_to_client' => $state['is_visible_to_client'], 'effective_visible_to_client' => $state['effective_visible_to_client'],
             'sharing_note' => $state['sharing_note']];
     }
