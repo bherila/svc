@@ -1,3 +1,5 @@
+import type { AttachmentPanel } from '@/types/files';
+
 export type CollaborationContent = {
     id: string;
     body: string | null;
@@ -12,6 +14,7 @@ export type CollaborationContent = {
     update_href: string | null;
     visibility_update_href: string | null;
     delete_href: string | null;
+    attachment_panel?: AttachmentPanel;
 };
 
 export type CollaborationTopic = CollaborationContent & {

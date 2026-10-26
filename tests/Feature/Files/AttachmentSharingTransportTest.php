@@ -4,11 +4,14 @@ namespace Tests\Feature\Files;
 
 use App\Models\ClientAttachment;
 use App\Models\ClientCollaborationTopic;
+use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Collaboration\CollaborationReadService;
 use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentMutationOrigin;
 use App\Services\Files\AttachmentParentReference;
@@ -16,10 +19,12 @@ use App\Services\Files\AttachmentPrivacyLatch;
 use App\Services\Files\AttachmentSharingPresenter;
 use App\Services\Files\AttachmentSharingTransport;
 use App\Services\Files\AttachmentStorageService;
+use App\Services\Files\CollaborationAttachmentPreview;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
@@ -46,6 +51,8 @@ final class AttachmentSharingTransportTest extends TestCase
         Storage::fake('svc_files');
         Route::post('/synthetic/{workspace}/{client}/{recordType}/{recordPublicId}/upload', fn () => null)
             ->name('agent-api.v1.collaboration.attachments.upload');
+        Route::get('/synthetic/{workspace}/{client}/{recordType}/{recordPublicId}/files', fn () => null)
+            ->name('agent-api.v1.collaboration.attachments.index');
         Route::getRoutes()->refreshNameLookups();
     }
 
@@ -210,6 +217,64 @@ final class AttachmentSharingTransportTest extends TestCase
         Storage::disk('svc_files')->assertExists($file->object_key);
         $this->assertDatabaseCount('agent_mutation_receipts', 1);
         $this->assertDatabaseCount('agent_mutation_audits', 1);
+    }
+
+    public function test_comment_previews_filter_before_window_bounds_and_agent_budget_without_truncation(): void
+    {
+        [$workspace, $company, $project, $owner, $publisher, $topic] = $this->fixture();
+        $project->update(['is_visible_to_client' => true]);
+        $topic->update(['is_visible_to_client' => true]);
+        $comments = [];
+        $sharedNames = [];
+        for ($index = 0; $index < 3; $index++) {
+            $comment = ClientComment::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                'client_project_id' => $project->id, 'client_collaboration_topic_id' => $topic->id, 'body' => 'Synthetic attachment comment '.$index,
+                'author_user_id' => $publisher->id, 'author_name' => $publisher->name, 'is_visible_to_client' => true]);
+            $comments[] = $comment;
+            for ($number = 0; $number < 9; $number++) {
+                $name = $number < 4 ? 'Synthetic-'.str_repeat('測試', 100).'-'.$index.'-'.$number.'.txt' : 'Synthetic private filename '.$index.'-'.$number;
+                $file = ClientAttachment::query()->create(['workspace_id' => $workspace->id, 'record_type' => 'comment', 'record_public_id' => $comment->public_id,
+                    'object_key' => 'synthetic-comment/'.$index.'/'.$number, 'original_filename' => $name, 'media_type' => 'text/plain', 'bytes' => 1,
+                    'sha256' => str_repeat('a', 64), 'uploader_id' => $publisher->id, 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE]);
+                if ($number < 4) {
+                    ClientAttachment::query()->where('workspace_id', $workspace->id)->whereKey($file->id)->update(['is_visible_to_client' => true]);
+                    $sharedNames[$comment->public_id][] = $name;
+                }
+            }
+        }
+        $portal = $this->syntheticUser('preview-portal');
+        $company->portalUsers()->attach($portal, ['role' => 'client']);
+        $previews = app(CollaborationAttachmentPreview::class);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $single = $previews->comments($portal, $workspace, $company, [$comments[0]], AttachmentAudience::Portal, false, true, agent: true);
+        $oneCount = count(DB::getQueryLog());
+        DB::flushQueryLog();
+        $all = $previews->comments($portal, $workspace, $company, $comments, AttachmentAudience::Portal, false, true, agent: true);
+        $allQueries = DB::getQueryLog();
+        DB::disableQueryLog();
+        $this->assertSame($oneCount, count($allQueries), 'Query count must not grow with comments.');
+        $this->assertCount(1, array_filter($allQueries, fn (array $query): bool => str_contains($query['query'], 'ROW_NUMBER()')));
+        $this->assertSame(array_reverse(array_slice($sharedNames[$comments[0]->public_id], 1)), array_column($single[$comments[0]->public_id]['data'], 'filename'));
+        foreach ($all as $preview) {
+            $this->assertCount(3, $preview['data']);
+            $this->assertNotNull($preview['next_href']);
+            $this->assertStringNotContainsString('private filename', json_encode($preview, JSON_THROW_ON_ERROR));
+        }
+        $read = app(CollaborationReadService::class);
+        $withoutFiles = $read->commentPage($portal, $workspace, $company, 'topic', $topic->public_id, CollaborationAudience::Portal, 3, null);
+        $this->assertArrayNotHasKey('attachments', $withoutFiles['data'][0]);
+        config(['agent_api.mcp_max_result_bytes' => 32768, 'agent_api.mcp_max_response_body_bytes' => 32768]);
+        $withFiles = $read->commentPage($portal, $workspace, $company, 'topic', $topic->public_id, CollaborationAudience::Portal, 3, null, includeFiles: true, agentFiles: true);
+        $this->assertCount(1, $withFiles['data']);
+        $this->assertNotNull($withFiles['meta']['next_cursor']);
+        $this->assertSame($single[$comments[0]->public_id], $withFiles['data'][0]['attachments']);
+        $topic->update(['is_visible_to_client' => false]);
+        $hidden = $previews->comments($portal, $workspace, $company, $comments, AttachmentAudience::Portal, false, false, agent: true);
+        foreach ($hidden as $preview) {
+            $this->assertSame([], $preview['data']);
+            $this->assertNull($preview['next_href']);
+        }
     }
 
     /** @return array{Workspace,ClientCompany,ClientProject,User,User,ClientCollaborationTopic} */

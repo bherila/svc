@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Files;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentMutationOrigin;
 use App\Services\Files\AttachmentPageQuery;
 use App\Services\Files\AttachmentParentReference;
+use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Files\AttachmentSharingTransport;
 use Illuminate\Http\JsonResponse;
@@ -16,10 +18,12 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class AttachmentSharingController extends Controller
 {
-    public function __construct(private readonly AttachmentSharingTransport $files, private readonly AttachmentSharingNativeView $view) {}
+    public function __construct(private readonly AttachmentSharingTransport $files, private readonly AttachmentSharingNativeView $view,
+        private readonly AttachmentReader $reader) {}
 
     public function legacyVisibilityUpdate(Request $request, Workspace $workspace, string $attachment): JsonResponse
     {
@@ -32,9 +36,8 @@ final class AttachmentSharingController extends Controller
 
     public function collaborationPage(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): Response
     {
-        return Inertia::render('files/parent', ['workspace' => $workspace,
-            'attachment_panel' => $this->view->collaboration($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
-                AttachmentAudience::Internal, AttachmentPageQuery::fromInput($request->query()))]);
+        return Inertia::render('files/parent', ['attachment_panel' => $this->view->collaboration($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
+            AttachmentAudience::Internal, AttachmentPageQuery::fromInput($request->query()))]);
     }
 
     public function collaborationIndex(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): JsonResponse
@@ -62,6 +65,35 @@ final class AttachmentSharingController extends Controller
     {
         return response()->json($this->files->delete($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
             $attachment, $request->all(), 'svc-native:attachments', $this->key($request), AttachmentMutationOrigin::Native));
+    }
+
+    public function portalCollaborationPage(Request $request, ClientCompany $clientCompany, string $recordType, string $recordPublicId): Response
+    {
+        $actor = $this->actor($request);
+        $workspace = $clientCompany->workspace;
+
+        return Inertia::render('files/parent', ['attachment_panel' => $this->view->collaboration($actor, $workspace,
+            $this->reference($clientCompany->public_id, $recordType, $recordPublicId), $this->reader->nativePortalAudience($actor, $workspace),
+            AttachmentPageQuery::fromInput($request->query()))]);
+    }
+
+    public function portalCollaborationIndex(Request $request, ClientCompany $clientCompany, string $recordType, string $recordPublicId): JsonResponse
+    {
+        $actor = $this->actor($request);
+        $workspace = $clientCompany->workspace;
+
+        return response()->json($this->view->collaboration($actor, $workspace,
+            $this->reference($clientCompany->public_id, $recordType, $recordPublicId), $this->reader->nativePortalAudience($actor, $workspace),
+            AttachmentPageQuery::fromInput($request->query())));
+    }
+
+    public function portalCollaborationDownload(Request $request, ClientCompany $clientCompany, string $recordType, string $recordPublicId, string $attachment): StreamedResponse
+    {
+        $actor = $this->actor($request);
+        $workspace = $clientCompany->workspace;
+
+        return $this->files->download($actor, $workspace, $this->reference($clientCompany->public_id, $recordType, $recordPublicId),
+            $attachment, $this->reader->nativePortalAudience($actor, $workspace));
     }
 
     private function actor(Request $request): User

@@ -24,17 +24,21 @@ final class AttachmentSharingNativeView
             ->whereIn('public_id', $ids)->get()->keyBy('public_id');
         $parameters = ['workspace' => $workspace, 'client' => $reference->companyId,
             'recordType' => $reference->type, 'recordPublicId' => $reference->publicId];
+        $portal = in_array($audience, [AttachmentAudience::Portal, AttachmentAudience::PortalPreview], true);
+        $readParameters = $portal ? ['clientCompany' => $reference->companyId, 'recordType' => $reference->type,
+            'recordPublicId' => $reference->publicId] : $parameters;
         $files = [];
         foreach ($ids as $id) {
             $file = $rows->get($id);
             if (! $file instanceof ClientAttachment) {
                 continue;
             }
-            $sharing = $this->presenter->nativeControl($file, $view,
+            $sharing = $portal ? null : $this->presenter->nativeControl($file, $view,
                 route('svc.files.collaboration.visibility.update', [...$parameters, 'attachment' => $id], absolute: false), $audience);
             $files[] = ['id' => $id, 'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
                 'uploaded_at' => $file->created_at?->toIso8601String(),
-                'download_href' => route('svc.files.download', [$workspace, $id], absolute: false),
+                'download_href' => $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $id], absolute: false)
+                    : route('svc.files.download', [$workspace, $id], absolute: false),
                 'delete_href' => $sharing === null ? null : route('svc.files.collaboration.destroy', [...$parameters, 'attachment' => $id], absolute: false),
                 'sharing' => $sharing];
         }
@@ -44,7 +48,7 @@ final class AttachmentSharingNativeView
         return ['files' => $files, 'parent_version' => AgentApiVersion::for($view->parent),
             'upload' => $canWrite ? ['href' => route('svc.files.collaboration.upload', $parameters, absolute: false),
                 'parent_version' => AgentApiVersion::for($view->parent)] : null,
-            'next_href' => $cursor === null ? null : route('svc.files.collaboration.index', [...$parameters,
+            'next_href' => $cursor === null ? null : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', [...$readParameters,
                 'limit' => $page?->limit ?? 100, 'cursor' => $cursor], absolute: false)];
     }
 }

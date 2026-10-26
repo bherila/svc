@@ -20,6 +20,7 @@ export default function ParentFiles({
                 <AttachmentSharingPanel
                     key={attachment_panel.parent_version}
                     panel={attachment_panel}
+                    title="Attached files"
                 />
             </main>
         </WorkspaceShell>

@@ -10,13 +10,21 @@ use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentPageQuery;
+use App\Services\Files\AttachmentParentReference;
+use App\Services\Files\AttachmentSharingNativeView;
+use App\Services\Files\AttachmentSharingTransport;
+use App\Services\Files\CollaborationAttachmentPreview;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentPageBudget;
 use App\Support\AgentApi\CursorPage;
 
 final class CollaborationReadService
 {
-    public function __construct(private readonly CollaborationRepository $records, private readonly CollaborationAccess $access) {}
+    public function __construct(private readonly CollaborationRepository $records, private readonly CollaborationAccess $access,
+        private readonly CollaborationAttachmentPreview $filePreviews, private readonly AttachmentSharingNativeView $nativeFiles,
+        private readonly AttachmentSharingTransport $files) {}
 
     public function taskThreadHref(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, ClientTask $task, CollaborationAudience $audience): ?string
     {
@@ -65,7 +73,7 @@ final class CollaborationReadService
     }
 
     /** @return array<string, mixed> */
-    public function detail(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $id, CollaborationAudience $audience, int $page = 1, ?string $focusId = null, bool $includeThread = true): array
+    public function detail(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $id, CollaborationAudience $audience, int $page = 1, ?string $focusId = null, bool $includeThread = true, bool $includeFiles = false, bool $agentFiles = false): array
     {
         $topic = $this->records->topic($workspace, $company, $id);
         abort_unless($this->access->canViewParent($actor, $workspace, $company, $topic, $audience), 404);
@@ -74,7 +82,7 @@ final class CollaborationReadService
         $deleted = $topic->deleted_at !== null;
         $href = $this->url('show', $workspace, $company, $audience, ['topic' => $topic->public_id]);
 
-        return ['company' => ['id' => $company->public_id, 'name' => $company->name], 'audience' => $audience->value,
+        $result = ['company' => ['id' => $company->public_id, 'name' => $company->name], 'audience' => $audience->value,
             'topic' => ['id' => $topic->public_id, 'title' => $deleted ? 'Removed '.$topic->kind->label() : $topic->title, 'kind' => $topic->kind->value, 'kind_label' => $topic->kind->label(),
                 'project_id' => $project?->public_id, 'scope_label' => $project === null ? 'Company-wide' : $project->name,
                 'body' => $deleted ? null : $topic->body, 'author_name' => $topic->author_name, 'created_at' => $topic->created_at?->toISOString(),
@@ -85,13 +93,29 @@ final class CollaborationReadService
                 'update_href' => $this->access->canEditTopic($actor, $workspace, $company, $topic, $audience) ? $this->url('update', $workspace, $company, $audience, ['topic' => $topic->public_id]) : null,
                 'visibility_update_href' => $publisher && ! $deleted ? $this->url('update', $workspace, $company, $audience, ['topic' => $topic->public_id]) : null,
                 'delete_href' => $publisher && ! $deleted ? $this->url('destroy', $workspace, $company, $audience, ['topic' => $topic->public_id]) : null],
-            'thread' => $deleted || ! $includeThread ? null : $this->thread($actor, $workspace, $company, 'topic', $id, $audience, $page, $focusId)];
+            'thread' => $deleted || ! $includeThread ? null : $this->thread($actor, $workspace, $company, 'topic', $id, $audience, $page, $focusId,
+                includeFiles: $includeFiles, agentFiles: $agentFiles)];
+        if ($includeFiles && ! $deleted) {
+            $reference = new AttachmentParentReference('topic', $id, $company->public_id);
+            if ($agentFiles) {
+                $filePage = $this->files->listing($actor, $workspace, $reference, $this->fileAudience($audience), AttachmentPageQuery::fromInput(['limit' => 3]));
+                $cursor = $filePage['meta']['next_cursor'];
+                $result['topic']['attachments'] = ['data' => $filePage['data'], 'parent_version' => $filePage['parent_version'],
+                    'next_href' => $cursor === null ? null : route('agent-api.v1.collaboration.attachments.index', ['workspace' => $workspace,
+                        'client' => $company->public_id, 'recordType' => 'topic', 'recordPublicId' => $id, 'limit' => 3, 'cursor' => $cursor], absolute: false)];
+            } else {
+                abort_unless($actor instanceof User, 401);
+                $result['topic']['attachment_panel'] = $this->nativeFiles->collaboration($actor, $workspace, $reference, $this->fileAudience($audience));
+            }
+        }
+
+        return $result;
     }
 
     /** Shared task/topic thread; task pages may embed this DTO without extra route assumptions.
      * @return array<string, mixed>
      */
-    public function thread(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $type, string $id, CollaborationAudience $audience, int $page = 1, ?string $focusId = null, int $pageSize = 30): array
+    public function thread(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $type, string $id, CollaborationAudience $audience, int $page = 1, ?string $focusId = null, int $pageSize = 30, bool $includeFiles = false, bool $agentFiles = false): array
     {
         abort_unless($pageSize >= 1 && $pageSize <= 30, 422);
         $parent = $this->records->parent($workspace, $company, $type, $id);
@@ -113,12 +137,16 @@ final class CollaborationReadService
             ? $this->url('show', $workspace, $company, $audience, ['topic' => $id])
             : $this->url('comments.index', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]);
         $effective = $this->access->effectiveVisible($workspace, $company, $parent);
+        $previews = $includeFiles ? $this->filePreviews->comments($actor, $workspace, $company, $rows->items(),
+            $this->fileAudience($audience), $publisher, $effective, $agentFiles) : [];
 
         return ['parent_kind' => $parent instanceof ClientTask ? 'task' : $parent->kind->value, 'parent_title' => $parent->title,
             'parent_version' => AgentApiVersion::for($parent), 'href' => $href,
             'store_href' => $canComment ? $this->url('comments.store', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]) : null,
             'visibility_store_href' => $publisher && $canComment ? $this->url('comments.store', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]) : null,
-            'comments' => array_map(fn (ClientComment $comment): array => $this->presentComment($comment, $workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective), $rows->items()),
+            'comments' => array_map(fn (ClientComment $comment): array => $this->withFiles(
+                $this->presentComment($comment, $workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective),
+                $previews[$comment->public_id] ?? null, $agentFiles), $rows->items()),
             'next_href' => $rows->hasMorePages() ? $href.'?comments_page='.($page + 1) : null,
             'previous_href' => $page > 1 ? $href.'?comments_page='.($page - 1) : null];
     }
@@ -126,7 +154,7 @@ final class CollaborationReadService
     /** Authorized Agent/CLI comments in stable ascending order; byte bounds never skip unreturned rows.
      * @return array{data:list<array<string,mixed>>,meta:array{next_cursor:?string},parent_version:string}
      */
-    public function commentPage(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $type, string $id, CollaborationAudience $audience, int $limit, ?string $cursor): array
+    public function commentPage(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $type, string $id, CollaborationAudience $audience, int $limit, ?string $cursor, bool $includeFiles = false, bool $agentFiles = false): array
     {
         abort_unless($limit >= 1 && $limit <= 30, 422);
         $parent = $this->records->parent($workspace, $company, $type, $id);
@@ -144,12 +172,39 @@ final class CollaborationReadService
             : $this->url('comments.index', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]);
         $effective = $this->access->effectiveVisible($workspace, $company, $parent);
         $key = implode(':', ['collaboration.comments', $company->public_id, $type, $id, $actor->public_id, $audience->value, 'id-asc-tombstones-v1']);
+        if ($includeFiles) {
+            $key .= $agentFiles ? ':agent-files' : ':native-files';
+        }
+        $previews = [];
         $result = CursorPage::run($workspace, $key, $limit, $cursor,
-            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn ($rows) => $rows->where('id', '>', $after))->orderBy('id')->limit($take)->get(),
-            fn (ClientComment $comment): array => $this->presentComment($comment, $workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective),
+            function (int $take, ?int $after) use ($query, $actor, $workspace, $company, $audience, $publisher, $effective, $includeFiles, $agentFiles, &$previews) {
+                $rows = (clone $query)->when($after !== null, fn ($rows) => $rows->where('id', '>', $after))->orderBy('id')->limit($take)->get();
+                if ($includeFiles) {
+                    $previews = $this->filePreviews->comments($actor, $workspace, $company, $rows->all(), $this->fileAudience($audience), $publisher, $effective, $agentFiles);
+                }
+
+                return $rows;
+            },
+            function (ClientComment $comment) use ($workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective, $agentFiles, &$previews): array {
+                return $this->withFiles($this->presentComment($comment, $workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective),
+                    $previews[$comment->public_id] ?? null, $agentFiles);
+            },
             maxDataBytes: AgentPageBudget::dataBytes(), allowLegacyCursor: false);
 
         return [...$result, 'parent_version' => AgentApiVersion::for($parent)];
+    }
+
+    private function fileAudience(CollaborationAudience $audience): AttachmentAudience
+    {
+        return $audience === CollaborationAudience::Portal ? AttachmentAudience::Portal : AttachmentAudience::Internal;
+    }
+
+    /** @param array<string,mixed> $content
+     * @param array<string,mixed>|null $preview
+     * @return array<string,mixed> */
+    private function withFiles(array $content, ?array $preview, bool $agent): array
+    {
+        return $preview === null ? $content : [...$content, $agent ? 'attachments' : 'attachment_panel' => $preview];
     }
 
     /** @return array<string,mixed> */
