@@ -125,6 +125,15 @@ final class AttachmentReader
             && $this->portalParents($actor, $workspace, $type, $audience === AttachmentAudience::PortalPreview)->where('public_id', $id)->exists(), 404);
     }
 
+    /** Structural disclosure fact only, after the caller's current parent read authority. */
+    public function parentVisibleToClient(User|AgentPrincipal $actor, Workspace $workspace, string $type, string $id, AttachmentAudience $audience): bool
+    {
+        $this->assertParentAccess($actor, $workspace, $type, $id, $audience);
+        abort_if(in_array($type, ['topic', 'comment'], true), 422);
+
+        return $this->portalParents($actor, $workspace, $type, true)->where('public_id', $id)->exists();
+    }
+
     /** @return Builder<covariant Model> */
     private function base(Workspace $workspace, string $type): Builder
     {

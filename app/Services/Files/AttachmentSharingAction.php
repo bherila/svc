@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\BillingMaintenance;
 use App\Support\AgentApi\AgentApiVersion;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -37,18 +38,26 @@ final class AttachmentSharingAction
     public function prepareUpload(User $actor, Workspace $workspace, AttachmentParentReference $parentScope, UploadedFile $file,
         string $expectedParentVersion, AttachmentMutationOrigin $origin): ClientAttachment
     {
+        Validator::make(['file' => $file], ['file' => ['required', 'file', 'max:51200']])->validate();
+        $parent = $this->uploadPreflight($actor, $workspace, $parentScope, $origin, $expectedParentVersion);
+
+        return $this->storage->prepareForPublication($workspace, $parent, $file, $actor);
+    }
+
+    /** Read-only URL/CLI preview validation; never stages bytes or creates a receipt. */
+    public function uploadPreflight(User $actor, Workspace $workspace, AttachmentParentReference $parentScope,
+        AttachmentMutationOrigin $origin, ?string $expectedParentVersion = null): Model
+    {
         AttachmentSharingGate::assertEnabled();
         abort_unless($parentScope->collaboration(), 422);
-        Validator::make(['file' => $file], ['file' => ['required', 'file', 'max:51200']])->validate();
-        $parent = DB::transaction(function () use ($actor, $workspace, $parentScope, $expectedParentVersion, $origin) {
+
+        return DB::transaction(function () use ($actor, $workspace, $parentScope, $expectedParentVersion, $origin) {
             BillingMaintenance::share($workspace->id);
             $parent = $this->authority->lock($actor, $workspace, $parentScope, $origin);
-            abort_unless(AgentApiVersion::matches($parent, $expectedParentVersion), 409, 'The parent changed. Read it again before uploading.');
+            abort_unless($expectedParentVersion === null || AgentApiVersion::matches($parent, $expectedParentVersion), 409, 'The parent changed. Read it again before uploading.');
 
             return $parent;
         });
-
-        return $this->storage->prepareForPublication($workspace, $parent, $file, $actor);
     }
 
     public function publishPrepared(User $actor, Workspace $workspace, AttachmentParentReference $parentScope, ClientAttachment $prepared,

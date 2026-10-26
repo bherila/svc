@@ -146,6 +146,7 @@ following names are frozen for the isolated implementation.
 
 | Operation                                     | Binding                                                             | Scope/policy                                                                       |
 | --------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `attachments.visibility.get`                  | GET `/workspaces/{workspace}/attachments/{attachment}/visibility`   | `files:read`; existing manager/current-parent read policy, no writer gate         |
 | `attachments.visibility.update`               | PATCH `/workspaces/{workspace}/attachments/{attachment}/visibility` | `files:read`, `files:write`; six legacy generic parents, manager-only              |
 | `collaboration.attachments.list`              | GET scoped parent base below                                        | `files:read`, `collaboration:read`; current parent reader                          |
 | `collaboration.attachments.download_url`      | POST scoped base `/{attachment}/download-url`                       | Same read scopes; current file reader                                              |
@@ -162,8 +163,12 @@ parent type/UUID and company/project lineage, including download and replay.
 The route IDs are excluded from request bodies; extra identity/body/origin keys
 are rejected even when they agree with the route.
 
-There are eight new REST bindings and six new MCP tools; binary download and
-multipart upload remain REST-only. `AgentMcpAttachmentSharingTools` uses the same
+There are nine new REST bindings and seven new MCP tools; binary download and
+multipart upload remain REST-only. The additive visibility GET supplies legacy
+API read parity without a write or a writer gate; it reuses
+AttachmentVisibilityResponse and preserves existing Attachment schemas. New
+collaboration rows additionally expose stored/effective visibility and a generic
+sharing note only after current parent and file authorization. `AgentMcpAttachmentSharingTools` uses the same
 REST dispatcher and a concrete factory instance. Use authenticated ten-minute
 prepared URLs, never inline blobs. URL preparation has no receipt or durable
 side effect; multipart publication, sharing and deletion require an
@@ -174,7 +179,7 @@ unchanged.
 Use `AgentDeploymentFlags::ATTACHMENT_SHARING` as a non-bypassable availability
 condition on the five new writer bindings (including upload URL preparation),
 and existing file/collaboration Agent cutovers as additional Agent conditions.
-Keep the three new readers usable with the flag off; they enforce R1 reader
+Keep the four new readers usable with the flag off; they enforce R1 reader
 policies, including exact Portal-first disclosure for dual Agent identities.
 Do not mark the scoped collaboration operations blanket manager-only.
 
@@ -287,7 +292,7 @@ bounded UI/comment previews and four-width browser evidence. Required tests:
 - CLI preview row/object fingerprints unchanged, apply parity, exact actor and
   private input enforcement; prepared cleanup/repair and capable-R1 rollback
   remain available with marker retained and old cached settings.
-- Closed OpenAPI/MCP schemas, exact inventories, six actual tools/eight REST
+- Closed OpenAPI/MCP schemas, exact inventories, seven actual tools/nine REST
   bindings, native server URLs, stable retry/stale UI behavior; browser at
   390/820/1440/1920 with individual screenshot review. Run full/static/frontend/
   mutation gates only in the coordinator's scheduled slots, then require exact
