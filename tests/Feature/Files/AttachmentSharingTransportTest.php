@@ -10,12 +10,14 @@ use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentAttachmentService;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Collaboration\CollaborationReadService;
 use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentMutationOrigin;
 use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentPrivacyLatch;
+use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Files\AttachmentSharingPresenter;
 use App\Services\Files\AttachmentSharingTransport;
 use App\Services\Files\AttachmentStorageService;
@@ -53,6 +55,8 @@ final class AttachmentSharingTransportTest extends TestCase
             ->name('agent-api.v1.collaboration.attachments.upload');
         Route::get('/synthetic/{workspace}/{client}/{recordType}/{recordPublicId}/files', fn () => null)
             ->name('agent-api.v1.collaboration.attachments.index');
+        Route::patch('/synthetic/{workspace}/{attachment}/visibility', fn () => null)->name('svc.files.visibility.update');
+        Route::get('/synthetic/{workspace}/{recordType}/{recordPublicId}/legacy-files', fn () => null)->name('svc.files.parent.index');
         Route::getRoutes()->refreshNameLookups();
     }
 
@@ -275,6 +279,34 @@ final class AttachmentSharingTransportTest extends TestCase
             $this->assertSame([], $preview['data']);
             $this->assertNull($preview['next_href']);
         }
+    }
+
+    public function test_legacy_parent_page_keeps_existing_forms_available_independently_of_sharing_writes(): void
+    {
+        [$workspace, $company, $project, $owner, $publisher] = $this->fixture();
+        $file = app(AttachmentStorageService::class)->store($workspace, $company, $this->upload(), $owner);
+        $native = app(AttachmentSharingNativeView::class);
+        $scope = new AttachmentParentReference('company', $company->public_id);
+        $panel = $native->legacy($owner, $workspace, $scope);
+        $legacy = app(AgentAttachmentService::class)->metadata($owner, $workspace, $file->public_id);
+        $this->assertSame(['id', 'record_type', 'record_id', 'filename', 'media_type', 'bytes', 'sha256', 'status', 'version'], array_keys($legacy['data']));
+        $this->assertSame([$file->public_id], array_column($panel['files'], 'id'));
+        $this->assertNotNull($panel['files'][0]['sharing']);
+        $this->assertNotNull($panel['legacy_upload_href']);
+        $this->assertNull($panel['upload']);
+        $this->assertNull($panel['next_href']);
+        config(['svc.attachments.sharing_writes_enabled' => false]);
+        $disabled = $native->legacy($owner, $workspace, $scope);
+        $this->assertNull($disabled['files'][0]['sharing']);
+        $this->assertSame($panel['files'][0]['delete_href'], $disabled['files'][0]['delete_href']);
+        $this->assertSame($panel['legacy_upload_href'], $disabled['legacy_upload_href']);
+        $projectFile = app(AttachmentStorageService::class)->store($workspace, $project, $this->upload(), $owner);
+        $reader = $native->legacy($publisher, $workspace, new AttachmentParentReference('project', $project->public_id));
+        $this->assertSame([$projectFile->public_id], array_column($reader['files'], 'id'));
+        $this->assertNull($reader['files'][0]['sharing']);
+        $this->assertNull($reader['files'][0]['delete_href']);
+        $this->assertNull($reader['legacy_upload_href']);
+        $this->assertRefused(404, fn () => $native->legacy($owner, $workspace, new AttachmentParentReference('invoice', $company->public_id)));
     }
 
     /** @return array{Workspace,ClientCompany,ClientProject,User,User,ClientCollaborationTopic} */

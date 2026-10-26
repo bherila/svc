@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react';
+import { router, useForm } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
@@ -93,18 +93,42 @@ function SharingControl({
     );
 }
 
-function RemoveAttachment({ file }: { file: SharedAttachment }) {
+function RemoveAttachment({
+    file,
+    nativeForm,
+}: {
+    file: SharedAttachment;
+    nativeForm: boolean;
+}) {
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const attempt = useRef<string | null>(null);
 
-    if (!file.delete_href || !file.sharing) {
+    if (!file.delete_href || (!nativeForm && !file.sharing)) {
         return null;
     }
 
     async function remove() {
-        if (!file.delete_href || !file.sharing) {
+        if (!file.delete_href) {
+            return;
+        }
+
+        if (nativeForm) {
+            setBusy(true);
+            router.delete(file.delete_href, {
+                preserveScroll: true,
+                onError: () =>
+                    setError(
+                        'The file could not be removed. Reload the page and try again.',
+                    ),
+                onFinish: () => setBusy(false),
+            });
+
+            return;
+        }
+
+        if (!file.sharing) {
             return;
         }
 
@@ -173,6 +197,56 @@ function RemoveAttachment({ file }: { file: SharedAttachment }) {
                 </p>
             )}
         </div>
+    );
+}
+
+function LegacyUploadAttachment({ href }: { href: string }) {
+    const form = useForm<{ file: File | null }>({ file: null });
+
+    return (
+        <form
+            className="grid min-w-0 grid-cols-1 gap-2"
+            onSubmit={(event) => {
+                event.preventDefault();
+                form.post(href, {
+                    forceFormData: true,
+                    preserveScroll: true,
+                    onSuccess: () => form.reset(),
+                });
+            }}
+        >
+            <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
+                Upload a file
+                <input
+                    type="file"
+                    className="w-full min-w-0 rounded-md border p-2 text-sm"
+                    disabled={form.processing}
+                    required
+                    onChange={(event) =>
+                        form.setData('file', event.target.files?.[0] ?? null)
+                    }
+                />
+            </label>
+            <p className="text-sm text-muted-foreground">
+                New files are private.
+            </p>
+            <div>
+                <Button
+                    type="submit"
+                    disabled={form.processing || form.data.file === null}
+                >
+                    Upload file
+                </Button>
+            </div>
+            {form.errors.file && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-destructive"
+                >
+                    {form.errors.file}
+                </p>
+            )}
+        </form>
     );
 }
 
@@ -265,9 +339,11 @@ function UploadAttachment({
 export default function AttachmentSharingPanel({
     panel,
     title = 'Files',
+    legacyForms,
 }: {
     panel: AttachmentPanel;
     title?: string;
+    legacyForms?: { upload_href: string | null };
 }) {
     const [pages, setPages] = useState({
         source: panel,
@@ -319,11 +395,17 @@ export default function AttachmentSharingPanel({
                                 }));
                             }}
                         />
-                        <RemoveAttachment file={file} />
+                        <RemoveAttachment
+                            file={file}
+                            nativeForm={legacyForms !== undefined}
+                        />
                     </li>
                 ))}
             </ul>
             {panel.upload && <UploadAttachment upload={panel.upload} />}
+            {legacyForms?.upload_href && (
+                <LegacyUploadAttachment href={legacyForms.upload_href} />
+            )}
             {next && (
                 <div>
                     <Button

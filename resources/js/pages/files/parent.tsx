@@ -7,8 +7,10 @@ import type { AttachmentPanel } from '@/types/files';
 
 export default function ParentFiles({
     attachment_panel,
+    legacy_upload_href,
 }: {
     attachment_panel: AttachmentPanel;
+    legacy_upload_href?: string | null;
 }) {
     return (
         <WorkspaceShell>
@@ -21,6 +23,11 @@ export default function ParentFiles({
                     key={attachment_panel.parent_version}
                     panel={attachment_panel}
                     title="Attached files"
+                    legacyForms={
+                        legacy_upload_href === undefined
+                            ? undefined
+                            : { upload_href: legacy_upload_href }
+                    }
                 />
             </main>
         </WorkspaceShell>

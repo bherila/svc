@@ -51,4 +51,28 @@ final class AttachmentSharingNativeView
             'next_href' => $cursor === null ? null : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', [...$readParameters,
                 'limit' => $page?->limit ?? 100, 'cursor' => $cursor], absolute: false)];
     }
+
+    /** Legacy native forms retain their existing upload/deletion contracts.
+     * @return array<string,mixed> */
+    public function legacy(User $actor, Workspace $workspace, AttachmentParentReference $reference, int $page = 1): array
+    {
+        abort_unless(in_array($reference->type, ['company', 'project', 'task'], true), 404);
+        $view = $this->presenter->view($actor, $workspace, $reference, AttachmentAudience::Internal);
+        $rows = $this->reader->forParent($actor, $workspace, $reference->type, $reference->publicId, AttachmentAudience::Internal)
+            ->orderByDesc('id')->simplePaginate(100, ['*'], 'page', $page);
+        $files = [];
+        foreach ($rows->items() as $file) {
+            $files[] = ['id' => $file->public_id, 'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
+                'uploaded_at' => $file->created_at?->toIso8601String(),
+                'download_href' => route('svc.files.download', [$workspace, $file->public_id], absolute: false),
+                'delete_href' => $view->canPublish ? route('svc.files.destroy', [$workspace, $file->public_id], absolute: false) : null,
+                'sharing' => $this->presenter->nativeControl($file, $view, route('svc.files.visibility.update', [
+                    'workspace' => $workspace, 'attachment' => $file->public_id], absolute: false), AttachmentAudience::Internal)];
+        }
+        $parameters = ['workspace' => $workspace, 'recordType' => $reference->type, 'recordPublicId' => $reference->publicId];
+
+        return ['files' => $files, 'upload' => null, 'parent_version' => AgentApiVersion::for($view->parent),
+            'next_href' => $rows->hasMorePages() ? route('svc.files.parent.index', [...$parameters, 'page' => $page + 1], absolute: false) : null,
+            'legacy_upload_href' => $view->canPublish ? route('svc.files.store', $parameters, absolute: false) : null];
+    }
 }

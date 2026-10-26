@@ -34,6 +34,18 @@ final class AttachmentSharingController extends Controller
             $request->all(), 'svc-native:attachments', $this->key($request), AttachmentMutationOrigin::Native));
     }
 
+    public function legacyParentPage(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): Response
+    {
+        $panel = $this->legacyPanel($request, $workspace, $recordType, $recordPublicId);
+
+        return Inertia::render('files/parent', ['attachment_panel' => $panel, 'legacy_upload_href' => $panel['legacy_upload_href']]);
+    }
+
+    public function legacyParentIndex(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
+    {
+        return response()->json($this->legacyPanel($request, $workspace, $recordType, $recordPublicId));
+    }
+
     public function collaborationPage(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): Response
     {
         return Inertia::render('files/parent', ['attachment_panel' => $this->view->collaboration($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
@@ -102,6 +114,15 @@ final class AttachmentSharingController extends Controller
         abort_unless($actor instanceof User, 401);
 
         return $actor;
+    }
+
+    /** @return array<string,mixed> */
+    private function legacyPanel(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): array
+    {
+        abort_unless(in_array($recordType, ['company', 'project', 'task'], true), 404);
+        $input = $request->validate(['page' => ['sometimes', 'integer', 'min:1', 'max:100000']]);
+
+        return $this->view->legacy($this->actor($request), $workspace, new AttachmentParentReference($recordType, $recordPublicId), (int) ($input['page'] ?? 1));
     }
 
     private function key(Request $request): string

@@ -6,7 +6,28 @@ import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import type { AttachmentPanel } from '@/types/files';
 
 const reload = vi.hoisted(() => vi.fn());
-vi.mock('@inertiajs/react', () => ({ router: { reload } }));
+const legacy = vi.hoisted(() => ({ post: vi.fn(), delete: vi.fn() }));
+vi.mock('@inertiajs/react', async () => {
+    const { useState } = await import('react');
+
+    return {
+        router: { reload, delete: legacy.delete },
+        useForm(initial: { file: File | null }) {
+            const [data, setData] = useState(initial);
+
+            return {
+                data,
+                errors: {},
+                processing: false,
+                setData: (field: string, value: unknown) =>
+                    setData((prior) => ({ ...prior, [field]: value })),
+                post: (href: string, options: object) =>
+                    legacy.post(href, data, options),
+                reset: () => setData(initial),
+            };
+        },
+    };
+});
 
 const panel: AttachmentPanel = {
     files: [
@@ -157,5 +178,43 @@ describe('attachment sharing panel', () => {
         expect(
             screen.queryByRole('button', { name: 'Load more files' }),
         ).not.toBeInTheDocument();
+    });
+
+    it('retains legacy native form upload and confirmed deletion when sharing controls are unavailable', async () => {
+        vi.stubGlobal('fetch', vi.fn());
+        render(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    files: panel.files.map((file) => ({
+                        ...file,
+                        sharing: null,
+                    })),
+                    upload: null,
+                    next_href: null,
+                }}
+                legacyForms={{ upload_href: '/synthetic/legacy-upload' }}
+            />,
+        );
+        const file = new File(['Synthetic bytes'], 'synthetic-legacy.txt');
+        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        expect(legacy.post).toHaveBeenCalledWith(
+            '/synthetic/legacy-upload',
+            { file },
+            expect.objectContaining({ forceFormData: true }),
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Remove file' }));
+        expect(legacy.delete).not.toHaveBeenCalled();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Confirm removal' }),
+        );
+        expect(legacy.delete).toHaveBeenCalledWith(
+            '/synthetic/delete',
+            expect.objectContaining({ preserveScroll: true }),
+        );
+        expect(fetch).not.toHaveBeenCalled();
     });
 });
