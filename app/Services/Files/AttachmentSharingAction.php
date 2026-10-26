@@ -109,4 +109,21 @@ final class AttachmentSharingAction
                 $deletion ? [ClientAttachment::STATE_DELETING, ClientAttachment::STATE_DELETED] : [ClientAttachment::STATE_AVAILABLE]);
         });
     }
+
+    /** CLI preview validates the same locked authority/CAS without mutation or receipt/audit. */
+    public function mutationPreflight(User $actor, Workspace $workspace, AttachmentParentReference $parentScope,
+        string $attachmentId, string $expectedVersion, string $expectedParentVersion): ClientAttachment
+    {
+        AttachmentSharingGate::assertEnabled();
+
+        return DB::transaction(function () use ($actor, $workspace, $parentScope, $attachmentId, $expectedVersion, $expectedParentVersion): ClientAttachment {
+            BillingMaintenance::share($workspace->id);
+            $parent = $this->authority->lock($actor, $workspace, $parentScope, AttachmentMutationOrigin::Native);
+            abort_unless(AgentApiVersion::matches($parent, $expectedParentVersion), 409, 'The parent changed. Read it again before saving.');
+            $file = $this->files->lockFile($workspace, $attachmentId, $parentScope);
+            abort_unless(AgentApiVersion::matches($file, $expectedVersion), 409, 'The attachment changed. Read it again before saving.');
+
+            return $file;
+        });
+    }
 }

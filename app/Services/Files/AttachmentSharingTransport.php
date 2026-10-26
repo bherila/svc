@@ -71,7 +71,10 @@ final class AttachmentSharingTransport
     public function listing(User|AgentPrincipal $actor, Workspace $workspace, AttachmentParentReference $reference,
         AttachmentAudience $audience, ?AttachmentPageQuery $page = null): array
     {
-        abort_unless($reference->collaboration(), 422);
+        if (! $reference->collaboration()) {
+            abort_unless(in_array($reference->type, AgentAttachmentService::uploadableTypes(), true), 422);
+            $this->legacy->authorize($actor, $workspace);
+        }
         $view = $this->presenter->view($actor, $workspace, $reference, $audience);
         $query = $this->reader->forParent($actor, $workspace, $reference->type, $reference->publicId, $audience);
         $page ??= AttachmentPageQuery::fromInput([]);
@@ -82,6 +85,19 @@ final class AttachmentSharingTransport
             maxDataBytes: AgentPageBudget::dataBytes(), allowLegacyCursor: false);
 
         return [...$result, 'parent_version' => AgentApiVersion::for($view->parent)];
+    }
+
+    /** Native CLI read, without a receipt or a writer gate.
+     * @return array<string,mixed> */
+    public function metadata(User $actor, Workspace $workspace, AttachmentParentReference $reference, string $id): array
+    {
+        if (! $reference->collaboration()) {
+            $this->legacyReference($actor, $workspace, $id, AttachmentAudience::Internal);
+        }
+        $view = $this->presenter->view($actor, $workspace, $reference, AttachmentAudience::Internal);
+
+        return ['data' => $this->presenter->collaborationFile($this->find($actor, $workspace, $reference, $id, AttachmentAudience::Internal), $view),
+            'parent_version' => AgentApiVersion::for($view->parent)];
     }
 
     /** @return array<string,mixed> */

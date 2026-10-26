@@ -184,6 +184,34 @@ final class AttachmentSharingTransportTest extends TestCase
             'synthetic-native', 'invalid-extra', AttachmentMutationOrigin::Native);
     }
 
+    public function test_cli_preview_has_no_objects_rows_receipts_or_audit_and_apply_uses_the_same_private_contract(): void
+    {
+        [$workspace, $company, , , $publisher, $topic] = $this->fixture();
+        $source = $this->policyDirectory.'/synthetic-source.txt';
+        $input = $this->policyDirectory.'/synthetic-request.json';
+        File::put($source, 'Synthetic command upload bytes');
+        File::put($input, json_encode(['source_path' => $source, 'expected_version' => AgentApiVersion::for($topic)], JSON_THROW_ON_ERROR));
+        chmod($input, 0600);
+        $arguments = ['operation' => 'upload', 'workspace' => $workspace->public_id, 'record_type' => 'topic', 'record_id' => $topic->public_id,
+            '--company' => $company->public_id, '--actor' => $publisher->public_id, '--input' => $input, '--key' => 'synthetic-cli-key', '--format' => 'json'];
+        $this->artisan('svc:attachments', $arguments)->assertExitCode(0);
+        $this->assertDatabaseCount('client_attachments', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+        $this->assertDatabaseCount('agent_mutation_audits', 0);
+        $this->assertSame([], Storage::disk('svc_files')->allFiles());
+        chmod($input, 0644);
+        $this->artisan('svc:attachments', $arguments)->assertExitCode(1);
+        $this->assertDatabaseCount('client_attachments', 0);
+        chmod($input, 0600);
+        $this->artisan('svc:attachments', [...$arguments, '--apply' => true])->assertExitCode(0);
+        $file = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertFalse($file->is_visible_to_client);
+        $this->assertSame('synthetic-source.txt', $file->original_filename);
+        Storage::disk('svc_files')->assertExists($file->object_key);
+        $this->assertDatabaseCount('agent_mutation_receipts', 1);
+        $this->assertDatabaseCount('agent_mutation_audits', 1);
+    }
+
     /** @return array{Workspace,ClientCompany,ClientProject,User,User,ClientCollaborationTopic} */
     private function fixture(): array
     {
