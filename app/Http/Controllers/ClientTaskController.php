@@ -26,7 +26,7 @@ use Inertia\Response;
 
 class ClientTaskController extends Controller
 {
-    public function show(Request $request, Workspace $workspace, ClientTask $clientTask, WorkspaceAuthorization $authorization, WorkspaceTaskMutationAction $tasks, TaskEditorPresenter $presenter): Response
+    public function show(Request $request, Workspace $workspace, ClientTask $clientTask, WorkspaceAuthorization $authorization, WorkspaceTaskMutationAction $tasks, TaskEditorPresenter $presenter, WorkspaceTaskRepository $taskRecords): Response
     {
         $authorization->assertOwnedBy($workspace, $clientTask);
         $task = $tasks->find($workspace, $clientTask->public_id);
@@ -39,7 +39,7 @@ class ClientTaskController extends Controller
         return Inertia::render('clients/task', [
             'company' => ['name' => $company->name],
             'project' => ['name' => $task->project->name],
-            'task' => $presenter->task($workspace, $task),
+            'task' => $presenter->task($workspace, $task, $taskRecords->assigneeOptions($workspace, $task->project)),
             'comment_thread_url' => app(CollaborationReadService::class)->taskThreadHref($actor, $workspace, $company, $task, CollaborationAudience::Internal),
         ]);
     }

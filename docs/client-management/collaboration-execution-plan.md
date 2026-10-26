@@ -309,6 +309,16 @@ preview/`--apply` conventions. Root integrates the operation catalog, scopes,
 routes, OpenAPI, generated types and conformance snapshots. Do not describe a
 feature as complete while an advertised transport still lacks it.
 
+Native pages include authorized, bounded initial picker/list results in their
+existing Inertia JSON page props. New file/planning controls should render that
+first page without a mount-time request, including an empty result. Keep typed
+searches, pagination and explicit refreshes asynchronous. Seed only the initially
+selected scope; do not preload every project or duplicate the page payload in a
+second script. Initial data uses the same scoped reader as subsequent requests,
+and writes still recheck current authority and revisions. After mutations,
+refresh the complete set of affected props together; financial totals, versions
+and collection state must not become inconsistent to save response bytes.
+
 Extend unified MariaDB search for notes, discussions and permitted comments,
 landing on exact task/topic/comment URLs. Search filters authorization before
 snippets/counts/pagination. Record metadata-only activity events for creation,

@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     AlertDialog,
@@ -27,6 +26,7 @@ import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 
 /**
  * Payment reminders on an invoice, as the operator sees them (#438): the
@@ -123,7 +123,7 @@ export function PaymentRemindersCard({
                               `Reminder ${statusLabel(result.data.status).toLowerCase()}.`,
                       },
             );
-            router.reload({ onFinish: () => setBusy(false) });
+            void refreshPageProps({ onFinish: () => setBusy(false) });
 
             return;
         }
@@ -339,7 +339,7 @@ export function PaymentReminderCadenceCard({
 
         if (result.ok) {
             setNotice(null);
-            router.reload({ onFinish: () => setBusy(false) });
+            void refreshPageProps({ onFinish: () => setBusy(false) });
 
             return;
         }

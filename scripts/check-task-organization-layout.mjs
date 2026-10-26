@@ -287,66 +287,86 @@ try {
                 }
             }
 
-            for (const [state, href] of Object.entries(fixture.pages)) {
-                await page.goto(new URL(href, origin).href);
-                await expect(page.locator('main')).toBeVisible();
-                await expect(
-                    page.getByRole('button', { name: 'Current client' }),
-                ).toContainText(fixture.company_name);
-                await capture(state);
+            if (!process.argv.includes('--assignee-seed')) {
+                for (const [state, href] of Object.entries(fixture.pages)) {
+                    await page.goto(new URL(href, origin).href);
+                    await expect(page.locator('main')).toBeVisible();
+                    await expect(
+                        page.getByRole('button', { name: 'Current client' }),
+                    ).toContainText(fixture.company_name);
+                    await capture(state);
+                }
+
+                await page.goto(initial);
+                await page
+                    .getByRole('button', { name: 'New list', exact: true })
+                    .click();
+                await page
+                    .getByLabel('List name', { exact: true })
+                    .fill('Synthetic browser list');
+                await capture('new-list-dialog');
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                await page
+                    .getByRole('button', { name: 'Edit list', exact: true })
+                    .first()
+                    .click();
+                await capture('edit-list-dialog');
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                await page
+                    .getByRole('button', { name: 'New task', exact: true })
+                    .click();
+                await page
+                    .getByLabel('Title', { exact: true })
+                    .fill('Synthetic browser task');
+                await page
+                    .getByLabel('Description', { exact: true })
+                    .fill('Synthetic task description '.repeat(25));
+                await capture('new-task-dialog');
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                await page
+                    .getByRole('button', { name: 'Archive list', exact: true })
+                    .first()
+                    .click();
+                await capture('archive-list-dialog');
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toHaveCount(0);
             }
 
-            await page.goto(initial);
-            await page
-                .getByRole('button', { name: 'New list', exact: true })
-                .click();
-            await page
-                .getByLabel('List name', { exact: true })
-                .fill('Synthetic browser list');
-            await capture('new-list-dialog');
-            await page.keyboard.press('Escape');
-            await expect(page.getByRole('dialog')).toHaveCount(0);
-            await page
-                .getByRole('button', { name: 'Edit list', exact: true })
-                .first()
-                .click();
-            await capture('edit-list-dialog');
-            await page.keyboard.press('Escape');
-            await expect(page.getByRole('dialog')).toHaveCount(0);
-            await page
-                .getByRole('button', { name: 'New task', exact: true })
-                .click();
-            await page
-                .getByLabel('Title', { exact: true })
-                .fill('Synthetic browser task');
-            await page
-                .getByLabel('Description', { exact: true })
-                .fill('Synthetic task description '.repeat(25));
-            await capture('new-task-dialog');
-            await page.keyboard.press('Escape');
-            await expect(page.getByRole('dialog')).toHaveCount(0);
-            await page
-                .getByRole('button', { name: 'Archive list', exact: true })
-                .first()
-                .click();
-            await capture('archive-list-dialog');
-            await page.keyboard.press('Escape');
-            await expect(page.getByRole('dialog')).toHaveCount(0);
-            const staffResponse = page.waitForResponse((response) => {
-                const actual = new URL(response.url());
-                const expected = new URL(
-                    fixture.advisory_assignees_page,
-                    origin,
-                );
+            const staffQueries = [];
+            const staffPath = new URL(fixture.advisory_assignees_page, origin)
+                .pathname;
+            page.on('request', (request) => {
+                const url = new URL(request.url());
 
-                return (
-                    actual.origin === expected.origin &&
-                    actual.pathname === expected.pathname &&
-                    actual.searchParams.get('q') === ''
-                );
+                if (url.origin === origin && url.pathname === staffPath) {
+                    staffQueries.push(url.searchParams.get('q'));
+                }
             });
             await page.goto(new URL(fixture.advisory_task_page, origin).href);
+            await expect(page.getByRole('checkbox')).toHaveCount(1);
+            await page.waitForTimeout(350);
+            expect(staffQueries).toEqual([]);
+            await capture('initial-assignee-seed');
+            const search = page.getByLabel('Find staff with project access');
+            const staffResponse = page.waitForResponse((response) => {
+                const actual = new URL(response.url());
+
+                return (
+                    actual.origin === origin &&
+                    actual.pathname === staffPath &&
+                    actual.searchParams.get('q') === 'Synthetic'
+                );
+            });
+            await search.fill('Synthetic');
             expect((await staffResponse).status()).toBe(200);
+            await expect(page.getByRole('checkbox')).toHaveCount(1);
+            await search.fill('');
+            await expect(page.getByRole('checkbox')).toHaveCount(1);
+            await page.waitForTimeout(350);
+            expect(staffQueries).toEqual(['Synthetic']);
             await page
                 .getByRole('combobox', { name: 'Status', exact: true })
                 .click();

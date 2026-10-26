@@ -285,6 +285,9 @@ class WorkspaceNavigationTest extends TestCase
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic Bounded', 'synthetic-bounded', $manager);
         $company = $this->company($workspace, 'Synthetic Bounded Client', 'bounded-client');
+        // Keep the same page capabilities in both renders: zero projects has
+        // no task editor or initial roster, while one and six each load one.
+        $this->project($workspace, $company, 'Synthetic Initial Project');
 
         $this->assertQueryCountIndependentOfRows(
             fn () => $this->actingAs($manager)

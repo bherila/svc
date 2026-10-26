@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     AlertDialog,
@@ -19,6 +18,7 @@ import { apiRequest } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 
 /**
  * Who collects this invoice, and its Square link, as the operator sees it.
@@ -71,7 +71,7 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
         if (result.ok) {
             setNotice(null);
             setEditing(false);
-            router.reload({ onFinish: () => setBusy(false) });
+            void refreshPageProps({ onFinish: () => setBusy(false) });
 
             return;
         }
@@ -95,7 +95,7 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
 
         if (result.ok) {
             setNotice(null);
-            router.reload({ onFinish: () => setBusy(false) });
+            void refreshPageProps({ onFinish: () => setBusy(false) });
 
             return;
         }
