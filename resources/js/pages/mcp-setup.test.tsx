@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { lifetimeLabel } from '@/components/api-credentials';
@@ -134,7 +134,7 @@ describe('MCP setup guide', () => {
         );
         vi.stubGlobal('fetch', fetchMock);
         const user = userEvent.setup();
-        const { container } = render(
+        const { container, rerender, unmount } = render(
             <McpSetup serverUrl={serverUrl} available rest={rest()} />,
         );
 
@@ -162,8 +162,34 @@ describe('MCP setup guide', () => {
         expect(
             screen.getByRole('button', { name: 'Copy API token' }),
         ).toBeInTheDocument();
-        expect(inertia.reload).toHaveBeenCalledWith({ only: ['rest'] });
+        expect(inertia.reload).toHaveBeenCalledWith({
+            only: ['rest'],
+            onFinish: expect.any(Function),
+        });
+        // The list response contains metadata only. Its prop update and finish
+        // callback must neither erase the creation response nor issue again.
+        const refreshed = rest({
+            tokens: [
+                {
+                    id: 'synthetic-new-token',
+                    name: 'Synthetic connector',
+                    scopes: ['billing:read'],
+                    created_at: null,
+                    expires_at: '2027-01-08T00:00:00+00:00',
+                    revoke_href:
+                        '/account/api-credentials/tokens/synthetic-new-token',
+                },
+            ],
+        });
+        rerender(<McpSetup serverUrl={serverUrl} available rest={refreshed} />);
+        await act(async () => inertia.reload.mock.calls[0][0].onFinish());
+        expect(screen.getByText('eyJ'.repeat(400))).toBeVisible();
+        expect(fetchMock).toHaveBeenCalledOnce();
         expect(horizontalOverflowRisks(container)).toEqual([]);
+        // A fresh mount has only page props and cannot recover the secret.
+        unmount();
+        render(<McpSetup serverUrl={serverUrl} available rest={refreshed} />);
+        expect(screen.queryByText('eyJ'.repeat(400))).not.toBeInTheDocument();
     });
 
     it('shows a refusal and keeps the form', async () => {
@@ -264,8 +290,14 @@ describe('MCP setup guide', () => {
         expect(init.method).toBe('DELETE');
         expect(inertia.delete).not.toHaveBeenCalled();
         await vi.waitFor(() =>
-            expect(inertia.reload).toHaveBeenCalledWith({ only: ['rest'] }),
+            expect(inertia.reload).toHaveBeenCalledWith({
+                only: ['rest'],
+                onFinish: expect.any(Function),
+            }),
         );
+        await act(async () => inertia.reload.mock.calls[0][0].onFinish());
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(JSON.parse(String(init.body))).toEqual({});
     });
 
     it('hides the creation forms while issuing is switched off', () => {

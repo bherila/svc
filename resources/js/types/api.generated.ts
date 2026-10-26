@@ -1207,7 +1207,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine, the same path invoices.preview_period rolls back. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. Nothing generates cadence period drafts automatically: a started period without one is waiting for this call, and billing_audit.stale_and_missing lists those periods. Requires confirmation and the agreement version. */
+        /** @description Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine, the same path invoices.preview_period rolls back. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. Where the deployment enables it, an hourly job creates the current period's draft for each agreement without a billing schedule that has something to bill; otherwise a started period without one is waiting for this call, and billing_audit.stale_and_missing lists those periods. Requires confirmation and the agreement version. */
         post: operations['invoices.generate_period'];
         delete?: never;
         options?: never;
@@ -1289,7 +1289,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only. Runs the checks and cadence engine of invoices.generate_period for one started retainer cycle inside a transaction that is always rolled back, and returns the draft it would write and any other invoice of the client the same generation would create, rewrite or remove. Writes nothing and takes no idempotency key. Refuses what generation refuses, with the same status, including 409 for a period that already has a non-void invoice. agreement_version is the expected_version a following invoices.generate_period call must present. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice. */
+        /** @description Workspace managers only. Runs the checks and cadence engine of invoices.generate_period for one started retainer cycle inside a transaction that is always rolled back, and returns the draft it would write and any other invoice of the client the same generation would create, rewrite or remove. Writes nothing and takes no idempotency key. Refuses what generation refuses, with the same status, including 409 for a period that already has a non-void invoice. agreement_version is the expected_version a following invoices.generate_period call must present. Where the deployment enables it, an hourly job creates the current period's draft for each agreement without a billing schedule that has something to bill; billing_audit.stale_and_missing lists started periods with no non-void invoice. */
         get: operations['invoices.preview_period'];
         put?: never;
         post?: never;

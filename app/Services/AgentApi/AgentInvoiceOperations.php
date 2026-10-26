@@ -3,14 +3,12 @@
 namespace App\Services\AgentApi;
 
 use App\Models\AgentPrincipal;
-use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
-use App\Services\Billing\BillingCycleResolver;
-use App\Services\Billing\BillingMaintenance;
+use App\Services\Billing\CadencePeriodGuard;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
@@ -19,13 +17,8 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
-use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceEmailDraft;
-use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
-use App\Support\Concurrency\Locks;
-use App\Support\WorkspaceClock;
-use Carbon\Carbon;
 use Closure;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -43,8 +36,7 @@ final class AgentInvoiceOperations
         private readonly InvoiceCorrectionService $corrections,
         private readonly InvoiceFromTimeService $fromTime,
         private readonly ClientInvoicingService $cadence,
-        private readonly BillingCycleResolver $cycles,
-        private readonly WorkspaceClock $clock,
+        private readonly CadencePeriodGuard $periods,
         private readonly AgentInvoicePresenter $presenter,
         private readonly CadencePreviewInvoiceChanges $previewChanges,
         private readonly InvoiceEmailService $email,
@@ -181,7 +173,7 @@ final class AgentInvoiceOperations
     {
         $ids = $this->run('invoices.generate_period', $actor, $workspace, $client, $key, ['agreement_id' => $agreement, 'body' => $body], function () use ($workspace, $agreement, $body): string {
             $data = $this->validate($body, ['expected_version' => ['required', 'string', 'size:64'], 'period_start' => ['required', 'date_format:Y-m-d'], 'confirm' => ['required', new ExplicitConfirmation]]);
-            [$company, $record, $start] = $this->lockPeriod($workspace, $agreement, $data['period_start'], $data['expected_version']);
+            [$company, $record, $start] = $this->periods->lock($workspace, $agreement, $data['period_start'], $data['expected_version']);
 
             return $this->cadence->generateCadencePeriod($company, $record, $start)->public_id;
         });
@@ -212,7 +204,7 @@ final class AgentInvoiceOperations
         DB::beginTransaction();
         try {
             return $this->refusalsAsValidation(function () use ($workspace, $agreement, $data): array {
-                [$company, $record, $start] = $this->lockPeriod($workspace, $agreement, $data['period_start'], null);
+                [$company, $record, $start] = $this->periods->lock($workspace, $agreement, $data['period_start'], null);
                 // Read before generation, which is what a generate call
                 // following this preview must present as expected_version.
                 $version = AgentApiVersion::for($record);
@@ -230,49 +222,6 @@ final class AgentInvoiceOperations
             // returned, refused or failed has written nothing.
             DB::rollBack();
         }
-    }
-
-    /**
-     * Lock and check one cadence period of an agreement: the guard
-     * invoices.generate_period and invoices.preview_period share, so a preview
-     * refuses exactly what generation would. The caller holds the transaction.
-     *
-     * @return array{ClientCompany, ClientAgreement, Carbon}
-     */
-    private function lockPeriod(Workspace $workspace, string $agreement, string $periodStart, ?string $expectedVersion): array
-    {
-        BillingMaintenance::share($workspace->id);
-        $record = ClientAgreement::query()->where('workspace_id', $workspace->id)->where('public_id', $agreement)->tap(Locks::forUpdate())->firstOrFail();
-        if ($expectedVersion !== null) {
-            abort_unless(AgentApiVersion::matches($record, $expectedVersion), 409, 'The agreement has changed; read it and retry.');
-        }
-        if ($record->status !== 'active' || ! $record->billsOnARecurringCadence()) {
-            throw ValidationException::withMessages(['agreement_id' => 'Only active recurring agreements can generate cadence invoices.']);
-        }
-        $start = Carbon::parse($periodStart)->startOfDay();
-        $earliest = $record->starts_on->copy();
-        if ($record->effectiveBillingCadence() === BillingCadence::Monthly) {
-            $earliest = $earliest->startOfMonth();
-        }
-        if ($start->toDateString() < $earliest->toDateString() || $record->starts_on->toDateString() > $this->clock->today($workspace)->toDateString()) {
-            throw ValidationException::withMessages(['period_start' => 'Choose a cadence period after the agreement has begun.']);
-        }
-        $cycle = $this->cycles->cycleContaining($record, $start);
-        if (! $cycle->start->isSameDay($start) || $cycle->end->toDateString() < $record->starts_on->toDateString() || $start->toDateString() > $this->clock->today($workspace)->toDateString()
-            || ($record->ends_on !== null && $start->toDateString() > $record->ends_on->toDateString())) {
-            throw ValidationException::withMessages(['period_start' => 'Choose the start of a cadence period that has begun during this agreement.']);
-        }
-        $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($record->client_company_id)->firstOrFail();
-        $live = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->where('client_agreement_id', $record->id)
-            ->where('status', '!=', 'void')->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
-            ->where(function ($period) use ($cycle): void {
-                $period->whereDate('cycle_start', $cycle->start->toDateString())->orWhere(function ($legacy) use ($cycle): void {
-                    $legacy->whereNull('cycle_start')->whereDate('service_period_end', $cycle->start->copy()->subDay()->toDateString());
-                });
-            })->tap(Locks::forUpdate())->first(['id']);
-        abort_if($live !== null, 409, 'A non-void invoice already exists for this cadence period. Read or regenerate that draft instead.');
-
-        return [$company, $record, $start];
     }
 
     /** @param array<string, mixed> $payload

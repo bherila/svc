@@ -36,7 +36,7 @@ foreach (['private' => $privateKey, 'public' => $details['key']] as $kind => $va
 }
 Artisan::call('migrate', ['--force' => true]);
 require __DIR__.'/routes.php';
-$owner = User::factory()->create(['name' => 'Synthetic Organization Owner', 'email' => 'organization-owner@example.test']);
+$owner = User::factory()->create(['name' => str_repeat('SyntheticOrganizationOwner', 9), 'email' => 'organization-owner@example.test']);
 $workspace = Workspace::query()->create(['name' => 'Synthetic Organization Workspace', 'slug' => 'synthetic-organization', 'timezone' => 'UTC']);
 $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
 $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticCompany', 15), 'slug' => 'synthetic-organization-company']);
