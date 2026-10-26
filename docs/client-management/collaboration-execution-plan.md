@@ -4,6 +4,21 @@ Planning baseline: `fa6d72a8f34af60386dfc876abc190b0404cb74a`.
 
 ## Implementation checkpoint (2026-10-22)
 
+Production now includes the permission prerequisite, contacts/company profiles,
+task dates/assignments, and the collaboration foundation (PR527–530). Each release
+passed independent serving checks; imported historical records remain unchanged.
+The dedicated Agent collaboration write switch remains off. AC retirement still
+depends on the agreed owner review.
+
+Three worktrees continue in parallel: the combined task/file reader floor and
+durable upload privacy policy (PR533); organization writers and native/REST/MCP/CLI
+integration; and labels/dependencies/contact responsibilities behind an independent
+default-off gate. Root owns shared registration, UI integration and production
+verification. Exact full/mutation runs and dependent production rollouts remain
+sequenced. Reader compatibility must be verified before activating new privacy
+state or organization writers; application rollback must restore service while
+preserving that privacy state.
+
 The first native collaboration slice now supplies company/project notes and
 discussions, flat comments on both topic kinds and tasks, escaped plain text,
 server authorship, optimistic versions and tombstones. Website, REST, MCP and
@@ -293,6 +308,16 @@ authorization, expected versions and opaque public IDs. CLI writes follow existi
 preview/`--apply` conventions. Root integrates the operation catalog, scopes,
 routes, OpenAPI, generated types and conformance snapshots. Do not describe a
 feature as complete while an advertised transport still lacks it.
+
+Native pages include authorized, bounded initial picker/list results in their
+existing Inertia JSON page props. New file/planning controls should render that
+first page without a mount-time request, including an empty result. Keep typed
+searches, pagination and explicit refreshes asynchronous. Seed only the initially
+selected scope; do not preload every project or duplicate the page payload in a
+second script. Initial data uses the same scoped reader as subsequent requests,
+and writes still recheck current authority and revisions. After mutations,
+refresh the complete set of affected props together; financial totals, versions
+and collection state must not become inconsistent to save response bytes.
 
 Extend unified MariaDB search for notes, discussions and permitted comments,
 landing on exact task/topic/comment URLs. Search filters authorization before

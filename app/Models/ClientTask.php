@@ -32,7 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $lock_version
  */
 #[Fillable(['workspace_id', 'client_project_id', 'title', 'description', 'status', 'is_visible_to_client', 'completed_at', 'milestone_price_amount', 'client_invoice_line_id', 'starts_on', 'due_on'])]
-#[Hidden(['id', 'workspace_id', 'client_project_id', 'parent_task_id', 'client_task_list_id'])]
+#[Hidden(['organization_position', 'id', 'workspace_id', 'client_project_id', 'parent_task_id', 'client_task_list_id'])]
 class ClientTask extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;

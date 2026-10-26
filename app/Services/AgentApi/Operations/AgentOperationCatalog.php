@@ -22,6 +22,7 @@ use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
+use App\Services\Mcp\AgentMcpTaskOrganizationTools;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -63,6 +64,7 @@ final class AgentOperationCatalog
      * @var array<string, array{0: string, 1: string, 2: list<int>}>
      */
     private const array ROUTES = [
+        ...TaskOrganizationOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -258,7 +260,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -434,7 +436,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.preview_period',
                 'Preview cadence period draft',
-                'Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice of the client that generation would also create, rewrite or remove, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.',
+                'Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice of the client that generation would also create, rewrite or remove, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Where the deployment enables it, an hourly job creates the current period\'s draft for each agreement without a billing schedule that has something to bill; billing_audit.stale_and_missing lists started periods with no non-void invoice.',
                 [AgentMcpReadTools::class, 'invoicesPreviewPeriod'],
                 Effect::Read,
                 true,
@@ -861,7 +863,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.generate_period',
                 'Generate cadence period draft',
-                'Create the draft for an explicit started retainer cycle on an active recurring agreement, through the same cadence engine as invoices.preview_period. Nothing generates cadence period drafts automatically: a started period with no draft is waiting for this call, not for a scheduled job, and billing_audit.stale_and_missing lists started periods that have no non-void invoice. period_start is the retainer cycle start; service dates cover the preceding work cycle. Repeating the same idempotency key returns the same draft; a period that already has a non-void invoice is refused. Explicit confirmation and current agreement version required.',
+                'Create the draft for an explicit started retainer cycle on an active recurring agreement, through the same cadence engine as invoices.preview_period. Where the deployment enables it, an hourly job creates the current period\'s draft for each agreement without a billing schedule that has something to bill, through the same guard; otherwise a started period with no draft is waiting for this call. billing_audit.stale_and_missing lists started periods that have no non-void invoice. period_start is the retainer cycle start; service dates cover the preceding work cycle. Repeating the same idempotency key returns the same draft; a period that already has a non-void invoice is refused. Explicit confirmation and current agreement version required.',
                 [AgentMcpWriteTools::class, 'invoicesGeneratePeriod'],
                 Effect::LocalWrite,
                 true,
@@ -1950,6 +1952,27 @@ final class AgentOperationCatalog
         );
     }
 
+    /** @return list<Operation> */
+    private function taskOrganizationTools(): array
+    {
+        $handlers = ['get' => 'get', 'lists.create' => 'listsCreate', 'lists.update' => 'listsUpdate',
+            'lists.archive' => 'listsArchive', 'lists.restore' => 'listsRestore', 'lists.reorder' => 'listsReorder',
+            'tasks.create' => 'tasksCreate', 'tasks.move' => 'tasksMove', 'tasks.reorder' => 'tasksReorder'];
+        $definitions = TaskOrganizationOperations::documentation();
+        $operations = [];
+        foreach ($handlers as $suffix => $handler) {
+            $id = 'task_organization.'.$suffix;
+            $read = $suffix === 'get';
+            $operations[] = $this->tool($id, $definitions[$id]['summary'], $definitions[$id]['description'],
+                [AgentMcpTaskOrganizationTools::class, $handler],
+                $read ? Effect::Read : ($suffix === 'lists.archive' ? Effect::Destructive : Effect::LocalWrite), true,
+                $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::WRITES],
+                availability: [AgentDeploymentFlags::TASK_ORGANIZATION]);
+        }
+
+        return $operations;
+    }
+
     private function takesConfirmation(string $id): bool
     {
         if (! isset(self::ROUTES[$id])) {
@@ -1967,6 +1990,7 @@ final class AgentOperationCatalog
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
 
-        return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version']);
+        return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version'])
+            || isset($body['properties']['expected_graph_version']) || isset($body['properties']['expected_container_version']);
     }
 }

@@ -37,6 +37,7 @@ use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskEditorPresenter;
+use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
@@ -656,6 +657,7 @@ class ClientDirectoryController extends Controller
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
         BillingRecordAccess $billing,
+        WorkspaceTaskRepository $taskRecords,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -708,8 +710,10 @@ class ClientDirectoryController extends Controller
 
         return Inertia::render('clients/project', [
             'workspace' => ['id' => $workspace->public_id],
+            'organization_href' => $canManageTasks && config('task_organization.enabled') === true
+                ? route('tasks.organization.show', [$workspace, $clientCompany, $clientProject->public_id]) : null,
             'task_management' => $canManageTasks
-                ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject)]]
+                ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject, $taskRecords->assigneeOptions($workspace, $clientProject))]]
                 : null,
             'company' => [
                 'id' => $clientCompany->public_id,
@@ -1002,6 +1006,7 @@ class ClientDirectoryController extends Controller
         ClientCompany $clientCompany,
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
+        WorkspaceTaskRepository $taskRecords,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -1037,6 +1042,10 @@ class ClientDirectoryController extends Controller
         $manageable = app(TaskAccess::class)->manageableProjectIds($user, $workspace);
         $taskProjects = $projects->filter(fn (ClientProject $project): bool => $manageable === null || in_array((int) $project->id, $manageable, true))->values();
         $taskProjectIds = array_fill_keys($taskProjects->modelKeys(), true);
+        // Only the initially selected creation project needs an initial roster.
+        // Other projects keep their authorized lookup URL for user-driven changes.
+        $initialTaskProject = $taskProjects->first();
+        $initialAssignees = $initialTaskProject === null ? null : $taskRecords->assigneeOptions($workspace, $initialTaskProject);
 
         return Inertia::render('clients/tasks', [
             'company' => [
@@ -1048,7 +1057,7 @@ class ClientDirectoryController extends Controller
             // client is reading.
             'audience' => 'operator',
             'task_management' => $taskProjects->isNotEmpty()
-                ? ['projects' => $taskProjects->map(fn (ClientProject $project): array => app(TaskEditorPresenter::class)->project($workspace, $project))->values()->all()]
+                ? ['projects' => $taskProjects->map(fn (ClientProject $project, int $index): array => app(TaskEditorPresenter::class)->project($workspace, $project, $index === 0 ? $initialAssignees : null))->values()->all()]
                 : null,
             'filters' => [
                 'project_id' => $selected?->public_id,

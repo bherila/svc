@@ -55,6 +55,7 @@ const task: EditableTask = {
     version: 'synthetic-opaque-version',
     update_action: '/synthetic/task-update',
     assignees_action: '/synthetic/staff-lookup',
+    assignee_options: { data: [person], has_more: false },
 };
 
 beforeEach(() => {
@@ -80,6 +81,307 @@ async function loadOptions() {
 }
 
 describe('task editor', () => {
+    it('renders initial staff immediately and makes no mount request', async () => {
+        render(<TaskEditor task={task} />);
+        expect(
+            screen.getByRole('checkbox', { name: person.name }),
+        ).toBeChecked();
+        expect(fetch).not.toHaveBeenCalled();
+        await loadOptions();
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('accepts an empty initial page and its has-more state without requesting it again', async () => {
+        render(
+            <TaskEditor
+                task={{
+                    ...task,
+                    assignee_options: { data: [], has_more: true },
+                }}
+            />,
+        );
+        expect(screen.getByText('No matching staff loaded.')).toBeVisible();
+        expect(screen.getByText(/More staff match/)).toBeVisible();
+        await loadOptions();
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('debounces typed searches and restores the initial page when cleared', async () => {
+        const match = {
+            id: 'synthetic-remote',
+            name: 'Synthetic remote match',
+        };
+        vi.mocked(fetch).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: [match], has_more: false }),
+        } as Response);
+        render(
+            <TaskEditor
+                task={{
+                    ...task,
+                    assignee_options: { data: [person], has_more: true },
+                }}
+            />,
+        );
+        const search = screen.getByLabelText('Find staff with project access');
+        fireEvent.change(search, { target: { value: 'remote' } });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(199);
+        });
+        expect(fetch).not.toHaveBeenCalled();
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(fetch).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ search: '?q=remote' }),
+            expect.objectContaining({ credentials: 'same-origin' }),
+        );
+        expect(
+            screen.getByRole('checkbox', { name: match.name }),
+        ).toBeVisible();
+        expect(screen.queryByText(/More staff match/)).not.toBeInTheDocument();
+
+        fireEvent.change(search, { target: { value: '' } });
+        expect(
+            screen.getByRole('checkbox', { name: person.name }),
+        ).toBeVisible();
+        expect(
+            screen.queryByRole('checkbox', { name: match.name }),
+        ).not.toBeInTheDocument();
+        expect(screen.getByText(/More staff match/)).toBeVisible();
+        await loadOptions();
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows failed remote lookups without replacing the initial answer', async () => {
+        vi.mocked(fetch).mockRejectedValueOnce(
+            new Error('Synthetic network error'),
+        );
+        render(<TaskEditor task={task} />);
+        const search = screen.getByLabelText('Find staff with project access');
+        fireEvent.change(search, { target: { value: 'missing' } });
+        await loadOptions();
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Staff could not be loaded',
+        );
+        fireEvent.change(search, { target: { value: '' } });
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(
+            screen.getByRole('checkbox', { name: person.name }),
+        ).toBeVisible();
+        await loadOptions();
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('aborts a superseded search and ignores its late response', async () => {
+        let resolveOld: ((response: Response) => void) | undefined;
+        const current = {
+            id: 'synthetic-current',
+            name: 'Synthetic current result',
+        };
+        const old = { id: 'synthetic-old', name: 'Synthetic old result' };
+        vi.mocked(fetch)
+            .mockImplementationOnce(
+                () =>
+                    new Promise<Response>((resolve) => {
+                        resolveOld = resolve;
+                    }),
+            )
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ data: [current], has_more: false }),
+            } as Response);
+        render(<TaskEditor task={task} />);
+        const search = screen.getByLabelText('Find staff with project access');
+        fireEvent.change(search, { target: { value: 'old' } });
+        await loadOptions();
+        const previousSignal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+        fireEvent.change(search, { target: { value: 'current' } });
+        expect(previousSignal?.aborted).toBe(true);
+        await loadOptions();
+        expect(
+            screen.getByRole('checkbox', { name: current.name }),
+        ).toBeVisible();
+        await act(async () => {
+            resolveOld?.({
+                ok: true,
+                json: async () => ({ data: [old], has_more: true }),
+            } as Response);
+        });
+        expect(
+            screen.queryByRole('checkbox', { name: old.name }),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.getByRole('checkbox', { name: current.name }),
+        ).toBeVisible();
+        expect(screen.queryByText(/More staff match/)).not.toBeInTheDocument();
+    });
+
+    it('aborts an outstanding search when cleared and keeps the initial answer', async () => {
+        let resolveSearch: ((response: Response) => void) | undefined;
+        vi.mocked(fetch).mockImplementationOnce(
+            () =>
+                new Promise<Response>((resolve) => {
+                    resolveSearch = resolve;
+                }),
+        );
+        render(<TaskEditor task={task} />);
+        const search = screen.getByLabelText('Find staff with project access');
+        fireEvent.change(search, { target: { value: 'late' } });
+        await loadOptions();
+        const previousSignal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+        fireEvent.change(search, { target: { value: '' } });
+        expect(previousSignal?.aborted).toBe(true);
+        await act(async () => {
+            resolveSearch?.({
+                ok: true,
+                json: async () => ({ data: [], has_more: true }),
+            } as Response);
+        });
+        await loadOptions();
+        expect(
+            screen.getByRole('checkbox', { name: person.name }),
+        ).toBeVisible();
+        expect(screen.queryByText(/More staff match/)).not.toBeInTheDocument();
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('loads a newly selected unseeded project without reusing another project roster', async () => {
+        const next = {
+            id: 'synthetic-next',
+            name: 'Synthetic next project member',
+        };
+        const project = {
+            id: 'synthetic-project',
+            name: 'Synthetic project',
+            create_action: '/synthetic/create',
+            assignees_action: '/synthetic/project-staff',
+            assignee_options: { data: [person], has_more: false },
+        };
+        const { rerender } = render(<TaskEditor project={project} />);
+        expect(
+            screen.getByRole('checkbox', { name: person.name }),
+        ).toBeVisible();
+        await loadOptions();
+        expect(fetch).not.toHaveBeenCalled();
+        vi.mocked(fetch).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: [next], has_more: false }),
+        } as Response);
+        rerender(
+            <TaskEditor
+                project={{
+                    ...project,
+                    id: 'synthetic-next-project',
+                    assignees_action: '/synthetic/next-project-staff',
+                    assignee_options: null,
+                }}
+            />,
+        );
+        expect(
+            screen.queryByRole('checkbox', { name: person.name }),
+        ).not.toBeInTheDocument();
+        await loadOptions();
+        expect(fetch).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                pathname: '/synthetic/next-project-staff',
+                search: '?q=',
+            }),
+            expect.any(Object),
+        );
+        expect(screen.getByRole('checkbox', { name: next.name })).toBeVisible();
+    });
+
+    it('never publishes a pending old project answer into a newly seeded project', async () => {
+        let resolveOld: ((response: Response) => void) | undefined;
+        const next = {
+            id: 'synthetic-next',
+            name: 'Synthetic next project member',
+        };
+        vi.mocked(fetch).mockImplementationOnce(
+            () =>
+                new Promise<Response>((resolve) => {
+                    resolveOld = resolve;
+                }),
+        );
+        const project = {
+            id: 'synthetic-project',
+            name: 'Synthetic project',
+            create_action: '/synthetic/create',
+            assignees_action: '/synthetic/project-staff',
+        };
+        const { rerender } = render(<TaskEditor project={project} />);
+        await loadOptions();
+        const previousSignal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+        rerender(
+            <TaskEditor
+                project={{
+                    ...project,
+                    id: 'synthetic-next-project',
+                    assignees_action: '/synthetic/next-project-staff',
+                    assignee_options: { data: [next], has_more: false },
+                }}
+            />,
+        );
+        expect(previousSignal?.aborted).toBe(true);
+        expect(screen.getByRole('checkbox', { name: next.name })).toBeVisible();
+        await act(async () => {
+            resolveOld?.({
+                ok: true,
+                json: async () => ({ data: [person], has_more: true }),
+            } as Response);
+        });
+        await loadOptions();
+        expect(
+            screen.queryByRole('checkbox', { name: person.name }),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByText(/More staff match/)).not.toBeInTheDocument();
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the server completion advisory without blocking the parent-only save', async () => {
+        const advisory =
+            'This task has unfinished subtasks. Completing it leaves those subtasks unchanged.';
+        const { rerender } = render(
+            <TaskEditor task={{ ...task, completion_advisory: advisory }} />,
+        );
+        await loadOptions();
+        expect(screen.getByText(advisory)).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Save task' }));
+        expect(submit).toHaveBeenCalledOnce();
+        expect(submit.mock.calls[0][0]).toBe('PATCH');
+        expect(submit.mock.calls[0][1]).toBe(task.update_action);
+        expect(submit.mock.calls[0][2]).toEqual({
+            title: task.title,
+            description: task.description,
+            status: 'completed',
+            expected_version: task.version,
+            starts_on: task.starts_on,
+            due_on: task.due_on,
+            assignee_ids: [person.id],
+            is_visible_to_client: false,
+        });
+        rerender(<TaskEditor task={task} />);
+        expect(screen.queryByText(advisory)).not.toBeInTheDocument();
+    });
+
+    it('does not show completion advice while editing an open task', async () => {
+        const advisory =
+            'This task has unfinished subtasks. Completing it leaves those subtasks unchanged.';
+        render(
+            <TaskEditor
+                task={{
+                    ...task,
+                    status: 'open',
+                    completion_advisory: advisory,
+                }}
+            />,
+        );
+        await loadOptions();
+        expect(screen.getByRole('combobox')).toHaveTextContent('Open');
+        expect(screen.queryByText(advisory)).not.toBeInTheDocument();
+    });
+
     it('submits the rendered revision, preserves completion and clears nullable dates explicitly', async () => {
         render(<TaskEditor task={task} />);
         await loadOptions();

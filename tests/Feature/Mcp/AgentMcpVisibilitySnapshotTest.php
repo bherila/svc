@@ -94,7 +94,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         // it is unconfigured and its read-only tools are withheld. Portal
         // invitations (#430) are a product switch, likewise off on install.
         $on = ['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true];
         foreach (self::WRITE_FLAGS as $flag) {
             $on['agent_api.'.$flag] = true;
         }
@@ -106,6 +106,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         foreach (self::WRITE_FLAGS as $flag) {
             $installDefaults['agent_api.'.$flag] = $flag === 'time_entry_writes_enabled';
         }
+        $installDefaults['task_organization.enabled'] = false;
         $installDefaults['services.square.access_token'] = null;
         $installDefaults['svc.portal_invitations.enabled'] = false;
 

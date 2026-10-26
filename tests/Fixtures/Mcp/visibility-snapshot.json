@@ -15741,7 +15741,7 @@
                             }
                         }
                     },
-                    "description": "Create the draft for an explicit started retainer cycle on an active recurring agreement, through the same cadence engine as invoices.preview_period. Nothing generates cadence period drafts automatically: a started period with no draft is waiting for this call, not for a scheduled job, and billing_audit.stale_and_missing lists started periods that have no non-void invoice. period_start is the retainer cycle start; service dates cover the preceding work cycle. Repeating the same idempotency key returns the same draft; a period that already has a non-void invoice is refused. Explicit confirmation and current agreement version required.",
+                    "description": "Create the draft for an explicit started retainer cycle on an active recurring agreement, through the same cadence engine as invoices.preview_period. Where the deployment enables it, an hourly job creates the current period's draft for each agreement without a billing schedule that has something to bill, through the same guard; otherwise a started period with no draft is waiting for this call. billing_audit.stale_and_missing lists started periods that have no non-void invoice. period_start is the retainer cycle start; service dates cover the preceding work cycle. Repeating the same idempotency key returns the same draft; a period that already has a non-void invoice is refused. Explicit confirmation and current agreement version required.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -17689,7 +17689,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice of the client that generation would also create, rewrite or remove, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.",
+                    "description": "Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice of the client that generation would also create, rewrite or remove, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Where the deployment enables it, an hourly job creates the current period's draft for each agreement without a billing schedule that has something to bill; billing_audit.stale_and_missing lists started periods with no non-void invoice.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -23957,6 +23957,13 @@
                                             }
                                         },
                                         "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
+                                    },
+                                    "completion_advisory": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks."
                                     }
                                 }
                             },
@@ -31210,6 +31217,1077 @@
                     }
                 },
                 {
+                    "name": "task_organization.get",
+                    "title": "Read bounded task organization",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "container": {
+                                "type": "boolean",
+                                "default": false
+                            },
+                            "parent_id": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "uuid"
+                            },
+                            "list_id": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Read current lists, task containment and opaque graph/container versions. Internal project managers only; Portal and dual Agent identities are refused. Up to 1,000 retained tasks, 100 retained lists and 100 siblings; unsupported sizes fail explicitly. Request container=true with nullable parent_id/list_id for one complete sibling group.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "project_id",
+                                    "graph_version",
+                                    "lists_version",
+                                    "lists",
+                                    "tree",
+                                    "container"
+                                ],
+                                "properties": {
+                                    "project_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "graph_version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "lists_version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "lists": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "is_visible_to_client",
+                                                "archived",
+                                                "version"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "$ref": "#/$defs/Uuid"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 255
+                                                },
+                                                "is_visible_to_client": {
+                                                    "type": "boolean"
+                                                },
+                                                "archived": {
+                                                    "type": "boolean"
+                                                },
+                                                "version": {
+                                                    "$ref": "#/$defs/Version"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "tree": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "id",
+                                                "parent_id",
+                                                "list_id",
+                                                "position",
+                                                "version"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "$ref": "#/$defs/Uuid"
+                                                },
+                                                "parent_id": {
+                                                    "anyOf": [
+                                                        {
+                                                            "$ref": "#/$defs/Uuid"
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                },
+                                                "list_id": {
+                                                    "anyOf": [
+                                                        {
+                                                            "$ref": "#/$defs/Uuid"
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                },
+                                                "position": {
+                                                    "type": "integer"
+                                                },
+                                                "version": {
+                                                    "$ref": "#/$defs/Version"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "container": {
+                                        "anyOf": [
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "parent_id",
+                                                    "list_id",
+                                                    "version",
+                                                    "tasks"
+                                                ],
+                                                "properties": {
+                                                    "parent_id": {
+                                                        "anyOf": [
+                                                            {
+                                                                "$ref": "#/$defs/Uuid"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "list_id": {
+                                                        "anyOf": [
+                                                            {
+                                                                "$ref": "#/$defs/Uuid"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "version": {
+                                                        "$ref": "#/$defs/Version"
+                                                    },
+                                                    "tasks": {
+                                                        "type": "array",
+                                                        "maxItems": 100,
+                                                        "items": {
+                                                            "type": "object",
+                                                            "additionalProperties": false,
+                                                            "required": [
+                                                                "id",
+                                                                "title",
+                                                                "status",
+                                                                "is_visible_to_client",
+                                                                "version"
+                                                            ],
+                                                            "properties": {
+                                                                "id": {
+                                                                    "$ref": "#/$defs/Uuid"
+                                                                },
+                                                                "title": {
+                                                                    "type": "string",
+                                                                    "maxLength": 255
+                                                                },
+                                                                "status": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "open",
+                                                                        "in_progress",
+                                                                        "completed"
+                                                                    ]
+                                                                },
+                                                                "is_visible_to_client": {
+                                                                    "type": "boolean"
+                                                                },
+                                                                "version": {
+                                                                    "$ref": "#/$defs/Version"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.lists.archive",
+                    "title": "Archive a task list",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "list_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_graph_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "list_id",
+                            "expected_graph_version",
+                            "expected_version",
+                            "confirm",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "After explicit confirmation, archive a list using current list and graph versions. Tasks remain in place and are hidden from clients while archived.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": true,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.lists.create",
+                    "title": "Create a task list",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "expected_graph_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "is_visible_to_client": {
+                                "type": "boolean",
+                                "default": false
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "name",
+                            "expected_graph_version",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Create an internal task list using the current graph version. Client visibility is false when omitted.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.lists.reorder",
+                    "title": "Reorder task lists",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "ordered_ids": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "uniqueItems": true,
+                                "items": {
+                                    "$ref": "#/$defs/Uuid"
+                                }
+                            },
+                            "expected_container_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "ordered_ids",
+                            "expected_container_version",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Supply every active list ID exactly once with the rendered lists_version as expected_container_version. Archived lists are excluded.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.lists.restore",
+                    "title": "Restore a task list",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "list_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_graph_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "list_id",
+                            "expected_graph_version",
+                            "expected_version",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Restore a list using current list and graph versions. Saved list and task sharing choices are preserved.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.lists.update",
+                    "title": "Update a task list",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "list_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_graph_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "is_visible_to_client": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "list_id",
+                            "expected_graph_version",
+                            "expected_version",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Update a list name or client visibility using current list and graph versions. Tasks retain their own sharing choices; publishing a containing list can reveal already-shared tasks.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.tasks.create",
+                    "title": "Create an organized task",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "task": {
+                                "$ref": "#/$defs/TaskCreateRequest"
+                            },
+                            "parent_id": {
+                                "anyOf": [
+                                    {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "list_id": {
+                                "anyOf": [
+                                    {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "expected_graph_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "task",
+                            "parent_id",
+                            "list_id",
+                            "expected_graph_version",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "TaskCreateRequest": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "title"
+                                ],
+                                "properties": {
+                                    "title": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 255
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000
+                                    },
+                                    "is_visible_to_client": {
+                                        "type": "boolean",
+                                        "description": "Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task."
+                                    },
+                                    "starts_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "due_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "assignee_ids": {
+                                        "type": "array",
+                                        "maxItems": 10,
+                                        "uniqueItems": true,
+                                        "items": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "description": "Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them."
+                                    }
+                                }
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Create a task in the supplied nullable parent/list container using the current graph version. New tasks are internal by default. Assignment grants no access.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.tasks.move",
+                    "title": "Move a task",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "task_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "parent_id": {
+                                "anyOf": [
+                                    {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "list_id": {
+                                "anyOf": [
+                                    {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "expected_graph_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "task_id",
+                            "parent_id",
+                            "list_id",
+                            "expected_graph_version",
+                            "expected_version",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Move one task and its descendants within this project using current task and graph versions. Cycles, excessive depth and incompatible containers are refused. Sharing flags and billing facts remain unchanged.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "task_organization.tasks.reorder",
+                    "title": "Reorder sibling tasks",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "parent_id": {
+                                "anyOf": [
+                                    {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "list_id": {
+                                "anyOf": [
+                                    {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "ordered_ids": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "uniqueItems": true,
+                                "items": {
+                                    "$ref": "#/$defs/Uuid"
+                                }
+                            },
+                            "expected_container_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "parent_id",
+                            "list_id",
+                            "ordered_ids",
+                            "expected_container_version",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Supply every current sibling task ID exactly once with the rendered container version. Omitted, duplicate, foreign and stale IDs are refused.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "affected_ids"
+                                ],
+                                "properties": {
+                                    "affected_ids": {
+                                        "type": "array",
+                                        "maxItems": 1000,
+                                        "items": {
+                                            "$ref": "#/$defs/Uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "tasks.create",
                     "title": "Create task",
                     "inputSchema": {
@@ -31386,6 +32464,13 @@
                                             }
                                         },
                                         "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
+                                    },
+                                    "completion_advisory": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks."
                                     }
                                 }
                             },
@@ -31530,6 +32615,13 @@
                                             }
                                         },
                                         "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
+                                    },
+                                    "completion_advisory": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks."
                                     }
                                 }
                             },
@@ -31713,6 +32805,13 @@
                                             }
                                         },
                                         "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
+                                    },
+                                    "completion_advisory": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks."
                                     }
                                 }
                             },
@@ -31920,6 +33019,13 @@
                                             }
                                         },
                                         "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
+                                    },
+                                    "completion_advisory": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks."
                                     }
                                 }
                             },
@@ -33438,13 +34544,13 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "987e93847046a0fa",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "7eade4913e162ab2",
@@ -33467,7 +34573,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -33494,10 +34600,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -33673,16 +34788,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -33855,16 +34979,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -34037,16 +35170,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -34219,16 +35361,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -34326,6 +35477,14 @@
                     "proposals.send scope_not_granted proposals:write",
                     "square.import_customer scope_not_granted billing:write",
                     "square.sync scope_not_granted billing:write",
+                    "task_organization.lists.archive scope_not_granted tasks:write",
+                    "task_organization.lists.create scope_not_granted tasks:write",
+                    "task_organization.lists.reorder scope_not_granted tasks:write",
+                    "task_organization.lists.restore scope_not_granted tasks:write",
+                    "task_organization.lists.update scope_not_granted tasks:write",
+                    "task_organization.tasks.create scope_not_granted tasks:write",
+                    "task_organization.tasks.move scope_not_granted tasks:write",
+                    "task_organization.tasks.reorder scope_not_granted tasks:write",
                     "tasks.create scope_not_granted tasks:write",
                     "tasks.update scope_not_granted tasks:write",
                     "time_entries.approve scope_not_granted time:approve",
@@ -34389,12 +35548,12 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
@@ -34414,8 +35573,9 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -34492,12 +35652,12 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
@@ -34661,6 +35821,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync scope_not_granted billing:write",
+                    "task_organization.lists.archive scope_not_granted tasks:write",
+                    "task_organization.lists.create scope_not_granted tasks:write",
+                    "task_organization.lists.reorder scope_not_granted tasks:write",
+                    "task_organization.lists.restore scope_not_granted tasks:write",
+                    "task_organization.lists.update scope_not_granted tasks:write",
+                    "task_organization.tasks.create scope_not_granted tasks:write",
+                    "task_organization.tasks.move scope_not_granted tasks:write",
+                    "task_organization.tasks.reorder scope_not_granted tasks:write",
                     "tasks.create scope_not_granted tasks:write",
                     "tasks.update scope_not_granted tasks:write",
                     "time_entries.approve scope_not_granted time:approve",
@@ -34695,13 +35863,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -34892,6 +36061,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync scope_not_granted billing:write",
+                    "task_organization.lists.archive scope_not_granted tasks:write",
+                    "task_organization.lists.create scope_not_granted tasks:write",
+                    "task_organization.lists.reorder scope_not_granted tasks:write",
+                    "task_organization.lists.restore scope_not_granted tasks:write",
+                    "task_organization.lists.update scope_not_granted tasks:write",
+                    "task_organization.tasks.create scope_not_granted tasks:write",
+                    "task_organization.tasks.move scope_not_granted tasks:write",
+                    "task_organization.tasks.reorder scope_not_granted tasks:write",
                     "tasks.create scope_not_granted tasks:write",
                     "tasks.update scope_not_granted tasks:write",
                     "time_entries.approve scope_not_granted time:approve",
@@ -34926,13 +36103,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -35089,6 +36267,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -35151,18 +36338,18 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -35272,6 +36459,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -35334,18 +36530,18 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -35491,6 +36687,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -35522,13 +36727,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -35672,6 +36877,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -35703,13 +36917,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -35853,6 +37067,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -35884,13 +37107,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -36034,6 +37257,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -36065,13 +37297,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -36165,6 +37397,14 @@
                     "proposals.send deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -36231,12 +37471,12 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
@@ -36256,8 +37496,9 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36346,6 +37587,14 @@
                     "proposals.send deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -36412,12 +37661,12 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
@@ -36437,8 +37686,9 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36579,6 +37829,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -36613,13 +37871,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36758,6 +38017,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -36792,13 +38059,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36937,6 +38205,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -36971,13 +38247,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -37116,6 +38393,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -37150,13 +38435,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -37245,6 +38531,14 @@
                     "proposals.send deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -37308,12 +38602,12 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
@@ -37333,8 +38627,9 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -37428,6 +38723,14 @@
                     "proposals.send deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -37491,12 +38794,12 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
@@ -37516,8 +38819,9 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -37663,6 +38967,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -37694,13 +39006,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -37844,6 +39157,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -37875,13 +39196,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -38025,6 +39347,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -38056,13 +39386,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -38206,6 +39537,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -38237,13 +39576,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -38380,7 +39720,7 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_reconcile": "e1e06e7dfba48e73",
@@ -38393,7 +39733,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -38420,10 +39760,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -38563,7 +39912,7 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_reconcile": "e1e06e7dfba48e73",
@@ -38576,7 +39925,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -38603,10 +39952,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -38781,16 +40139,25 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -38962,16 +40329,25 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -39143,16 +40519,25 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -39324,16 +40709,25 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -39409,6 +40803,14 @@
                     "proposals.send deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -39495,12 +40897,12 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
@@ -39520,8 +40922,9 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -39590,6 +40993,14 @@
                     "proposals.send deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -39676,12 +41087,12 @@
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
@@ -39701,8 +41112,9 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -39843,6 +41255,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -39877,13 +41297,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -40022,6 +41443,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -40056,13 +41485,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -40201,6 +41631,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -40235,13 +41673,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -40380,6 +41819,14 @@
                     "square.series.get role",
                     "square.series.list role",
                     "square.sync deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -40414,13 +41861,14 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
+                "task_organization.get": "f9adae72b05c876d",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -40536,13 +41984,13 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "987e93847046a0fa",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "7eade4913e162ab2",
@@ -40565,7 +42013,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -40592,10 +42040,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -40718,13 +42175,13 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "987e93847046a0fa",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "7eade4913e162ab2",
@@ -40747,7 +42204,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -40774,10 +42231,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -40951,16 +42417,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -41133,16 +42608,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -41315,16 +42799,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -41497,16 +42990,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -41632,12 +43134,12 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "987e93847046a0fa",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "7eade4913e162ab2",
@@ -41660,7 +43162,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -41687,10 +43189,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
@@ -41813,12 +43324,12 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "987e93847046a0fa",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "7eade4913e162ab2",
@@ -41841,7 +43352,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -41868,10 +43379,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
@@ -42044,16 +43564,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
@@ -42223,16 +43752,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
@@ -42402,16 +43940,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
@@ -42581,16 +44128,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
@@ -42750,6 +44306,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -42910,6 +44475,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -43070,6 +44644,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -43230,6 +44813,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -43390,6 +44982,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -43550,6 +45151,15 @@
                     "square.series.get deployment_disabled",
                     "square.series.list deployment_disabled",
                     "square.sync deployment_disabled",
+                    "task_organization.get deployment_disabled",
+                    "task_organization.lists.archive deployment_disabled",
+                    "task_organization.lists.create deployment_disabled",
+                    "task_organization.lists.reorder deployment_disabled",
+                    "task_organization.lists.restore deployment_disabled",
+                    "task_organization.lists.update deployment_disabled",
+                    "task_organization.tasks.create deployment_disabled",
+                    "task_organization.tasks.move deployment_disabled",
+                    "task_organization.tasks.reorder deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -43672,13 +45282,13 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "987e93847046a0fa",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "7eade4913e162ab2",
@@ -43701,7 +45311,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -43728,10 +45338,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -43856,13 +45475,13 @@
                 "invoices.create_deferred_buydown": "2c091dbc13804bd9",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "a736a25f33ed9607",
+                "invoices.generate_period": "caab6d783c58bae3",
                 "invoices.get": "843d9a2f01078ee7",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "987e93847046a0fa",
                 "invoices.list": "e97aede32d5e4f78",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.preview_period": "7ab38ebf35a75760",
+                "invoices.preview_period": "74aa4d41ddbf8a33",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "7eade4913e162ab2",
@@ -43885,7 +45504,7 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
@@ -43912,10 +45531,19 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -44091,16 +45719,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -44273,16 +45910,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -44455,16 +46101,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
@@ -44637,16 +46292,25 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "9829dbe314a3c9bb",
+                "projects.get": "ceb48b5cfab04faf",
                 "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
-                "tasks.create": "c060079f00e1e34f",
-                "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "4e17a8df00a95db0",
-                "tasks.update": "f22f524c3f9673e1",
+                "task_organization.get": "f9adae72b05c876d",
+                "task_organization.lists.archive": "054d0ff824b61e6c",
+                "task_organization.lists.create": "8794913d0d3764fb",
+                "task_organization.lists.reorder": "5ef756f6d16a1670",
+                "task_organization.lists.restore": "895c5739768785bf",
+                "task_organization.lists.update": "58338e660f7f2dd1",
+                "task_organization.tasks.create": "df90b169fc200d49",
+                "task_organization.tasks.move": "dbf4a66f614f9730",
+                "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.create": "f0794bf293bafca8",
+                "tasks.get": "5c52ada72320ff2a",
+                "tasks.list": "22f61fee51b9777f",
+                "tasks.update": "342e53cec95396b5",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",

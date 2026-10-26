@@ -1248,9 +1248,20 @@ engine, including any interim reconciliation it requires. It does not issue or
 send. Repeating the same key replays the result and writes nothing; another key
 for a period with a non-void invoice is refused with 409.
 
-Nothing generates cadence period drafts automatically - there is no scheduled
-job, by decision (#377). A started period without a draft is therefore not
-late: it is waiting for an agent or operator to call `invoices.generate_period`.
+Where a deployment turns on `SVC_BILLING_SCHEDULED_CADENCE_DRAFTS`
+(`svc.billing.scheduled_cadence_drafts`), the scheduler runs
+`svc:billing:generate-cadence-drafts --apply` hourly. It creates the draft for
+every active recurring agreement whose *current* period has started with no
+non-void invoice, through the same guard and engine as
+`invoices.generate_period`, and skips any agreement with an active billing
+schedule, which issues its own invoices. A period whose draft would bill
+nothing - a $0 retainer with no priced line, billable time or milestone - is
+rolled back and reported rather than created, and stays in the audit's missing
+periods. It only creates drafts: issuing and
+sending stay an operator's. It does not reach back for older gaps. A refusal is
+logged and retried on the next run. With the flag off, or for an older period,
+a started period without a draft is waiting for an agent or operator to call
+`invoices.generate_period` (the on-demand design of #377).
 `billing_audit.stale_and_missing` lists every active recurring agreement whose
 started period has no non-void invoice, with the `agreement_id` and
 `period_start` these two tools take.

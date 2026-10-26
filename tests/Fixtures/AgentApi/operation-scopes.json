@@ -1726,6 +1726,113 @@
             "mcp.switch:square.sync"
         ]
     },
+    "task_organization.get": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_organization.get"
+        ]
+    },
+    "task_organization.lists.archive": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.lists.archive"
+        ]
+    },
+    "task_organization.lists.create": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.lists.create"
+        ]
+    },
+    "task_organization.lists.reorder": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.lists.reorder"
+        ]
+    },
+    "task_organization.lists.restore": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.lists.restore"
+        ]
+    },
+    "task_organization.lists.update": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.lists.update"
+        ]
+    },
+    "task_organization.tasks.create": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.tasks.create"
+        ]
+    },
+    "task_organization.tasks.move": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.tasks.move"
+        ]
+    },
+    "task_organization.tasks.reorder": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.organization",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_organization.tasks.reorder"
+        ]
+    },
     "tasks.create": {
         "scopes": [
             "tasks:write"
