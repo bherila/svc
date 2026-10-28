@@ -73,7 +73,7 @@ final class SharedReadProjectionParityTest extends TestCase
         $this->assertSame([Arr::except($canonicalProposal['items'][0], ['sort_order'])], $nativeProposal['items']);
 
         $operations = $this->get(route('workspaces.operations', $workspace))->assertOk()->viewData('page')['props']['workspace']['clients'][0];
-        $this->assertSame(Arr::only($canonicalProposal, ['id', 'title', 'status', 'total_amount', 'currency']), Arr::except($operations['proposals'][0], ['attachments', 'attachment_panel']));
+        $this->assertSame(Arr::only($canonicalProposal, ['id', 'title', 'status', 'total_amount', 'currency']) + ['version' => $canonicalProposal['version'], 'send_href' => null], Arr::except($operations['proposals'][0], ['attachments', 'attachment_panel']));
         $this->assertSame(Arr::only($canonicalInvoice, ['id', 'invoice_number', 'status', 'total_amount', 'paid_amount', 'balance_amount', 'currency', 'issue_date', 'due_date']), Arr::except($operations['invoices'][0], ['attachments', 'attachment_panel']));
         $this->assertSame(['Synthetic internal second', 'Synthetic internal first'], array_column($operations['projects'][0]['time_entries'], 'description'));
         $this->assertArrayNotHasKey('notes', $operations['invoices'][0]);
