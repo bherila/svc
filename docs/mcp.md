@@ -1478,6 +1478,18 @@ redirects and numeric form revision error.
 
 ### Proposals
 
+The Operations proposal draft/send controls, agreement activation and billing
+schedule creation/generation call the canonical REST operations through the
+signed-in browser session. Agreement rename and terms editing use
+`agreements.update`. The server supplies finished URLs and current opaque
+versions; viewer controls are absent. Activation, sending and generation require
+explicit confirmation. An uncertain POST response retains the original payload
+and receipt key for a safe retry; a stale revision refreshes the current page.
+The former seven engagement/schedule mutation routes have been retired. Portal
+proposal acceptance and interactive agreement signatures keep their browser
+flows.
+
+
 `proposals.list` and `proposals.get` require `proposals:read`. Managers can read
 workspace proposals; portal recipients can read only sent or accepted proposals
 in their own company and project grants. Company-wide proposals remain visible

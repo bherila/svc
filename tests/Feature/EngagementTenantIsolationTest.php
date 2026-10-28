@@ -8,21 +8,11 @@ use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class EngagementTenantIsolationTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! Route::has('svc.engagement.proposals.store')) {
-            require base_path('routes/engagement.php');
-        }
-    }
 
     public function test_time_entry_rejects_a_project_from_another_workspace(): void
     {
@@ -35,7 +25,7 @@ class EngagementTenantIsolationTest extends TestCase
             'name' => 'Other Project',
         ]);
 
-        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$firstWorkspace->public_id}/time-entries", ['entries' => [['project_id' => "{$project->public_id}", ...[
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$firstWorkspace->public_id}/time-entries", ['entries' => [['project_id' => "{$project->public_id}", ...[
             'worked_on' => '2026-08-15',
             'minutes' => 30,
             'description' => 'Cross tenant attempt',
@@ -63,13 +53,13 @@ class EngagementTenantIsolationTest extends TestCase
         $hidden->update(['status' => 'sent', 'sent_at' => now()]);
         $other->update(['status' => 'sent', 'sent_at' => now()]);
 
-        $this->actingAs($clientUser)->postJson("/portal/{$company->public_id}/proposals/{$visible->public_id}/accept", [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/portal/{$company->public_id}/proposals/{$visible->public_id}/accept", [
             'signer_name' => 'Synthetic Client',
         ])->assertRedirect();
-        $this->actingAs($clientUser)->postJson("/portal/{$company->public_id}/proposals/{$hidden->public_id}/accept", [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/portal/{$company->public_id}/proposals/{$hidden->public_id}/accept", [
             'signer_name' => 'Synthetic Client',
         ])->assertNotFound();
-        $this->actingAs($clientUser)->postJson("/portal/{$company->public_id}/proposals/{$other->public_id}/accept", [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/portal/{$company->public_id}/proposals/{$other->public_id}/accept", [
             'signer_name' => 'Synthetic Client',
         ])->assertNotFound();
 

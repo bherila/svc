@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     AgreementActivationButton,
@@ -150,26 +150,37 @@ function invoice(overrides: Record<string, unknown> = {}) {
 }
 
 describe('agreement activation', () => {
-    it('shows an overlap refusal beside the activation control', () => {
-        inertia.post.mockImplementation(
-            (
-                _href: string,
-                _data: undefined,
-                options: { onError: (errors: Record<string, string>) => void },
-            ) => {
-                options.onError({
-                    engagement:
-                        'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
-                });
-            },
+    it('shows an overlap refusal beside the confirmed API activation control', async () => {
+        const message =
+            'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.';
+        requestFetch.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({ message, errors: { engagement: [message] } }),
+                { status: 422 },
+            ),
         );
-
-        render(<AgreementActivationButton href="/agreements/one/activate" />);
-        fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
-
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
+        render(
+            <AgreementActivationButton
+                href="/synthetic/agreements/activate"
+                version={'a'.repeat(64)}
+            />,
         );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Activate', exact: true }),
+        );
+        const dialog = await screen.findByRole('dialog');
+        expect(requestFetch).not.toHaveBeenCalled();
+        fireEvent.click(
+            within(dialog).getByRole('button', {
+                name: 'Activate',
+                exact: true,
+            }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent(message);
+        expect(JSON.parse(String(requestFetch.mock.calls[0][1].body))).toEqual({
+            expected_version: 'a'.repeat(64),
+            confirm: true,
+        });
     });
 });
 

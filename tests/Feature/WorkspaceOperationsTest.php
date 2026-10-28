@@ -209,6 +209,9 @@ class WorkspaceOperationsTest extends TestCase
         $workspace = Workspace::query()->create(['name' => 'Synthetic Query Scope', 'slug' => 'synthetic-query-scope']);
         $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
 
+        // Both measurements start inside the entered workspace; remembering a
+        // return point on the first navigation is a separate one-time write.
+        $manager->forceFill(['last_workspace_id' => $workspace->id])->save();
         $singleCompanyQueries = null;
         foreach (range(1, 4) as $companyNumber) {
             $company = ClientCompany::query()->create([
@@ -294,7 +297,11 @@ class WorkspaceOperationsTest extends TestCase
         // The shared file reader adds two current actor authority lookups,
         // independent of the number of companies, parents and files.
         $this->assertSame($singleCompanyQueries, count($queries));
-        $this->assertLessThanOrEqual(14, count($queries));
+        // The page now renders WorkspaceShell: five fixed navigation queries
+        // (staff access, manager role, staff role, portal grants, client list)
+        // join the existing fourteen-query controller/binding ceiling. Growth
+        // from one to four companies must still add no query at all.
+        $this->assertLessThanOrEqual(14 + 5, count($queries));
 
         $attachmentQueries = collect($queries)->filter(
             fn (array $query): bool => str_contains($query['query'], 'client_attachments'),

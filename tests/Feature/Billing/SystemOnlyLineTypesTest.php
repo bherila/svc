@@ -121,8 +121,8 @@ final class SystemOnlyLineTypesTest extends TestCase
         ]);
 
         $this->actingAs($this->owner)
-            ->postJson(route('svc.billing.schedules.store', [$this->workspace, $this->company]), [
-                'client_agreement' => $agreement->public_id, 'cadence' => 'monthly', 'next_run_on' => '2026-10-01',
+            ->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(route('agent-api.v1.billing-schedules.store', [$this->workspace]), [
+                'company_id' => $this->company->public_id, 'expected_version' => AgentApiVersion::for($agreement), 'client_agreement' => $agreement->public_id, 'cadence' => 'monthly', 'next_run_on' => '2026-10-01',
                 'due_days' => 14, 'currency' => 'USD', 'line_template' => [$this->line($type)],
             ])
             ->assertStatus(422)
