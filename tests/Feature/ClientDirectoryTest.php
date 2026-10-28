@@ -11,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\ClientHome\ClientHomeViewModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -1029,8 +1030,10 @@ class ClientDirectoryTest extends TestCase
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/settings")
             ->assertForbidden();
 
-        $this->actingAs($member)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+        $this->actingAs($member, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-client-member-edit')
+            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'expected_version' => AgentApiVersion::for($company),
                 'name' => 'Renamed By Someone Who May Not',
                 'billing_email' => null,
                 'is_active' => true,
@@ -1047,13 +1050,15 @@ class ClientDirectoryTest extends TestCase
         $company = $this->company($workspace, 'Before Rename Client', 'before-rename-client');
         $project = $this->project($workspace, $company, 'Before Rename Project');
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+        $this->actingAs($manager, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-client-manager-edit')
+            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'expected_version' => AgentApiVersion::for($company),
                 'name' => 'After Rename Client',
                 'billing_email' => 'billing@synthetic.test',
                 'is_active' => false,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $fresh = $company->fresh();
         $this->assertSame('After Rename Client', $fresh?->name);

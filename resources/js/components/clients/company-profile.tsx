@@ -1,8 +1,10 @@
 import { useForm } from '@inertiajs/react';
+import { useClientChange } from '@/components/clients/use-client-change';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 
 export type CompanyProfileData = {
     billing_address: string | null;
@@ -25,9 +27,11 @@ const FIELDS = [
 export function CompanyProfile({
     profile,
     action,
+    version,
 }: {
     profile: CompanyProfileData;
     action: string;
+    version: string;
 }) {
     const form = useForm({
         billing_address: profile.billing_address ?? '',
@@ -38,12 +42,31 @@ export function CompanyProfile({
         notes: profile.notes ?? '',
     });
 
+    const change = useClientChange();
+
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.patch(action, { preserveScroll: true });
+                void change.run(
+                    'PATCH',
+                    action,
+                    {
+                        ...Object.fromEntries(
+                            Object.entries(form.data).map(([field, value]) => [
+                                field,
+                                value === '' ? null : value,
+                            ]),
+                        ),
+                        expected_version: version,
+                    },
+                    async () => {
+                        await refreshPageProps({
+                            only: ['company', 'company_profile'],
+                        });
+                    },
+                );
             }}
         >
             {FIELDS.map(([field, label, multiline]) => (
@@ -82,9 +105,9 @@ export function CompanyProfile({
                             }
                         />
                     )}
-                    {form.errors[field] && (
+                    {change.errors[field]?.[0] && (
                         <p className="text-sm text-destructive">
-                            {form.errors[field]}
+                            {change.errors[field]?.[0]}
                         </p>
                     )}
                 </div>
@@ -92,8 +115,13 @@ export function CompanyProfile({
             <p className="text-sm text-muted-foreground">
                 Company details do not change previously issued invoices.
             </p>
+            {change.error && (
+                <p role="alert" className="text-sm text-destructive">
+                    {change.error}
+                </p>
+            )}
             <div>
-                <Button type="submit" disabled={form.processing}>
+                <Button type="submit" disabled={change.busy}>
                     Save company profile
                 </Button>
             </div>
