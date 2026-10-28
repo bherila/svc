@@ -1,8 +1,10 @@
 # Attachment reader compatibility
 
-The first deployment adds readers while ordinary uploads retain legacy
-inheritance. Its verified artifact can later honor the persistent private-default
-latch, including during rollback. Historical blobs and imported copies stay separate.
+This document records the staged reader/privacy compatibility boundary. R1 and
+R2 are implemented in PR533/543; the phase table describes deployment order,
+not a claim about a particular installation's active flags. The reader artifact
+honors the persistent private-default latch across compatible rollback.
+Historical blobs and imported copies stay separate.
 
 ## Release phases
 
@@ -112,10 +114,11 @@ readers; it conveys no foreign ancestor names or identifiers.
 
 The central `AttachmentStorageService::recordStaged` creates every active native
 attachment row and explicitly persists the latch-selected flag: true during
-the initial deployment, false after verified activation. No native attachment CRUD CLI
-exists yet. R2 must add any new CLI operation through shared actions, exact actor
-UUIDs, private JSON and preview/apply semantics. Preview must not stage physical
-objects or leave recovery rows; a database rollback alone cannot undo staging.
+the initial deployment, false after verified activation. R2 now provides
+`svc:attachments` through shared actions, exact actor/workspace UUIDs, private
+JSON and preview/apply semantics. Preview stages no physical objects and leaves
+no recovery rows; a database rollback alone cannot undo staging. See the
+[sharing contract](attachment-sharing-contract.md) for its exact operations.
 MCP continues to use authenticated prepared multipart REST URLs, not inline blobs.
 
 Agent publication and replay recheck current staff/Portal membership rows with

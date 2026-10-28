@@ -1,9 +1,10 @@
 # Task labels, dependencies and business-contact responsibility
 
-Design checkpoint based on organization writer `87e6b69f`, containing actual main
-`0cd6`. This work stays separate from the merged task foundation and the pending
-organization/combined-reader integration. The approved collaboration execution
-plan remains the product authority.
+Approved design, implemented in PR544 after the organization and combined-reader
+prerequisites merged. The historical design baseline was organization writer
+`87e6b69f`, containing main `0cd6`. The
+[execution plan](collaboration-execution-plan.md) records delivered scope; this
+file retains the design and its invariants.
 
 ## Existing boundaries
 

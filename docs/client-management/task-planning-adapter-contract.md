@@ -1,11 +1,10 @@
 # Task planning presentation and adapter contract
 
-This documentation checkpoint is based on frozen persistence `ef18e247` and the
-approved [planning design](task-planning-details-plan.md). The coordinator has
-accepted the fifteen operation names, separate contact authority, CLI prefix and
-shared task-read scope below. Exact route/schema integration remains reviewable
-here before source adapters or public registration are added. This commit adds
-no routes, tools, UI, schema or enabled flags.
+Finalized for the implementation delivered in PR544, based on frozen persistence
+`ef18e247` and the approved [planning design](task-planning-details-plan.md).
+All 15 route/tool contracts, native UI, schemas and CLI below are integrated.
+The product gate remains disabled by default. This contract does not authorize
+an installation's operational activation or a permission change.
 
 ## Availability and audience
 

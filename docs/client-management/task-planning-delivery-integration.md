@@ -1,8 +1,10 @@
-# Planning adapter integration checkpoint
+# Delivered planning adapter integration
 
-This additive branch keeps planning disabled by `task_planning_details.enabled`.
-The coordinator owns route/registry/scope/OpenAPI/MCP factory wiring and the existing
-`TaskEditor`, `ClientTaskController`, `AgentReadService`, and completion advisory.
+Implemented and integrated in PR544. Planning remains disabled by default through
+`task_planning_details.enabled`; activation is an installation operation. The
+route/registry/scope/OpenAPI/MCP factory wiring, native task page, ordinary task
+read enrichment and shared completion advisory are integrated. The bindings and
+props below describe the maintained compatibility contract.
 
 ## Handler bindings
 
@@ -95,12 +97,13 @@ Each catalog label adds nullable `update_href`, `archive_href`, `restore_href`.
 
 ## Shared scope extraction
 
-`TaskReadScope` is the unchanged extraction from coordinator commit `ec0`
-(cherry-picked as `12376e6c` in this stack); shared AgentReadService now delegates
-to it, preserving explicit Internal versus Agent origin. Preserve both files
-when combining this branch with the candidate. Do not copy old organization UI
-from before the main535 merge: checkpoint `6b8c9d14` resolved those UI conflicts
-with current main exactly.
+`TaskReadScope` is the shared extraction of the existing authorized task query.
+`AgentReadService` delegates to it with explicit Internal versus Agent origin.
+The planning loader batches at most 100 authorized task facts without a full DAG
+read, and attaches transient metadata without making task columns dirty. Ordinary
+Task responses include only labels and dependency summary; contact responsibility
+is a separate authorized read. Preserve these scope and audience boundaries when
+changing list, detail or project-embedded responses.
 
 ## Focused evidence
 
@@ -108,3 +111,11 @@ Local checks cover synthetic SQLite HTTP/native/CLI adapters, all fifteen MCP
 route/body dispatches and schema bounds, closed route/query validation, and
 native first-page seeding with role omissions. Heavy full suites, PHPStan,
 mutation/coverage, and final candidate gating belong to CI.
+
+
+Final exact-head CI passed on candidate `7096c634e41eba31fe04b9645eecf2d6a20d6bd6`.
+Its actual Unit-selected diff mutation artifact killed 507/507 with no escapes,
+timeouts or skips. The four-width browser proof includes the actual combined
+native task page and preservation of unsaved task-body versions after a planning
+save. Operational serving/activation evidence belongs to private installation
+records, not generated application fixtures.

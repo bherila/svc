@@ -1,7 +1,8 @@
 # R2 attachment sharing contract
 
-Status: frozen with coordinator review, based on reader `01d56d39`. This document
-authorizes no activation or production change. It implements the R2 phase in
+Status: finalized and implemented in PR543, originally based on reader `01d56d39`.
+This document authorizes no installation activation or permission change. It
+implements the R2 phase in
 [the execution plan](collaboration-execution-plan.md) after the deployed reader
 and retained fallback have been verified as described in
 [the reader rollout](attachment-reader-rollout.md).
