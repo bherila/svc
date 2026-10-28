@@ -1433,6 +1433,14 @@ Workspace owners/admins can administer projects through REST and MCP:
 | `projects.members.list` | `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/members` | Returns the project version |
 | `projects.members.update` | `PUT /api/v1/workspaces/{workspace_id}/projects/{project_id}/members` | Project version from the member listing |
 
+Client settings uses these same project operations with the signed-in browser
+session, finished server-provided URLs, explicit confirmation, and stable retry
+keys. Project create uses the client version; edit and member access use the
+current project version. The former nested project creation, update, and access
+web mutation routes have been retired. A refused write keeps the operator’s
+unsaved edits and displays its error.
+
+
 Writes require `projects:write` and the scope that exposes the current revision:
 `clients:read` for create, or `projects:read` for update, archive and member access.
 Both `AGENT_API_WRITES_ENABLED` and
