@@ -48,6 +48,7 @@ use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -792,6 +793,9 @@ class ClientDirectoryController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Reuse the already authorized parent without loading one per row.
+        $projects->each(fn (ClientProject $project): ClientProject => $project->setRelation('clientCompany', $clientCompany));
+
         // One query for every membership on these projects, grouped in memory.
         // Asking per project would cost a query per row on a screen whose
         // whole job is listing rows.
@@ -855,19 +859,15 @@ class ClientDirectoryController extends Controller
                 // The confirmed Square customer (#438); set through the API.
                 'square_customer' => app(SquareLinkPresenter::class)->customer(app(SquareLinkRepository::class)->activeCustomer($clientCompany)),
             ],
+            'project_create' => [
+                'url' => route('agent-api.v1.projects.store', $workspace, absolute: false),
+                'company_id' => $clientCompany->public_id,
+                'expected_version' => AgentApiVersion::for($clientCompany),
+            ],
             'projects' => $projects->map(fn (ClientProject $project): array => [
-                'id' => $project->public_id,
-                'name' => $project->name,
-                'description' => $project->description,
-                // Sent as stored - already canonical - so the field round-trips
-                // unchanged when the operator saves something else on the form.
-                'repository' => $project->repository,
-                'status' => $project->status,
-                'is_visible_to_client' => (bool) $project->is_visible_to_client,
-                // The version this form is rendered from, sent back on save so
-                // the write can refuse a payload composed against values
-                // someone has since changed.
-                'lock_version' => (int) $project->lock_version,
+                ...app(AgentProjectPresenter::class)->present($workspace, $project, true),
+                'update_url' => route('agent-api.v1.projects.update', [$workspace, $project->public_id], absolute: false),
+                'members_update_url' => route('agent-api.v1.projects.members.update', [$workspace, $project->public_id], absolute: false),
                 // Who reaches this project, and with what role. Sent per
                 // project rather than as one map because that is how the screen
                 // reads it, and because an owner or admin holds no membership

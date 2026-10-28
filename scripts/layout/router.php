@@ -35,7 +35,8 @@ $draftWrite = in_array($requestPath, $fixture['draft_writes'][$method] ?? [], tr
 $buydownWrite = $method === 'POST' && is_string($fixture['buydown_create'] ?? null) && $requestPath === $fixture['buydown_create'];
 $taskWrite = ($method === 'POST' && $requestPath === ($fixture['task_create'] ?? null))
     || ($method === 'PATCH' && $requestPath === ($fixture['task_update'] ?? null));
-if ($method !== 'GET' && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite) {
+$projectWrite = in_array($requestPath, $fixture['project_writes'][$method] ?? [], true);
+if ($method !== 'GET' && ! $projectWrite && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }
