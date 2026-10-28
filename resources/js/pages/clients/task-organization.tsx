@@ -1,6 +1,10 @@
 import { Head, Link } from '@inertiajs/react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import {
+    PlanningMutationError,
+    usePlanningMutation,
+} from '@/components/tasks/planning-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +20,6 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { cn } from '@/lib/utils';
@@ -28,7 +31,7 @@ import type {
 } from '@/types/task-organization';
 
 type Mutation = ReturnType<typeof useOrganizationMutation>;
-type OpenDialog =
+type DialogSelection =
     | { kind: 'new-list' }
     | {
           kind: 'edit-list' | 'archive-list' | 'restore-list';
@@ -40,50 +43,14 @@ type OpenDialog =
           target: TaskOrganizationTarget;
           title: string;
       };
+type OpenDialog = DialogSelection & { graphVersion: string };
 
 function useOrganizationMutation() {
-    const [pending, setPending] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const inFlight = useRef(false);
-    const keys = useRef(new Map<string, string>());
-
-    async function run(
-        method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
-        href: string,
-        body: object,
-        saved?: () => void,
-    ) {
-        if (inFlight.current) {
-            return;
-        }
-
-        inFlight.current = true;
-        setPending(true);
-        setError(null);
-        const signature = JSON.stringify([method, href, body]);
-        const key = keys.current.get(signature) ?? newIdempotencyKey();
-        keys.current.set(signature, key);
-
-        try {
-            const result = await apiRequest(method, href, body, key);
-
-            if (!result.ok) {
-                setError(result.message);
-
-                return;
-            }
-
-            keys.current.delete(signature);
-            saved?.();
-            // Refresh graph, container tokens and capabilities together after every change.
-            await refreshPageProps({ only: ['organization'] });
-        } finally {
-            inFlight.current = false;
-            setPending(false);
-        }
-    }
-
-    return { pending, error, clearError: () => setError(null), run };
+    return usePlanningMutation(
+        () =>
+            refreshPageProps({ only: ['organization'], requireSuccess: true }),
+        'Task organization',
+    );
 }
 
 function reorder(ids: string[], index: number, offset: number): string[] {
@@ -160,7 +127,7 @@ function MoveHere({
             type="button"
             size="sm"
             variant="outline"
-            disabled={mutation.pending}
+            disabled={mutation.locked}
             onClick={() =>
                 void mutation.run('PATCH', source.move_href, {
                     expected_version: source.version,
@@ -181,9 +148,13 @@ function ListPanel({
 }: {
     view: TaskOrganizationView;
     mutation: Mutation;
-    open: (dialog: OpenDialog) => void;
+    open: (dialog: DialogSelection) => void;
 }) {
-    const [order, setOrder] = useState(view.ordered_list_ids);
+    const [draft, setDraft] = useState<{
+        ids: string[];
+        version: string;
+    } | null>(null);
+    const order = draft?.ids ?? view.ordered_list_ids;
     const ordered = order
         .map((id) => view.lists.find((list) => list.id === id))
         .filter((list): list is TaskOrganizationList => list !== undefined);
@@ -202,7 +173,7 @@ function ListPanel({
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={mutation.pending}
+                        disabled={mutation.locked}
                         onClick={() => open({ kind: 'new-list' })}
                     >
                         New list
@@ -257,15 +228,19 @@ function ListPanel({
                                                     name={list.name}
                                                     index={index}
                                                     count={order.length}
-                                                    disabled={mutation.pending}
+                                                    disabled={mutation.locked}
                                                     change={(offset) =>
-                                                        setOrder((current) =>
-                                                            reorder(
-                                                                current,
+                                                        setDraft((current) => ({
+                                                            ids: reorder(
+                                                                current?.ids ??
+                                                                    view.ordered_list_ids,
                                                                 index,
                                                                 offset,
                                                             ),
-                                                        )
+                                                            version:
+                                                                current?.version ??
+                                                                view.lists_version,
+                                                        }))
                                                     }
                                                 />
                                             )}
@@ -276,7 +251,7 @@ function ListPanel({
                                                 type="button"
                                                 size="sm"
                                                 variant="outline"
-                                                disabled={mutation.pending}
+                                                disabled={mutation.locked}
                                                 onClick={() =>
                                                     open({
                                                         kind: 'edit-list',
@@ -292,7 +267,7 @@ function ListPanel({
                                                 type="button"
                                                 size="sm"
                                                 variant="outline"
-                                                disabled={mutation.pending}
+                                                disabled={mutation.locked}
                                                 onClick={() =>
                                                     open({
                                                         kind: 'archive-list',
@@ -308,7 +283,7 @@ function ListPanel({
                                                 type="button"
                                                 size="sm"
                                                 variant="outline"
-                                                disabled={mutation.pending}
+                                                disabled={mutation.locked}
                                                 onClick={() =>
                                                     open({
                                                         kind: 'restore-list',
@@ -336,7 +311,7 @@ function ListPanel({
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 type="button"
-                                disabled={!dirty || mutation.pending}
+                                disabled={!dirty || mutation.locked}
                                 onClick={() =>
                                     void mutation.run(
                                         'PUT',
@@ -344,8 +319,10 @@ function ListPanel({
                                         {
                                             ordered_ids: order,
                                             expected_container_version:
+                                                draft?.version ??
                                                 view.lists_version,
                                         },
+                                        () => setDraft(null),
                                     )
                                 }
                             >
@@ -355,10 +332,8 @@ function ListPanel({
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    disabled={mutation.pending}
-                                    onClick={() =>
-                                        setOrder(view.ordered_list_ids)
-                                    }
+                                    disabled={mutation.locked}
+                                    onClick={() => setDraft(null)}
                                 >
                                     Reset order
                                 </Button>
@@ -377,10 +352,15 @@ function TaskPanel({
 }: {
     view: TaskOrganizationView;
     mutation: Mutation;
-    open: (dialog: OpenDialog) => void;
+    open: (dialog: DialogSelection) => void;
 }) {
     const { container } = view;
-    const [order, setOrder] = useState(container.tasks.map((task) => task.id));
+    const [draft, setDraft] = useState<{
+        ids: string[];
+        version: string;
+        target: TaskOrganizationTarget;
+    } | null>(null);
+    const order = draft?.ids ?? container.tasks.map((task) => task.id);
     const dirty =
         JSON.stringify(order) !==
         JSON.stringify(container.tasks.map((task) => task.id));
@@ -419,7 +399,7 @@ function TaskPanel({
                     {!view.moving && container.create_task_href && (
                         <Button
                             type="button"
-                            disabled={mutation.pending}
+                            disabled={mutation.locked}
                             onClick={() =>
                                 open({
                                     kind: 'new-task',
@@ -478,15 +458,25 @@ function TaskPanel({
                                             name={task.title}
                                             index={index}
                                             count={order.length}
-                                            disabled={mutation.pending}
+                                            disabled={mutation.locked}
                                             change={(offset) =>
-                                                setOrder((current) =>
-                                                    reorder(
-                                                        current,
+                                                setDraft((current) => ({
+                                                    ids: reorder(
+                                                        current?.ids ??
+                                                            container.tasks.map(
+                                                                (task) =>
+                                                                    task.id,
+                                                            ),
                                                         index,
                                                         offset,
                                                     ),
-                                                )
+                                                    version:
+                                                        current?.version ??
+                                                        container.version,
+                                                    target:
+                                                        current?.target ??
+                                                        container.target,
+                                                }))
                                             }
                                         />
                                     )}
@@ -515,7 +505,7 @@ function TaskPanel({
                                             type="button"
                                             size="sm"
                                             variant="outline"
-                                            disabled={mutation.pending}
+                                            disabled={mutation.locked}
                                             onClick={() =>
                                                 open({
                                                     kind: 'new-task',
@@ -552,17 +542,18 @@ function TaskPanel({
                     <div className="flex flex-wrap gap-2">
                         <Button
                             type="button"
-                            disabled={!dirty || mutation.pending}
+                            disabled={!dirty || mutation.locked}
                             onClick={() =>
                                 void mutation.run(
                                     'PUT',
                                     container.reorder_href!,
                                     {
-                                        ...container.target,
+                                        ...(draft?.target ?? container.target),
                                         ordered_ids: order,
                                         expected_container_version:
-                                            container.version,
+                                            draft?.version ?? container.version,
                                     },
+                                    () => setDraft(null),
                                 )
                             }
                         >
@@ -572,12 +563,8 @@ function TaskPanel({
                             <Button
                                 type="button"
                                 variant="outline"
-                                disabled={mutation.pending}
-                                onClick={() =>
-                                    setOrder(
-                                        container.tasks.map((task) => task.id),
-                                    )
-                                }
+                                disabled={mutation.locked}
+                                onClick={() => setDraft(null)}
                             >
                                 Reset order
                             </Button>
@@ -592,16 +579,21 @@ function TaskPanel({
 function ListForm({
     list,
     href,
-    view,
+    graphVersion,
     mutation,
     saved,
 }: {
     list: TaskOrganizationList | null;
     href: string;
-    view: TaskOrganizationView;
+    graphVersion: string;
     mutation: Mutation;
     saved: () => void;
 }) {
+    const [baseline] = useState({
+        href,
+        graphVersion,
+        version: list?.version,
+    });
     const [name, setName] = useState(list?.name ?? '');
     const [visible, setVisible] = useState(list?.is_visible_to_client ?? false);
 
@@ -612,14 +604,14 @@ function ListForm({
                 event.preventDefault();
                 void mutation.run(
                     list ? 'PATCH' : 'POST',
-                    href,
+                    baseline.href,
                     {
                         name,
                         is_visible_to_client: visible,
-                        expected_graph_version: view.graph_version,
+                        expected_graph_version: baseline.graphVersion,
                         ...(list
                             ? {
-                                  expected_version: list.version,
+                                  expected_version: baseline.version,
                               }
                             : {}),
                     },
@@ -630,6 +622,7 @@ function ListForm({
             <div className="grid grid-cols-1 gap-2">
                 <Label htmlFor="organization-list-name">List name</Label>
                 <Input
+                    disabled={mutation.locked}
                     id="organization-list-name"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
@@ -639,6 +632,7 @@ function ListForm({
             </div>
             <div className="flex items-center gap-2">
                 <Switch
+                    disabled={mutation.locked}
                     id="organization-list-sharing"
                     checked={visible}
                     onCheckedChange={(value) => setVisible(value === true)}
@@ -651,12 +645,8 @@ function ListForm({
                 Tasks keep their own sharing choices. Making this list visible
                 can reveal tasks already selected for client sharing.
             </p>
-            {mutation.error && (
-                <p role="alert" className="wrap-anywhere text-destructive">
-                    {mutation.error}
-                </p>
-            )}
-            <Button type="submit" disabled={mutation.pending}>
+            {mutation.error && <PlanningMutationError mutation={mutation} />}
+            <Button type="submit" disabled={mutation.locked}>
                 {list ? 'Save list' : 'Create list'}
             </Button>
         </form>
@@ -665,15 +655,18 @@ function ListForm({
 
 function NewTaskForm({
     dialog,
-    view,
     mutation,
     saved,
 }: {
     dialog: Extract<OpenDialog, { kind: 'new-task' }>;
-    view: TaskOrganizationView;
     mutation: Mutation;
     saved: () => void;
 }) {
+    const [baseline] = useState({
+        href: dialog.href,
+        graphVersion: dialog.graphVersion,
+        target: dialog.target,
+    });
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [visible, setVisible] = useState(false);
@@ -687,10 +680,10 @@ function NewTaskForm({
                 event.preventDefault();
                 void mutation.run(
                     'POST',
-                    dialog.href,
+                    baseline.href,
                     {
-                        expected_graph_version: view.graph_version,
-                        ...dialog.target,
+                        expected_graph_version: baseline.graphVersion,
+                        ...baseline.target,
                         task: {
                             title,
                             description:
@@ -707,6 +700,7 @@ function NewTaskForm({
             <div className="grid grid-cols-1 gap-2">
                 <Label htmlFor="organization-task-title">Title</Label>
                 <Input
+                    disabled={mutation.locked}
                     id="organization-task-title"
                     value={title}
                     onChange={(event) => setTitle(event.target.value)}
@@ -719,6 +713,7 @@ function NewTaskForm({
                     Description
                 </Label>
                 <Textarea
+                    disabled={mutation.locked}
                     id="organization-task-description"
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
@@ -730,6 +725,7 @@ function NewTaskForm({
                 <div className="grid grid-cols-1 gap-2">
                     <Label htmlFor="organization-task-start">Start date</Label>
                     <Input
+                        disabled={mutation.locked}
                         id="organization-task-start"
                         type="date"
                         value={startsOn}
@@ -739,6 +735,7 @@ function NewTaskForm({
                 <div className="grid grid-cols-1 gap-2">
                     <Label htmlFor="organization-task-due">Due date</Label>
                     <Input
+                        disabled={mutation.locked}
                         id="organization-task-due"
                         type="date"
                         value={dueOn}
@@ -748,6 +745,7 @@ function NewTaskForm({
             </div>
             <div className="flex items-center gap-2">
                 <Switch
+                    disabled={mutation.locked}
                     id="organization-task-sharing"
                     checked={visible}
                     onCheckedChange={(value) => setVisible(value === true)}
@@ -760,12 +758,8 @@ function NewTaskForm({
                 Open the created task to assign people. The project and parent
                 visibility still apply.
             </p>
-            {mutation.error && (
-                <p role="alert" className="wrap-anywhere text-destructive">
-                    {mutation.error}
-                </p>
-            )}
-            <Button type="submit" disabled={mutation.pending}>
+            {mutation.error && <PlanningMutationError mutation={mutation} />}
+            <Button type="submit" disabled={mutation.locked}>
                 Create task
             </Button>
         </form>
@@ -779,16 +773,21 @@ export default function TaskOrganizationPage({
 }: TaskOrganizationPageProps) {
     const mutation = useOrganizationMutation();
     const [dialog, setDialog] = useState<OpenDialog | null>(null);
-    const open = (next: OpenDialog) => {
+    const [draftEpoch, setDraftEpoch] = useState(0);
+    const open = (next: DialogSelection) => {
+        if (mutation.locked) {
+            return;
+        }
+
         mutation.clearError();
-        setDialog(next);
+        setDialog({ ...next, graphVersion: view.graph_version });
     };
     const close = () => setDialog(null);
-    const reloadCurrent = () => {
-        mutation.clearError();
-        close();
-        void refreshPageProps({ only: ['organization'] });
-    };
+    const reloadCurrent = () =>
+        void mutation.reload(() => {
+            close();
+            setDraftEpoch((current) => current + 1);
+        });
     const dialogTitle =
         dialog?.kind === 'new-task'
             ? dialog.title
@@ -832,18 +831,13 @@ export default function TaskOrganizationPage({
                     </Card>
                 )}
                 {mutation.error && !dialog && (
-                    <div
-                        role="alert"
-                        className="grid min-w-0 grid-cols-1 gap-3 rounded-md border border-destructive p-4"
-                    >
-                        <p className="wrap-anywhere text-destructive">
-                            {mutation.error}
-                        </p>
+                    <div className="grid min-w-0 grid-cols-1 gap-3 rounded-md border border-destructive p-4">
+                        <PlanningMutationError mutation={mutation} />
                         <Button
                             type="button"
                             variant="outline"
                             className="justify-self-start"
-                            disabled={mutation.pending}
+                            disabled={mutation.locked}
                             onClick={reloadCurrent}
                         >
                             Reload current state
@@ -852,13 +846,13 @@ export default function TaskOrganizationPage({
                 )}
                 <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
                     <ListPanel
-                        key={view.lists_version}
+                        key={`${project.id}:${draftEpoch}`}
                         view={view}
                         mutation={mutation}
                         open={open}
                     />
                     <TaskPanel
-                        key={view.container.version}
+                        key={`${JSON.stringify(view.container.target)}:${draftEpoch}`}
                         view={view}
                         mutation={mutation}
                         open={open}
@@ -867,12 +861,15 @@ export default function TaskOrganizationPage({
                 <Dialog
                     open={dialog !== null}
                     onOpenChange={(value) => {
-                        if (!value && !mutation.pending) {
+                        if (!value && !mutation.locked) {
                             close();
                         }
                     }}
                 >
-                    <DialogContent className="max-h-[90dvh] min-w-0 overflow-y-auto">
+                    <DialogContent
+                        showCloseButton={!mutation.locked}
+                        className="max-h-[90dvh] min-w-0 overflow-y-auto"
+                    >
                         <DialogHeader>
                             <DialogTitle>{dialogTitle}</DialogTitle>
                             <DialogDescription>
@@ -884,9 +881,9 @@ export default function TaskOrganizationPage({
                         {dialog?.kind === 'new-list' &&
                             view.create_list_href && (
                                 <ListForm
+                                    graphVersion={dialog.graphVersion}
                                     list={null}
                                     href={view.create_list_href}
-                                    view={view}
                                     mutation={mutation}
                                     saved={close}
                                 />
@@ -894,9 +891,9 @@ export default function TaskOrganizationPage({
                         {dialog?.kind === 'edit-list' &&
                             dialog.list.update_href && (
                                 <ListForm
+                                    graphVersion={dialog.graphVersion}
                                     list={dialog.list}
                                     href={dialog.list.update_href}
-                                    view={view}
                                     mutation={mutation}
                                     saved={close}
                                 />
@@ -916,16 +913,13 @@ export default function TaskOrganizationPage({
                                         : 'The list keeps its saved visibility setting. Its tasks also keep their own sharing choices.'}
                                 </p>
                                 {mutation.error && (
-                                    <p
-                                        role="alert"
-                                        className="wrap-anywhere text-destructive"
-                                    >
-                                        {mutation.error}
-                                    </p>
+                                    <PlanningMutationError
+                                        mutation={mutation}
+                                    />
                                 )}
                                 <Button
                                     type="button"
-                                    disabled={mutation.pending}
+                                    disabled={mutation.locked}
                                     onClick={() => {
                                         const href =
                                             dialog.kind === 'archive-list'
@@ -942,7 +936,7 @@ export default function TaskOrganizationPage({
                                                     expected_version:
                                                         dialog.list.version,
                                                     expected_graph_version:
-                                                        view.graph_version,
+                                                        dialog.graphVersion,
                                                     ...(dialog.kind ===
                                                     'archive-list'
                                                         ? { confirm: true }
@@ -962,7 +956,6 @@ export default function TaskOrganizationPage({
                         {dialog?.kind === 'new-task' && (
                             <NewTaskForm
                                 dialog={dialog}
-                                view={view}
                                 mutation={mutation}
                                 saved={close}
                             />
@@ -971,7 +964,7 @@ export default function TaskOrganizationPage({
                             <Button
                                 type="button"
                                 variant="outline"
-                                disabled={mutation.pending}
+                                disabled={mutation.locked}
                                 onClick={reloadCurrent}
                             >
                                 Reload current state

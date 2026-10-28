@@ -116,8 +116,11 @@ beforeEach(() => {
     });
     reload
         .mockReset()
-        .mockImplementation((options?: { onFinish?: () => void }) =>
-            options?.onFinish?.(),
+        .mockImplementation(
+            (options?: { onSuccess?: () => void; onFinish?: () => void }) => {
+                options?.onSuccess?.();
+                options?.onFinish?.();
+            },
         );
     newKey.mockReset().mockReturnValue('synthetic-stable-retry-key');
 });
@@ -189,7 +192,10 @@ describe('task organization', () => {
     it('refreshes the complete organization and keeps controls busy until it arrives', async () => {
         let finish: (() => void) | undefined;
         reload.mockImplementationOnce((options) => {
-            finish = options?.onFinish;
+            finish = () => {
+                options?.onSuccess?.();
+                options?.onFinish?.();
+            };
         });
         render(<TaskOrganizationPage {...fixture()} />);
         fireEvent.click(
@@ -231,8 +237,14 @@ describe('task organization', () => {
                 'Synthetic lost answer',
             ),
         );
+        expect(within(dialog).getByLabelText('List name')).toBeDisabled();
+        expect(
+            within(dialog).queryByRole('button', { name: 'Close' }),
+        ).not.toBeInTheDocument();
         fireEvent.click(
-            within(dialog).getByRole('button', { name: 'Create list' }),
+            within(dialog).getByRole('button', {
+                name: 'Check original change',
+            }),
         );
         await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
         expect(newKey).toHaveBeenCalledTimes(1);
@@ -393,12 +405,13 @@ describe('task organization', () => {
         );
     });
 
-    it('discards a stale editor before reloading after a revision conflict', async () => {
+    it('discards a stale editor only after the authorized reload succeeds', async () => {
         request.mockResolvedValueOnce({
             ok: false,
             status: 409,
             message: 'Synthetic stale revision',
         });
+        reload.mockImplementationOnce((options) => options?.onFinish?.());
         render(<TaskOrganizationPage {...fixture()} />);
         fireEvent.click(
             screen.getAllByRole('button', { name: 'Edit list' })[0],
@@ -416,11 +429,19 @@ describe('task organization', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Reload current state' }),
         );
+        await screen.findByText(
+            /Task organization could not be refreshed. Your choices are preserved/,
+        );
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(screen.getByLabelText('List name')).toHaveValue('Discovery');
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Reload current state' }),
+        );
         await waitFor(() =>
             expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
         );
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(reload).toHaveBeenCalledOnce();
+        expect(reload).toHaveBeenCalledTimes(2);
         expect(reload).toHaveBeenCalledWith(
             expect.objectContaining({ only: ['organization'] }),
         );
@@ -447,5 +468,144 @@ describe('task organization', () => {
             }),
         ).toHaveAttribute('href', '/synthetic/editor-0');
         expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+    it('keeps list edits paired with the graph and list revisions read when the dialog opened', async () => {
+        const props = fixture();
+        request.mockResolvedValue({
+            ok: false,
+            status: 409,
+            message: 'Synthetic concurrent graph',
+        });
+        const view = render(<TaskOrganizationPage {...props} />);
+        fireEvent.click(
+            screen.getAllByRole('button', { name: 'Edit list' })[0],
+        );
+        fireEvent.change(screen.getByLabelText('List name'), {
+            target: { value: 'Synthetic retained draft' },
+        });
+        view.rerender(
+            <TaskOrganizationPage
+                {...props}
+                organization={{
+                    ...props.organization,
+                    graph_version: 'n'.repeat(64),
+                    lists: props.organization.lists.map((list) => ({
+                        ...list,
+                        version: 'm'.repeat(64),
+                        name: 'Concurrent synthetic name',
+                    })),
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save list' }));
+        await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+        expect(request.mock.calls[0][2]).toEqual({
+            name: 'Synthetic retained draft',
+            is_visible_to_client: false,
+            expected_version: props.organization.lists[0].version,
+            expected_graph_version: props.organization.graph_version,
+        });
+    });
+
+    it('retains an unknown creation through later refusal and retries only reads after known acceptance', async () => {
+        const props = fixture();
+        request
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 408,
+                message: 'Synthetic timeout',
+            })
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 403,
+                message: 'Synthetic current permission refusal',
+            });
+        reload.mockImplementationOnce((options) => options?.onFinish?.());
+        const view = render(<TaskOrganizationPage {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'New list' }));
+        fireEvent.change(screen.getByLabelText('List name'), {
+            target: { value: 'Synthetic original list' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Create list' }));
+        await screen.findByRole('button', { name: 'Check original change' });
+        expect(screen.getByLabelText('List name')).toBeDisabled();
+        expect(
+            screen.queryByRole('button', { name: 'Close' }),
+        ).not.toBeInTheDocument();
+        view.rerender(
+            <TaskOrganizationPage
+                {...props}
+                organization={{
+                    ...props.organization,
+                    graph_version: 'n'.repeat(64),
+                    create_list_href: '/synthetic/changed-create',
+                }}
+            />,
+        );
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await screen.findByText('Synthetic current permission refusal');
+        expect(screen.getByLabelText('List name')).toBeDisabled();
+        expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await screen.findByText(
+            /change was saved, but current task organization could not be refreshed/,
+        );
+        expect(request.mock.calls[2]).toEqual(request.mock.calls[0]);
+        expect(request.mock.calls[2][1]).toBe(
+            '/synthetic/finished-list-create',
+        );
+        expect(request.mock.calls[2][2].expected_graph_version).toBe(
+            props.organization.graph_version,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await waitFor(() =>
+            expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+        );
+        expect(request).toHaveBeenCalledTimes(3);
+        expect(reload).toHaveBeenCalledTimes(2);
+        expect(newKey).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves a reordered draft with its original container version across background refreshes', async () => {
+        const props = fixture();
+        const view = render(<TaskOrganizationPage {...props} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Move Second task up' }),
+        );
+        view.rerender(
+            <TaskOrganizationPage
+                {...props}
+                organization={{
+                    ...props.organization,
+                    graph_version: 'n'.repeat(64),
+                    container: {
+                        ...props.organization.container,
+                        version: 'x'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Save task order' }),
+        );
+        await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+        expect(request.mock.calls[0][2]).toEqual({
+            parent_id: null,
+            list_id: null,
+            ordered_ids: [
+                props.organization.container.tasks[1].id,
+                props.organization.container.tasks[0].id,
+                props.organization.container.tasks[2].id,
+            ],
+            expected_container_version: props.organization.container.version,
+        });
     });
 });

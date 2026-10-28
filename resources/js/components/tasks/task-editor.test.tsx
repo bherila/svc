@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
 import { TaskEditor } from '@/components/tasks/task-editor';
 import type { EditableTask } from '@/components/tasks/task-editor';
 import { refreshPageProps } from '@/lib/refresh-page-props';
@@ -526,14 +527,14 @@ describe('task editor', () => {
         const key = submit.mock.calls[0][3];
         await act(async () => {
             fireEvent.click(
-                screen.getByRole('button', { name: 'Create task' }),
+                screen.getByRole('button', { name: 'Check task save' }),
             );
         });
         expect(submit.mock.calls[1][3]).toBe(key);
         expect(screen.getByLabelText('Title')).toHaveValue('');
     });
 
-    it('replays a saved creation when refreshing its list fails', async () => {
+    it('retries only the authoritative refresh after a confirmed creation', async () => {
         vi.mocked(refreshPageProps).mockRejectedValueOnce(
             new Error('Synthetic refresh failure'),
         );
@@ -559,14 +560,14 @@ describe('task editor', () => {
         expect(screen.getByRole('alert')).toHaveTextContent(
             'saved, but current tasks could not be refreshed',
         );
-        const key = submit.mock.calls[0][3];
+        expect(screen.getByLabelText('Title')).toBeDisabled();
         await act(async () => {
             fireEvent.click(
-                screen.getByRole('button', { name: 'Create task' }),
+                screen.getByRole('button', { name: 'Check task save' }),
             );
         });
-        expect(submit.mock.calls[1][3]).toBe(key);
-        expect(submit.mock.calls[1][2]).toEqual(submit.mock.calls[0][2]);
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(refreshPageProps).toHaveBeenCalledTimes(2);
         expect(screen.getByLabelText('Title')).toHaveValue('');
     });
 
@@ -615,5 +616,101 @@ describe('task editor', () => {
         );
         await loadOptions();
         expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+    it('freezes a timeout attempt across new props and later authorization refusal', async () => {
+        submit
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 408,
+                message: 'Synthetic timeout',
+            })
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 403,
+                message: 'Synthetic permission change',
+            });
+        const onSaved = vi.fn();
+        const view = render(<TaskEditor task={task} onSaved={onSaved} />);
+        fireEvent.change(screen.getByLabelText('Title'), {
+            target: { value: 'Synthetic original edit' },
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Save task' }));
+        });
+        expect(screen.getByLabelText('Title')).toBeDisabled();
+        view.rerender(
+            <TaskEditor
+                task={{
+                    ...task,
+                    version: 'new-server-version',
+                    update_action: '/synthetic/new-destination',
+                }}
+                onSaved={onSaved}
+            />,
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check task save' }),
+            );
+        });
+        expect(screen.getByLabelText('Title')).toBeDisabled();
+        expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]);
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check task save' }),
+            );
+        });
+        expect(submit.mock.calls[2]).toEqual(submit.mock.calls[0]);
+        expect(submit.mock.calls[2][2]).toEqual(
+            expect.objectContaining({
+                expected_version: task.version,
+                title: 'Synthetic original edit',
+            }),
+        );
+        expect(onSaved).toHaveBeenCalledTimes(1);
+        expect(screen.getByLabelText('Title')).toBeEnabled();
+    });
+
+    it('keeps the create dialog and selected project locked until an unknown creation is reconciled', async () => {
+        submit.mockResolvedValueOnce({
+            ok: false,
+            status: 408,
+            message: 'Synthetic timeout',
+        });
+        const projects = [1, 2].map((number) => ({
+            id: `synthetic-project-${number}`,
+            name: `Synthetic project ${number}`,
+            create_action: `/synthetic/create-${number}`,
+            assignees_action: `/synthetic/people-${number}`,
+            assignee_options: { data: [], has_more: false },
+        }));
+        render(<TaskCreateDialog projects={projects} />);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'New task' }));
+        });
+        fireEvent.change(screen.getByLabelText('Title'), {
+            target: { value: 'Synthetic single creation' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Create task' }),
+            );
+        });
+        expect(screen.getByRole('combobox')).toBeDisabled();
+        expect(
+            screen.queryByRole('button', { name: 'Close' }),
+        ).not.toBeInTheDocument();
+        await act(async () => {
+            fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+        });
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check task save' }),
+            );
+        });
+        expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]);
+        expect(submit.mock.calls[1][1]).toBe('/synthetic/create-1');
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 });

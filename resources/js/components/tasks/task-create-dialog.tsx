@@ -24,6 +24,7 @@ export function TaskCreateDialog({
     projects: TaskEditorProject[];
 }) {
     const [open, setOpen] = useState(false);
+    const [locked, setLocked] = useState(false);
     const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
     const project =
         projects.find((item) => item.id === projectId) ?? projects[0];
@@ -35,8 +36,18 @@ export function TaskCreateDialog({
     return (
         <>
             <Button onClick={() => setOpen(true)}>New task</Button>
-            <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-h-[90dvh] overflow-y-auto">
+            <Dialog
+                open={open}
+                onOpenChange={(next) => {
+                    if (!locked) {
+                        setOpen(next);
+                    }
+                }}
+            >
+                <DialogContent
+                    showCloseButton={!locked}
+                    className="max-h-[90dvh] overflow-y-auto"
+                >
                     <DialogHeader>
                         <DialogTitle>New task</DialogTitle>
                         <DialogDescription>
@@ -46,13 +57,14 @@ export function TaskCreateDialog({
                     </DialogHeader>
                     <Label htmlFor="new-task-project">Project</Label>
                     <Select
+                        disabled={locked}
                         items={projects.map((item) => ({
                             value: item.id,
                             label: item.name,
                         }))}
                         value={project.id}
                         onValueChange={(value) => {
-                            if (value !== null) {
+                            if (!locked && value !== null) {
                                 setProjectId(value);
                             }
                         }}
@@ -78,6 +90,7 @@ export function TaskCreateDialog({
                     <TaskEditor
                         key={`${project.id}:${open}`}
                         project={project}
+                        onLockedChange={setLocked}
                         onSaved={() => setOpen(false)}
                     />
                 </DialogContent>

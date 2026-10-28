@@ -214,10 +214,12 @@ export function TaskEditor({
     task = null,
     project = null,
     onSaved,
+    onLockedChange,
 }: {
     task?: EditableTask | null;
     project?: TaskEditorProject | null;
     onSaved?: () => void;
+    onLockedChange?: (locked: boolean) => void;
 }) {
     const prefix = useId();
     const [selected, setSelected] = useState(task?.assignees ?? []);
@@ -232,9 +234,23 @@ export function TaskEditor({
         expected_version: task?.version ?? '',
     });
     const [pending, setPending] = useState(false);
+    const [unresolved, setUnresolved] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const inFlight = useRef(false);
-    const attempt = useRef<{ signature: string; key: string } | null>(null);
+    const attempt = useRef<{
+        method: 'POST' | 'PATCH';
+        action: string;
+        body: object;
+        key: string;
+        accepted: boolean;
+        uncertain: boolean;
+        version?: string;
+    } | null>(null);
+    useEffect(() => {
+        onLockedChange?.(pending || unresolved);
+
+        return () => onLockedChange?.(false);
+    }, [pending, unresolved, onLockedChange]);
     const action = task?.update_action ?? project?.create_action;
     const assigneesAction = task?.assignees_action ?? project?.assignees_action;
     const assigneeOptions =
@@ -268,11 +284,15 @@ export function TaskEditor({
                   }),
         };
         const method = task === null ? 'POST' : 'PATCH';
-        const signature = JSON.stringify([method, action, body]);
-
-        if (attempt.current?.signature !== signature) {
-            attempt.current = { signature, key: newIdempotencyKey() };
-        }
+        attempt.current ??= {
+            method,
+            action,
+            body: structuredClone(body),
+            key: newIdempotencyKey(),
+            accepted: false,
+            uncertain: false,
+        };
+        const original = attempt.current;
 
         inFlight.current = true;
         setPending(true);
@@ -280,37 +300,49 @@ export function TaskEditor({
         form.clearErrors();
 
         try {
-            const result = await apiRequest<{ version: string }>(
-                method,
-                action,
-                body,
-                attempt.current.key,
-            );
+            if (!original.accepted) {
+                const result = await apiRequest<{ version: string }>(
+                    original.method,
+                    original.action,
+                    original.body,
+                    original.key,
+                );
 
-            if (!result.ok) {
-                setError(result.message);
+                if (!result.ok) {
+                    const uncertain =
+                        original.uncertain ||
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    original.uncertain = uncertain;
+                    setUnresolved(uncertain);
+                    setError(result.message);
 
-                if (result.status === 409) {
-                    form.setError(
-                        'expected_version',
-                        'This task has changed. Reload it before saving your changes.',
-                    );
-                } else {
-                    for (const [field, messages] of Object.entries(
-                        result.errors ?? {},
-                    )) {
-                        form.setError(
-                            field as keyof typeof form.data,
-                            messages[0],
-                        );
+                    if (!uncertain) {
+                        if (result.status === 409) {
+                            form.setError(
+                                'expected_version',
+                                'This task has changed. Reload it before saving your changes.',
+                            );
+                        } else {
+                            for (const [field, messages] of Object.entries(
+                                result.errors ?? {},
+                            )) {
+                                form.setError(
+                                    field as keyof typeof form.data,
+                                    messages[0],
+                                );
+                            }
+                        }
+
+                        attempt.current = null;
                     }
+
+                    return;
                 }
 
-                if (result.status >= 400 && result.status < 500) {
-                    attempt.current = null;
-                }
-
-                return;
+                original.accepted = true;
+                original.version = result.data.version;
             }
 
             await refreshPageProps({
@@ -328,9 +360,10 @@ export function TaskEditor({
             // Keep the original body/key until the refresh also succeeds, so
             // retrying a saved creation cannot create a second task.
             attempt.current = null;
+            setUnresolved(false);
 
-            if (task !== null) {
-                form.setData('expected_version', result.data.version);
+            if (task !== null && original.version !== undefined) {
+                form.setData('expected_version', original.version);
             }
 
             if (task === null) {
@@ -340,8 +373,10 @@ export function TaskEditor({
 
             onSaved?.();
         } catch {
+            original.uncertain = true;
+            setUnresolved(true);
             setError(
-                'The task was saved, but current tasks could not be refreshed. Reload before making another change.',
+                'The task was saved, but current tasks could not be refreshed. Check the original task save to refresh it.',
             );
         } finally {
             inFlight.current = false;
@@ -351,114 +386,121 @@ export function TaskEditor({
 
     return (
         <form onSubmit={submit} className="grid min-w-0 grid-cols-1 gap-4">
-            <div className="grid min-w-0 grid-cols-1 gap-2">
-                <Label htmlFor={`${prefix}-title`}>Title</Label>
-                <Input
-                    id={`${prefix}-title`}
-                    required
-                    maxLength={255}
-                    value={form.data.title}
-                    onChange={(event) =>
-                        form.setData('title', event.target.value)
-                    }
-                />
-            </div>
-            <div className="grid min-w-0 grid-cols-1 gap-2">
-                <Label htmlFor={`${prefix}-description`}>Description</Label>
-                <Textarea
-                    className="min-w-0 wrap-anywhere"
-                    id={`${prefix}-description`}
-                    maxLength={10000}
-                    value={form.data.description}
-                    onChange={(event) =>
-                        form.setData('description', event.target.value)
-                    }
-                />
-            </div>
-            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+            <fieldset
+                disabled={pending || unresolved}
+                className="grid min-w-0 grid-cols-1 gap-4"
+            >
                 <div className="grid min-w-0 grid-cols-1 gap-2">
-                    <Label htmlFor={`${prefix}-start`}>Start date</Label>
+                    <Label htmlFor={`${prefix}-title`}>Title</Label>
                     <Input
-                        id={`${prefix}-start`}
-                        type="date"
-                        value={form.data.starts_on}
+                        id={`${prefix}-title`}
+                        required
+                        maxLength={255}
+                        value={form.data.title}
                         onChange={(event) =>
-                            form.setData('starts_on', event.target.value)
+                            form.setData('title', event.target.value)
                         }
                     />
                 </div>
                 <div className="grid min-w-0 grid-cols-1 gap-2">
-                    <Label htmlFor={`${prefix}-due`}>Due date</Label>
-                    <Input
-                        id={`${prefix}-due`}
-                        type="date"
-                        min={form.data.starts_on || undefined}
-                        value={form.data.due_on}
+                    <Label htmlFor={`${prefix}-description`}>Description</Label>
+                    <Textarea
+                        className="min-w-0 wrap-anywhere"
+                        id={`${prefix}-description`}
+                        maxLength={10000}
+                        value={form.data.description}
                         onChange={(event) =>
-                            form.setData('due_on', event.target.value)
+                            form.setData('description', event.target.value)
                         }
                     />
                 </div>
-            </div>
-            {task !== null && (
-                <div className="grid min-w-0 grid-cols-1 gap-2">
-                    <Label htmlFor={`${prefix}-status`}>Status</Label>
-                    <Select
-                        items={statuses}
-                        value={form.data.status}
-                        onValueChange={(value) => {
-                            if (value !== null) {
-                                form.setData('status', value);
+                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="grid min-w-0 grid-cols-1 gap-2">
+                        <Label htmlFor={`${prefix}-start`}>Start date</Label>
+                        <Input
+                            id={`${prefix}-start`}
+                            type="date"
+                            value={form.data.starts_on}
+                            onChange={(event) =>
+                                form.setData('starts_on', event.target.value)
                             }
-                        }}
-                    >
-                        <SelectTrigger id={`${prefix}-status`}>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {statuses.map((status) => (
-                                <SelectItem
-                                    key={status.value}
-                                    value={status.value}
-                                >
-                                    {status.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    {form.data.status === 'completed' &&
-                        task.completion_advisory && (
-                            <p className="text-sm wrap-anywhere text-muted-foreground">
-                                {task.completion_advisory}
-                            </p>
-                        )}
+                        />
+                    </div>
+                    <div className="grid min-w-0 grid-cols-1 gap-2">
+                        <Label htmlFor={`${prefix}-due`}>Due date</Label>
+                        <Input
+                            id={`${prefix}-due`}
+                            type="date"
+                            min={form.data.starts_on || undefined}
+                            value={form.data.due_on}
+                            onChange={(event) =>
+                                form.setData('due_on', event.target.value)
+                            }
+                        />
+                    </div>
                 </div>
-            )}
-            <AssigneePicker
-                key={assigneesAction}
-                action={assigneesAction}
-                initialOptions={assigneeOptions}
-                selected={selected}
-                onChange={(next) => {
-                    setSelected(next);
-                    form.setData(
-                        'assignee_ids',
-                        next.map((person) => person.id),
-                    );
-                }}
-            />
-            <div className="flex items-center gap-2">
-                <Switch
-                    id={`${prefix}-visibility`}
-                    checked={form.data.is_visible_to_client}
-                    onCheckedChange={(checked) =>
-                        form.setData('is_visible_to_client', checked)
-                    }
+                {task !== null && (
+                    <div className="grid min-w-0 grid-cols-1 gap-2">
+                        <Label htmlFor={`${prefix}-status`}>Status</Label>
+                        <Select
+                            disabled={pending || unresolved}
+                            items={statuses}
+                            value={form.data.status}
+                            onValueChange={(value) => {
+                                if (value !== null) {
+                                    form.setData('status', value);
+                                }
+                            }}
+                        >
+                            <SelectTrigger id={`${prefix}-status`}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {statuses.map((status) => (
+                                    <SelectItem
+                                        key={status.value}
+                                        value={status.value}
+                                    >
+                                        {status.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        {form.data.status === 'completed' &&
+                            task.completion_advisory && (
+                                <p className="text-sm wrap-anywhere text-muted-foreground">
+                                    {task.completion_advisory}
+                                </p>
+                            )}
+                    </div>
+                )}
+                <AssigneePicker
+                    key={assigneesAction}
+                    action={assigneesAction}
+                    initialOptions={assigneeOptions}
+                    selected={selected}
+                    onChange={(next) => {
+                        setSelected(next);
+                        form.setData(
+                            'assignee_ids',
+                            next.map((person) => person.id),
+                        );
+                    }}
                 />
-                <Label htmlFor={`${prefix}-visibility`}>
-                    Visible to client
-                </Label>
-            </div>
+                <div className="flex items-center gap-2">
+                    <Switch
+                        disabled={pending || unresolved}
+                        id={`${prefix}-visibility`}
+                        checked={form.data.is_visible_to_client}
+                        onCheckedChange={(checked) =>
+                            form.setData('is_visible_to_client', checked)
+                        }
+                    />
+                    <Label htmlFor={`${prefix}-visibility`}>
+                        Visible to client
+                    </Label>
+                </div>
+            </fieldset>
             {error && !form.errors.expected_version && (
                 <p
                     role="alert"
@@ -486,7 +528,11 @@ export function TaskEditor({
                 </Button>
             )}
             <Button type="submit" disabled={pending}>
-                {task === null ? 'Create task' : 'Save task'}
+                {unresolved
+                    ? 'Check task save'
+                    : task === null
+                      ? 'Create task'
+                      : 'Save task'}
             </Button>
         </form>
     );
