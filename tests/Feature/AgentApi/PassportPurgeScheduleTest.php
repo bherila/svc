@@ -70,11 +70,19 @@ final class PassportPurgeScheduleTest extends TestCase
         $this->assertSame(0, Artisan::call('svc:oauth:prune-dynamic-clients', ['--apply' => true]));
         $this->assertStringNotContainsString('deferred', Artisan::output());
 
-        // Passport's default takes revoked rows at once and expired ones after
-        // a week: the smoke's evidence is gone, and the legacy refresh token
-        // is left belonging to no one a revocation by person can name.
+        // Passport 13.10 also preserves an expired access token while its
+        // refresh token is live. The conservative schedule still additionally
+        // retains recently revoked evidence, which the default removes.
         $this->assertSame(0, Artisan::call('passport:purge'));
+        $this->assertSame([$legacy], Passport::token()->newQuery()->pluck('id')->all());
+        $this->assertSame([$legacyRefresh], Passport::refreshToken()->newQuery()->pluck('id')->all());
+        $this->assertSame(0, app(CredentialRevoker::class)->unattributedRefreshTokens());
+        $this->assertSame(0, Artisan::call('svc:oauth:prune-dynamic-clients', ['--apply' => true]));
+        $this->assertStringNotContainsString('deferred', Artisan::output());
 
+        // Historical purges can already have left an orphan. Preserve the
+        // independent revocation/pruning guard for that legacy condition.
+        Passport::token()->newQuery()->whereKey($legacy)->delete();
         $this->assertFalse(Passport::token()->newQuery()->exists());
         $this->assertSame(1, app(CredentialRevoker::class)->unattributedRefreshTokens());
         $this->assertSame(0, Artisan::call('svc:oauth:prune-dynamic-clients', ['--apply' => true]));
