@@ -8,6 +8,7 @@ import type { CompanyProfileData } from '@/components/clients/company-profile';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
 import { useClientChange } from '@/components/clients/use-client-change';
+import { useClientDraft } from '@/components/clients/use-client-draft';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -167,15 +168,18 @@ function AccessRow({
  * is, and what projects exist.
  */
 function CompanyForm({ company }: { company: ManagedCompany }) {
-    const form = useForm({
-        name: company.name,
-        billing_email: company.billing_email ?? '',
-        automatic_invoice_email_enabled:
-            company.automatic_invoice_email_enabled ?? false,
-        automatic_invoice_email_delay_days:
-            company.automatic_invoice_email_delay_days ?? 0,
-        is_active: company.is_active,
-    });
+    const form = useClientDraft(
+        {
+            name: company.name,
+            billing_email: company.billing_email ?? '',
+            automatic_invoice_email_enabled:
+                company.automatic_invoice_email_enabled ?? false,
+            automatic_invoice_email_delay_days:
+                company.automatic_invoice_email_delay_days ?? 0,
+            is_active: company.is_active,
+        },
+        company.version,
+    );
 
     const change = useClientChange();
 
@@ -184,18 +188,20 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
             className="grid grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                void change.run(
+                const submitted = { ...form.data };
+                void change.run<{ version: string }>(
                     'PATCH',
                     company.update_url,
                     {
-                        ...form.data,
+                        ...submitted,
                         billing_email:
-                            form.data.billing_email === ''
+                            submitted.billing_email === ''
                                 ? null
-                                : form.data.billing_email,
-                        expected_version: company.version,
+                                : submitted.billing_email,
+                        expected_version: form.version,
                     },
-                    async () => {
+                    async (result) => {
+                        form.saved(submitted, result.data.version);
                         await refreshPageProps({
                             only: [
                                 'company',
@@ -589,7 +595,7 @@ export default function ClientManage({
                         <CardTitle>Client</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <CompanyForm key={company.version} company={company} />
+                        <CompanyForm key={company.id} company={company} />
                     </CardContent>
                 </Card>
 
@@ -600,7 +606,7 @@ export default function ClientManage({
                         </CardHeader>
                         <CardContent>
                             <CompanyProfile
-                                key={company.version}
+                                key={company.id}
                                 profile={companyProfile}
                                 action={profileAction}
                                 version={company.version}

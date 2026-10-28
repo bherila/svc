@@ -64,7 +64,7 @@ beforeEach(() => {
     vi.mocked(apiRequest).mockResolvedValue({
         ok: true,
         status: 200,
-        data: {},
+        data: { version: 'saved-version' },
     });
 });
 

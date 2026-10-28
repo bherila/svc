@@ -1,5 +1,5 @@
-import { useForm } from '@inertiajs/react';
 import { useClientChange } from '@/components/clients/use-client-change';
+import { useClientDraft } from '@/components/clients/use-client-draft';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,14 +33,17 @@ export function CompanyProfile({
     action: string;
     version: string;
 }) {
-    const form = useForm({
-        billing_address: profile.billing_address ?? '',
-        phone: profile.phone ?? '',
-        website_url: profile.website_url ?? '',
-        tax_id: profile.tax_id ?? '',
-        currency: profile.currency ?? '',
-        notes: profile.notes ?? '',
-    });
+    const form = useClientDraft(
+        {
+            billing_address: profile.billing_address ?? '',
+            phone: profile.phone ?? '',
+            website_url: profile.website_url ?? '',
+            tax_id: profile.tax_id ?? '',
+            currency: profile.currency ?? '',
+            notes: profile.notes ?? '',
+        },
+        version,
+    );
 
     const change = useClientChange();
 
@@ -49,19 +52,21 @@ export function CompanyProfile({
             className="grid min-w-0 grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                void change.run(
+                const submitted = { ...form.data };
+                void change.run<{ version: string }>(
                     'PATCH',
                     action,
                     {
                         ...Object.fromEntries(
-                            Object.entries(form.data).map(([field, value]) => [
+                            Object.entries(submitted).map(([field, value]) => [
                                 field,
                                 value === '' ? null : value,
                             ]),
                         ),
-                        expected_version: version,
+                        expected_version: form.version,
                     },
-                    async () => {
+                    async (result) => {
+                        form.saved(submitted, result.data.version);
                         await refreshPageProps({
                             only: ['company', 'company_profile'],
                         });

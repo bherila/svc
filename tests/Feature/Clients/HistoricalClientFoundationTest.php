@@ -148,6 +148,26 @@ class HistoricalClientFoundationTest extends TestCase
         }
     }
 
+    public function test_dual_role_manager_keeps_internal_contact_access_through_the_browser_session(): void
+    {
+        config(['agent_api.writes_enabled' => false, 'agent_api.client_writes_enabled' => false]);
+        $this->company->portalUsers()->attach($this->manager->id, ['workspace_id' => $this->workspace->id, 'role' => 'client']);
+        $created = $this->browser($this->manager)->withHeader('Idempotency-Key', 'synthetic-dual-browser-create')
+            ->postJson($this->contactsUrl(), $this->details())->assertCreated();
+        $contact = ClientContact::query()->where('workspace_id', $this->workspace->id)->sole();
+        $url = $this->contactsUrl($contact);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.id', $contact->public_id);
+        $updated = $this->withHeader('Idempotency-Key', 'synthetic-dual-browser-update')->patchJson($url,
+            ['expected_version' => $created->json('data.version'), 'notes' => 'Synthetic internal manager edit'])->assertOk();
+        $archived = $this->withHeader('Idempotency-Key', 'synthetic-dual-browser-archive')->postJson($url.'/archive',
+            ['expected_version' => $updated->json('data.version'), 'confirm' => true])->assertOk()->assertJsonPath('data.is_archived', true);
+        $this->withHeader('Idempotency-Key', 'synthetic-dual-browser-restore')->postJson($url.'/restore',
+            ['expected_version' => $archived->json('data.version')])->assertOk()->assertJsonPath('data.is_archived', false);
+        $this->assertSame('Synthetic internal manager edit', $contact->fresh()->notes);
+        $this->assertDatabaseCount('client_contacts', 1);
+        $this->assertDatabaseCount('users', 1);
+    }
+
     private function browser(User $user): static
     {
         return $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40));
