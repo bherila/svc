@@ -12,6 +12,15 @@ use Tests\TestCase;
 
 final class ExpenseReceiptOperationContractTest extends TestCase
 {
+    public function test_upload_preparation_still_requires_manager_authority_and_the_expense_write_cutover(): void
+    {
+        $catalog = new AgentOperationCatalog;
+        $operation = $catalog->registry()->find('expenses.receipts.upload_url');
+        $this->assertNotNull($operation);
+        $this->assertTrue($catalog->isManagerOnly($operation->id));
+        $this->assertSame([AgentDeploymentFlags::EXPENSES, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:expenses.receipts.upload_url'], $operation->requirement->flags);
+    }
+
     public function test_receipt_delete_publishes_the_exact_versioned_confirmed_expense_authority_contract(): void
     {
         $catalog = new AgentOperationCatalog;
