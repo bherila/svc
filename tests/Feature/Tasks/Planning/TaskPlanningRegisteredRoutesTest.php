@@ -290,7 +290,7 @@ final class TaskPlanningRegisteredRoutesTest extends TestCase
         $headers = ['X-Inertia' => 'true', 'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/')) ?? ''];
         $this->withHeaders($headers)->get(route('tasks.planning.labels.page', [$workspace]))->assertOk()
             ->assertJsonPath('component', 'clients/task-labels')->assertJsonPath('props.catalog.labels', [])
-            ->assertJsonPath('props.catalog.create_href', route('tasks.planning.labels.create', [$workspace]));
+            ->assertJsonPath('props.catalog.create_href', route('agent-api.v1.task-planning.labels.create', [$workspace]));
     }
 
     public function test_native_empty_search_and_catalog_continuations_survive_http_empty_string_normalization(): void
@@ -313,8 +313,10 @@ final class TaskPlanningRegisteredRoutesTest extends TestCase
     private function connect(string $surface, User $actor): void
     {
         $this->flushHeaders();
+        $this->defaultCookies = [];
+        $this->unencryptedCookies = [];
         if ($surface === 'native') {
-            $this->actingAs($actor, 'web');
+            $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
 
             return;
         }
@@ -367,11 +369,8 @@ final class TaskPlanningRegisteredRoutesTest extends TestCase
     private function url(string $surface, Workspace $workspace, string $operation, ?string $target = null): string
     {
         $path = self::BINDINGS[$operation][1];
-        if ($surface === 'native' && $operation === 'labels.list') {
-            $path .= '/data';
-        }
 
-        return ($surface === 'native' ? '' : '/api/v1').'/workspaces/'.$workspace->public_id
+        return '/api/v1'.'/workspaces/'.$workspace->public_id
             .str_replace(['{task}', '{project}', '{label}'], $target ?? '', $path);
     }
 

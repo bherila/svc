@@ -3,7 +3,7 @@
 
 import { Buffer } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import {
     existsSync,
     mkdirSync,
@@ -475,6 +475,7 @@ try {
                 });
 
             if (screen === 'task_list') {
+                const createdTitle = `SyntheticTaskCreatedInBrowser${width}`;
                 await expect(
                     page.getByRole('link', { name: 'Next tasks', exact: true }),
                 ).toBeVisible();
@@ -504,7 +505,7 @@ try {
                 await capture(screen, 'create-empty', width);
                 await page
                     .getByLabel('Title', { exact: true })
-                    .fill('SyntheticTaskCreatedInBrowser');
+                    .fill(createdTitle);
                 await page
                     .getByLabel('Description', { exact: true })
                     .fill('Synthetic create task description. '.repeat(20));
@@ -521,24 +522,96 @@ try {
                     .scrollIntoViewIfNeeded();
                 await capture(screen, 'create-dialog', width);
 
-                if (width === 1440) {
-                    await page
-                        .getByRole('button', {
-                            name: 'Create task',
-                            exact: true,
-                        })
-                        .click();
-                    await expect(page.getByRole('dialog')).toHaveCount(0);
-                    await expect(
-                        page.getByRole('link', {
-                            name: 'SyntheticTaskCreatedInBrowser',
-                            exact: true,
-                        }),
-                    ).toBeVisible();
-                    await capture(screen, 'created', width);
-                } else {
-                    await page.keyboard.press('Escape');
-                }
+                const createPattern =
+                    origin +
+                    new URL(fixture.task_create, origin).pathname +
+                    '*';
+                const readPattern = origin + new URL(page.url()).pathname + '*';
+                const writes = [];
+                let loseWriteAnswer = true;
+                let loseRead = true;
+                const createHandler = async (route) => {
+                    if (route.request().method() !== 'POST') {
+                        return route.continue();
+                    }
+
+                    writes.push({
+                        body: route.request().postDataJSON(),
+                        key: route.request().headers()['idempotency-key'],
+                    });
+
+                    if (loseWriteAnswer) {
+                        loseWriteAnswer = false;
+                        const committed = await route.fetch();
+                        expect(committed.status()).toBe(201);
+
+                        return route.abort('failed');
+                    }
+
+                    return route.continue();
+                };
+                const readHandler = async (route) => {
+                    if (
+                        loseRead &&
+                        route.request().method() === 'GET' &&
+                        route.request().headers()['x-inertia-partial-data']
+                    ) {
+                        loseRead = false;
+
+                        return route.abort('failed');
+                    }
+
+                    return route.continue();
+                };
+                await page.route(createPattern, createHandler);
+                await page.route(readPattern, readHandler);
+                await page
+                    .getByRole('button', { name: 'Create task', exact: true })
+                    .click();
+                const check = page.getByRole('button', {
+                    name: 'Check task save',
+                    exact: true,
+                });
+                await expect(check).toBeEnabled();
+                await expect(
+                    page.getByLabel('Title', { exact: true }),
+                ).toBeDisabled();
+                await expect(
+                    page.getByRole('combobox', {
+                        name: 'Project',
+                        exact: true,
+                    }),
+                ).toBeDisabled();
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toBeVisible();
+                const unresolvedUrl = page.url();
+                await page.evaluate(() => window.history.back());
+                await expect(page.getByRole('alert')).toContainText(
+                    'Check the original change before leaving this page.',
+                );
+                expect(page.url()).toBe(unresolvedUrl);
+                await expect(page.getByRole('dialog')).toBeVisible();
+                expect(writes).toHaveLength(1);
+                await check.scrollIntoViewIfNeeded();
+                await capture(screen, 'create-unknown', width);
+                await check.click();
+                await expect(page.getByRole('alert')).toContainText(
+                    'saved, but current tasks could not be refreshed',
+                );
+                await expect(check).toBeEnabled();
+                expect(writes).toHaveLength(2);
+                expect(writes[1]).toEqual(writes[0]);
+                await check.scrollIntoViewIfNeeded();
+                await capture(screen, 'create-refresh-failed', width);
+                await check.click();
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                expect(writes).toHaveLength(2);
+                await expect(
+                    page.getByRole('link', { name: createdTitle, exact: true }),
+                ).toHaveCount(1);
+                await capture(screen, 'created', width);
+                await page.unroute(createPattern, createHandler);
+                await page.unroute(readPattern, readHandler);
             }
 
             if (screen === 'task_project') {
@@ -592,12 +665,15 @@ try {
                     origin + fixture.task_update,
                     {
                         data: { expected_version: version },
-                        headers: { 'Sec-Fetch-Site': 'same-origin' },
+                        headers: {
+                            'Sec-Fetch-Site': 'same-origin',
+                            'Idempotency-Key': randomUUID(),
+                        },
                         maxRedirects: 0,
                     },
                 );
 
-                expect([302, 303]).toContain(revised.status());
+                expect(revised.status()).toBe(200);
 
                 await page
                     .getByRole('button', { name: 'Save task', exact: true })

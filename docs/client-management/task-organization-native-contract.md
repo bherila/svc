@@ -6,12 +6,11 @@ The page component is `clients/task-organization`. It renders through
 and `workspaceNavigation` props. The page route includes a model-bound
 `clientCompany`; the controller verifies workspace/project/company lineage.
 
-Native route names:
+Native read routes use `tasks.organization.show` and `tasks.organization.snapshot`.
+Mutations use the session-authenticated canonical API routes below.
 
-| Name suffix after `tasks.organization.` | Method | Path identities | Domain command |
+| Name suffix after `agent-api.v1.task-organization.` | Method | Path identities | Domain command |
 | --- | --- | --- | --- |
-| `show` | GET | workspace, clientCompany, project | Native page |
-| `snapshot` | GET | workspace, project | Shared JSON snapshot |
 | `lists.store` | POST | workspace, project | lists.create |
 | `lists.update` | PATCH | workspace, project, list | lists.update |
 | `lists.archive` | DELETE | workspace, project, list | lists.archive |
@@ -21,11 +20,10 @@ Native route names:
 | `tasks.move` | PATCH | workspace, project, task | tasks.move |
 | `tasks.reorder` | PUT | workspace, project | tasks.reorder |
 
-Mutations use the server route default `task_organization_operation`. Path record
+The trusted first-party session selects Internal task authority; OAuth and MCP keep Agent authority. The caller cannot select that origin. Mutations use the server route default `task_organization_operation`. Path record
 identities cannot also appear in the body. All mutation requests accept an
 `Idempotency-Key` header and return `{data:{affected_ids:[UUID]}}`; creations return
-201 and other mutations return 200. Native form adapters may alternatively supply
-`idempotency_key` in the body. Preserve the key and exact payload when retrying an
+201 and other mutations return 200. The API accepts the receipt key in the header only. Preserve the key and exact payload when retrying an
 uncertain result. A changed payload needs a new key after a successful response.
 
 Native page query: `parent_id` or `list_id`, otherwise the unlisted root;

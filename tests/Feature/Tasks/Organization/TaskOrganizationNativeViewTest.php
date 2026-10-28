@@ -28,13 +28,7 @@ final class TaskOrganizationNativeViewTest extends TestCase
         Route::middleware(['web', 'auth:web', ResolveWorkspaceNavigation::class])->group(function (): void {
             Route::get('/synthetic-native/{workspace}/clients/{clientCompany}/projects/{project}/organization', [ClientTaskOrganizationController::class, 'page'])->name('tasks.organization.show');
             Route::get('/synthetic-native/{workspace}/projects/{project}/organization/snapshot', [ClientTaskOrganizationController::class, 'show'])->name('tasks.organization.snapshot');
-            foreach ([['post', '/lists', 'lists.store', 'lists.create'], ['patch', '/lists/{list}', 'lists.update', 'lists.update'],
-                ['delete', '/lists/{list}', 'lists.archive', 'lists.archive'], ['post', '/lists/{list}/restore', 'lists.restore', 'lists.restore'],
-                ['put', '/lists/order', 'lists.reorder', 'lists.reorder'], ['post', '/tasks', 'tasks.store', 'tasks.create'],
-                ['patch', '/tasks/{task}/container', 'tasks.move', 'tasks.move'], ['put', '/tasks/order', 'tasks.reorder', 'tasks.reorder']] as [$verb, $suffix, $name, $operation]) {
-                Route::$verb('/synthetic-native/{workspace}/projects/{project}/organization'.$suffix, [ClientTaskOrganizationController::class, 'mutate'])
-                    ->defaults('task_organization_operation', $operation)->name('tasks.organization.'.$name);
-            }
+
         });
         Route::getRoutes()->refreshNameLookups();
     }

@@ -1,6 +1,9 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useId, useState } from 'react';
-import { usePlanningMutation } from '@/components/tasks/planning-controls';
+import {
+    PlanningMutationError,
+    usePlanningMutation,
+} from '@/components/tasks/planning-controls';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -75,7 +78,7 @@ function LabelNameForm({
             <Input
                 id={id}
                 value={name}
-                disabled={mutation.pending}
+                disabled={mutation.locked}
                 onChange={(event) =>
                     setDraft((current) => ({
                         name: event.target.value,
@@ -86,19 +89,12 @@ function LabelNameForm({
             <p className="text-xs text-muted-foreground">
                 {length} of 80 characters. Labels use one line.
             </p>
-            {mutation.error && (
-                <p
-                    role="alert"
-                    className="text-sm wrap-anywhere text-destructive"
-                >
-                    {mutation.error}
-                </p>
-            )}
+            {mutation.error && <PlanningMutationError mutation={mutation} />}
             <div className="flex flex-wrap gap-2">
                 <Button
                     type="submit"
                     disabled={
-                        mutation.pending ||
+                        mutation.locked ||
                         length === 0 ||
                         length > 80 ||
                         (label !== undefined && draft === null)
@@ -110,7 +106,7 @@ function LabelNameForm({
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={mutation.pending}
+                        disabled={mutation.locked}
                         onClick={() =>
                             void mutation.reload(() => {
                                 setDraft(null);
@@ -155,7 +151,7 @@ function LabelRow({ label }: { label: PlanningCatalogLabel }) {
                                 <div className="flex flex-wrap gap-2">
                                     <Button
                                         type="button"
-                                        disabled={mutation.pending}
+                                        disabled={mutation.locked}
                                         onClick={() =>
                                             void mutation.run(
                                                 label.is_archived
@@ -180,7 +176,7 @@ function LabelRow({ label }: { label: PlanningCatalogLabel }) {
                                     <Button
                                         type="button"
                                         variant="outline"
-                                        disabled={mutation.pending}
+                                        disabled={mutation.locked}
                                         onClick={() => {
                                             setConfirming(null);
                                             mutation.clearError();
@@ -205,16 +201,11 @@ function LabelRow({ label }: { label: PlanningCatalogLabel }) {
                         )}
                         {mutation.error && (
                             <>
-                                <p
-                                    role="alert"
-                                    className="text-sm wrap-anywhere text-destructive"
-                                >
-                                    {mutation.error}
-                                </p>
+                                <PlanningMutationError mutation={mutation} />
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    disabled={mutation.pending}
+                                    disabled={mutation.locked}
                                     onClick={() =>
                                         void mutation.reload(() => {
                                             setConfirming(null);
