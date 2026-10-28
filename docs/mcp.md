@@ -475,6 +475,9 @@ parameters and bodies, and all responses, including refusals, validate their
 status, media type and JSON shape. Deliberately invalid negative-test inputs may
 be refused; they cannot be accepted outside the schema. The MCP transport
 endpoint retains its separate JSON-RPC envelope and tool-schema contract tests.
+Historical receipt replays and ignored-input security regressions explicitly pin
+a closed request schema for that one named operation at the test call; their
+responses still use the current published schema.
 Tests disable debug responses so refusal shapes match the deployed API rather
 than Laravel's development exception traces. Protected-resource discovery links
 the public contract with `service_documentation`.

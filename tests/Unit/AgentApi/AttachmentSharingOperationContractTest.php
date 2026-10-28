@@ -90,7 +90,7 @@ final class AttachmentSharingOperationContractTest extends TestCase
                 $this->assertSame($parameters, $document['parameters'], $id);
                 $this->assertSame([401, 403, 404, 409, 422, 429, 503], array_keys($document['errors']), $id);
                 if ($download) {
-                    $this->assertSame(['application/octet-stream', 'Authorized attachment content.'], $document['binary']);
+                    $this->assertSame(['*/*', 'Authorized attachment content.'], $document['binary']);
                     $this->assertArrayNotHasKey('response', $document);
                 } else {
                     $this->assertSame($response, $document['response']);

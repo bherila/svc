@@ -77,7 +77,7 @@ final class AttachmentSharingOperations
                     409 => 'A captured version is stale or the idempotency key was reused for different input.',
                     422 => 'A field, confirmation, cursor or file is invalid.', 429 => 'Too many requests; retry after Retry-After.',
                     503 => 'The retained local privacy latch is unavailable; no write was performed.'],
-            ] + ($response === null ? ['binary' => ['application/octet-stream', 'Authorized attachment content.']] : ['response' => $response])
+            ] + ($response === null ? ['binary' => ['*/*', 'Authorized attachment content.']] : ['response' => $response])
                 + ($id === 'collaboration.attachments.upload' ? ['request_types' => ['multipart/form-data']] : [])
                 + ($request === null ? [] : ['request' => $request]);
         }

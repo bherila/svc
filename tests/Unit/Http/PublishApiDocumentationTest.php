@@ -12,13 +12,14 @@ final class PublishApiDocumentationTest extends TestCase
 {
     public function test_metadata_retains_its_resource_and_headers_and_adds_the_document_url(): void
     {
+        config(['app.url' => 'https://svc.example.test/']);
         $response = new JsonResponse(['resource' => 'https://svc.example.test/api/v1'], 200, ['Cache-Control' => 'public, max-age=300']);
         $published = (new PublishApiDocumentation)->handle(Request::create('/metadata'), static fn () => $response);
 
         $this->assertSame($response, $published);
         $this->assertSame([
             'resource' => 'https://svc.example.test/api/v1',
-            'service_documentation' => route('openapi.document'),
+            'service_documentation' => 'https://svc.example.test/api/openapi.json',
         ], $published->getData(true));
         $this->assertSame('max-age=300, public', $published->headers->get('Cache-Control'));
     }

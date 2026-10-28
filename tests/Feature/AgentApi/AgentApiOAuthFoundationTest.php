@@ -56,6 +56,17 @@ class AgentApiOAuthFoundationTest extends TestCase
         $this->getJson('/.well-known/oauth-protected-resource/api/v2')->assertNotFound();
     }
 
+    public function test_documentation_discovery_uses_the_configured_installation_url(): void
+    {
+        config(['app.url' => 'https://svc.example.test/']);
+        foreach (['/api/v1', '/api/v1/mcp'] as $resource) {
+            $this->withHeader('Host', 'untrusted.example.test')
+                ->getJson('/.well-known/oauth-protected-resource'.$resource)
+                ->assertOk()
+                ->assertJsonPath('service_documentation', 'https://svc.example.test/api/openapi.json');
+        }
+    }
+
     /**
      * Browser agents reach discovery, registration and the token endpoint
      * through the package's CORS list; an unlisted origin is answered without
