@@ -1,7 +1,8 @@
 import { router } from '@inertiajs/react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
+import { visitPage } from '@/lib/visit-page';
 
 type SavedContent = { version: string; web_url: string };
 type Attempt = {
@@ -22,6 +23,46 @@ export function useCollaborationMutation() {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const inFlight = useRef(false);
     const attempt = useRef<Attempt | null>(null);
+
+    useEffect(() => {
+        if (!pending && !unresolved) {
+            return;
+        }
+
+        const stopNavigation = router.on?.('before', (event) => {
+            if (!attempt.current || attempt.current.content) {
+                return;
+            }
+
+            const visit = event.detail.visit;
+            const destination = new URL(visit.url, window.location.href);
+            const readingCurrentProps =
+                visit.method === 'get' &&
+                visit.only.length > 0 &&
+                destination.origin === window.location.origin &&
+                destination.pathname === window.location.pathname &&
+                destination.search === window.location.search;
+
+            if (!readingCurrentProps) {
+                event.preventDefault();
+                setErrors({
+                    message:
+                        'Check the original change before leaving this page.',
+                });
+            }
+        });
+        const stopUnload = (event: BeforeUnloadEvent) => {
+            if (attempt.current !== null && !attempt.current.content) {
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('beforeunload', stopUnload);
+
+        return () => {
+            stopNavigation?.();
+            window.removeEventListener('beforeunload', stopUnload);
+        };
+    }, [pending, unresolved]);
 
     async function run(
         method: Attempt['method'],
@@ -103,22 +144,7 @@ export function useCollaborationMutation() {
             const content = original.content;
 
             if (original.navigate) {
-                await new Promise<void>((resolve, reject) => {
-                    let loaded = false;
-                    router.visit(content.web_url, {
-                        onNetworkError: () => false,
-                        onHttpException: () => false,
-                        onSuccess: () => {
-                            loaded = true;
-                            resolve();
-                        },
-                        onFinish: () => {
-                            if (!loaded) {
-                                reject(new Error('Content navigation failed.'));
-                            }
-                        },
-                    });
-                });
+                await visitPage(content.web_url);
             } else {
                 await refreshPageProps({
                     only: ['topic', 'thread', 'topics'],
