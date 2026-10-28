@@ -219,6 +219,23 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             const errors = [];
             const requests = [];
             const onError = (error) => errors.push(error.message);
+            const onResponse = async (response) => {
+                if (
+                    response.url().startsWith(origin + '/api/v1/') &&
+                    response.request().resourceType() === 'fetch'
+                ) {
+                    logs.push(
+                        JSON.stringify({
+                            screen,
+                            width,
+                            url: response.url(),
+                            status: response.status(),
+                            body: (await response.text()).slice(0, 4000),
+                        }) + '\n',
+                    );
+                }
+            };
+            page.on('response', onResponse);
             const onRequest = (request) => {
                 if (
                     request.resourceType() === 'fetch' &&
@@ -286,9 +303,33 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                                     name: 'Load more files',
                                 })
                                 .click();
-                            await expect
-                                .poll(async () => panel.locator('li').count())
-                                .toBeGreaterThan(before);
+
+                            try {
+                                await expect
+                                    .poll(async () =>
+                                        panel.locator('li').count(),
+                                    )
+                                    .toBeGreaterThan(before);
+                            } catch (error) {
+                                logs.push(
+                                    JSON.stringify({
+                                        screen,
+                                        width,
+                                        errors,
+                                        panel: await panel.innerText(),
+                                    }) + '\n',
+                                );
+                                await page.screenshot({
+                                    path: path.join(
+                                        artifacts,
+                                        `${screen}-failure-${width}.png`,
+                                    ),
+                                    fullPage: true,
+                                });
+
+                                throw error;
+                            }
+
                             expect(++reads).toBeLessThan(6);
                         }
 
@@ -354,6 +395,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     });
                 }
 
+                page.off('response', onResponse);
                 page.off('pageerror', onError);
                 page.off('request', onRequest);
                 continue;
@@ -502,6 +544,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 ...layout,
                 mountFetches: requests.length,
             });
+            page.off('response', onResponse);
             page.off('pageerror', onError);
             page.off('request', onRequest);
         }

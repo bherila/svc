@@ -50,6 +50,11 @@ final class AttachmentSharingOperationContractTest extends TestCase
                 $download = $id === 'collaboration.attachments.download';
                 $preparation = $id === 'collaboration.attachments.upload_url';
                 $document = $documents[$id];
+                if ($id === 'collaboration.attachments.list') {
+                    $this->assertStringStartsWith('Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs.', $document['description']);
+                } else {
+                    $this->assertStringNotContainsString('presentation=native', $document['description']);
+                }
                 $operation = $registry->find($id);
                 $this->assertNotNull($operation, $id);
                 $this->assertSame($write, AttachmentSharingOperations::writes($id), $id);
