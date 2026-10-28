@@ -165,15 +165,12 @@ describe('agreement activation', () => {
                 version={'a'.repeat(64)}
             />,
         );
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Activate', exact: true }),
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
         const dialog = await screen.findByRole('dialog');
         expect(requestFetch).not.toHaveBeenCalled();
         fireEvent.click(
             within(dialog).getByRole('button', {
                 name: 'Activate',
-                exact: true,
             }),
         );
         expect(await screen.findByRole('alert')).toHaveTextContent(message);
