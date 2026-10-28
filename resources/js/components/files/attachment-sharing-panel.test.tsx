@@ -187,6 +187,279 @@ describe('attachment sharing panel', () => {
         ).not.toBeInTheDocument();
     });
 
+    it('prepares an expense receipt with GET and uploads to its signed upload_url', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { upload_url: '/synthetic/signed-receipt' },
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { id: 'synthetic-receipt' },
+                        }),
+                    ),
+                ),
+        );
+        render(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: {
+                        href: '/synthetic/receipt-preparation',
+                        method: 'GET',
+                        parent_version: 'p'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        const file = new File(
+            ['Synthetic receipt bytes'],
+            'synthetic-receipt.txt',
+        );
+        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await waitFor(() =>
+            expect(
+                (screen.getByLabelText('Upload a file') as HTMLInputElement)
+                    .files,
+            ).toHaveLength(0),
+        );
+        expect(vi.mocked(fetch).mock.calls[0]).toEqual([
+            expect.stringMatching(/\/synthetic\/receipt-preparation$/),
+            expect.objectContaining({ method: 'GET', body: undefined }),
+        ]);
+        expect(vi.mocked(fetch).mock.calls[1][0]).toBe(
+            '/synthetic/signed-receipt',
+        );
+        const request = vi.mocked(fetch).mock.calls[1][1]!;
+        expect(request.method).toBe('POST');
+        expect((request.body as FormData).get('file')).toBe(file);
+        expect((request.body as FormData).get('expected_version')).toBe(
+            'p'.repeat(64),
+        );
+        expect((request.body as FormData).has('is_visible_to_client')).toBe(
+            false,
+        );
+        expect(
+            (request.headers as Record<string, string>)['Idempotency-Key'],
+        ).toBeTruthy();
+        expect(
+            (screen.getByLabelText('Upload a file') as HTMLInputElement).files,
+        ).toHaveLength(0);
+    });
+
+    it('retries an ambiguous receipt upload with the original file, preparation method, version and key', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { upload_url: '/synthetic/signed-receipt' },
+                        }),
+                    ),
+                )
+                .mockRejectedValueOnce(
+                    new Error('Synthetic lost upload answer'),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: {
+                                upload_url: '/synthetic/renewed-signed-receipt',
+                            },
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({ data: { id: 'synthetic-receipt' } }),
+                    ),
+                ),
+        );
+        const { rerender } = render(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: {
+                        href: '/synthetic/receipt-preparation',
+                        method: 'GET',
+                        parent_version: 'p'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        const file = new File(
+            ['Synthetic original receipt'],
+            'synthetic-original-receipt.txt',
+        );
+        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await screen.findByRole('alert');
+        expect(screen.getByLabelText('Upload a file')).toBeDisabled();
+        expect(
+            (screen.getByLabelText('Upload a file') as HTMLInputElement)
+                .files?.[0],
+        ).toBe(file);
+        const original = vi.mocked(fetch).mock.calls[1][1]!;
+        rerender(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: {
+                        href: '/synthetic/different-preparation',
+                        method: 'POST',
+                        parent_version: 'q'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+        await waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Upload file' }),
+            ).toBeDisabled(),
+        );
+        expect(vi.mocked(fetch).mock.calls[2]).toEqual([
+            expect.stringMatching(/\/synthetic\/receipt-preparation$/),
+            expect.objectContaining({ method: 'GET', body: undefined }),
+        ]);
+        expect(vi.mocked(fetch).mock.calls[3][0]).toBe(
+            '/synthetic/renewed-signed-receipt',
+        );
+        const retried = vi.mocked(fetch).mock.calls[3][1]!;
+        expect(Array.from((retried.body as FormData).entries())).toEqual(
+            Array.from((original.body as FormData).entries()),
+        );
+        expect((retried.body as FormData).get('file')).toBe(file);
+        expect(
+            (retried.headers as Record<string, string>)['Idempotency-Key'],
+        ).toBe((original.headers as Record<string, string>)['Idempotency-Key']);
+        expect(screen.getByLabelText('Upload a file')).toBeEnabled();
+        expect(
+            (screen.getByLabelText('Upload a file') as HTMLInputElement).files,
+        ).toHaveLength(0);
+    });
+
+    it('keeps a recorded upload attempt through refresh failure and releases it only after reconciliation', async () => {
+        reload.mockImplementationOnce((options) => {
+            options?.onFinish?.();
+        });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockImplementation((href: string) =>
+                Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            data: href.includes('preparation')
+                                ? { upload_url: '/synthetic/signed-receipt' }
+                                : { id: 'synthetic-receipt' },
+                        }),
+                    ),
+                ),
+            ),
+        );
+        const { rerender } = render(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: {
+                        href: '/synthetic/receipt-preparation',
+                        method: 'GET',
+                        parent_version: 'p'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        const file = new File(
+            ['Synthetic recorded receipt'],
+            'synthetic-recorded-receipt.txt',
+        );
+        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await screen.findByText(
+            'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
+        );
+        const original = vi.mocked(fetch).mock.calls[1][1]!;
+        expect(screen.getByLabelText('Upload a file')).toBeDisabled();
+        expect(
+            (screen.getByLabelText('Upload a file') as HTMLInputElement)
+                .files?.[0],
+        ).toBe(file);
+        rerender(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: {
+                        href: '/synthetic/current-preparation',
+                        method: 'POST',
+                        parent_version: 'q'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+        await waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Upload file' }),
+            ).toBeDisabled(),
+        );
+        expect(vi.mocked(fetch).mock.calls[2]).toEqual([
+            expect.stringMatching(/\/synthetic\/receipt-preparation$/),
+            expect.objectContaining({ method: 'GET', body: undefined }),
+        ]);
+        const replayed = vi.mocked(fetch).mock.calls[3][1]!;
+        expect(Array.from((replayed.body as FormData).entries())).toEqual(
+            Array.from((original.body as FormData).entries()),
+        );
+        const originalKey = (original.headers as Record<string, string>)[
+            'Idempotency-Key'
+        ];
+        expect(
+            (replayed.headers as Record<string, string>)['Idempotency-Key'],
+        ).toBe(originalKey);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Upload a file')).toBeEnabled();
+        const nextFile = new File(
+            ['Synthetic next receipt'],
+            'synthetic-next-receipt.txt',
+        );
+        await userEvent.upload(
+            screen.getByLabelText('Upload a file'),
+            nextFile,
+        );
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
+        expect(vi.mocked(fetch).mock.calls[4]).toEqual([
+            '/synthetic/current-preparation',
+            expect.objectContaining({ method: 'POST' }),
+        ]);
+        const next = vi.mocked(fetch).mock.calls[5][1]!;
+        expect((next.body as FormData).get('file')).toBe(nextFile);
+        expect((next.body as FormData).get('expected_version')).toBe(
+            'q'.repeat(64),
+        );
+        expect(
+            (next.headers as Record<string, string>)['Idempotency-Key'],
+        ).not.toBe(originalKey);
+    });
+
     it('deletes through the canonical API when sharing controls are unavailable', async () => {
         respond({ data: { status: 'deleting' } });
         render(

@@ -1134,15 +1134,13 @@ try {
                     .click();
 
                 if (receiptsOnly && width === 1920) {
-                    await page
-                        .getByLabel('Upload a file')
-                        .setInputFiles({
-                            name: 'synthetic-browser-receipt.txt',
-                            mimeType: 'text/plain',
-                            buffer: Buffer.from(
-                                'Synthetic receipt browser acceptance bytes.',
-                            ),
-                        });
+                    await page.getByLabel('Upload a file').setInputFiles({
+                        name: 'synthetic-browser-receipt.txt',
+                        mimeType: 'text/plain',
+                        buffer: Buffer.from(
+                            'Synthetic receipt browser acceptance bytes.',
+                        ),
+                    });
                     const uploaded = page.waitForResponse(
                         (response) =>
                             response.request().method() === 'POST' &&
