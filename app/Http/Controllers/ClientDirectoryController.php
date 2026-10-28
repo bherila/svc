@@ -583,17 +583,7 @@ class ClientDirectoryController extends Controller
                 'square_series_key' => $clientAgreement->square_series_key,
                 'square_location_id' => $clientAgreement->square_location_id,
             ],
-            'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
-                'id' => $item->public_id,
-                'description' => $item->description,
-                'cadence' => $item->cadence,
-                'quantity' => $item->quantity === null ? null : (float) $item->quantity,
-                'amount' => $item->amount === null ? null : (int) $item->amount,
-                'currency' => $item->currency,
-                'effective_on' => $item->effective_on?->toDateString(),
-                'expires_on' => $item->expires_on?->toDateString(),
-                'is_active' => (bool) $item->is_active,
-            ])->values()->all(),
+            'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => AgreementReadPresenter::recurringItem($item))->values()->all(),
             // What termination would collect and charge today (#366), priced
             // at the agreement's rate, so a manager's alone.
             'deferred_backlog' => $manages ? $deferredBacklogs->trailing($workspace, $clientAgreement) : null,

@@ -9,6 +9,12 @@ use LogicException;
 /** Pure fields over scoped, already-loaded proposal items. */
 final class AgentProposalPresenter
 {
+    /** @return array{id:string,title:string,status:string} */
+    public static function identity(ClientProposal $proposal): array
+    {
+        return ['id' => $proposal->public_id, 'title' => $proposal->title, 'status' => $proposal->status];
+    }
+
     /** @return array<string, mixed> */
     public static function summary(ClientProposal $proposal): array
     {
@@ -16,8 +22,7 @@ final class AgentProposalPresenter
             throw new LogicException('Load the scoped proposal items before presenting a proposal.');
         }
 
-        return ['id' => $proposal->public_id, 'title' => $proposal->title, 'status' => $proposal->status,
-            'total_amount' => $proposal->totalAmount(), 'currency' => $proposal->currency];
+        return self::identity($proposal) + ['total_amount' => $proposal->totalAmount(), 'currency' => $proposal->currency];
     }
 
     /** @return array<string, mixed> */
