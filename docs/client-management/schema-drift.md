@@ -78,7 +78,7 @@ already caused a defect.
 ## The engine gap, and how it is closed
 
 Everything above is only findable if the tests run on the engine that ships.
-They did not. The suite ran on in-memory SQLite; production is **MariaDB 10.6**,
+They did not. The suite ran on in-memory SQLite; production uses **MariaDB 11.4**,
 reached through Laravel's `mariadb` driver with `strict => true`. SQLite hides
 schema drift in three distinct ways, and all have now cost real defects.
 
@@ -111,7 +111,7 @@ strings, not Carbon values, which bind as `Y-m-d H:i:s` and would drop the
 moved to `DateOnly` must bound its queries the same way.
 
 A second CI job (`mariadb` in `.github/workflows/tests.yml`) now runs the whole
-suite against MariaDB 10.6, and `deploy` waits on it. SQLite stays the default
+suite against MariaDB 11.4, and `deploy` waits on it. SQLite stays the default
 so the local loop remains fast — the MariaDB run is the one that has to be true.
 
 To run it locally against any MySQL-compatible server:

@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature;
+namespace Tests\Unit\Database;
 
 use App\Database\CharacterUuidMariaDbConnection;
 use App\Database\Schema\Grammars\CharacterUuidMariaDbGrammar;
@@ -10,7 +10,8 @@ use Illuminate\Database\Connectors\ConnectionFactory;
 use Illuminate\Database\MariaDbConnection;
 use Illuminate\Database\MySqlConnection;
 use Illuminate\Database\Query\Grammars\MariaDbGrammar;
-use Tests\TestCase;
+use Illuminate\Foundation\Application;
+use PHPUnit\Framework\TestCase;
 
 final class DatabaseConnectionRegistrationTest extends TestCase
 {
@@ -19,12 +20,13 @@ final class DatabaseConnectionRegistrationTest extends TestCase
         // Resolvers are static across application lifetimes. Exercise the
         // provider from stock behavior inside this test, independently of boot.
         Connection::resolverFor('mariadb', static fn ($pdo, $database, $prefix, $config): MariaDbConnection => new MariaDbConnection($pdo, $database, $prefix, $config));
-        $factory = app(ConnectionFactory::class);
+        $application = new Application(dirname(__DIR__, 3));
+        $factory = new ConnectionFactory($application);
         $configuration = [
             'driver' => 'mariadb', 'database' => 'synthetic', 'strict' => true,
         ];
         $this->assertNotInstanceOf(CharacterUuidMariaDbConnection::class, $factory->make($configuration, 'synthetic_stock'));
-        (new AppServiceProvider($this->app))->register();
+        (new AppServiceProvider($application))->register();
         // Resolving the lazy connection and its grammars performs no network I/O.
         $mariadb = $factory->make($configuration, 'synthetic_mariadb');
         $this->assertInstanceOf(CharacterUuidMariaDbConnection::class, $mariadb);
