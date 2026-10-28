@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Concerns\CallsInvoiceApi;
+use Tests\Concerns\FakesInvoiceMailOutcomes;
 use Tests\TestCase;
 
 /**
@@ -38,6 +39,7 @@ use Tests\TestCase;
 class InvoiceEmailTest extends TestCase
 {
     use CallsInvoiceApi;
+    use FakesInvoiceMailOutcomes;
     use RefreshDatabase;
 
     public function test_sending_delivers_the_message_and_records_what_was_sent(): void
@@ -125,9 +127,7 @@ class InvoiceEmailTest extends TestCase
     {
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
 
-        Mail::shouldReceive('to')
-            ->once()
-            ->andThrow(new TransportException('535 auth failed for postmaster@synthetic.test'));
+        $this->failInvoiceMail(new TransportException('535 auth failed for postmaster@synthetic.test'));
 
         $response = $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)
             ->assertOk()->assertJsonPath('data.delivery.status', 'failed');
@@ -166,7 +166,7 @@ class InvoiceEmailTest extends TestCase
             'idempotency_key' => '11111111-1111-4111-8111-222222222222',
         ];
 
-        Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic refusal'));
+        $this->failInvoiceMail(new TransportException('synthetic refusal'));
         $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, $payload)
             ->assertOk()->assertJsonPath('data.delivery.status', 'failed');
         $failed = ClientInvoiceEmailDelivery::query()->sole();
@@ -197,7 +197,7 @@ class InvoiceEmailTest extends TestCase
         $draft = InvoiceEmailDraft::of(['ap@synthetic.test'], [], 'Synthetic keyed delivery', null);
         $key = 'synthetic-failed-revision-key';
 
-        Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic refusal'));
+        $this->failInvoiceMail(new TransportException('synthetic refusal'));
         try {
             app(InvoiceEmailService::class)->send($invoice, $draft, $workspace, $key);
             $this->fail('The first attempt must fail definitely.');
@@ -295,7 +295,7 @@ class InvoiceEmailTest extends TestCase
         $before = (int) $invoice->fresh()->lock_version;
 
         if ($refused) {
-            Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
+            $this->failInvoiceMail(new TransportException('refused'));
         } else {
             Mail::fake();
         }
@@ -505,7 +505,7 @@ class InvoiceEmailTest extends TestCase
     {
         [, $workspace, $invoice] = $this->issuedInvoice();
         $log = Log::spy();
-        Mail::shouldReceive('to')->andThrow(new TransportException('refused'));
+        $this->failInvoiceMail(new TransportException('refused'));
 
         // Nobody is waiting on this: the request that asked for it has been
         // answered. Throwing would reach nothing, so the outcome goes on the
@@ -524,7 +524,7 @@ class InvoiceEmailTest extends TestCase
     {
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
         $log = Log::spy();
-        Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
+        $this->failInvoiceMail(new TransportException('refused'));
 
         $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)->assertOk()->assertJsonPath('data.delivery.status', 'failed');
 

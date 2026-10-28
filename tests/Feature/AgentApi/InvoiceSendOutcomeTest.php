@@ -14,13 +14,19 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
-use Illuminate\Mail\PendingMail;
+use Illuminate\Mail\Mailer;
+use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\View\View;
+use Illuminate\View\ViewException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Concerns\CallsMcp;
+use Tests\Concerns\FakesInvoiceMailOutcomes;
+use Tests\Support\RecordingMailTransport;
 use Tests\TestCase;
 
 /** Real commits: the receipt's afterCommit delivery must resolve before the API projects its result. */
@@ -28,6 +34,7 @@ final class InvoiceSendOutcomeTest extends TestCase
 {
     use CallsMcp;
     use DatabaseTruncation;
+    use FakesInvoiceMailOutcomes;
 
     protected function beforeTruncatingDatabase(): void
     {
@@ -77,7 +84,7 @@ final class InvoiceSendOutcomeTest extends TestCase
         [$owner, $workspace, $invoice] = $this->fixture();
         $body = $this->body($invoice);
         $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
-        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('Synthetic private preparation detail'));
+        $this->failInvoiceMail(new \RuntimeException('Synthetic private preparation detail'));
         $failed = $this->send($transport, $workspace, $invoice, $body, 'synthetic-preparation');
         $this->assertSame('failed', $failed['delivery']['status']);
         $this->assertSame('Email delivery failed (RuntimeException).', $failed['delivery']['error_summary']);
@@ -102,9 +109,8 @@ final class InvoiceSendOutcomeTest extends TestCase
         [$owner, $workspace, $invoice] = $this->fixture();
         $body = $this->body($invoice);
         $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
-        $mailer = \Mockery::mock(PendingMail::class);
-        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('Synthetic accepted then response lost; private detail'));
-        Mail::shouldReceive('to')->once()->andReturn($mailer);
+        [$mailer, $transport] = $this->realMailer();
+        $transport->fail = true;
         $unknown = $this->send('rest', $workspace, $invoice, $body, 'synthetic-unknown');
         $this->assertSame('sending', $unknown['delivery']['status']);
         $this->assertNull($unknown['delivery']['error_summary']);
@@ -118,6 +124,50 @@ final class InvoiceSendOutcomeTest extends TestCase
         $this->assertNotNull($delivery->claimed_at);
         $this->assertNull($delivery->failed_at);
         $this->assertNull($delivery->next_attempt_at);
+        $this->assertCount(1, $transport->messages);
+        $this->assertSame($transport, $mailer->getSymfonyTransport());
+    }
+
+    #[DataProvider('transports')]
+    public function test_real_blade_failure_is_known_unsent_and_a_deliberate_new_attempt_can_succeed(string $transportName): void
+    {
+        Log::spy();
+        [$owner, $workspace, $invoice] = $this->fixture();
+        [$mailer, $transport] = $this->realMailer();
+        $directory = storage_path('framework/testing/synthetic-invoice-view-'.str()->uuid());
+        File::ensureDirectoryExists($directory);
+        $path = $directory.'/synthetic-failure.blade.php';
+        File::put($path, '@php throw new \\RuntimeException("Synthetic private-render-detail"); @endphp');
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($directory));
+        $broken = true;
+        app('view')->composer('invoices.email', function (View $view) use (&$broken, $path): void {
+            if ($broken) {
+                $view->setPath($path);
+            }
+        });
+        $body = $this->body($invoice);
+        $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
+        $failed = $this->send($transportName, $workspace, $invoice, $body, 'synthetic-real-render-failure');
+        $this->assertSame('failed', $failed['delivery']['status']);
+        $this->assertSame('Email delivery failed (ViewException).', $failed['delivery']['error_summary']);
+        $this->assertSame([], $transport->messages);
+        $this->assertSame($transport, $mailer->getSymfonyTransport());
+        Log::shouldHaveReceived('error')->once()->with('An invoice email could not be sent.', [
+            'delivery' => $failed['delivery']['id'], 'exception_class' => ViewException::class,
+        ]);
+        $this->assertStringNotContainsString('private-render-detail', json_encode($failed, JSON_THROW_ON_ERROR));
+        $this->assertSame($failed, $this->send($transportName, $workspace, $invoice, $body, 'synthetic-real-render-failure'));
+        $this->assertSame([], $transport->messages);
+
+        $broken = false;
+        $current = $invoice->fresh();
+        $accepted = $this->send($transportName, $workspace, $current, $this->body($current), 'synthetic-real-render-repaired');
+        $this->assertSame('sent', $accepted['delivery']['status']);
+        $this->assertNotSame($failed['delivery']['id'], $accepted['delivery']['id']);
+        $this->assertCount(1, $transport->messages);
+        $this->assertSame($transport, $mailer->getSymfonyTransport());
+        $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('status', 'failed')->count());
+        $this->assertNotNull(ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('status', 'sent')->sole()->provider_message_reference);
     }
 
     public function test_surrounding_transaction_projects_pending_and_rollback_never_hands_off(): void
@@ -183,6 +233,20 @@ final class InvoiceSendOutcomeTest extends TestCase
     private function body(ClientInvoice $invoice): array
     {
         return ['expected_version' => AgentApiVersion::for($invoice), 'confirm' => true, 'recipients' => ['synthetic-billing@example.test']];
+    }
+
+    /** @return array{Mailer, RecordingMailTransport} */
+    private function realMailer(): array
+    {
+        config(['mail.default' => 'array', 'mail.from.address' => 'sender@example.test']);
+        $manager = new MailManager($this->app);
+        Mail::swap($manager);
+        $mailer = $manager->mailer();
+        $this->assertInstanceOf(Mailer::class, $mailer);
+        $transport = new RecordingMailTransport;
+        $mailer->setSymfonyTransport($transport);
+
+        return [$mailer, $transport];
     }
 
     private function url(Workspace $workspace, ClientInvoice $invoice): string

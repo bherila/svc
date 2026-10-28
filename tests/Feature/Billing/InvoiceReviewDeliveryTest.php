@@ -20,7 +20,6 @@ use Closure;
 use DateTimeInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Attachment;
-use Illuminate\Mail\PendingMail;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -29,11 +28,13 @@ use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Concerns\CallsInvoiceApi;
+use Tests\Concerns\FakesInvoiceMailOutcomes;
 use Tests\TestCase;
 
 final class InvoiceReviewDeliveryTest extends TestCase
 {
     use CallsInvoiceApi;
+    use FakesInvoiceMailOutcomes;
     use RefreshDatabase;
 
     protected function tearDown(): void
@@ -413,7 +414,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         Mail::clearResolvedInstance('mail.manager');
         app()->forgetInstance('mail.manager');
-        Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic client refusal'));
+        $this->failInvoiceMail(new TransportException('synthetic client refusal'));
         Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
 
         $failed = ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->sole();
@@ -455,7 +456,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
         for ($attempt = 1; $attempt <= 5; $attempt++) {
             Mail::clearResolvedInstance('mail.manager');
             app()->forgetInstance('mail.manager');
-            Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic client refusal'));
+            $this->failInvoiceMail(new TransportException('synthetic client refusal'));
             Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
 
             $invoice = $invoice->fresh();
@@ -561,9 +562,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
         [, $workspace, $company, $invoice] = $this->draft();
         $company->forceFill(['automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
-        $mailer = \Mockery::mock(PendingMail::class);
-        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('Synthetic accepted then response lost'));
-        Mail::shouldReceive('to')->once()->andReturn($mailer);
+        $this->failInvoiceMail(new TransportException('Synthetic accepted then response lost'), handoffStarted: true);
 
         Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
         $delivery = ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->sole();
