@@ -966,6 +966,8 @@ Square identifiers are opaque, shape-checked strings.
 | `invoices.square_link` | `POST /workspaces/{workspace}/invoices/{invoice}/square-link` | `billing:write`, `billing:read` | invoices |
 | `invoices.square_unlink` | `DELETE /workspaces/{workspace}/invoices/{invoice}/square-link` | `billing:write`, `billing:read` | invoices |
 | `invoices.square_cover` | `POST /workspaces/{workspace}/invoices/{invoice}/square-coverage` | `billing:write`, `billing:read` | invoices |
+| `invoices.square_covered_payments` | `GET /workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments` | `billing:read` | read |
+| `invoices.square_covered_payment_record` | `POST /workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments/{payment}` | `billing:read`, `payments:record` | payments |
 | `invoices.square_uncover` | `DELETE /workspaces/{workspace}/invoices/{invoice}/square-coverage` | `billing:write`, `billing:read` | invoices |
 | `companies.square_customer.get` | `GET /workspaces/{workspace}/clients/{client}/square-customer` | `billing:read` | - |
 | `companies.square_customer.set` | `PUT /workspaces/{workspace}/clients/{client}/square-customer` | `billing:write`, `billing:read` | clients |
@@ -996,9 +998,16 @@ current `expected_version`, and are recorded in the client's activity.
   both commit. An invoice that covers others cannot be unlinked until those
   coverages are cleared, and `invoices.square_candidates` lists a covered Square
   invoice under `excluded.linked_elsewhere` rather than offering it. A
-  coverage is not a link: SVC collects, reconciles and records no payment
-  through it, and a payment on a covered Square invoice is still reported by the
-  billing audit until it is recorded. The billing audit does not report a
+  coverage is not a link and never starts automatic collection or allocation.
+  Review its current completed payments with `invoices.square_covered_payments`
+  (or the invoice screen's **Review payments**) and explicitly record one with
+  `invoices.square_covered_payment_record`. Confirmation requires the current
+  invoice `expected_version`, selected payment `reviewed_version`, `confirm: true`
+  and an idempotency key. The operation refetches provider facts and disputes,
+  rechecks the active coverage and invoice under locks, and records the payment's
+  canonical Square identity once. Refunded, disputed, over-balance or in-flight
+  cases return a refusal and no record URL; they remain manual review cases.
+  A payment stays in the billing audit until it is actually recorded. The billing audit does not report a
   covered series member as an unmirrored period. `invoices.get` lists coverages
   in `square.covers`.
 - **Customer mapping.** One active mapping per client and per Square customer.
@@ -1692,3 +1701,10 @@ lists default to one row, with `limit` from 1 to 30; native UI pages retain 30.
 A list containing several maximal bodies can exceed the result ceiling: reduce
 `limit` and follow `next_href`. Comment `web_url` uses an authorized comment UUID
 focus, so API page size never changes the native permalink destination.
+
+Covered-payment CLI: `svc:square:covered-payments <workspace UUID> <invoice UUID>
+<covered Square invoice id> --actor=<manager UUID> --format=json` reviews without
+recording. To record the selected safe payment, supply `--apply --confirm`,
+`--payment`, `--expected-version`, `--reviewed-version` and `--idempotency-key`
+from that review. The same canonical operation owns validation, provider dedup,
+receipts and audit for CLI, REST, MCP and the signed-in website.

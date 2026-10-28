@@ -668,3 +668,16 @@ lock after re-reading the source record in its workspace. Entries and file
 metadata are immutable, so replay compares fingerprints/digests and never takes
 an entry lock followed by a source lock. Private content-addressed file copies
 can be repaired without changing the original source record.
+
+### Covered Square payment recording (#499)
+
+Recording a reviewed covered payment reserves its receipt, takes shared billing
+maintenance and the target invoice lock, then calls the canonical provider-payment
+ledger. It verifies the actor’s current workspace-manager membership with a
+share lock after ledger writes, then checks the active `square_invoice_coverages` row with a current share
+read last, after the ledger locks, while still holding the covering invoice.
+`SquareInvoiceCoverage` follows the final `InvoiceSquareLink` resource. Coverage
+changes take the invoice lock and advance its revision; stale preview versions or
+a changed current coverage roll back both payment and receipt. Provider HTTP and
+dispute reads happen before the transaction. Settlement metadata is applied after
+the receipt transaction through the existing settlement recorder.

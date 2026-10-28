@@ -544,6 +544,79 @@ try {
                     'href',
                     'https://squareupsandbox.com/dashboard/invoices/inv_fixture_layout',
                 );
+
+                // Synthetic provider responses exercise review/confirmation layout
+                // without any network request to Square or ledger mutation.
+                let recordable = false;
+                const reviewPattern = '**/square-coverage/*/payments';
+                await page.route(reviewPattern, async (route) => {
+                    await route.fulfill({
+                        json: {
+                            data: {
+                                invoice_id:
+                                    '00000000-0000-4000-8000-000000000001',
+                                invoice_number:
+                                    'SYNTHETICCOVEREDINVOICE'.repeat(8),
+                                invoice_version: 'a'.repeat(64),
+                                balance_amount: 12345,
+                                currency: 'USD',
+                                square_invoice_id: 'inv_fixture_layout_covered',
+                                square_invoice_number:
+                                    'SYNTHETICCOVERED'.repeat(10),
+                                payments: [
+                                    {
+                                        square_payment_id:
+                                            'synthetic_payment_'.repeat(10),
+                                        amount: 12345,
+                                        refunded_amount: 0,
+                                        currency: 'USD',
+                                        received_on: '2030-02-01',
+                                        reviewed_version: 'b'.repeat(64),
+                                        recorded_payment_id: null,
+                                        refusal: recordable
+                                            ? null
+                                            : 'This payment includes a refund and requires manual review.',
+                                        record_href: recordable
+                                            ? '/synthetic-covered-record'
+                                            : null,
+                                    },
+                                ],
+                            },
+                        },
+                    });
+                });
+                await page
+                    .getByRole('button', {
+                        name: 'Review payments',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByText(
+                        'This payment includes a refund and requires manual review.',
+                        { exact: true },
+                    ),
+                ).toBeVisible();
+                await capture(screen, 'covered-payment-refused', width);
+                recordable = true;
+                await page
+                    .getByRole('button', {
+                        name: 'Review payments',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', {
+                        name: 'Record this payment',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'covered-payment-confirm', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page.unroute(reviewPattern);
             }
 
             if (screen === 'reminder_invoice') {
