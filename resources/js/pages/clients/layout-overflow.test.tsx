@@ -116,21 +116,16 @@ describe('client screens under data that does not fit', () => {
             screen.getByRole('main'),
         );
         expect(
-            screen.getByRole('link', { name: '← Workspaces' }),
+            screen.getByRole('link', { name: 'Leave this workspace' }),
         ).toHaveAttribute('href', '/app');
         expect(
-            screen.getByRole('navigation', { name: 'Workspace operations' }),
-        ).toContainElement(screen.getByRole('link', { name: 'Clients' }));
-        expect(screen.getByRole('link', { name: 'Clients' })).toHaveAttribute(
+            screen.getByRole('navigation', { name: 'Client sections' }),
+        ).toContainElement(screen.getByRole('link', { name: 'Client Home' }));
+        expect(screen.getByRole('link', { name: 'Time' })).toHaveAttribute(
             'href',
-            '/workspaces/synthetic-workspace/clients',
+            '/workspaces/workspace-1/clients/company-1/time',
         );
-        expect(
-            screen.getByRole('link', { name: 'Time sheet' }),
-        ).toHaveAttribute('href', '/workspaces/synthetic-workspace/time');
-        expect(
-            screen.getByRole('combobox', { name: 'Appearance' }),
-        ).toBeVisible();
+        expect(screen.getAllByRole('banner')).toHaveLength(1);
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
@@ -147,6 +142,7 @@ describe('client screens under data that does not fit', () => {
                 deferred_backlog={null}
                 agreement={{
                     id: 'synthetic-agreement',
+                    version: 'a'.repeat(64),
                     title: 'Synthetic agreement',
                     status: 'active',
                     currency: 'USD',
