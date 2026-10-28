@@ -21,9 +21,9 @@ class SvcFoundationWorkflowTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)
-            ->post('/workspaces', ['name' => 'Synthetic Studio'])
-            ->assertRedirect(route('workspaces.enter', Workspace::query()->sole()));
+        $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('w', 40))
+            ->withHeader('Idempotency-Key', 'foundation-workspace-create')->postJson(route('agent-api.v1.workspaces.store'), ['name' => 'Synthetic Studio'])
+            ->assertCreated()->assertJsonPath('data.web_url', route('workspaces.operations', Workspace::query()->sole()));
 
         $workspace = Workspace::query()->sole();
         $this->assertSame('synthetic-studio', $workspace->slug);

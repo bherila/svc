@@ -81,7 +81,6 @@ final class WebApiParityTest extends TestCase
         'svc.files.collaboration.upload' => 'operation:collaboration.attachments.upload',
         'svc.files.collaboration.visibility.update' => 'operation:collaboration.attachments.visibility.update',
         'svc.files.collaboration.destroy' => 'operation:collaboration.attachments.delete',
-        'workspaces.store' => 'operation:workspaces.create',
     ];
 
     public function test_every_state_changing_web_route_is_classified(): void

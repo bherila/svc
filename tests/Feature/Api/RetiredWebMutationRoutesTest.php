@@ -33,6 +33,12 @@ final class RetiredWebMutationRoutesTest extends TestCase
         $this->assertSame([], $violations, 'Browser controllers branching on JSON: '.implode(', ', $violations));
     }
 
+    public function test_workspace_creation_uses_the_api_route(): void
+    {
+        $this->assertFalse(Route::has('workspaces.store'));
+        $this->assertTrue(Route::has('agent-api.v1.workspaces.store'));
+    }
+
     public function test_retired_portal_access_mutation_routes_are_absent(): void
     {
         foreach (['clients.portal-access.store', 'clients.portal-access.update', 'clients.portal-access.destroy',

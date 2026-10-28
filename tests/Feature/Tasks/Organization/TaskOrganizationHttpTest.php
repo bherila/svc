@@ -23,7 +23,9 @@ final class TaskOrganizationHttpTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach ([['api/v1/synthetic-organization', AgentTaskOrganizationController::class, ['api', 'auth:api']],
+        // Isolated controller probes are not published API routes; registry tests
+        // cover the real /api/v1 bindings and their OpenAPI contracts.
+        foreach ([['synthetic-api/organization', AgentTaskOrganizationController::class, ['api', 'auth:api']],
             ['synthetic-organization', ClientTaskOrganizationController::class, ['web', 'auth:web']]] as [$prefix, $controller, $middleware]) {
             Route::prefix($prefix.'/{workspace}/{project}')->middleware($middleware)->group(function () use ($controller, $prefix): void {
                 Route::get('/', [$controller, 'show']);
@@ -43,7 +45,7 @@ final class TaskOrganizationHttpTest extends TestCase
     {
         [$workspace, $project, $owner] = $this->fixture();
         $this->actingAsMcp($owner, ['tasks:read', 'tasks:write']);
-        $base = '/api/v1/synthetic-organization/'.$workspace->public_id.'/'.$project->public_id;
+        $base = '/synthetic-api/organization/'.$workspace->public_id.'/'.$project->public_id;
         $graph = $this->getJson($base)->assertOk()->json('data');
         $created = $this->withHeader('Idempotency-Key', 'synthetic-http-list')->postJson($base.'/lists',
             ['name' => 'Synthetic HTTP private list', 'expected_graph_version' => $graph['graph_version']])->assertCreated();
@@ -78,7 +80,7 @@ final class TaskOrganizationHttpTest extends TestCase
     {
         [$workspace, $project, $owner] = $this->fixture();
         $this->actingAsMcp($owner, ['tasks:read', 'tasks:write']);
-        $base = '/api/v1/synthetic-organization/'.$workspace->public_id.'/'.$project->public_id;
+        $base = '/synthetic-api/organization/'.$workspace->public_id.'/'.$project->public_id;
         $graph = $this->getJson($base)->assertOk()->json('data');
         $input = ['name' => 'Synthetic controlled list', 'expected_graph_version' => $graph['graph_version']];
         config(['task_organization.enabled' => false]);

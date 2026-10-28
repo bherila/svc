@@ -89,6 +89,9 @@ $workspace = Workspace::query()->create([
     'timezone' => 'America/Los_Angeles',
 ]);
 $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+if (getenv('SVC_LAYOUT_WORKSPACES') === '1') {
+    $workspace->update(['name' => str_repeat('SyntheticWorkspaceWithoutBreaks', 4)]);
+}
 $company = ClientCompany::query()->create([
     'workspace_id' => $workspace->id, 'name' => str_repeat('Synthetic', 8),
     'slug' => 'synthetic-layout-client',
@@ -310,6 +313,11 @@ app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPa
     'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
 ]));
 
+if (getenv('SVC_LAYOUT_DISPUTES') === '1') {
+    $service->setPaymentDisputed($layoutPayment, 500, $workspace);
+    $service->setPaymentDisputed($squareInvoice->payments()->sole(), 345, $workspace);
+}
+
 // Payment reminders (#438): an open invoice of a client with the cadence on,
 // and a logged reminder of every kind with oversized recipients and reasons.
 $company->forceFill(['payment_reminders_enabled_at' => CarbonImmutable::parse($date)->subMonth()])->save();
@@ -402,6 +410,8 @@ if ($planningTask !== null) {
 }
 
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'selector' => route('workspaces.index', absolute: false),
+    'workspace_create' => route('agent-api.v1.workspaces.store', absolute: false),
     'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),
     'task_list' => route('clients.tasks', [$workspace, $company], absolute: false),
     'task_project' => route('clients.project', [$workspace, $company, $project], absolute: false),

@@ -14,11 +14,11 @@ use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SquareExploreController;
-use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\PublishApiDocumentation;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
 use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
@@ -33,7 +33,7 @@ Route::inertia('/', 'welcome')->name('home');
 // MCP, which is where the MCP endpoint's 401 challenge points. Browser
 // agents get CORS here from oauth_server.cors; MCP's own origin and host
 // validation stays on the MCP endpoint, not on public discovery.
-AgentOAuthServer::routes();
+AgentOAuthServer::routes([PublishApiDocumentation::class]);
 
 Route::withoutMiddleware(['web'])->group(function (): void {
     Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1')->name('openapi.document');
@@ -69,8 +69,6 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/finance-links/payments/{payment}', FinancePaymentLinkController::class)
         ->middleware('throttle:60,1')
         ->name('finance-links.payments.show');
-
-    Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
 
     // Opening a workspace, as its own step. Which client to open depends on
     // this viewer at this moment, so the selector links here instead of

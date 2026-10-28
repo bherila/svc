@@ -6,11 +6,8 @@ use App\Models\ClientInvoicePayment;
 use App\Models\InvoiceSquareLink;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\Workspace;
-use App\Services\Square\Mirror\SquareMirrorRepository;
-use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Support\Square\SquareDisputeFacts;
 use App\Support\Square\SquarePaymentFacts;
-use App\Support\WorkspaceClock;
 
 /** Webhooks and the sweep share exactly the same synchronous refetch operation. */
 final class SquarePaymentReconciler
@@ -25,10 +22,8 @@ final class SquarePaymentReconciler
     public function __construct(
         private readonly SquareClient $client,
         private readonly SquareLinkRepository $links,
-        private readonly SquareSnapshotMapper $mapper,
-        private readonly SquareMirrorRepository $mirror,
+        private readonly SquareInvoicePaymentReader $invoicePayments,
         private readonly SquarePaymentRecorder $payments,
-        private readonly WorkspaceClock $clock,
         private readonly SquareSettlementSync $settlements,
     ) {}
 
@@ -56,41 +51,8 @@ final class SquarePaymentReconciler
         if ($historical === null) {
             return null;
         }
-        $invoice = $this->client->getInvoice($squareInvoiceId)['invoice'] ?? null;
-        $row = is_array($invoice) ? $this->mapper->invoice($invoice) : null;
-        if ($row === null || $row['square_invoice_id'] !== $squareInvoiceId || ! is_string($row['square_order_id'])
-            || ! is_string($row['square_location_id']) || $row['currency'] !== $historical->currency) {
-            throw SquareRequestFailed::unreadable();
-        }
-        $order = $this->client->retrieveOrder($row['square_order_id'])['order'] ?? null;
-        if (! is_array($order) || ($order['id'] ?? null) !== $row['square_order_id'] || ($order['location_id'] ?? null) !== $row['square_location_id']) {
-            throw SquareRequestFailed::unreadable();
-        }
-        $tenders = $order['tenders'] ?? [];
-        if (! is_array($tenders) || ! array_is_list($tenders) || count($tenders) > 100) {
-            throw SquareRequestFailed::unreadable();
-        }
-        $facts = [];
-        foreach ($tenders as $tender) {
-            $id = is_array($tender) ? ($tender['payment_id'] ?? $tender['id'] ?? null) : null;
-            if (! is_string($id) || preg_match(SquareClient::ID_PATTERN, $id) !== 1) {
-                throw SquareRequestFailed::unreadable();
-            }
-            $payment = $this->client->getPayment($id)['payment'] ?? null;
-            if (! is_array($payment)) {
-                throw SquareRequestFailed::unreadable();
-            }
-            $fact = SquarePaymentFacts::from($payment, $id);
-            if ($fact !== null) {
-                if ($fact->orderId !== $row['square_order_id'] || $fact->locationId !== $row['square_location_id'] || $fact->currency !== $historical->currency) {
-                    throw SquareRequestFailed::unreadable();
-                }
-                $facts[$id] = $fact;
-            }
-        }
-        $this->mirror->storeInvoices($workspace, [$row], $this->clock->now()->utc());
 
-        return new SquareInvoiceRefetch($link, array_values($facts));
+        return new SquareInvoiceRefetch($link, $this->invoicePayments->read($workspace, $squareInvoiceId, $historical->currency));
     }
 
     /**

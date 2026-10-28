@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SquareCoveredPayments } from '@/components/billing/square-covered-payments';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -225,9 +226,10 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
                 {square.covers.length > 0 && (
                     <div className="grid grid-cols-1 gap-1">
                         <p className="text-muted-foreground">
-                            Also covers these Square invoices. SVC collects and
-                            records nothing through them; they are not reported
-                            as unmirrored periods.
+                            Also covers these Square invoices. Review their
+                            payments before recording money against this
+                            invoice. They are not reported as unmirrored
+                            periods.
                         </p>
                         <ul className="grid grid-cols-1 gap-1">
                             {square.covers.map((coverage) => (
@@ -245,6 +247,11 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
                                         {coverage.covered_by !== null &&
                                             ` by ${coverage.covered_by}`}
                                     </span>
+                                    {coverage.review_href != null && (
+                                        <SquareCoveredPayments
+                                            href={coverage.review_href}
+                                        />
+                                    )}
                                 </li>
                             ))}
                         </ul>

@@ -47,6 +47,7 @@ final class WorkspaceSelectionTest extends TestCase
 
         $response->assertInertia(fn (Assert $page) => $page
             ->component('workspaces/index')
+            ->where('create_url', route('agent-api.v1.workspaces.store', absolute: false))
             ->has('workspaces', 1)
             ->where('workspaces.0.name', 'Synthetic Selector')
             ->where('workspaces.0.enter_href', "/workspaces/{$workspace->public_id}")
@@ -62,6 +63,26 @@ final class WorkspaceSelectionTest extends TestCase
             ['Synthetic Selector Client', 'Synthetic Selector Project', 'Synthetic Selector Task'],
             'Synthetic Selector',
         );
+    }
+
+    public function test_session_creation_receipts_are_bound_to_the_creator_and_replay_without_another_tenant(): void
+    {
+        config(['agent_api.writes_enabled' => false, 'agent_api.workspace_writes_enabled' => false]);
+        $owner = User::factory()->create();
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('w', 40));
+        $path = route('agent-api.v1.workspaces.store');
+        $body = ['name' => 'Synthetic replay workspace'];
+        $first = $this->withHeader('Idempotency-Key', 'synthetic-owner-create')->postJson($path, $body)->assertCreated()->json('data');
+        $this->postJson($path, $body)->assertCreated()->assertJsonPath('data.id', $first['id']);
+        $workspace = Workspace::query()->sole();
+        $this->assertSame(route('workspaces.operations', $workspace), $first['web_url']);
+        $this->assertDatabaseHas('workspace_memberships', ['workspace_id' => $workspace->id, 'user_id' => $owner->id, 'role' => 'owner']);
+        $this->postJson($path, ['name' => 'Changed request'])->assertConflict();
+        $this->assertDatabaseCount('workspaces', 1);
+        $other = User::factory()->create();
+        $this->actingAs($other, 'web')->postJson($path, $body)->assertCreated();
+        $this->assertDatabaseCount('workspaces', 2);
+        $this->assertDatabaseMissing('workspace_memberships', ['workspace_id' => $workspace->id, 'user_id' => $other->id]);
     }
 
     /**
