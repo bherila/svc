@@ -1,10 +1,22 @@
 import { useForm } from '@inertiajs/react';
+import { useState } from 'react';
+import { useClientChange } from '@/components/clients/use-client-change';
+import {
+    AlertDialog,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 
 export type ClientContact = {
     id: string;
@@ -15,7 +27,9 @@ export type ClientContact = {
     phone: string | null;
     notes: string | null;
     is_archived: boolean;
-    lock_version: number;
+    version: string;
+    archive_action: string;
+    restore_action: string;
     update_action: string;
 };
 
@@ -42,8 +56,12 @@ function ContactForm({
         phone: contact?.phone ?? '',
         notes: contact?.notes ?? '',
         is_archived: contact?.is_archived ?? false,
-        lock_version: contact?.lock_version ?? 1,
     });
+    const change = useClientChange();
+    const [confirming, setConfirming] = useState(false);
+    const refresh = async () => {
+        await refreshPageProps({ only: ['contacts'] });
+    };
     const prefix = `contact-${contact?.id ?? 'new'}`;
 
     return (
@@ -52,14 +70,27 @@ function ContactForm({
             onSubmit={(event) => {
                 event.preventDefault();
 
-                if (contact) {
-                    form.patch(action, { preserveScroll: true });
-                } else {
-                    form.post(action, {
-                        preserveScroll: true,
-                        onSuccess: () => form.reset(),
-                    });
-                }
+                const { is_archived, ...fields } = form.data;
+                const details = Object.fromEntries(
+                    Object.entries(fields).map(([field, value]) => [
+                        field,
+                        value === '' ? null : value,
+                    ]),
+                );
+                void change.run(
+                    contact ? 'PATCH' : 'POST',
+                    action,
+                    contact
+                        ? { ...details, expected_version: contact.version }
+                        : { ...details, is_archived },
+                    async () => {
+                        if (!contact) {
+                            form.reset();
+                        }
+
+                        await refresh();
+                    },
+                );
             }}
         >
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
@@ -74,9 +105,9 @@ function ContactForm({
                                 form.setData(field, event.target.value)
                             }
                         />
-                        {form.errors[field] && (
+                        {change.errors[field]?.[0] && (
                             <p className="text-sm text-destructive">
-                                {form.errors[field]}
+                                {change.errors[field]?.[0]}
                             </p>
                         )}
                     </div>
@@ -94,24 +125,108 @@ function ContactForm({
                         form.setData('notes', event.target.value)
                     }
                 />
-                {form.errors.notes && (
+                {change.errors.notes?.[0] && (
                     <p className="text-sm text-destructive">
-                        {form.errors.notes}
+                        {change.errors.notes?.[0]}
                     </p>
                 )}
             </div>
+            {change.error && !confirming && (
+                <p role="alert" className="text-sm text-destructive">
+                    {change.error}
+                </p>
+            )}
             <div className="flex flex-wrap items-center gap-3">
-                <Switch
-                    id={`${prefix}-archived`}
-                    checked={form.data.is_archived}
-                    onCheckedChange={(checked) =>
-                        form.setData('is_archived', checked === true)
-                    }
-                />
-                <Label htmlFor={`${prefix}-archived`}>Archived contact</Label>
-                <Button type="submit" disabled={form.processing}>
+                {!contact && (
+                    <>
+                        <Switch
+                            id={`${prefix}-archived`}
+                            checked={form.data.is_archived}
+                            onCheckedChange={(checked) =>
+                                form.setData('is_archived', checked === true)
+                            }
+                        />
+                        <Label htmlFor={`${prefix}-archived`}>
+                            Archived contact
+                        </Label>
+                    </>
+                )}
+                <Button type="submit" disabled={change.busy}>
                     {contact ? 'Save contact' : 'Add contact'}
                 </Button>
+                {contact && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={change.busy}
+                        onClick={() => {
+                            if (contact.is_archived) {
+                                void change.run(
+                                    'POST',
+                                    contact.restore_action,
+                                    { expected_version: contact.version },
+                                    refresh,
+                                );
+                            } else {
+                                setConfirming(true);
+                            }
+                        }}
+                    >
+                        {contact.is_archived
+                            ? 'Restore contact'
+                            : 'Archive contact'}
+                    </Button>
+                )}
+                {contact && (
+                    <AlertDialog open={confirming} onOpenChange={setConfirming}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                    Archive contact?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    The contact stays in the client history.
+                                    Their sign-in and portal access are
+                                    unchanged.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            {change.error && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive"
+                                >
+                                    {change.error}
+                                </p>
+                            )}
+                            <AlertDialogFooter>
+                                <AlertDialogCancel disabled={change.busy}>
+                                    Cancel
+                                </AlertDialogCancel>
+                                <Button
+                                    type="button"
+                                    disabled={change.busy}
+                                    onClick={() => {
+                                        void change.run(
+                                            'POST',
+                                            contact.archive_action,
+                                            {
+                                                expected_version:
+                                                    contact.version,
+                                                confirm: true,
+                                            },
+                                            async () => {
+                                                setConfirming(false);
+                                                await refresh();
+                                            },
+                                        );
+                                    }}
+                                >
+                                    Archive contact
+                                </Button>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                )}
             </div>
         </form>
     );
@@ -132,7 +247,7 @@ export function ClientContacts({
             </p>
             {contacts.map((contact) => (
                 <details
-                    key={contact.id}
+                    key={`${contact.id}:${contact.version}`}
                     className="min-w-0 rounded-md border p-4"
                 >
                     <summary className="cursor-pointer wrap-anywhere">

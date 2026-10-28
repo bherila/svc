@@ -22,6 +22,8 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Access\PortalInvitations;
+use App\Services\AgentApi\AgentClientContactReadService;
+use App\Services\AgentApi\AgentClientReadService;
 use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
@@ -36,7 +38,6 @@ use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
-use App\Services\Square\SquareLinkRepository;
 use App\Services\Tasks\Planning\TaskPlanningDetailsLoader;
 use App\Services\Tasks\Planning\TaskPlanningDetailsPresenter;
 use App\Services\Tasks\TaskAccess;
@@ -833,27 +834,17 @@ class ClientDirectoryController extends Controller
 
         return Inertia::render('clients/settings', [
             'company_profile' => app(CompanyProfile::class)->read($clientCompany),
-            'profile_action' => route('clients.profile.update', [$workspace, $clientCompany]),
-            'contact_create_action' => route('contacts.store', [$workspace, $clientCompany]),
-            'contacts' => $contacts->map(fn (ClientContact $contact): array => [
-                'id' => $contact->public_id,
-                'first_name' => $contact->first_name, 'last_name' => $contact->last_name,
-                'title' => $contact->title, 'email' => $contact->email,
-                'phone' => $contact->phone, 'notes' => $contact->notes,
-                'is_archived' => $contact->is_archived, 'lock_version' => $contact->lock_version,
-                'update_action' => route('contacts.update', [$workspace, $clientCompany, $contact]),
+            'profile_action' => route('agent-api.v1.clients.update', [$workspace, $clientCompany], absolute: false),
+            'contact_create_action' => route('agent-api.v1.clients.contacts.store', [$workspace, $clientCompany], absolute: false),
+            'contacts' => $contacts->map(fn (ClientContact $contact): array => app(AgentClientContactReadService::class)->present($clientCompany, $contact) + [
+                'update_action' => route('agent-api.v1.clients.contacts.update', [$workspace, $clientCompany, $contact], absolute: false),
+                'archive_action' => route('agent-api.v1.clients.contacts.archive', [$workspace, $clientCompany, $contact], absolute: false),
+                'restore_action' => route('agent-api.v1.clients.contacts.restore', [$workspace, $clientCompany, $contact], absolute: false),
             ])->all(),
             'workspace' => ['id' => $workspace->public_id],
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-                'billing_email' => $clientCompany->billing_email,
-                'automatic_invoice_email_enabled' => (bool) $clientCompany->automatic_invoice_email_enabled,
-                'automatic_invoice_email_delay_days' => $clientCompany->automatic_invoice_email_delay_days,
+            'company' => app(AgentClientReadService::class)->present($clientCompany) + [
+                'update_url' => route('agent-api.v1.clients.update', [$workspace, $clientCompany], absolute: false),
                 'invoice_recipients' => $emails->suggestedRecipientsForCompany($clientCompany),
-                'is_active' => (bool) $clientCompany->is_active,
-                // The confirmed Square customer (#438); set through the API.
-                'square_customer' => app(SquareLinkPresenter::class)->customer(app(SquareLinkRepository::class)->activeCustomer($clientCompany)),
             ],
             'projects' => $projects->map(fn (ClientProject $project): array => [
                 'id' => $project->public_id,
