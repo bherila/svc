@@ -44,7 +44,10 @@ $taskWrite = ($method === 'POST' && $requestPath === ($fixture['task_create'] ??
     || ($method === 'PATCH' && $requestPath === ($fixture['task_update'] ?? null));
 $projectWrite = in_array($requestPath, $fixture['project_writes'][$method] ?? [], true);
 $workspaceWrite = $method === 'POST' && $requestPath === ($fixture['workspace_create'] ?? null);
-$clientWrite = getenv('SVC_LAYOUT_CLIENTS') === '1' && $method === 'POST' && $requestPath === ($fixture['contact_restore'] ?? null);
+$clientWrite = getenv('SVC_LAYOUT_CLIENTS') === '1' && (
+    ($method === 'POST' && $requestPath === ($fixture['contact_restore'] ?? null))
+    || ($method === 'PATCH' && $requestPath === ($fixture['client_profile_update'] ?? null))
+);
 if ($method !== 'GET' && ! $projectWrite && ! $workspaceWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');

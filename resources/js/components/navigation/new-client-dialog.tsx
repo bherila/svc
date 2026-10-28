@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import { useClientChange } from '@/components/clients/use-client-change';
 import { Button } from '@/components/ui/button';
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { visitPage } from '@/lib/visit-page';
 
 /**
  * Adding a client, from the control that switches between them.
@@ -44,21 +44,37 @@ export function NewClientDialog({
                 name,
                 billing_email: billingEmail === '' ? null : billingEmail,
             },
-            (result) => {
+            async (result) => {
+                const destination = result.location;
+
+                if (!destination) {
+                    throw new Error(
+                        'The finished client destination is missing.',
+                    );
+                }
+
+                await visitPage(destination);
                 setName('');
                 setBillingEmail('');
                 onOpenChange(false);
-
-                if (result.location) {
-                    router.visit(result.location);
-                }
             },
+            { requireLocation: true },
         );
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                if (!change.busy) {
+                    onOpenChange(next);
+                }
+            }}
+        >
+            <DialogContent
+                className="sm:max-w-md"
+                showCloseButton={!change.busy}
+            >
                 <DialogHeader>
                     <DialogTitle>Add client</DialogTitle>
                     <DialogDescription>
@@ -76,6 +92,7 @@ export function NewClientDialog({
                     <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="new-client-name">Name</Label>
                         <Input
+                            disabled={change.locked}
                             id="new-client-name"
                             value={name}
                             required
@@ -89,6 +106,7 @@ export function NewClientDialog({
                             Billing email
                         </Label>
                         <Input
+                            disabled={change.locked}
                             id="new-client-billing-email"
                             type="email"
                             value={billingEmail}
@@ -107,17 +125,31 @@ export function NewClientDialog({
                     <DialogFooter>
                         <DialogClose
                             render={
-                                <Button variant="outline" type="button">
+                                <Button
+                                    variant="outline"
+                                    type="button"
+                                    disabled={change.busy}
+                                >
                                     Cancel
                                 </Button>
                             }
                         />
                         <Button
                             type="submit"
-                            disabled={change.busy || name === ''}
+                            disabled={change.locked || name === ''}
                         >
                             Add client
                         </Button>
+                        {change.unresolved && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={change.busy}
+                                onClick={() => void change.check()}
+                            >
+                                Check original change
+                            </Button>
+                        )}
                     </DialogFooter>
                 </form>
             </DialogContent>

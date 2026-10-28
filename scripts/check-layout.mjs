@@ -834,6 +834,131 @@ try {
                     ).toBeVisible();
                 }
 
+                const profileRequests = [];
+                let profileReads = 0;
+                const profilePage = (url) =>
+                    url.pathname ===
+                    new URL(origin + fixture.settings).pathname;
+                const profileReadRoute = async (route) => {
+                    if (
+                        profileRequests.length === 3 &&
+                        route
+                            .request()
+                            .headers()
+                            ['x-inertia-partial-data']?.includes(
+                                'company_profile',
+                            )
+                    ) {
+                        profileReads++;
+
+                        if (profileReads === 1) {
+                            return route.abort('failed');
+                        }
+                    }
+
+                    return route.fallback();
+                };
+                await page.route(profilePage, profileReadRoute);
+                const profileRoute = async (route) => {
+                    const request = route.request();
+
+                    if (request.method() !== 'PATCH') {
+                        return route.continue();
+                    }
+
+                    profileRequests.push({
+                        url: request.url(),
+                        method: request.method(),
+                        body: request.postData(),
+                        key: request.headers()['idempotency-key'],
+                    });
+
+                    if (profileRequests.length <= 2) {
+                        return route.fulfill({
+                            status: profileRequests.length === 1 ? 408 : 409,
+                            json: {
+                                message:
+                                    'Synthetic original change needs checking.',
+                            },
+                        });
+                    }
+
+                    return route.continue();
+                };
+                await page.route('**/api/v1/**', profileRoute);
+                await page
+                    .getByLabel('Phone', { exact: true })
+                    .first()
+                    .fill('555-0100');
+                await page
+                    .getByRole('button', {
+                        name: 'Save company profile',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await capture(screen, 'profile-unknown-change', width);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                expect(profileRequests[1]).toEqual(profileRequests[0]);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByText(
+                        'The change was recorded, but this page could not load it. Check the original change.',
+                        { exact: true },
+                    ),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await capture(screen, 'profile-recorded-read-failed', width);
+                expect(profileRequests[2]).toEqual(profileRequests[0]);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeEnabled();
+                expect(profileRequests).toHaveLength(3);
+                expect(profileReads).toBe(2);
+                await page.unroute('**/api/v1/**', profileRoute);
+                await page.unroute(profilePage, profileReadRoute);
+
                 await capture(screen, 'client-contact-form', width);
                 await page
                     .getByRole('button', {
@@ -866,10 +991,87 @@ try {
                     .getByLabel('Billing email', { exact: true })
                     .fill('billing@example.test');
                 await capture(screen, 'create-client-dialog', width);
+                const clientRequests = [];
+                const clientRoute = async (route) => {
+                    const request = route.request();
+
+                    if (request.method() !== 'POST') {
+                        return route.continue();
+                    }
+
+                    clientRequests.push({
+                        url: request.url(),
+                        method: request.method(),
+                        body: request.postData(),
+                        key: request.headers()['idempotency-key'],
+                    });
+
+                    return route.fulfill({
+                        status: clientRequests.length === 1 ? 408 : 403,
+                        json: {
+                            message: 'Synthetic client result is uncertain.',
+                        },
+                    });
+                };
+                await page.route('**/api/v1/**', clientRoute);
                 await page
                     .getByRole('dialog')
-                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .getByRole('button', { name: 'Add client', exact: true })
                     .click();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByRole('button', { name: 'Cancel', exact: true }),
+                ).toBeEnabled();
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                await page
+                    .getByRole('button', {
+                        name: 'Current client',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'Add client', exact: true })
+                    .click();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toHaveValue('SyntheticNewClient'.repeat(8));
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'create-client-unknown-change', width);
+                await page
+                    .getByRole('dialog')
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('dialog').getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(clientRequests[1]).toEqual(clientRequests[0]);
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await page.unroute('**/api/v1/**', clientRoute);
+                // Each viewport starts from its own synthetic dialog attempt.
+                await page.goto(origin + fixture.portal_settings);
             }
 
             if (screen === 'history_index') {
@@ -981,7 +1183,12 @@ try {
                 await name.fill(`Synthetic reconciled project ${width}`);
                 await page.route(
                     origin + fixture.project_writes.PATCH[0],
-                    (route) => route.abort('failed'),
+                    async (route) => {
+                        // The save reaches the real API; only its browser answer is lost.
+                        const response = await route.fetch();
+                        expect(response.status()).toBe(200);
+                        await route.abort('failed');
+                    },
                     { times: 1 },
                 );
                 await form
@@ -992,9 +1199,26 @@ try {
                 );
                 await expect(name).toBeDisabled();
                 await capture(screen, 'uncertain-save', width);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
                 await form
                     .getByRole('button', {
                         name: 'Check project save',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    form.getByRole('button', {
+                        name: 'Refresh saved project',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(name).toBeDisabled();
+                await capture(screen, 'saved-refresh-failure', width);
+                await form
+                    .getByRole('button', {
+                        name: 'Refresh saved project',
                         exact: true,
                     })
                     .click();
@@ -1077,41 +1301,74 @@ try {
                     .fill('SyntheticWorkspaceWithoutBreaks'.repeat(4));
                 await capture(screen, 'create-dialog', width);
 
-                if (width === 1920) {
-                    await page
-                        .getByLabel('Name', { exact: true })
-                        .fill('Synthetic browser created workspace');
-                    const created = page.waitForResponse(
-                        (response) =>
-                            response.request().method() === 'POST' &&
-                            new URL(response.url()).pathname ===
-                                fixture.workspace_create,
-                    );
-                    await page
-                        .getByRole('button', { name: 'Create', exact: true })
-                        .click();
-                    const result = await created;
-                    expect(result.status()).toBe(201);
-                    const body = await result.json();
-                    await page.waitForURL(body.data.web_url);
-                    await expect(
-                        page.getByRole('heading', {
-                            name: 'Synthetic browser created workspace',
-                            exact: true,
-                        }),
-                    ).toBeVisible();
-                    await page.goto(origin + fixture.selector);
-                    await expect(
-                        page.getByRole('link', {
-                            name: /Synthetic browser created workspace/,
-                        }),
-                    ).toBeVisible();
-                    await capture(screen, 'created', width);
-                } else {
-                    await page
-                        .getByRole('button', { name: 'Cancel', exact: true })
-                        .click();
-                }
+                const createdName = `Synthetic browser recovered workspace ${width}`;
+                await page
+                    .getByLabel('Name', { exact: true })
+                    .fill(createdName);
+                const creations = [];
+                const recordCreation = (request) => {
+                    if (
+                        request.method() === 'POST' &&
+                        new URL(request.url()).pathname ===
+                            fixture.workspace_create
+                    ) {
+                        creations.push(request);
+                    }
+                };
+                page.on('request', recordCreation);
+                await page.route(
+                    '**/workspaces/*/operations',
+                    (route) => route.abort('failed'),
+                    { times: 1 },
+                );
+                const created = page.waitForResponse(
+                    (response) =>
+                        response.request().method() === 'POST' &&
+                        new URL(response.url()).pathname ===
+                            fixture.workspace_create,
+                );
+                await page
+                    .getByRole('button', { name: 'Create', exact: true })
+                    .click();
+                const result = await created;
+                expect(result.status()).toBe(201);
+                const body = await result.json();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Open created workspace',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(
+                    page.getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await expect(
+                    page.getByRole('button', { name: 'Cancel', exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'created-navigation-failure', width);
+                await page
+                    .getByRole('button', {
+                        name: 'Open created workspace',
+                        exact: true,
+                    })
+                    .click();
+                await page.waitForURL(body.data.web_url);
+                await expect(
+                    page.getByRole('heading', {
+                        name: createdName,
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                expect(creations).toHaveLength(1);
+                page.off('request', recordCreation);
+                await page.goto(origin + fixture.selector);
+                await expect(
+                    page.getByRole('link', {
+                        name: `${createdName} Open`,
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await capture(screen, 'created', width);
             }
 
             if (screen === 'agreement' && backlogOnly) {

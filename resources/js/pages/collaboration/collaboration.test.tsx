@@ -20,6 +20,7 @@ const mutations = vi.hoisted(() => ({
     get: vi.fn(),
     visit: vi.fn(),
     request: vi.fn(),
+    on: vi.fn(),
 }));
 vi.mock('@/layouts/workspace-shell', () => ({
     default: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -48,7 +49,7 @@ vi.mock('@inertiajs/react', () => ({
     Link: ({ children, ...props }: { children: ReactNode; href: string }) => (
         <a {...props}>{children}</a>
     ),
-    router: { get: mutations.get, visit: mutations.visit },
+    router: { get: mutations.get, visit: mutations.visit, on: mutations.on },
 }));
 
 const comment: CollaborationContent = {
@@ -574,6 +575,22 @@ describe('native collaboration pages', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Create' }));
         });
         const original = mutations.request.mock.calls[0];
+        const guard = mutations.on.mock.calls.at(-1)?.[1];
+        const navigation = {
+            detail: {
+                visit: {
+                    url: '/synthetic/other-client',
+                    method: 'get',
+                    only: [],
+                },
+            },
+            preventDefault: vi.fn(),
+        };
+        act(() => guard(navigation));
+        expect(navigation.preventDefault).toHaveBeenCalledOnce();
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(true);
         expect(screen.getByLabelText('Title')).toBeDisabled();
         expect(screen.getByLabelText('Content')).toBeDisabled();
         expect(screen.getByRole('combobox', { name: 'Scope' })).toBeDisabled();
@@ -694,6 +711,22 @@ describe('native collaboration pages', () => {
         expect(screen.getByRole('alert')).toHaveTextContent(
             'Check the original change',
         );
+        const guard = mutations.on.mock.calls.at(-1)?.[1];
+        const navigation = {
+            detail: {
+                visit: {
+                    url: '/synthetic/other-client',
+                    method: 'get',
+                    only: [],
+                },
+            },
+            preventDefault: vi.fn(),
+        };
+        guard(navigation);
+        expect(navigation.preventDefault).not.toHaveBeenCalled();
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(false);
         await act(async () => {
             fireEvent.click(
                 screen.getByRole('button', { name: 'Check original change' }),

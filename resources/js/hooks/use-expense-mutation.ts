@@ -34,13 +34,17 @@ export function useExpenseMutation(
                 destination.pathname === window.location.pathname &&
                 destination.search === window.location.search;
 
-            if (attempt.current !== null && !refreshing) {
+            if (
+                attempt.current !== null &&
+                !attempt.current.saved &&
+                !refreshing
+            ) {
                 event.preventDefault();
                 setError('Check the original result before leaving this page.');
             }
         });
         const stopUnload = (event: BeforeUnloadEvent) => {
-            if (attempt.current !== null) {
+            if (attempt.current !== null && !attempt.current.saved) {
                 event.preventDefault();
             }
         };

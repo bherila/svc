@@ -53,7 +53,7 @@ export function CompanyProfile({
             onSubmit={(event) => {
                 event.preventDefault();
                 const submitted = { ...form.data };
-                void change.run<{ version: string }>(
+                void change.run(
                     'PATCH',
                     action,
                     {
@@ -73,6 +73,7 @@ export function CompanyProfile({
                                 'company_profile',
                                 'project_create',
                             ],
+                            requireSuccess: true,
                         });
                     },
                 );
@@ -86,6 +87,7 @@ export function CompanyProfile({
                     <Label htmlFor={`profile-${field}`}>{label}</Label>
                     {multiline ? (
                         <Textarea
+                            disabled={change.locked}
                             className="wrap-anywhere"
                             id={`profile-${field}`}
                             value={form.data[field]}
@@ -95,6 +97,7 @@ export function CompanyProfile({
                         />
                     ) : (
                         <Input
+                            disabled={change.locked}
                             id={`profile-${field}`}
                             value={form.data[field]}
                             type={field === 'website_url' ? 'url' : 'text'}
@@ -129,10 +132,20 @@ export function CompanyProfile({
                     {change.error}
                 </p>
             )}
-            <div>
-                <Button type="submit" disabled={change.busy}>
+            <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={change.locked}>
                     Save company profile
                 </Button>
+                {change.unresolved && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={change.busy}
+                        onClick={() => void change.check()}
+                    >
+                        Check original change
+                    </Button>
+                )}
             </div>
         </form>
     );
