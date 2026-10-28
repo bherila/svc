@@ -13,6 +13,18 @@ export function installUnknownWriteHistoryGuard() {
     }
 
     installed = true;
+    document.addEventListener('inertia:navigate', () => {
+        for (const guard of guards) {
+            // A preserved component can survive filters and current-prop reads.
+            // Keep the successfully navigated entry, rather than its mount entry.
+            if (!guard.unknown() || guard.entry.href === window.location.href) {
+                guard.entry = {
+                    state: window.history.state,
+                    href: window.location.href,
+                };
+            }
+        }
+    });
     window.addEventListener('popstate', (event) => {
         const guard = [...guards].find((candidate) => candidate.unknown());
 
