@@ -2,14 +2,17 @@
 
 namespace Tests\Unit\Billing;
 
+use App\Providers\AppServiceProvider;
 use App\Services\Billing\Mail\InvoiceMailSender;
 use App\Services\Billing\Mail\LaravelInvoiceMailSender;
 use App\Services\Billing\Mail\SymfonyMailHandoff;
 use App\Services\Billing\Mail\TrackedMailTransport;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\InvoiceMailSendResult;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Mail\Factory;
 use Illuminate\Contracts\Mail\Mailer as MailerContract;
+use Illuminate\Foundation\Application;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Mail\Mailable;
@@ -30,8 +33,24 @@ use Tests\TestCase;
 #[CoversClass(SymfonyMailHandoff::class)]
 #[CoversClass(TrackedMailTransport::class)]
 #[CoversClass(InvoiceMailSendResult::class)]
+#[CoversClass(AppServiceProvider::class)]
 final class LaravelInvoiceMailSenderTest extends TestCase
 {
+    public function test_application_registration_supplies_the_replaceable_mail_boundary_in_a_fresh_container(): void
+    {
+        // The booted test application has already registered its services before
+        // test coverage begins. Check composition without inherited bindings.
+        $previous = Container::getInstance();
+        try {
+            $application = new Application($this->app->basePath());
+            (new AppServiceProvider($application))->register();
+
+            $this->assertInstanceOf(LaravelInvoiceMailSender::class, $application->make(InvoiceMailSender::class));
+        } finally {
+            Container::setInstance($previous);
+        }
+    }
+
     public function test_real_mailer_acceptance_preserves_addresses_and_the_shared_default_transport(): void
     {
         [$mailer, $transport] = $this->realMailer();
