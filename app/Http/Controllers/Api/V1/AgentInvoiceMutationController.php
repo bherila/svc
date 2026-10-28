@@ -176,9 +176,15 @@ final class AgentInvoiceMutationController extends Controller
     public function send(Request $request, Workspace $workspace, string $invoice, AgentInvoiceOperations $operations, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts): JsonResponse
     {
         $context = $contexts->from($request);
-        $record = $operations->send($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $invoice, $request->all());
+        $result = $operations->send($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $invoice, $request->all());
 
-        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
+        return response()->json(['data' => $presenter->mutation($workspace, $result->invoice) + [
+            'delivery' => $result->delivery === null ? null : [
+                'id' => $result->delivery->public_id,
+                'status' => $result->delivery->status,
+                'error_summary' => $result->delivery->error_summary,
+            ],
+        ]]);
     }
 
     private function authorizedInvoice(Workspace $workspace, string $id, AgentAccess $access, User $user): ClientInvoice

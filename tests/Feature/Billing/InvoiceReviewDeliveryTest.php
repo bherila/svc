@@ -19,6 +19,7 @@ use Closure;
 use DateTimeInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Attachment;
+use Illuminate\Mail\PendingMail;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -557,6 +558,30 @@ final class InvoiceReviewDeliveryTest extends TestCase
         } finally {
             $rejectAcceptedResult = false;
         }
+    }
+
+    public function test_automatic_delivery_does_not_retry_an_uncertain_mail_handoff(): void
+    {
+        Mail::fake();
+        Date::setTestNow('2026-09-15 12:00:00 UTC');
+        [, $workspace, $company, $invoice] = $this->draft();
+        $company->forceFill(['automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
+        $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $mailer = \Mockery::mock(PendingMail::class);
+        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('Synthetic accepted then response lost'));
+        Mail::shouldReceive('to')->once()->andReturn($mailer);
+
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
+        $delivery = ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->sole();
+        $this->assertSame('sending', $delivery->status);
+        $this->assertSame('sending', $invoice->fresh()->automatic_delivery_status);
+        $this->assertNull($delivery->failed_at);
+        $this->assertNull($delivery->next_attempt_at);
+        $this->assertNull($delivery->error_summary);
+        Date::setTestNow('2026-09-16 12:00:00 UTC');
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
+        $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->count());
+        $this->assertSame('sending', $delivery->fresh()->status);
     }
 
     public function test_hold_void_and_payment_each_prevent_automatic_delivery(): void

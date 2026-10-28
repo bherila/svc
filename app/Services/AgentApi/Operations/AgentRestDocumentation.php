@@ -1180,11 +1180,11 @@ final class AgentRestDocumentation
             'invoices.send' => [
                 'method' => 'POST',
                 'scopes' => ['billing:deliver'],
-                'description' => 'Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen\'s compose fields: an optional subject (default: the invoice\'s own), an optional covering message, and bcc_self to blind-copy the signed-in user\'s own address - no other blind copy can be named. The delivery is registered with this request\'s receipt and sent once it commits; repeating the same idempotency key sends nothing more.',
+                'description' => 'Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen\'s compose fields: an optional subject (default: the invoice\'s own), an optional covering message, and bcc_self to blind-copy the signed-in user\'s own address - no other blind copy can be named. The delivery is registered with this request\'s receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceSendRequest',
-                'response' => 'InvoiceMutationResponse',
-                'response_description' => 'Invoice delivery queued',
+                'response' => 'InvoiceSendResponse',
+                'response_description' => 'Invoice and recorded delivery outcome',
             ],
             'invoices.reminders.list' => [
                 'method' => 'GET',

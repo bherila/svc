@@ -325,7 +325,7 @@ class InvoiceController extends Controller
         $sent = $delivery->status === 'sent';
         $message = $sent
             ? 'Invoice sent to '.implode(', ', $delivery->recipients).'.'
-            : 'Invoice delivery registered and will send shortly.';
+            : 'Invoice delivery is unresolved. Check its recorded outcome before sending again.';
 
         return $this->done($message);
     }
