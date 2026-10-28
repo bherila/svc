@@ -338,15 +338,18 @@ function RemoveAttachment({ file }: { file: SharedAttachment }) {
 
 export function UploadAttachment({
     upload,
+    onPendingChange,
 }: {
-    upload: NonNullable<AttachmentPanel['upload']>;
+    onPendingChange?: (pending: boolean) => void;
+    upload: AttachmentPanel['upload'];
 }) {
     const input = useRef<HTMLInputElement>(null);
     const [file, setFile] = useState<File | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [staleVersion, setStaleVersion] = useState<string | null>(null);
-    const stale = staleVersion === upload.parent_version;
+    const stale =
+        staleVersion !== null && staleVersion === upload?.parent_version;
     const [unresolved, setUnresolved] = useState(false);
     const attempt = useRef<{
         file: File;
@@ -366,6 +369,14 @@ export function UploadAttachment({
                 'Check the original file change before leaving this page.',
             ),
     );
+
+    if (upload === null && !busy && !unresolved) {
+        if (file !== null) {
+            setFile(null);
+        }
+
+        return null;
+    }
 
     async function refreshRecorded(original: { uncertain: boolean }) {
         try {
@@ -395,6 +406,7 @@ export function UploadAttachment({
             }
 
             setUnresolved(false);
+            onPendingChange?.(false);
         } catch {
             original.uncertain = true;
             setUnresolved(true);
@@ -405,7 +417,7 @@ export function UploadAttachment({
     }
 
     async function send() {
-        if (running.current || !file) {
+        if (running.current || !file || (!upload && !attempt.current)) {
             return;
         }
 
@@ -417,15 +429,16 @@ export function UploadAttachment({
 
         attempt.current ??= {
             file,
-            parentVersion: upload.parent_version,
-            method: upload.method ?? 'POST',
-            href: upload.href,
+            parentVersion: upload!.parent_version,
+            method: upload!.method ?? 'POST',
+            href: upload!.href,
             key: newIdempotencyKey(),
             accepted: false,
             uncertain: false,
         };
         const original = attempt.current;
         running.current = true;
+        onPendingChange?.(true);
         setBusy(true);
         setError(null);
 
@@ -491,6 +504,7 @@ export function UploadAttachment({
 
             if (!uncertain) {
                 attempt.current = null;
+                onPendingChange?.(false);
             }
         }
 
@@ -512,7 +526,7 @@ export function UploadAttachment({
                     ref={input}
                     type="file"
                     className="w-full min-w-0 rounded-md border p-2 text-sm"
-                    disabled={busy || stale || unresolved}
+                    disabled={busy || stale || unresolved || upload === null}
                     required
                     onChange={(event) => {
                         setFile(event.target.files?.[0] ?? null);
@@ -522,7 +536,7 @@ export function UploadAttachment({
                 />
             </label>
             <p className="text-sm text-muted-foreground">
-                {upload.description ??
+                {upload?.description ??
                     'New files are private. Choose “Visible to client” after uploading to share a file.'}
             </p>
             <div>
@@ -541,7 +555,9 @@ export function UploadAttachment({
 export default function AttachmentSharingPanel({
     panel,
     title = 'Files',
+    onUploadPendingChange,
 }: {
+    onUploadPendingChange?: (pending: boolean) => void;
     panel: AttachmentPanel;
     title?: string;
 }) {
@@ -632,7 +648,10 @@ export default function AttachmentSharingPanel({
                     </li>
                 ))}
             </ul>
-            {panel.upload && <UploadAttachment upload={panel.upload} />}
+            <UploadAttachment
+                upload={panel.upload}
+                onPendingChange={onUploadPendingChange}
+            />
             {next && (
                 <div>
                     <Button

@@ -177,7 +177,7 @@ export default function CollaborationShow({
                 )}
                 {topic.attachment_panel && (
                     <AttachmentSharingPanel
-                        key={topic.attachment_panel.upload?.href}
+                        key={topic.id}
                         panel={topic.attachment_panel}
                     />
                 )}

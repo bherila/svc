@@ -1501,7 +1501,7 @@ export default function ClientInvoiceDetail({
                 )}
                 {attachment_panel && (
                     <AttachmentSharingPanel
-                        key={attachment_panel.upload?.href}
+                        key={invoice.id}
                         panel={attachment_panel}
                     />
                 )}

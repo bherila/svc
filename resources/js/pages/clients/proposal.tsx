@@ -238,7 +238,7 @@ export default function ClientProposalDetail({
                 )}
                 {attachment_panel && (
                     <AttachmentSharingPanel
-                        key={attachment_panel.upload?.href}
+                        key={proposal.id}
                         panel={attachment_panel}
                     />
                 )}

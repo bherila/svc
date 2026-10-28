@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
@@ -10,6 +10,8 @@ export default function ParentFiles({
 }: {
     attachment_panel: AttachmentPanel;
 }) {
+    const { url } = usePage();
+
     return (
         <WorkspaceShell>
             <Head title="Files" />
@@ -18,7 +20,7 @@ export default function ParentFiles({
             >
                 <h1 className="text-2xl font-semibold">Files</h1>
                 <AttachmentSharingPanel
-                    key={attachment_panel.upload?.href}
+                    key={url}
                     panel={attachment_panel}
                     title="Attached files"
                 />
