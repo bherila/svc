@@ -27,6 +27,7 @@ use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
 use App\Support\Billing\InvoiceStatus;
@@ -277,9 +278,7 @@ class WorkspaceOperationsController extends Controller
         }
 
         return Inertia::render('operations', [
-            'workspace' => [
-                'id' => $workspace->public_id,
-                'name' => $workspace->name,
+            'workspace' => AgentWorkspacePresenter::identity($workspace) + [
                 'clients' => $clients,
                 'files_next_href' => $filesNextHref,
                 'files_previous_href' => $filesPreviousHref,

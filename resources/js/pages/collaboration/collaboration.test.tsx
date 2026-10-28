@@ -581,8 +581,8 @@ describe('native collaboration pages', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Create' }));
         });
         const original = mutations.request.mock.calls[0];
-        const guard = mutations.on.mock.calls.at(-1)?.[1];
-        const navigation = {
+        const navigation = new CustomEvent('inertia:before', {
+            cancelable: true,
             detail: {
                 visit: {
                     url: '/synthetic/other-client',
@@ -590,10 +590,11 @@ describe('native collaboration pages', () => {
                     only: [],
                 },
             },
-            preventDefault: vi.fn(),
-        };
-        act(() => guard(navigation));
-        expect(navigation.preventDefault).toHaveBeenCalledOnce();
+        });
+        act(() => {
+            document.dispatchEvent(navigation);
+        });
+        expect(navigation.defaultPrevented).toBe(true);
         const unload = new Event('beforeunload', { cancelable: true });
         window.dispatchEvent(unload);
         expect(unload.defaultPrevented).toBe(true);
@@ -717,8 +718,8 @@ describe('native collaboration pages', () => {
         expect(screen.getByRole('alert')).toHaveTextContent(
             'Check the original change',
         );
-        const guard = mutations.on.mock.calls.at(-1)?.[1];
-        const navigation = {
+        const navigation = new CustomEvent('inertia:before', {
+            cancelable: true,
             detail: {
                 visit: {
                     url: '/synthetic/other-client',
@@ -726,10 +727,9 @@ describe('native collaboration pages', () => {
                     only: [],
                 },
             },
-            preventDefault: vi.fn(),
-        };
-        guard(navigation);
-        expect(navigation.preventDefault).not.toHaveBeenCalled();
+        });
+        document.dispatchEvent(navigation);
+        expect(navigation.defaultPrevented).toBe(false);
         const unload = new Event('beforeunload', { cancelable: true });
         window.dispatchEvent(unload);
         expect(unload.defaultPrevented).toBe(false);

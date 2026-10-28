@@ -14,8 +14,6 @@ import { apiRequest } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 
-const beforeNavigation = vi.hoisted(() => vi.fn());
-
 vi.mock('@/lib/api', () => ({
     apiRequest: vi.fn(),
     newIdempotencyKey: () => crypto.randomUUID(),
@@ -23,23 +21,6 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/lib/refresh-page-props', () => ({
     refreshPageProps: vi.fn(async () => {}),
 }));
-vi.mock('@inertiajs/react', async () => {
-    const { useState } = await import('react');
-
-    return {
-        router: { on: beforeNavigation },
-        useForm: function useForm(initial: Record<string, unknown>) {
-            const [data, setData] = useState(initial);
-
-            return {
-                data,
-                setData: (field: string, value: unknown) =>
-                    setData((prior) => ({ ...prior, [field]: value })),
-                reset: () => setData(initial),
-            };
-        },
-    };
-});
 
 const profile = {
     billing_address: 'Synthetic address',
@@ -208,8 +189,8 @@ describe('historical client details', () => {
         expect(screen.getByLabelText('Internal company notes')).toHaveValue(
             'Keep this edit',
         );
-        const guard = beforeNavigation.mock.calls.at(-1)?.[1];
-        const unrelatedNavigation = {
+        const unrelatedNavigation = new CustomEvent('inertia:before', {
+            cancelable: true,
             detail: {
                 visit: {
                     url: '/synthetic/other-client',
@@ -217,22 +198,24 @@ describe('historical client details', () => {
                     only: [],
                 },
             },
-            preventDefault: vi.fn(),
-        };
-        act(() => guard(unrelatedNavigation));
-        expect(unrelatedNavigation.preventDefault).toHaveBeenCalledOnce();
-        const partialRefresh = {
+        });
+        act(() => {
+            document.dispatchEvent(unrelatedNavigation);
+        });
+        expect(unrelatedNavigation.defaultPrevented).toBe(true);
+        const partialRefresh = new CustomEvent('inertia:before', {
+            cancelable: true,
             detail: {
                 visit: {
                     url: window.location.href,
                     method: 'get',
                     only: ['company_profile'],
+                    preserveState: true,
                 },
             },
-            preventDefault: vi.fn(),
-        };
-        guard(partialRefresh);
-        expect(partialRefresh.preventDefault).not.toHaveBeenCalled();
+        });
+        document.dispatchEvent(partialRefresh);
+        expect(partialRefresh.defaultPrevented).toBe(false);
         const unload = new Event('beforeunload', { cancelable: true });
         window.dispatchEvent(unload);
         expect(unload.defaultPrevented).toBe(true);
@@ -418,8 +401,8 @@ describe('historical client details', () => {
             'The change was recorded, but this page could not load it. Check the original change.',
         );
         expect(screen.getByLabelText('Internal company notes')).toBeDisabled();
-        const guard = beforeNavigation.mock.calls.at(-1)?.[1];
-        const unrelatedNavigation = {
+        const unrelatedNavigation = new CustomEvent('inertia:before', {
+            cancelable: true,
             detail: {
                 visit: {
                     url: '/synthetic/other-client',
@@ -427,10 +410,9 @@ describe('historical client details', () => {
                     only: [],
                 },
             },
-            preventDefault: vi.fn(),
-        };
-        guard(unrelatedNavigation);
-        expect(unrelatedNavigation.preventDefault).not.toHaveBeenCalled();
+        });
+        document.dispatchEvent(unrelatedNavigation);
+        expect(unrelatedNavigation.defaultPrevented).toBe(false);
         const unload = new Event('beforeunload', { cancelable: true });
         window.dispatchEvent(unload);
         expect(unload.defaultPrevented).toBe(false);

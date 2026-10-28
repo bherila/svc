@@ -1,5 +1,5 @@
-import { router } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiResult } from '@/lib/api';
 
@@ -24,44 +24,10 @@ export function useClientChange() {
     const inFlight = useRef(false);
     const attempt = useRef<Attempt | null>(null);
 
-    useEffect(() => {
-        if (!busy && !unresolved) {
-            return;
-        }
-
-        const stopNavigation = router.on?.('before', (event) => {
-            const original = attempt.current;
-
-            if (!original || original.accepted) {
-                return;
-            }
-
-            const visit = event.detail.visit;
-            const destination = new URL(visit.url, window.location.href);
-            const readingCurrentProps =
-                visit.method === 'get' &&
-                visit.only.length > 0 &&
-                destination.origin === window.location.origin &&
-                destination.pathname === window.location.pathname &&
-                destination.search === window.location.search;
-
-            if (!readingCurrentProps) {
-                event.preventDefault();
-                setError('Check the original change before leaving this page.');
-            }
-        });
-        const stopUnload = (event: BeforeUnloadEvent) => {
-            if (attempt.current !== null && !attempt.current.accepted) {
-                event.preventDefault();
-            }
-        };
-        window.addEventListener('beforeunload', stopUnload);
-
-        return () => {
-            stopNavigation?.();
-            window.removeEventListener('beforeunload', stopUnload);
-        };
-    }, [busy, unresolved]);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.accepted,
+        () => setError('Check the original change before leaving this page.'),
+    );
 
     async function check() {
         const original = attempt.current;

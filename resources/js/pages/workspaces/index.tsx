@@ -1,6 +1,6 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { ChevronRightIcon, PlusIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
@@ -67,37 +68,14 @@ function NewWorkspaceDialog({
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        if (!saving && !unresolved) {
-            return;
-        }
-
-        const stopNavigation = router.on?.('before', (event) => {
-            if (
-                attempt.current !== null &&
-                attempt.current.savedUrl === undefined
-            ) {
-                event.preventDefault();
-                setError(
-                    'Check the original workspace result before leaving this page.',
-                );
-            }
-        });
-        const stopUnload = (event: BeforeUnloadEvent) => {
-            if (
-                attempt.current !== null &&
-                attempt.current.savedUrl === undefined
-            ) {
-                event.preventDefault();
-            }
-        };
-        window.addEventListener('beforeunload', stopUnload);
-
-        return () => {
-            stopNavigation?.();
-            window.removeEventListener('beforeunload', stopUnload);
-        };
-    }, [saving, unresolved]);
+    useUnknownWriteGuard(
+        () =>
+            attempt.current !== null && attempt.current.savedUrl === undefined,
+        () =>
+            setError(
+                'Check the original workspace result before leaving this page.',
+            ),
+    );
 
     const close = (next: boolean) => {
         if (!running.current && !unresolved) {

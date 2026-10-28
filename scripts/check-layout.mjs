@@ -36,6 +36,7 @@ const artifacts = path.join(
 );
 const widths = [390, 820, 1440, 1920];
 const clientsOnly = process.argv.includes('--clients');
+const resourceChromeOnly = process.argv.includes('--resource-chrome');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
 const invoiceActionsOnly = process.argv.includes('--invoice-actions');
@@ -583,6 +584,13 @@ try {
                                                         'receipts',
                                                         'expense_schedules',
                                                     ]) {
+            if (
+                resourceChromeOnly &&
+                !['invoice', 'proposal', 'proposal_acceptance'].includes(screen)
+            ) {
+                continue;
+            }
+
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -601,6 +609,34 @@ try {
 
                     throw error;
                 });
+
+            if (resourceChromeOnly) {
+                await expect(
+                    page.locator('main').getByRole('link', { name: /^←/ }),
+                ).toHaveCount(0);
+                await expect(
+                    page.locator('main').getByRole('heading', { level: 1 }),
+                ).toBeVisible();
+
+                if (screen === 'proposal_acceptance') {
+                    await expect(page.locator('#signer-name')).toBeVisible();
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Accept',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await page
+                        .locator('#signer-name')
+                        .fill('SyntheticChromeSigner'.repeat(5));
+                    await page
+                        .locator('#signer-title')
+                        .fill('SyntheticChromeTitle'.repeat(5));
+                }
+
+                await capture(screen, 'shared-shell', width);
+                continue;
+            }
 
             if (taskLookupsOnly) {
                 await capture(screen, 'seeded-options', width);
@@ -1129,6 +1165,17 @@ try {
                     ).toBeVisible();
                 }
 
+                // Establish a real Inertia history entry before the unknown write.
+                const previousSettingsUrl = page.url();
+                await page
+                    .getByRole('link', {
+                        name: 'Newer invitations',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page).not.toHaveURL(previousSettingsUrl);
+                const activeSettingsUrl = page.url();
+
                 const profileRequests = [];
                 let profileReads = 0;
                 const profilePage = (url) =>
@@ -1201,6 +1248,36 @@ try {
                     page.getByLabel('Internal company notes'),
                 ).toBeDisabled();
                 await capture(screen, 'profile-unknown-change', width);
+                await page.evaluate(() => {
+                    window.__svcHistoryRestored = false;
+                    const originalPush = window.history.pushState;
+                    window.history.pushState = function (...args) {
+                        window.history.pushState = originalPush;
+                        const result = originalPush.apply(this, args);
+                        window.__svcHistoryRestored = true;
+
+                        return result;
+                    };
+                    window.history.back();
+                });
+                await page.waitForFunction(
+                    () => window.__svcHistoryRestored === true,
+                );
+                await expect(page).toHaveURL(activeSettingsUrl);
+                await expect(
+                    page.getByLabel('Phone', { exact: true }).first(),
+                ).toHaveValue('555-0100');
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                expect(profileRequests).toHaveLength(1);
+                await capture(screen, 'profile-unknown-history-back', width);
                 await page
                     .getByRole('button', {
                         name: 'Check original change',
@@ -1253,6 +1330,18 @@ try {
                 expect(profileReads).toBe(2);
                 await page.unroute('**/api/v1/**', profileRoute);
                 await page.unroute(profilePage, profileReadRoute);
+
+                const contactSummary = page
+                    .locator('summary')
+                    .filter({ hasText: 'SyntheticContact'.repeat(6) });
+
+                if (
+                    !(await contactSummary.evaluate(
+                        (element) => element.parentElement.open,
+                    ))
+                ) {
+                    await contactSummary.click();
+                }
 
                 await capture(screen, 'client-contact-form', width);
                 await page
@@ -2784,6 +2873,7 @@ try {
     }
 
     if (
+        !resourceChromeOnly &&
         !invoiceActionsOnly &&
         !invoiceSendOnly &&
         !invoiceRecoveryOnly &&
@@ -2826,6 +2916,7 @@ try {
     }
 
     if (
+        !resourceChromeOnly &&
         !invoiceSendOnly &&
         !invoiceRecoveryOnly &&
         !schedulesOnly &&
@@ -3026,33 +3117,35 @@ try {
         [
             '# Browser layout evidence',
             '',
-            invoiceSendOnly
-                ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
-                : receiptsOnly
-                  ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
-                  : projectsOnly
-                    ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
-                    : workspacesOnly
-                      ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
-                      : invoiceActionsOnly
-                        ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
-                        : disputesOnly
-                          ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
-                          : clientsOnly
-                            ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
-                            : tasksOnly
-                              ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                              : portalOnly
-                                ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                                : squareOnly
-                                  ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                                  : remindersOnly
-                                    ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                                    : backlogOnly
-                                      ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                                      : engagementOnly
-                                        ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                        : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+            resourceChromeOnly
+                ? 'Synthetic invoice and native/portal proposal screens use the shared shell without page-owned back links, at every required width. Interactive proposal signing remains visible; no writes are submitted.'
+                : invoiceSendOnly
+                  ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
+                  : receiptsOnly
+                    ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
+                    : projectsOnly
+                      ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
+                      : workspacesOnly
+                        ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
+                        : invoiceActionsOnly
+                          ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
+                          : disputesOnly
+                            ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                            : clientsOnly
+                              ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                              : tasksOnly
+                                ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                                : portalOnly
+                                  ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                                  : squareOnly
+                                    ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                                    : remindersOnly
+                                      ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                                      : backlogOnly
+                                        ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                                        : engagementOnly
+                                          ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                                          : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
 
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',

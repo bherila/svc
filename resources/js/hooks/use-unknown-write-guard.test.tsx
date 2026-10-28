@@ -92,3 +92,61 @@ it.each(['back', 'forward'])(
         window.removeEventListener('popstate', inertiaHistory);
     },
 );
+
+it('restores the current successful filter navigation when a later write becomes unknown', () => {
+    window.history.replaceState({ page: 'initial' }, '', '/synthetic/list');
+    let unknown = false;
+    const isUnknown = () => unknown;
+    const blocked = vi.fn();
+    const { unmount } = renderHook(() =>
+        useUnknownWriteGuard(isUnknown, blocked),
+    );
+    const filtered = { page: 'filtered', props: { synthetic: true } };
+    window.history.replaceState(filtered, '', '/synthetic/list?filter=current');
+    document.dispatchEvent(new CustomEvent('inertia:navigate'));
+    unknown = true;
+    window.history.replaceState(
+        { page: 'previous' },
+        '',
+        '/synthetic/previous',
+    );
+    window.dispatchEvent(
+        new PopStateEvent('popstate', { state: window.history.state }),
+    );
+    expect(window.location.pathname + window.location.search).toBe(
+        '/synthetic/list?filter=current',
+    );
+    expect(window.history.state).toEqual(filtered);
+    expect(blocked).toHaveBeenCalledTimes(1);
+    unmount();
+});
+
+it('keeps refreshed props for an allowed current-page read while preserving an unknown write', () => {
+    window.history.replaceState(
+        { page: 'before read' },
+        '',
+        '/synthetic/current',
+    );
+    const blocked = vi.fn();
+    const { unmount } = renderHook(() =>
+        useUnknownWriteGuard(() => true, blocked),
+    );
+    const refreshed = {
+        page: 'after read',
+        props: { syntheticVersion: 'new' },
+    };
+    window.history.replaceState(refreshed, '', '/synthetic/current');
+    document.dispatchEvent(new CustomEvent('inertia:navigate'));
+    window.history.replaceState(
+        { page: 'previous' },
+        '',
+        '/synthetic/previous',
+    );
+    window.dispatchEvent(
+        new PopStateEvent('popstate', { state: window.history.state }),
+    );
+    expect(window.location.pathname).toBe('/synthetic/current');
+    expect(window.history.state).toEqual(refreshed);
+    expect(blocked).toHaveBeenCalledTimes(1);
+    unmount();
+});
