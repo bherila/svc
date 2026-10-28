@@ -3206,12 +3206,39 @@ export interface components {
         DeletionResponse: {
             data: components['schemas']['DeletionReceipt'];
         };
-        Error: {
-            message: string;
-            errors?: {
-                [key: string]: string[];
-            };
-        };
+        Error:
+            | {
+                  message: string;
+                  errors?: {
+                      [key: string]: string[];
+                  };
+              }
+            | {
+                  /** @enum {string} */
+                  error: 'invalid_token' | 'insufficient_scope';
+              }
+            | {
+                  message: string;
+                  operation: string;
+                  /** @enum {string} */
+                  reason:
+                      | 'deployment_flag'
+                      | 'unauthenticated'
+                      | 'missing_scope'
+                      | 'missing_permission'
+                      | 'group_not_granted'
+                      | 'policy'
+                      | 'depends_on';
+                  detail: string;
+              }
+            | {
+                  /** @enum {string} */
+                  error:
+                      | 'invalid_token'
+                      | 'temporarily_unavailable'
+                      | 'access_denied';
+                  message: string;
+              };
         ExpectedVersionRequest: {
             expected_version: components['schemas']['Version'];
         };
@@ -4602,11 +4629,11 @@ export interface components {
             /** @description The operator's private note. */
             notes?: string | null;
             /**
-             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status.
+             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status. Omitted or null means succeeded.
              * @default succeeded
-             * @enum {string}
+             * @enum {string|null}
              */
-            status: 'pending' | 'succeeded';
+            status: 'pending' | 'succeeded' | null;
             /**
              * Format: uuid
              * @description The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers.
@@ -6475,7 +6502,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             default: components['responses']['Error'];
@@ -8472,7 +8499,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             /** @description Authentication is missing, expired or revoked. */
@@ -10455,7 +10482,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             default: components['responses']['Error'];

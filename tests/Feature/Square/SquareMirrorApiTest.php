@@ -56,7 +56,7 @@ final class SquareMirrorApiTest extends TestCase
     {
         $this->actingAsMcp($this->owner, ['billing:read', 'billing:write']);
 
-        $first = $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-one'])->assertOk();
+        $first = $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-one'], JSON_FORCE_OBJECT)->assertOk();
 
         $this->assertSame('completed', $first->json('data.status'));
         $this->assertSame('request', $first->json('data.trigger'));
@@ -66,7 +66,7 @@ final class SquareMirrorApiTest extends TestCase
         $this->assertSame(3, SquareInvoiceSnapshot::query()->where('workspace_id', $this->workspace->id)->count());
         $calls = count(Http::recorded());
 
-        $retry = $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-one'])->assertOk();
+        $retry = $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-one'], JSON_FORCE_OBJECT)->assertOk();
 
         $this->assertSame($first->json('data'), $retry->json('data'));
         $this->assertCount($calls, Http::recorded(), 'A replayed sync must not read Square again.');
@@ -100,16 +100,16 @@ final class SquareMirrorApiTest extends TestCase
     {
         $this->actingAsMcp($this->owner, ['billing:read', 'billing:write']);
         foreach (range(1, 4) as $attempt) {
-            $this->postJson($this->url('sync'), [], ['Idempotency-Key' => "sync-{$attempt}"])->assertOk();
+            $this->postJson($this->url('sync'), [], ['Idempotency-Key' => "sync-{$attempt}"], JSON_FORCE_OBJECT)->assertOk();
         }
 
-        $limited = $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-5'])->assertStatus(429);
+        $limited = $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-5'], JSON_FORCE_OBJECT)->assertStatus(429);
 
         $this->assertStringStartsWith('Square was synced recently.', (string) $limited->json('message'));
         $this->assertNotNull($limited->headers->get('Retry-After'));
         $this->assertSame(4, SquareSyncRun::query()->count());
         // A replay is not a new sync and is not limited.
-        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-1'])->assertOk();
+        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'sync-1'], JSON_FORCE_OBJECT)->assertOk();
     }
 
     public function test_only_a_manager_of_the_bound_workspace_with_billing_write_may_sync(): void
@@ -123,18 +123,18 @@ final class SquareMirrorApiTest extends TestCase
         WorkspaceMembership::query()->create(['workspace_id' => $other->id, 'user_id' => $this->owner->id, 'role' => 'owner']);
 
         $this->actingAsMcp($this->owner, ['billing:read']);
-        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'read-only'])->assertForbidden();
+        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'read-only'], JSON_FORCE_OBJECT)->assertForbidden();
         $this->actingAsMcp($member, ['billing:read', 'billing:write']);
-        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'member'])->assertForbidden();
+        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'member'], JSON_FORCE_OBJECT)->assertForbidden();
         $this->actingAsMcp($portal, ['billing:read', 'billing:write']);
-        $this->assertContains($this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'portal'])->status(), [403, 404]);
+        $this->assertContains($this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'portal'])->status(), [403, 404], JSON_FORCE_OBJECT);
         $this->actingAsMcp($this->owner, ['billing:read', 'billing:write']);
-        $this->postJson($this->url('sync', $other), [], ['Idempotency-Key' => 'unbound'])->assertNotFound();
+        $this->postJson($this->url('sync', $other), [], ['Idempotency-Key' => 'unbound'], JSON_FORCE_OBJECT)->assertNotFound();
 
         config(['agent_api.writes_enabled' => false]);
-        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'writes-off'])->assertNotFound();
+        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'writes-off'], JSON_FORCE_OBJECT)->assertNotFound();
         config(['agent_api.writes_enabled' => true, 'services.square.access_token' => null]);
-        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'unconfigured'])->assertNotFound();
+        $this->postJson($this->url('sync'), [], ['Idempotency-Key' => 'unconfigured'], JSON_FORCE_OBJECT)->assertNotFound();
 
         $this->assertSame(0, SquareSyncRun::query()->count());
         Http::assertNothingSent();
