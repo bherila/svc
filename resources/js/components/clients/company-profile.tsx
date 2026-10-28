@@ -68,7 +68,11 @@ export function CompanyProfile({
                     async (result) => {
                         form.saved(submitted, result.data.version);
                         await refreshPageProps({
-                            only: ['company', 'company_profile'],
+                            only: [
+                                'company',
+                                'company_profile',
+                                'project_create',
+                            ],
                         });
                     },
                 );
