@@ -23,6 +23,65 @@ final class AgentTimeParityTest extends TestCase
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
+    public function test_versions_load_missing_nested_invoice_facts_and_reuse_a_fully_loaded_snapshot(): void
+    {
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $entry = $this->entry($owner, $workspace, $company, $project);
+        $invoice = $this->allocate($workspace, $company, $entry, 'draft');
+        $entry->load('invoiceLines');
+        $this->assertFalse($entry->invoiceLines->sole()->relationLoaded('invoice'));
+        $version = AgentApiVersion::for($entry);
+        $this->assertSame($invoice->id, $entry->invoiceLines->sole()->invoice->id);
+        $connection = $entry->getConnection();
+        $connection->enableQueryLog();
+        try {
+            $this->assertSame($version, AgentApiVersion::for($entry));
+            $this->assertSame([], $connection->getQueryLog());
+        } finally {
+            $connection->disableQueryLog();
+            $connection->flushQueryLog();
+        }
+        $this->actingAsMcp($owner, [AgentApiScopes::TIME_READ]);
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")->assertOk()
+            ->assertJsonPath('data.0.invoice_id', $invoice->public_id)
+            ->assertJsonPath('data.0.allocation_state', 'reserved')
+            ->assertJsonPath('data.0.version', $version);
+    }
+
+    public function test_selected_time_allocation_and_removal_change_the_read_and_mutation_version_together(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $entry = $this->entry($owner, $workspace, $company, $project)->refresh();
+        $revision = $entry->lock_version;
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_WRITE, AgentApiScopes::TIME_READ, AgentApiScopes::TIME_APPROVE]);
+        $base = "/api/v1/workspaces/{$workspace->public_id}";
+        $before = $this->getJson($base.'/time-entries')->assertOk()
+            ->assertJsonPath('data.0.allocation_state', 'unallocated')->assertJsonPath('data.0.invoice_id', null)->json('data.0');
+        $draft = $this->postJson($base.'/invoices', [
+            'company_id' => $company->public_id, 'time_entry_ids' => [$entry->public_id],
+        ], ['Idempotency-Key' => 'synthetic-allocation-version-create'])->assertCreated()->json('data');
+        $reserved = $this->getJson($base.'/time-entries')->assertOk()
+            ->assertJsonPath('data.0.allocation_state', 'reserved')->assertJsonPath('data.0.invoice_id', $draft['id'])->json('data.0');
+        $this->assertNotSame($before['version'], $reserved['version']);
+        $this->assertSame($revision, $entry->fresh()->lock_version);
+        $this->postJson($this->unapprovePath($workspace, $entry), ['expected_version' => $before['version']], ['Idempotency-Key' => 'synthetic-pre-allocation-version'])->assertConflict();
+        $mcp = $this->mcpCall('tools/call', ['name' => 'time_entries.list', 'arguments' => ['workspace_id' => $workspace->public_id]]);
+        $this->assertSame($reserved['version'], $mcp['structuredContent']['data'][0]['version']);
+
+        $this->patchJson($base.'/invoices/'.$draft['id'], [
+            'expected_version' => $draft['version'], 'time_entry_ids' => [],
+            'manual_lines' => [['type' => 'manual', 'description' => 'Synthetic replacement service', 'quantity' => 1, 'unit_amount' => 10000]],
+        ], ['Idempotency-Key' => 'synthetic-allocation-version-remove'])->assertOk();
+        $released = $this->getJson($base.'/time-entries')->assertOk()
+            ->assertJsonPath('data.0.allocation_state', 'unallocated')->assertJsonPath('data.0.invoice_id', null)->json('data.0');
+        $this->assertNotSame($reserved['version'], $released['version']);
+        $this->assertSame($revision, $entry->fresh()->lock_version);
+        $this->postJson($this->unapprovePath($workspace, $entry), ['expected_version' => $reserved['version']], ['Idempotency-Key' => 'synthetic-reserved-version'])->assertConflict();
+        $this->postJson($this->unapprovePath($workspace, $entry), ['expected_version' => $released['version']], ['Idempotency-Key' => 'synthetic-released-version'])->assertOk()->assertJsonPath('data.status', 'draft');
+        $this->assertSame($revision + 1, $entry->fresh()->lock_version);
+    }
+
     public function test_mcp_task_updates_match_the_declared_api_contract(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
@@ -293,6 +352,7 @@ final class AgentTimeParityTest extends TestCase
         [$owner, $workspace, $company, $project] = $this->tenant();
         [$foreignOwner, $foreignWorkspace, $foreignCompany, $foreignProject] = $this->tenant();
         $entry = $this->entry($owner, $workspace, $company, $project, ['minutes' => 29]);
+        $unallocatedVersion = AgentApiVersion::for($entry);
         $this->entry($foreignOwner, $foreignWorkspace, $foreignCompany, $foreignProject);
         $invoice = ClientInvoice::query()->create(['workspace_id' => $part === 'invoice' ? $foreignWorkspace->id : $workspace->id, 'client_company_id' => $part === 'invoice' ? $foreignCompany->id : $company->id, 'status' => 'draft', 'currency' => 'USD', 'invoice_number' => 'SYNTHETIC-'.str()->uuid(), 'invoice_kind' => 'ad_hoc']);
         // The company-only case remains in this workspace to test that the
@@ -308,7 +368,8 @@ final class AgentTimeParityTest extends TestCase
         $this->actingAsMcp($owner, [AgentApiScopes::TIME_READ, AgentApiScopes::IDENTITY_READ]);
         $base = "/api/v1/workspaces/{$workspace->public_id}";
         $this->getJson($base.'/time-entries?unallocated=1')->assertOk()->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.id', $entry->public_id)->assertJsonPath('data.0.invoice_id', null)->assertJsonPath('data.0.allocation_state', 'unallocated');
+            ->assertJsonPath('data.0.id', $entry->public_id)->assertJsonPath('data.0.invoice_id', null)->assertJsonPath('data.0.allocation_state', 'unallocated')
+            ->assertJsonPath('data.0.version', $unallocatedVersion);
         $this->getJson($base.'/time-entries?allocation_state=unallocated&is_billable=true&compact=true')->assertOk()->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $entry->public_id)->assertJsonPath('data.0.invoice_id', null)->assertJsonPath('data.0.description', null);
         $this->getJson($base.'/time-entries?allocation_state=reserved')->assertOk()->assertJsonCount(0, 'data');

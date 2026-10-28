@@ -365,6 +365,8 @@ describe('client screens under data that does not fit', () => {
                     id: 'company-1',
                     name: LONG_NAME,
                     billing_email: 'billing@example.test',
+                    version: 'synthetic-company-version',
+                    update_url: '/synthetic/company-update',
                     automatic_invoice_email_enabled: true,
                     automatic_invoice_email_delay_days: 365,
                     invoice_recipients: [

@@ -18,6 +18,7 @@ use App\Services\Billing\MoneyService;
 use App\Services\Engagement\EngagementException;
 use App\Services\Engagement\TimeEntryWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\TimeEntryAllocation;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -249,12 +250,12 @@ final class TimeEntryMutationService
     /**
      * Run a write against the same row lock invoice allocation takes.
      *
-     * The optimistic version cannot see an allocation: `InvoiceFromTimeService`
-     * locks the entry, attaches the pivot and leaves `lock_version` untouched,
-     * because attaching does not change the entry. So a check of the freeze
+     * `InvoiceFromTimeService` locks the entry, attaches the pivot and leaves
+     * `lock_version` untouched because attaching does not change the entry.
+     * The public version also includes the allocation, but a check of the freeze
      * outside a lock is a read that can be true when it is written and false
-     * when it is acted on - the allocation commits in between, the version
-     * still matches, and the write lands under a draft invoice that goes on
+     * when it is acted on - the allocation can commit after the version check,
+     * and the write lands under a draft invoice that goes on
      * charging the old quantity, or against an entry that has just been
      * deleted from beneath its own line.
      *
@@ -329,6 +330,7 @@ final class TimeEntryMutationService
             $lockedEntries = ClientTimeEntry::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('public_id', array_column($entries, 'id'))
+                ->with(TimeEntryAllocation::relations($workspace->id))
                 ->tap(Locks::forUpdate())
                 ->get()
                 ->keyBy('public_id');

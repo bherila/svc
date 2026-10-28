@@ -175,7 +175,7 @@ test_pnpm_is_installed_at_the_pinned_version_through_npm() (
   # fails behind the sandbox proxy; model that as a failure unless the switch guard is set.
   home="$scratch/pnpm-home"
   mkdir -p "$home" "$scratch/pnpm-repo"
-  printf '{"packageManager":"pnpm@12.11.2"}\n' > "$scratch/pnpm-repo/package.json"
+  printf '{"packageManager":"pnpm@12.15.0"}\n' > "$scratch/pnpm-repo/package.json"
   trace="$scratch/pnpm.trace"
   : > "$trace"
   cd "$scratch/pnpm-repo"
@@ -184,10 +184,10 @@ test_pnpm_is_installed_at_the_pinned_version_through_npm() (
   npm() { printf 'npm %s\n' "$*" >> "$trace"; installed=1; }
   pnpm() {
     [[ "${npm_config_manage_package_manager_versions:-}" == false ]] || return 99
-    if [[ "$installed" == 1 ]]; then echo 12.11.2; else echo 11.0.0; fi
+    if [[ "$installed" == 1 ]]; then echo 12.15.0; else echo 11.0.0; fi
   }
   ensure_pnpm
-  [[ "$(cat "$trace")" == 'npm install --global --prefix '"$home"'/.local --no-audit --no-fund pnpm@12.11.2' ]]
+  [[ "$(cat "$trace")" == 'npm install --global --prefix '"$home"'/.local --no-audit --no-fund pnpm@12.15.0' ]]
   # A second run finds the pinned version and installs nothing.
   : > "$trace"
   ensure_pnpm
