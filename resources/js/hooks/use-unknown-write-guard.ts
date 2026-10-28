@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { registerUnknownWriteHistoryGuard } from '@/lib/unknown-write-history';
 
 /** Preserve a write with an unknown outcome across browser navigation. */
 export function useUnknownWriteGuard(
@@ -6,21 +7,11 @@ export function useUnknownWriteGuard(
     onBlocked: () => void,
 ) {
     useEffect(() => {
-        const currentEntry = {
-            state: window.history.state,
-            href: window.location.href,
-        };
-        // Inertia restores popstate quietly, without emitting its before event.
-        // Capture before its bubble listener and put back the entry we are keeping.
-        const stopHistory = (event: PopStateEvent) => {
-            if (!unknown()) {
-                return;
-            }
-
-            event.stopImmediatePropagation();
-            window.history.pushState(currentEntry.state, '', currentEntry.href);
-            onBlocked();
-        };
+        const stopHistory = registerUnknownWriteHistoryGuard({
+            unknown,
+            blocked: onBlocked,
+            entry: { state: window.history.state, href: window.location.href },
+        });
         const stopNavigation = (event: Event) => {
             if (!unknown()) {
                 return;
@@ -53,14 +44,11 @@ export function useUnknownWriteGuard(
         };
         document.addEventListener('inertia:before', stopNavigation);
         window.addEventListener('beforeunload', stopUnload);
-        window.addEventListener('popstate', stopHistory, { capture: true });
 
         return () => {
             document.removeEventListener('inertia:before', stopNavigation);
             window.removeEventListener('beforeunload', stopUnload);
-            window.removeEventListener('popstate', stopHistory, {
-                capture: true,
-            });
+            stopHistory();
         };
     }, [unknown, onBlocked]);
 }
