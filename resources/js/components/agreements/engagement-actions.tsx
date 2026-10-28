@@ -225,7 +225,12 @@ export function ScheduleDraftForm({
 }: {
     href: string;
     companyId: string;
-    agreement: { id: string; version: string; billing_cadence: string };
+    agreement: {
+        id: string;
+        version: string;
+        billing_cadence: string;
+        currency: string;
+    };
     timezone: string;
 }) {
     const cadences = ['monthly', 'quarterly', 'semi_annual', 'annual'];
@@ -249,7 +254,7 @@ export function ScheduleDraftForm({
                 cadence,
                 next_run_on: nextRun,
                 due_days: 30,
-                currency: 'USD',
+                currency: agreement.currency,
                 is_active: true,
                 line_template: [
                     {

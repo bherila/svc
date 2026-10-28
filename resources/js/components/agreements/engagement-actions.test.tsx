@@ -136,6 +136,7 @@ describe('engagement API controls', () => {
                     id: 'synthetic-agreement',
                     version,
                     billing_cadence: 'quarterly',
+                    currency: 'EUR',
                 }}
             />,
         );
@@ -155,6 +156,7 @@ describe('engagement API controls', () => {
             client_agreement: 'synthetic-agreement',
             expected_version: version,
             cadence: 'quarterly',
+            currency: 'EUR',
             line_template: [{ unit_amount: 2500 }],
         });
     });

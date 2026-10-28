@@ -62,6 +62,7 @@ type Agreement = {
     version: string;
     activate_href: string | null;
     create_schedule_href: string | null;
+    currency: string;
     title: string;
     status: string;
     billing_cadence: string;
@@ -626,8 +627,8 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                 key={invoice.id}
                                                 className="rounded-2xl border border-slate-200 p-4"
                                             >
-                                                <div className="flex justify-between gap-3">
-                                                    <div>
+                                                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1 wrap-anywhere">
                                                         <h4 className="font-semibold">
                                                             {
                                                                 invoice.invoice_number
@@ -642,7 +643,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                             {invoice.status}
                                                         </p>
                                                     </div>
-                                                    <div className="flex gap-3 text-sm font-semibold text-cyan-700">
+                                                    <div className="flex shrink-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
                                                         <a
                                                             href={`/workspaces/${workspace.id}/invoices/${invoice.id}/pdf`}
                                                         >

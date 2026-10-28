@@ -249,6 +249,7 @@ class WorkspaceOperationsController extends Controller
                         'create_schedule_href' => $canManage && $agreement->status === 'active' && ! $schedules->contains('client_agreement_id', $agreement->id) ? route('agent-api.v1.billing-schedules.store', [$workspace], absolute: false) : null,
                         'status' => $agreement->status,
                         'billing_cadence' => $agreement->billing_cadence,
+                        'currency' => $agreement->currency,
                         'attachments' => $attachmentPayload('agreement', $agreement->public_id),
                         'attachment_panel' => $filePanel('agreement', $agreement->public_id),
                     ])
