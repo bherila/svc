@@ -115,10 +115,12 @@ function useProjectWrite() {
         );
 
         if (!result.ok) {
-            original.uncertain ||=
-                result.status === 0 ||
-                result.status === 408 ||
-                result.status >= 500;
+            original.uncertain =
+                result.status !== 422 &&
+                (original.uncertain ||
+                    result.status === 0 ||
+                    result.status === 408 ||
+                    result.status >= 500);
             setUnresolved(original.uncertain);
             setFailure(
                 Object.values(result.errors ?? {})
@@ -130,6 +132,21 @@ function useProjectWrite() {
                 attempt.current = null;
             }
 
+            setBusy(false);
+
+            return null;
+        }
+
+        if (
+            !result.data ||
+            typeof result.data.version !== 'string' ||
+            typeof result.data.name !== 'string'
+        ) {
+            original.uncertain = true;
+            setUnresolved(true);
+            setFailure(
+                'SVC’s response could not be read. Check the original change.',
+            );
             setBusy(false);
 
             return null;

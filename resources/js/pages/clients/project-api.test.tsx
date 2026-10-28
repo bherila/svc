@@ -135,7 +135,13 @@ describe('project settings API mutations', () => {
         fetchMock.mockRejectedValueOnce(
             new TypeError('synthetic network loss'),
         );
-        respond(201, { data: {} });
+        respond(201, {
+            data: {
+                ...props.projects[0],
+                name: 'Synthetic New Project',
+                version: 'b'.repeat(64),
+            },
+        });
         render(<ClientSettings {...props} />);
         fireEvent.change(screen.getByLabelText('New project'), {
             target: { value: 'Synthetic New Project' },
@@ -313,5 +319,54 @@ describe('project settings API mutations', () => {
         await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
         expect(request(1).body.name).toBe('Corrected project');
         expect(request(1).key).not.toBe(request(0).key);
+    });
+    it('unlocks an uncertain edit after a definitive validation refusal', async () => {
+        fetchMock.mockRejectedValueOnce(
+            new TypeError('synthetic lost response'),
+        );
+        respond(422, { message: 'Correct the project name.' });
+        respond(200, {
+            data: {
+                ...props.projects[0],
+                name: 'Corrected project',
+                version: 'b'.repeat(64),
+            },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project save' }),
+        );
+        await waitFor(() =>
+            expect(
+                screen.getByLabelText('Name of Synthetic Project'),
+            ).toBeEnabled(),
+        );
+        fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+            target: { value: 'Corrected project' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(0)).toEqual(request(1));
+        expect(request(2).key).not.toBe(request(0).key);
+        expect(request(2).body.name).toBe('Corrected project');
+    });
+
+    it('keeps a receipt pending when a successful response has no usable project', async () => {
+        respond(200, { data: null });
+        respond(200, {
+            data: { ...props.projects[0], version: 'b'.repeat(64) },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'could not be read',
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project save' }),
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(0)).toEqual(request(1));
     });
 });
