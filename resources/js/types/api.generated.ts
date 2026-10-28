@@ -165,7 +165,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
+        /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged. */
         get: operations['attachments.list'];
         put?: never;
         post?: never;
@@ -704,7 +704,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation. */
+        /** @description Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs. Portal narrows to client-safe metadata and controls even for owner previews. Bearer/MCP callers cannot select this representation. Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation. */
         get: operations['collaboration.attachments.list'];
         put?: never;
         post?: never;
@@ -2753,12 +2753,21 @@ export interface components {
             data: components['schemas']['AttachmentDownloadUrl'];
         };
         AttachmentListResponse: {
-            data: components['schemas']['Attachment'][];
-            parent_version: string;
-            meta: {
+            data:
+                | components['schemas']['Attachment'][]
+                | components['schemas']['NativeAttachmentPanel'];
+            parent_version?: string;
+            meta?: {
                 next_cursor: string | null;
             };
-        };
+        } & (
+            | {
+                  data: components['schemas']['Attachment'][];
+              }
+            | {
+                  data: components['schemas']['NativeAttachmentPanel'];
+              }
+        );
         AttachmentResponse: {
             data: components['schemas']['Attachment'];
         };
@@ -2987,12 +2996,21 @@ export interface components {
             confirm: true;
         };
         CollaborationAttachmentListResponse: {
-            data: components['schemas']['CollaborationAttachment'][];
-            parent_version: string;
-            meta: {
+            data:
+                | components['schemas']['CollaborationAttachment'][]
+                | components['schemas']['NativeAttachmentPanel'];
+            parent_version?: string;
+            meta?: {
                 next_cursor: string | null;
             };
-        };
+        } & (
+            | {
+                  data: components['schemas']['CollaborationAttachment'][];
+              }
+            | {
+                  data: components['schemas']['NativeAttachmentPanel'];
+              }
+        );
         CollaborationAttachmentPreview: {
             data: components['schemas']['CollaborationAttachment'][];
             parent_version: components['schemas']['Version'];
@@ -4332,6 +4350,54 @@ export interface components {
         };
         MissingBilledOverageAuditResponse: {
             data: components['schemas']['MissingBilledOverageAudit'];
+        };
+        NativeAttachment: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            record_type:
+                | 'company'
+                | 'project'
+                | 'task'
+                | 'proposal'
+                | 'agreement'
+                | 'invoice'
+                | 'topic'
+                | 'comment';
+            /** Format: uuid */
+            record_id: string;
+            filename: string;
+            media_type: string;
+            bytes: number;
+            sha256: string;
+            /** @enum {string} */
+            status: 'staged' | 'available' | 'deleting' | 'deleted' | 'corrupt';
+            version: string;
+            /** Format: date-time */
+            uploaded_at: string | null;
+            download_href: string;
+            delete_href: string | null;
+            sharing: {
+                is_visible_to_client: boolean;
+                effective_visible_to_client: boolean;
+                sharing_note: string | null;
+                version: string;
+                parent_version: string;
+                update_href: string;
+            } | null;
+            deletion: {
+                expected_version: string;
+                expected_parent_version?: string;
+            } | null;
+        };
+        NativeAttachmentPanel: {
+            files: components['schemas']['NativeAttachment'][];
+            upload: {
+                href: string;
+                parent_version: string;
+            } | null;
+            parent_version: string;
+            next_href: string | null;
         };
         OpeningRolloverAudit: {
             agreements: number;
@@ -6675,6 +6741,10 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                /** @description Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused. */
+                presentation?: 'native' | 'portal';
+                /** @description Required only for the portal panel representation; exact current company and parent access is rechecked. */
+                client?: string;
             };
             header?: never;
             path: {
@@ -6694,7 +6764,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
+            /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -8801,6 +8871,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                /** @description Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused. */
+                presentation?: 'native' | 'portal';
             };
             header?: never;
             path: {

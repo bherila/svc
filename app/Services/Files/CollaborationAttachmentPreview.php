@@ -67,7 +67,7 @@ final class CollaborationAttachmentPreview
             }
             $canWrite = ! $agent && $audience === AttachmentAudience::Internal && $publisher && AttachmentSharingGate::available();
             $page = $agent ? route('agent-api.v1.collaboration.attachments.index', $parameters, absolute: false)
-                : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', $readParameters, absolute: false);
+                : route('agent-api.v1.collaboration.attachments.index', [...$parameters, 'presentation' => $portal ? 'portal' : 'native'], absolute: false);
             if ($agent) {
                 $panels[$comment->public_id] = ['data' => $files, 'parent_version' => AgentApiVersion::for($comment),
                     'next_href' => $rows->count() > 3 ? $page : null];

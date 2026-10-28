@@ -10,10 +10,8 @@ use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentAttachmentService;
 use App\Support\AgentApi\AgentApiVersion;
-use App\Support\AgentApi\AgentPageBudget;
-use App\Support\AgentApi\CursorPage;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -22,7 +20,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 final class AttachmentSharingNativeView
 {
     public function __construct(private readonly AttachmentSharingTransport $files, private readonly AttachmentReader $reader,
-        private readonly AttachmentSharingPresenter $presenter) {}
+        private readonly AttachmentSharingPresenter $presenter, private readonly AgentAttachmentService $legacyFiles) {}
 
     /** @return array<string,mixed> */
     public function collaboration(User $actor, Workspace $workspace, AttachmentParentReference $reference,
@@ -58,7 +56,8 @@ final class AttachmentSharingNativeView
         return ['files' => $files, 'parent_version' => AgentApiVersion::for($view->parent),
             'upload' => $canWrite ? ['href' => route('agent-api.v1.collaboration.attachments.upload-url', ['workspace' => $workspace, 'client' => $reference->companyId, 'recordType' => $reference->type, 'recordPublicId' => $reference->publicId], absolute: false),
                 'parent_version' => AgentApiVersion::for($view->parent)] : null,
-            'next_href' => $cursor === null ? null : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', [...$readParameters,
+            'next_href' => $cursor === null ? null : route('agent-api.v1.collaboration.attachments.index', ['workspace' => $workspace, 'client' => $reference->companyId,
+                'recordType' => $reference->type, 'recordPublicId' => $reference->publicId, 'presentation' => $portal ? 'portal' : 'native',
                 'limit' => $page->limit, 'cursor' => $cursor], absolute: false)];
     }
 
@@ -103,16 +102,23 @@ final class AttachmentSharingNativeView
         $parent = $this->portalParent($actor, $company, $type, $id);
         $workspace = $company->workspace;
         $audience = $this->reader->nativePortalAudience($actor, $workspace);
-        $query = $this->reader->forParent($actor, $workspace, $type, $id, $audience);
         $page ??= AttachmentPageQuery::fromInput(['limit' => 25]);
         $parameters = ['clientCompany' => $company, 'recordType' => $type, 'recordPublicId' => $id];
-        $result = CursorPage::run($workspace, implode(':', ['native-portal-files', $company->public_id, $type, $id, $actor->public_id, $audience->name, 'id-desc']), $page->limit, $page->cursor,
-            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $rows) => $rows->where('id', '<', $after))->orderByDesc('id')->limit($take)->get(),
-            fn (ClientAttachment $file): array => AttachmentMetadata::native($file, route('portal.files.parent.download', [...$parameters, 'attachment' => $file->public_id], absolute: false), null, null),
-            maxDataBytes: AgentPageBudget::dataBytes(), allowLegacyCursor: false);
+        $result = $this->legacyFiles->listingForAudience($actor, $workspace, $type, $id, $audience, $page);
+        $rows = $this->reader->forParent($actor, $workspace, $type, $id, $audience)
+            ->whereIn('public_id', array_column($result['data'], 'id'))->get()->keyBy('public_id');
+        $files = [];
+        foreach ($result['data'] as $metadata) {
+            $file = $rows->get($metadata['id']);
+            if ($file instanceof ClientAttachment) {
+                $files[] = AttachmentMetadata::native($file, route('portal.files.parent.download', [...$parameters, 'attachment' => $file->public_id], absolute: false), null, null);
+            }
+        }
 
-        return ['files' => $result['data'], 'upload' => null, 'parent_version' => AgentApiVersion::for($parent),
-            'next_href' => $result['meta']['next_cursor'] === null ? null : route('portal.files.parent.index', [...$parameters, 'limit' => $page->limit, 'cursor' => $result['meta']['next_cursor']], absolute: false)];
+        return ['files' => $files, 'upload' => null, 'parent_version' => AgentApiVersion::for($parent),
+            'next_href' => $result['meta']['next_cursor'] === null ? null : route('agent-api.v1.attachments.index', ['workspace' => $workspace,
+                'recordType' => $type, 'recordPublicId' => $id, 'presentation' => 'portal', 'client' => $company->public_id,
+                'limit' => $page->limit, 'cursor' => $result['meta']['next_cursor']], absolute: false)];
     }
 
     /** Commercial pages may remain readable for repairing malformed old project references.
@@ -134,14 +140,21 @@ final class AttachmentSharingNativeView
 
     /** Native pages use canonical API write capabilities.
      * @return array<string,mixed> */
-    public function legacy(User $actor, Workspace $workspace, AttachmentParentReference $reference, int $page = 1): array
+    public function legacy(User $actor, Workspace $workspace, AttachmentParentReference $reference, ?AttachmentPageQuery $page = null): array
     {
         abort_unless(in_array($reference->type, ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'], true), 404);
         $view = $this->presenter->view($actor, $workspace, $reference, AttachmentAudience::Internal);
+        $page ??= AttachmentPageQuery::fromInput([]);
+        $result = $this->legacyFiles->listingForAudience($actor, $workspace, $reference->type, $reference->publicId, AttachmentAudience::Internal, $page);
+        $ids = array_column($result['data'], 'id');
         $rows = $this->reader->forParent($actor, $workspace, $reference->type, $reference->publicId, AttachmentAudience::Internal)
-            ->orderByDesc('id')->simplePaginate(100, ['*'], 'page', $page);
+            ->whereIn('public_id', $ids)->get()->keyBy('public_id');
         $files = [];
-        foreach ($rows->items() as $file) {
+        foreach ($ids as $id) {
+            $file = $rows->get($id);
+            if (! $file instanceof ClientAttachment) {
+                continue;
+            }
             $files[] = AttachmentMetadata::native($file, route('svc.files.download', [$workspace, $file->public_id], absolute: false),
                 $view->canPublish ? route('agent-api.v1.attachments.destroy', [$workspace, $file->public_id], absolute: false) : null,
                 $this->presenter->nativeControl($file, $view, route('agent-api.v1.attachments.visibility.update', [
@@ -151,6 +164,6 @@ final class AttachmentSharingNativeView
 
         return ['files' => $files, 'upload' => $view->canPublish ? ['href' => route('agent-api.v1.attachments.upload-url', $parameters, absolute: false),
             'parent_version' => AgentApiVersion::for($view->parent)] : null, 'parent_version' => AgentApiVersion::for($view->parent),
-            'next_href' => $rows->hasMorePages() ? route('svc.files.parent.index', [...$parameters, 'page' => $page + 1], absolute: false) : null];
+            'next_href' => $result['meta']['next_cursor'] !== null ? route('agent-api.v1.attachments.index', [...$parameters, 'presentation' => 'native', 'limit' => $page->limit, 'cursor' => $result['meta']['next_cursor']], absolute: false) : null];
     }
 }

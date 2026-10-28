@@ -71,9 +71,17 @@ final class AgentAttachmentService
     {
         $this->authorize($user, $workspace, origin: $origin);
         $this->validateRecord($type, $id);
+
+        return $this->listingForAudience($user, $workspace, $type, $id, $this->audience($user, $workspace, $origin), $page);
+    }
+
+    /** Current parent policy authorizes native readers independently of agent manager policy.
+     * @return array<string,mixed> */
+    public function listingForAudience(User|AgentPrincipal $user, Workspace $workspace, string $type, string $id,
+        AttachmentAudience $audience, ?AttachmentPageQuery $page = null): array
+    {
         $record = $this->records->resolve($workspace, $type, $id);
         $page ??= AttachmentPageQuery::fromInput([]);
-        $audience = $this->audience($user, $workspace, $origin);
         $query = $this->reader->forParent($user, $workspace, $type, $id, $audience);
         $result = CursorPage::run($workspace, 'attachments:'.$type.':'.$id.':'.$user->public_id.':'.$audience->name.':available:id-desc', $page->limit, $page->cursor,
             fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $rows) => $rows->where('id', '<', $after))

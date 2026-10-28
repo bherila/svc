@@ -2,18 +2,23 @@
 
 namespace Tests\Feature\Files;
 
+use App\Models\ClientAttachment;
 use App\Models\ClientCollaborationTopic;
 use App\Models\ClientInvoice;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
+use App\Services\Files\AttachmentMutationOrigin;
+use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentPrivacyLatch;
+use App\Services\Files\AttachmentSharingTransport;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\BuildsSyntheticExpenses;
@@ -81,11 +86,11 @@ final class AttachmentSharingNativeTest extends TestCase
         $portal = $this->syntheticUser('native-sharing-portal');
         $company->portalUsers()->attach($portal->id, ['role' => 'viewer', 'access_scope' => 'company']);
         $portalParameters = ['clientCompany' => $company, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
-        $this->actingAs($portal, 'web')->getJson(route('portal.files.collaboration.index', $portalParameters))->assertOk()->assertJsonCount(0, 'files')->assertJsonPath('upload', null);
+        $this->actingAs($portal, 'web')->nativeFileJson('GET', route('agent-api.v1.collaboration.attachments.index', [$workspace, $company->public_id, 'topic', $topic->public_id, 'presentation' => 'portal']), [])->assertOk()->assertJsonCount(0, 'data.files')->assertJsonPath('data.upload', null);
         $this->get(route('portal.files.collaboration.download', [...$portalParameters, 'attachment' => $created['id']]))->assertNotFound();
         $this->actingAs($owner, 'web')->withHeader('Idempotency-Key', 'synthetic-portal-share')
             ->nativeFileJson('PATCH', route('agent-api.v1.collaboration.attachments.visibility.update', [$workspace, $company->public_id, 'topic', $topic->public_id, $created['id']]), ['is_visible_to_client' => true, 'expected_version' => $created['version'], 'expected_parent_version' => $version])->assertOk();
-        $this->actingAs($portal, 'web')->getJson(route('portal.files.collaboration.index', $portalParameters))->assertOk()->assertJsonCount(1, 'files')->assertJsonPath('files.0.sharing', null)->assertJsonPath('files.0.delete_href', null)->assertJsonPath('upload', null);
+        $this->actingAs($portal, 'web')->nativeFileJson('GET', route('agent-api.v1.collaboration.attachments.index', [$workspace, $company->public_id, 'topic', $topic->public_id, 'presentation' => 'portal']), [])->assertOk()->assertJsonCount(1, 'data.files')->assertJsonPath('data.files.0.sharing', null)->assertJsonPath('data.files.0.delete_href', null)->assertJsonPath('data.upload', null);
         $topic->update(['is_visible_to_client' => false]);
         $this->get(route('portal.files.collaboration.download', [...$portalParameters, 'attachment' => $created['id']]))->assertNotFound();
     }
@@ -160,9 +165,9 @@ final class AttachmentSharingNativeTest extends TestCase
             $this->actingAs($portal, 'web')->get($detail)->assertOk()->assertInertia(fn (Assert $page) => $page
                 ->has('attachment_panel.files', 2)->where('attachment_panel.upload', null)->where('attachment_panel.files.0.sharing', null)
                 ->where('attachment_panel.files.0.delete_href', null)->where('attachment_panel.files.0.id', $files[2]->public_id));
-            $first = $this->getJson(route('portal.files.parent.index', $parameters + ['limit' => 1]))->assertOk()->assertJsonCount(1, 'files')->json();
+            $first = $this->nativeFileJson('GET', route('agent-api.v1.attachments.index', [$workspace, $type, $parent->public_id, 'presentation' => 'portal', 'client' => $company->public_id, 'limit' => 1]), [])->assertOk()->assertJsonCount(1, 'data.files')->json('data');
             $this->assertNotNull($first['next_href']);
-            $this->getJson($first['next_href'])->assertOk()->assertJsonCount(1, 'files')->assertJsonPath('files.0.id', $files[1]->public_id)->assertJsonPath('next_href', null);
+            $this->nativeFileJson('GET', $first['next_href'], [])->assertOk()->assertJsonCount(1, 'data.files')->assertJsonPath('data.files.0.id', $files[1]->public_id)->assertJsonPath('data.next_href', null);
             $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[2]->public_id]))->assertOk()->assertStreamedContent('Synthetic commercial bytes');
             $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[0]->public_id]))->assertNotFound();
             if ($type === 'proposal') {
@@ -176,7 +181,7 @@ final class AttachmentSharingNativeTest extends TestCase
                 DB::table('client_company_memberships')->where('id', $membership->id)->update(['access_scope' => 'company']);
             }
 
-            $this->getJson(route('portal.files.parent.index', [...$parameters, 'clientCompany' => $sibling]))->assertNotFound();
+            $this->nativeFileJson('GET', route('agent-api.v1.attachments.index', [$workspace, $type, $parent->public_id, 'presentation' => 'portal', 'client' => $sibling->public_id]), [])->assertNotFound();
             $this->get(route('portal.files.parent.download', [...$parameters, 'clientCompany' => $sibling, 'attachment' => $files[2]->public_id]))->assertNotFound();
             DB::table($parent->getTable())->where('workspace_id', $workspace->id)->where('id', $parent->id)->update(['is_visible_to_client' => false]);
             DB::enableQueryLog();
@@ -208,7 +213,7 @@ final class AttachmentSharingNativeTest extends TestCase
         $fileQueries = array_filter(DB::getQueryLog(), fn (array $query): bool => str_contains($query['query'], 'client_attachments'));
         DB::disableQueryLog();
         $this->assertSame([], $fileQueries);
-        $this->getJson(route('portal.files.parent.index', [$company, 'proposal', $proposal->public_id]))->assertNotFound();
+        $this->nativeFileJson('GET', route('agent-api.v1.attachments.index', [$workspace, 'proposal', $proposal->public_id, 'presentation' => 'portal', 'client' => $company->public_id]), [])->assertNotFound();
     }
 
     public function test_portal_project_and_task_file_leaves_follow_current_grants_and_ancestry_without_company_disclosure(): void
@@ -245,7 +250,7 @@ final class AttachmentSharingNativeTest extends TestCase
         $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('projects.0.files_href', route('portal.files.parent.show', [$company, 'project', $project->public_id], absolute: false))->has('tasks', 2));
         $this->get(route('portal.files.parent.show', [$company, 'company', $company->public_id]))->assertNotFound();
-        $this->getJson(route('portal.files.parent.index', [$company, 'company', $company->public_id]))->assertNotFound();
+        $this->nativeFileJson('GET', route('agent-api.v1.attachments.index', [$workspace, 'company', $company->public_id, 'presentation' => 'portal', 'client' => $company->public_id]), [])->assertNotFound();
         DB::table('client_tasks')->where('workspace_id', $workspace->id)->where('id', $task->id)->update(['is_visible_to_client' => false]);
         $this->get($held['task'])->assertNotFound();
         $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->has('tasks', 0));
@@ -254,6 +259,98 @@ final class AttachmentSharingNativeTest extends TestCase
         $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->has('projects', 0)->has('tasks', 0));
         $sibling = $this->syntheticCompany($workspace, 'project-task-file-sibling');
         $this->get(route('portal.files.parent.show', [$sibling, 'project', $project->public_id]))->assertNotFound();
+    }
+
+    public function test_native_cursor_continuations_preserve_contributor_access_and_current_parent_authority(): void
+    {
+        [$workspace, $company, $project, $owner] = $this->fixture();
+        $files = [];
+        foreach (range(1, 3) as $number) {
+            $files[] = app(AttachmentStorageService::class)->store($workspace, $project, UploadedFile::fake()->createWithContent('Synthetic-page-'.$number.'.txt', 'Synthetic cursor bytes'), $owner);
+        }
+        $contributor = $this->syntheticMember($workspace, 'pagination-contributor', 'member');
+        $membership = ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
+        config(['agent_api.writes_enabled' => false, 'agent_api.file_writes_enabled' => false, 'svc.attachments.sharing_writes_enabled' => false]);
+        $this->actingAs($contributor, 'web');
+        $url = route('agent-api.v1.attachments.index', [$workspace, 'project', $project->public_id, 'presentation' => 'native', 'limit' => 1]);
+        $first = $this->nativeFileJson('GET', $url, [])->assertOk()->assertJsonCount(1, 'data.files')
+            ->assertJsonPath('data.files.0.id', $files[2]->public_id)->assertJsonPath('data.files.0.sharing', null)
+            ->assertJsonPath('data.files.0.delete_href', null)->assertJsonPath('data.upload', null)->json('data');
+        $this->assertStringContainsString('/api/v1/', $first['next_href']);
+        $this->assertStringContainsString('presentation=native', $first['next_href']);
+        $this->assertStringContainsString('cursor=', $first['next_href']);
+        $second = $this->nativeFileJson('GET', $first['next_href'], [])->assertOk()->assertJsonCount(1, 'data.files')
+            ->assertJsonPath('data.files.0.id', $files[1]->public_id)->json('data');
+        $this->nativeFileJson('GET', $second['next_href'], [])->assertOk()->assertJsonPath('data.files.0.id', $files[0]->public_id)->assertJsonPath('data.next_href', null);
+        $this->get($first['files'][0]['download_href'])->assertOk()->assertStreamedContent('Synthetic cursor bytes');
+        $foreign = $this->syntheticWorkspace('pagination-foreign');
+        $this->nativeFileJson('GET', route('agent-api.v1.attachments.index', [$foreign, 'project', $project->public_id, 'presentation' => 'native']), [])->assertNotFound();
+        $sibling = $this->syntheticProject($company, 'pagination-sibling');
+        $this->nativeFileJson('GET', str_replace($project->public_id, $sibling->public_id, $first['next_href']), [])->assertNotFound();
+        $membership->delete();
+        $this->nativeFileJson('GET', $first['next_href'], [])->assertNotFound()->assertDontSee('Synthetic-page', false);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    public function test_owner_portal_projection_stays_safe_and_cursors_cannot_change_audience_or_actor(): void
+    {
+        [$workspace, $company, $project, $owner, $topic] = $this->fixture();
+        $project->update(['is_visible_to_client' => true]);
+        // Collaboration retains its exact Portal membership policy, including owner previews.
+        $company->portalUsers()->attach($owner->id, ['role' => 'viewer', 'access_scope' => 'company']);
+        $topic->update(['is_visible_to_client' => true]);
+        foreach ([$project, $topic] as $parent) {
+            foreach (range(1, 3) as $number) {
+                $upload = UploadedFile::fake()->createWithContent($number === 3 ? 'Synthetic-private-name.txt' : 'Synthetic-public-'.$number.'.txt', 'Synthetic safe preview');
+                if ($parent === $topic) {
+                    $created = app(AttachmentSharingTransport::class)->upload($owner, $workspace, new AttachmentParentReference('topic', $topic->public_id, $company->public_id), $upload,
+                        ['expected_version' => AgentApiVersion::for($topic)], 'synthetic-pagination', 'synthetic-preview-'.$number, AttachmentMutationOrigin::Native);
+                    $file = ClientAttachment::query()->where('workspace_id', $workspace->id)->where('public_id', $created['data']['id'])->firstOrFail();
+                } else {
+                    $file = app(AttachmentStorageService::class)->store($workspace, $parent, $upload, $owner);
+                }
+                DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $file->id)->update(['is_visible_to_client' => $number !== 3]);
+            }
+            $collaboration = $parent === $topic;
+            $url = $collaboration
+                ? route('agent-api.v1.collaboration.attachments.index', [$workspace, $company->public_id, 'topic', $topic->public_id, 'presentation' => 'portal', 'limit' => 1])
+                : route('agent-api.v1.attachments.index', [$workspace, 'project', $project->public_id, 'presentation' => 'portal', 'client' => $company->public_id, 'limit' => 1]);
+            $this->actingAs($owner, 'web');
+            $first = $this->nativeFileJson('GET', $url, [])->assertOk()->assertJsonCount(1, 'data.files')
+                ->assertJsonPath('data.files.0.sharing', null)->assertJsonPath('data.files.0.deletion', null)->assertJsonPath('data.upload', null)
+                ->assertDontSee('Synthetic-private-name', false)->json('data');
+            $this->nativeFileJson('GET', $first['next_href'], [])->assertOk()->assertJsonCount(1, 'data.files')->assertJsonPath('data.next_href', null)->assertDontSee('Synthetic-private-name', false);
+            $this->nativeFileJson('GET', str_replace('presentation=portal', 'presentation=native', $first['next_href']), [])->assertUnprocessable();
+            $viewer = $this->syntheticUser('pagination-portal-'.($collaboration ? 'topic' : 'project'));
+            $company->portalUsers()->attach($viewer->id, ['role' => 'viewer', 'access_scope' => 'company']);
+            $this->actingAs($viewer, 'web');
+            $this->nativeFileJson('GET', $first['next_href'], [])->assertUnprocessable();
+            $this->nativeFileJson('GET', $url, [])->assertOk()->assertDontSee('Synthetic-private-name', false)->assertJsonPath('data.upload', null);
+            $this->nativeFileJson('GET', str_replace('presentation=portal', 'presentation=native', $url), [])->assertNotFound();
+            $this->actingAs($owner, 'web');
+            DB::table($parent->getTable())->where('workspace_id', $workspace->id)->where('id', $parent->id)->update(['is_visible_to_client' => false]);
+            $this->nativeFileJson('GET', $first['next_href'], [])->assertNotFound()->assertDontSee('Synthetic-public', false);
+            if (! $collaboration) {
+                $project->refresh()->update(['is_visible_to_client' => true]);
+            }
+        }
+    }
+
+    public function test_bearer_cannot_forge_native_panel_representation_or_widen_ordinary_agent_reads(): void
+    {
+        [$workspace, $company, $project, $owner, $topic] = $this->fixture();
+        $file = app(AttachmentStorageService::class)->store($workspace, $project, UploadedFile::fake()->createWithContent('Synthetic-agent-file.txt', 'Synthetic agent bytes'), $owner);
+        $this->actingAsMcp($owner, ['files:read', 'collaboration:read']);
+        foreach (['native', 'portal'] as $presentation) {
+            $this->getJson(route('agent-api.v1.attachments.index', [$workspace, 'project', $project->public_id, 'presentation' => $presentation, 'client' => $company->public_id, 'svc_first_party_session' => true]))->assertForbidden();
+            $this->getJson(route('agent-api.v1.collaboration.attachments.index', [$workspace, $company->public_id, 'topic', $topic->public_id, 'presentation' => $presentation]))->assertForbidden();
+        }
+        $this->getJson(route('agent-api.v1.attachments.index', [$workspace, 'project', $project->public_id]))->assertOk()
+            ->assertJsonPath('data.0.id', $file->public_id)->assertJsonStructure(['data', 'parent_version', 'meta' => ['next_cursor']])
+            ->assertJsonMissingPath('data.0.download_href')->assertJsonMissingPath('data.0.sharing');
+        foreach (['svc.files.parent.index', 'svc.files.collaboration.index', 'portal.files.parent.index', 'portal.files.collaboration.index'] as $route) {
+            $this->assertFalse(Route::has($route));
+        }
     }
 
     private function fixture(): array
