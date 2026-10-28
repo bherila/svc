@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* global process */
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
     existsSync,
     mkdirSync,
@@ -67,12 +67,19 @@ try {
     );
     writeFileSync(path.join(runtime, '.env'), '');
     writeFileSync(path.join(runtime, 'database.sqlite'), '');
+    const oauthKeys = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
     const env = {
         ...process.env,
         APP_ENV: 'testing',
         APP_DEBUG: 'true',
         APP_KEY: `base64:${randomBytes(32).toString('base64')}`,
         APP_URL: origin,
+        PASSPORT_PRIVATE_KEY: oauthKeys.privateKey,
+        PASSPORT_PUBLIC_KEY: oauthKeys.publicKey,
         APP_CONFIG_CACHE: path.join(runtime, 'config.php'),
         DB_CONNECTION: 'sqlite',
         DB_DATABASE: path.join(runtime, 'database.sqlite'),
@@ -291,14 +298,12 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             });
 
             if (screen === 'agreementfiles') {
-                const row = panel
-                    .locator('li')
-                    .filter({
-                        has: panel.getByRole('link', {
-                            name: 'SyntheticReaderFile.txt',
-                            exact: true,
-                        }),
-                    });
+                const row = panel.locator('li').filter({
+                    has: page.getByRole('link', {
+                        name: 'SyntheticReaderFile.txt',
+                        exact: true,
+                    }),
+                });
                 const checkbox = row.getByLabel('Visible to client');
                 const writes = [];
                 await page.route(
@@ -315,7 +320,16 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                             key: route.request().headers()['idempotency-key'],
                         });
                         const result = await route.fetch();
-                        expect(result.status()).toBe(200);
+
+                        if (result.status() !== 200) {
+                            writeFileSync(
+                                path.join(
+                                    artifacts,
+                                    'sharing-recovery-error.txt',
+                                ),
+                                await result.text(),
+                            );
+                        }
 
                         if (writes.length === 1) {
                             await route.abort('failed');

@@ -257,7 +257,24 @@ function RemoveAttachment({ file }: { file: SharedAttachment }) {
         }
 
         try {
-            await refreshPageProps({ requireSuccess: true });
+            await refreshPageProps({
+                only: [
+                    'files',
+                    'files_next_href',
+                    'files_previous_href',
+                    'upload',
+                    'attachment_upload',
+                    'attachment_panel',
+                    'clients',
+                    'topic',
+                    'thread',
+                    'agreement',
+                    'proposal',
+                    'invoice',
+                    'expense',
+                ],
+                requireSuccess: true,
+            });
             attempt.current = null;
             setUnresolved(false);
             setAccepted(false);
@@ -345,7 +362,24 @@ export function UploadAttachment({
 
     async function refreshRecorded(original: { uncertain: boolean }) {
         try {
-            await refreshPageProps({ requireSuccess: true });
+            await refreshPageProps({
+                only: [
+                    'files',
+                    'files_next_href',
+                    'files_previous_href',
+                    'upload',
+                    'attachment_upload',
+                    'attachment_panel',
+                    'clients',
+                    'topic',
+                    'thread',
+                    'agreement',
+                    'proposal',
+                    'invoice',
+                    'expense',
+                ],
+                requireSuccess: true,
+            });
             attempt.current = null;
             setFile(null);
 
