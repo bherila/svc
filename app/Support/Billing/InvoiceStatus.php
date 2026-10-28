@@ -28,6 +28,7 @@ enum InvoiceStatus: string
     case Issued = 'issued';
     case PartiallyPaid = 'partially_paid';
     case Paid = 'paid';
+    case Disputed = 'disputed';
     case Void = 'void';
 
     /**
@@ -50,7 +51,7 @@ enum InvoiceStatus: string
      */
     public static function settled(): array
     {
-        return [self::Issued->value, self::PartiallyPaid->value, self::Paid->value, self::Void->value];
+        return [self::Issued->value, self::PartiallyPaid->value, self::Paid->value, self::Disputed->value, self::Void->value];
     }
 
     /**
@@ -65,17 +66,41 @@ enum InvoiceStatus: string
      */
     public static function charged(): array
     {
-        return [self::Issued->value, self::PartiallyPaid->value, self::Paid->value];
+        return [self::Issued->value, self::PartiallyPaid->value, self::Paid->value, self::Disputed->value];
     }
 
     /**
-     * Statuses with money still outstanding.
+     * Undisputed statuses where collection may proceed. A dispute pauses
+     * collection even when the invoice still has an outstanding balance.
      *
      * @return list<string>
      */
     public static function collectible(): array
     {
         return [self::Issued->value, self::PartiallyPaid->value];
+    }
+
+    /**
+     * Already-received replacement money can be recorded during a dispute.
+     * This is separate from initiating collection or sending reminders.
+     *
+     * @return list<string>
+     */
+    public static function recordable(): array
+    {
+        return [self::Issued->value, self::PartiallyPaid->value, self::Disputed->value];
+    }
+
+    /** Derive a known invoice's state from its current payment facts. */
+    public function withPayments(int $paid, int $total, bool $hasDispute): self
+    {
+        return match ($this) {
+            self::Void => self::Void,
+            self::Draft => throw new \DomainException('A draft invoice must be issued before accepting payment.'),
+            self::Issued, self::PartiallyPaid, self::Paid, self::Disputed => $hasDispute
+                ? self::Disputed
+                : ($paid >= $total ? self::Paid : ($paid > 0 ? self::PartiallyPaid : self::Issued)),
+        };
     }
 
     /**
@@ -89,7 +114,7 @@ enum InvoiceStatus: string
      */
     public static function live(): array
     {
-        return [self::Draft->value, self::Issued->value, self::PartiallyPaid->value, self::Paid->value];
+        return [self::Draft->value, self::Issued->value, self::PartiallyPaid->value, self::Paid->value, self::Disputed->value];
     }
 
     public function isSettled(): bool

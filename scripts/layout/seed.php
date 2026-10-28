@@ -310,6 +310,11 @@ app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPa
     'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
 ]));
 
+if (getenv('SVC_LAYOUT_DISPUTES') === '1') {
+    $service->setPaymentDisputed($layoutPayment, 500, $workspace);
+    $service->setPaymentDisputed($squareInvoice->payments()->sole(), 345, $workspace);
+}
+
 // Payment reminders (#438): an open invoice of a client with the cadence on,
 // and a logged reminder of every kind with oversized recipients and reasons.
 $company->forceFill(['payment_reminders_enabled_at' => CarbonImmutable::parse($date)->subMonth()])->save();
