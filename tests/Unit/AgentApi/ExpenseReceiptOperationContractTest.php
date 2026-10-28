@@ -12,6 +12,15 @@ use Tests\TestCase;
 
 final class ExpenseReceiptOperationContractTest extends TestCase
 {
+    public function test_upload_preparation_still_requires_manager_authority_and_the_expense_write_cutover(): void
+    {
+        $catalog = new AgentOperationCatalog;
+        $operation = $catalog->registry()->find('expenses.receipts.upload_url');
+        $this->assertNotNull($operation);
+        $this->assertTrue($catalog->isManagerOnly($operation->id));
+        $this->assertSame([AgentDeploymentFlags::EXPENSES, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:expenses.receipts.upload_url'], $operation->requirement->flags);
+    }
+
     public function test_receipt_delete_publishes_the_exact_versioned_confirmed_expense_authority_contract(): void
     {
         $catalog = new AgentOperationCatalog;
@@ -35,6 +44,7 @@ final class ExpenseReceiptOperationContractTest extends TestCase
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $published = $document['paths'][$rest->path]['delete'];
         $this->assertSame($operation->id, $published['operationId']);
+        $this->assertSame($operation->effect->value, $published['x-agent-effect']);
         $this->assertSame($published['description'], $rest->description);
         $this->assertSame($published['description'], $operation->description);
         $this->assertSame($published['parameters'], array_map(static fn (string|array $parameter): array => is_string($parameter) ? ['$ref' => '#/components/parameters/'.$parameter] : $parameter, $rest->parameters));

@@ -61,14 +61,14 @@ trait FakesSquarePaymentSync
         $this->squarePayments['pay_fixture_1']['card_details']['card_payment_timeline'] = ['captured_at' => '2030-02-01T16:00:00Z'];
         Http::fake(function (Request $request) {
             $path = rawurldecode((string) parse_url($request->url(), PHP_URL_PATH));
-            if ($path === '/v2/invoices/inv_fixture_1') {
+            if ($path === '/v2/invoices/'.($this->paymentInvoice['id'] ?? 'inv_fixture_1')) {
                 if ($this->squareInvoiceFailureStatus !== null) {
                     return Http::response(['errors' => [['category' => 'AUTHENTICATION_ERROR', 'code' => 'UNAUTHORIZED']]], $this->squareInvoiceFailureStatus);
                 }
 
                 return Http::response(['invoice' => $this->paymentInvoice]);
             }
-            if ($path === '/v2/orders/order_fixture_1') {
+            if ($path === '/v2/orders/'.($this->paymentOrder['id'] ?? 'order_fixture_1')) {
                 return Http::response(['order' => $this->paymentOrder]);
             }
             if (str_starts_with($path, '/v2/payments/')) {

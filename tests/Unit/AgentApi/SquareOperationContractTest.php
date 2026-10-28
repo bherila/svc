@@ -4,6 +4,7 @@ namespace Tests\Unit\AgentApi;
 
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\Mcp\AgentMcpSquareCoveredPaymentTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
 use App\Services\Mcp\McpFeatureFlags;
@@ -66,6 +67,8 @@ final class SquareOperationContractTest extends TestCase
             'square.sync' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
             'invoices.square_link' => [[AgentDeploymentFlags::INVOICES], []],
             'invoices.square_reconcile' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
+            'invoices.square_covered_payments' => [[], [AgentDeploymentFlags::SQUARE]],
+            'invoices.square_covered_payment_record' => [[AgentDeploymentFlags::PAYMENTS], [AgentDeploymentFlags::SQUARE]],
             'invoices.square_unlink' => [[AgentDeploymentFlags::INVOICES], []],
             'invoices.square_cover' => [[AgentDeploymentFlags::INVOICES], []],
             'invoices.square_uncover' => [[AgentDeploymentFlags::INVOICES], []],
@@ -108,6 +111,62 @@ final class SquareOperationContractTest extends TestCase
             sort($declared);
             sort($observed);
             $this->assertSame($declared, $observed);
+        });
+    }
+
+    public function test_covered_payment_review_and_recording_publish_their_exact_safety_contract(): void
+    {
+        $this->withCatalog(function (AgentOperationCatalog $catalog): void {
+            foreach ([
+                'invoices.square_covered_payments' => ['review', 'GET', Effect::Read, ['billing:read'], 'SquareCoveredPaymentReviewResponse'],
+                'invoices.square_covered_payment_record' => ['record', 'POST', Effect::LocalWrite, ['billing:read', 'payments:record'], 'SquareCoveredPaymentRecordResponse'],
+            ] as $id => [$handler, $method, $effect, $scopes, $response]) {
+                $operation = $catalog->registry()->find($id);
+                $this->assertNotNull($operation, $id);
+                $this->assertSame($effect, $operation->effect);
+                $this->assertTrue($operation->isIdempotent());
+                $this->assertTrue($catalog->isManagerOnly($id));
+                $this->assertTrue($catalog->readsExternalSystem($id));
+                $this->assertSame([AgentMcpSquareCoveredPaymentTools::class, $handler], $operation->mcp?->handler);
+                $this->assertSame($scopes, $operation->requirement->scopes);
+                $this->assertSame($method, $operation->rest?->method);
+                $this->assertSame([200], $operation->rest->successStatuses);
+                $this->assertSame($response, AgentApiResponseSchemaCatalog::operationComponent($id));
+                $this->assertStringContainsString('Refunded or disputed unrecorded payments', $operation->description);
+                $this->assertStringContainsString('Nothing is written to Square', $operation->description);
+                $record = $handler === 'record';
+                $this->assertSame($record, $operation->safety->confirm);
+                $this->assertSame($record, $operation->safety->expectedVersion);
+                $this->assertSame($record ? IdempotencyKey::HeaderAndArgument : IdempotencyKey::None, $operation->safety->idempotencyKey);
+            }
+            $request = AgentApiResponseSchemaCatalog::requestForOperation('invoices.square_covered_payment_record');
+            $this->assertFalse($request['additionalProperties']);
+            $this->assertSame(['expected_version', 'reviewed_version', 'confirm'], $request['required']);
+            $this->assertTrue($request['properties']['confirm']['const']);
+        });
+    }
+
+    /** Public path parameters, refusal statuses and safety prose are a client contract. */
+    public function test_covered_payment_bindings_match_the_published_contract_field_for_field(): void
+    {
+        $document = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($document): void {
+            foreach (['invoices.square_covered_payments', 'invoices.square_covered_payment_record'] as $id) {
+                $operation = $catalog->registry()->find($id);
+                $rest = $operation?->rest;
+                $this->assertNotNull($rest, $id);
+                $published = $document['paths'][$rest->path][strtolower($rest->method)];
+                $this->assertSame($id, $published['operationId']);
+                $this->assertSame($published['description'], $rest->description, $id);
+                $this->assertSame($published['parameters'], array_map(
+                    static fn (string|array $parameter): array => is_string($parameter) ? ['$ref' => '#/components/parameters/'.$parameter] : $parameter,
+                    $rest->parameters,
+                ), $id);
+                $this->assertSame([401, 403, 404, 409, 422, 429, 502, 503], array_keys($rest->responses), $id);
+                foreach ($rest->responses as $status => $response) {
+                    $this->assertSame($published['responses'][$status], $response, "{$id} {$status}");
+                }
+            }
         });
     }
 
