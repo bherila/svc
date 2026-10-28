@@ -16,6 +16,7 @@ use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Mail\PendingMail;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -72,6 +73,7 @@ final class InvoiceSendOutcomeTest extends TestCase
     #[DataProvider('transports')]
     public function test_preparation_failure_is_explicit_and_requires_a_new_confirmed_attempt(string $transport): void
     {
+        Log::spy();
         [$owner, $workspace, $invoice] = $this->fixture();
         $body = $this->body($invoice);
         $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
@@ -79,6 +81,9 @@ final class InvoiceSendOutcomeTest extends TestCase
         $failed = $this->send($transport, $workspace, $invoice, $body, 'synthetic-preparation');
         $this->assertSame('failed', $failed['delivery']['status']);
         $this->assertSame('Email delivery failed (RuntimeException).', $failed['delivery']['error_summary']);
+        Log::shouldHaveReceived('error')->once()->with('An invoice email could not be sent.', [
+            'delivery' => $failed['delivery']['id'], 'exception_class' => \RuntimeException::class,
+        ]);
         $this->assertSame($failed, $this->send($transport, $workspace, $invoice, $body, 'synthetic-preparation'));
         $this->assertSame(1, ClientInvoiceEmailDelivery::query()->count());
 
@@ -93,6 +98,7 @@ final class InvoiceSendOutcomeTest extends TestCase
 
     public function test_lost_handoff_response_stays_unresolved_and_blocks_any_new_attempt(): void
     {
+        Log::spy();
         [$owner, $workspace, $invoice] = $this->fixture();
         $body = $this->body($invoice);
         $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
@@ -102,6 +108,9 @@ final class InvoiceSendOutcomeTest extends TestCase
         $unknown = $this->send('rest', $workspace, $invoice, $body, 'synthetic-unknown');
         $this->assertSame('sending', $unknown['delivery']['status']);
         $this->assertNull($unknown['delivery']['error_summary']);
+        Log::shouldHaveReceived('error')->once()->with('An invoice email handoff has an unknown outcome.', [
+            'delivery' => $unknown['delivery']['id'], 'exception_class' => TransportException::class,
+        ]);
         $this->assertSame($unknown, $this->send('rest', $workspace, $invoice, $body, 'synthetic-unknown'));
         $this->postJson($this->url($workspace, $invoice), $this->body($invoice->fresh()), ['Idempotency-Key' => 'synthetic-unsafe-new-attempt'])->assertUnprocessable();
         $delivery = ClientInvoiceEmailDelivery::query()->sole();

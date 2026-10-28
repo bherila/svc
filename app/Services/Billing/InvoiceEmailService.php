@@ -729,7 +729,7 @@ final class InvoiceEmailService
             // retry nor the scheduler can duplicate this delivery.
             Log::error('An invoice email handoff has an unknown outcome.', [
                 'delivery' => $delivery->public_id,
-                'exception' => $exception,
+                'exception_class' => $exception::class,
             ]);
 
             throw new DomainException('The mail handoff outcome is unknown. Delivery remains in progress for reconciliation.');
@@ -880,7 +880,7 @@ final class InvoiceEmailService
 
         Log::error('An invoice email could not be sent.', [
             'delivery' => $delivery->public_id,
-            'exception' => $exception,
+            'exception_class' => $exception::class,
         ]);
 
         throw new DomainException(
