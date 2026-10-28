@@ -44,20 +44,50 @@ export function NewClientDialog({
                 name,
                 billing_email: billingEmail === '' ? null : billingEmail,
             },
-            (result) => {
+            async (result) => {
+                const destination = result.location;
+
+                if (!destination) {
+                    throw new Error(
+                        'The finished client destination is missing.',
+                    );
+                }
+
+                await new Promise<void>((resolve, reject) => {
+                    let loaded = false;
+                    router.visit(destination, {
+                        onNetworkError: () => false,
+                        onHttpException: () => false,
+                        onSuccess: () => {
+                            loaded = true;
+                        },
+                        onFinish: () =>
+                            loaded
+                                ? resolve()
+                                : reject(
+                                      new Error(
+                                          'The client page could not load.',
+                                      ),
+                                  ),
+                    });
+                });
                 setName('');
                 setBillingEmail('');
                 onOpenChange(false);
-
-                if (result.location) {
-                    router.visit(result.location);
-                }
             },
+            { requireLocation: true },
         );
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                if (!change.locked) {
+                    onOpenChange(next);
+                }
+            }}
+        >
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle>Add client</DialogTitle>
@@ -76,6 +106,7 @@ export function NewClientDialog({
                     <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="new-client-name">Name</Label>
                         <Input
+                            disabled={change.locked}
                             id="new-client-name"
                             value={name}
                             required
@@ -89,6 +120,7 @@ export function NewClientDialog({
                             Billing email
                         </Label>
                         <Input
+                            disabled={change.locked}
                             id="new-client-billing-email"
                             type="email"
                             value={billingEmail}
@@ -107,17 +139,31 @@ export function NewClientDialog({
                     <DialogFooter>
                         <DialogClose
                             render={
-                                <Button variant="outline" type="button">
+                                <Button
+                                    variant="outline"
+                                    type="button"
+                                    disabled={change.locked}
+                                >
                                     Cancel
                                 </Button>
                             }
                         />
                         <Button
                             type="submit"
-                            disabled={change.busy || name === ''}
+                            disabled={change.locked || name === ''}
                         >
                             Add client
                         </Button>
+                        {change.unresolved && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={change.busy}
+                                onClick={() => void change.check()}
+                            >
+                                Check original change
+                            </Button>
+                        )}
                     </DialogFooter>
                 </form>
             </DialogContent>

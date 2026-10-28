@@ -2,30 +2,32 @@ import { useRef, useState } from 'react';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiResult } from '@/lib/api';
 
-/** Preserve one logical edit across an uncertain network response. */
+type ClientResult = Extract<ApiResult<{ version: string }>, { ok: true }>;
+type Attempt = {
+    method: 'POST' | 'PATCH';
+    url: string;
+    body: object;
+    key: string;
+    uncertain: boolean;
+    accepted?: ClientResult;
+    requireLocation: boolean;
+    complete: (result: ClientResult) => void | Promise<void>;
+};
+
+/** Hold the exact write until its outcome and resulting page are confirmed. */
 export function useClientChange() {
     const [busy, setBusy] = useState(false);
+    const [unresolved, setUnresolved] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [errors, setErrors] = useState<Record<string, string[]>>({});
     const inFlight = useRef(false);
-    const attempt = useRef<{ body: string; key: string } | null>(null);
+    const attempt = useRef<Attempt | null>(null);
 
-    async function run<T>(
-        method: 'POST' | 'PATCH',
-        url: string,
-        body: object,
-        onSuccess: (
-            result: Extract<ApiResult<T>, { ok: true }>,
-        ) => void | Promise<void>,
-    ) {
-        if (inFlight.current) {
+    async function check() {
+        const original = attempt.current;
+
+        if (!original || inFlight.current) {
             return;
-        }
-
-        const signature = JSON.stringify([method, url, body]);
-
-        if (attempt.current?.body !== signature) {
-            attempt.current = { body: signature, key: newIdempotencyKey() };
         }
 
         inFlight.current = true;
@@ -34,33 +36,97 @@ export function useClientChange() {
         setErrors({});
 
         try {
-            const result = await apiRequest<T>(
-                method,
-                url,
-                body,
-                attempt.current.key,
-            );
+            if (!original.accepted) {
+                const result = await apiRequest<{ version: string }>(
+                    original.method,
+                    original.url,
+                    original.body,
+                    original.key,
+                );
 
-            if (!result.ok) {
-                setError(result.message);
-                setErrors(result.errors ?? {});
+                if (!result.ok) {
+                    setError(result.message);
+                    setErrors(result.errors ?? {});
+                    original.uncertain ||=
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    setUnresolved(original.uncertain);
 
-                // A definite refusal ends the attempt. An uncertain network or
-                // server failure retains the key so a retry cannot duplicate it.
-                if (result.status >= 400 && result.status < 500) {
-                    attempt.current = null;
+                    if (!original.uncertain) {
+                        attempt.current = null;
+                    }
+
+                    return;
                 }
 
-                return;
+                if (
+                    !result.data ||
+                    typeof result.data.version !== 'string' ||
+                    result.data.version.trim() === '' ||
+                    (original.requireLocation &&
+                        (!result.location || result.location.trim() === ''))
+                ) {
+                    original.uncertain = true;
+                    setUnresolved(true);
+                    setError(
+                        'SVC’s response could not be read. Check the original change.',
+                    );
+
+                    return;
+                }
+
+                original.accepted = result;
             }
 
-            await onSuccess(result);
+            // A confirmed write retries only its read/navigation callback.
+            await original.complete(original.accepted);
             attempt.current = null;
+            setUnresolved(false);
+        } catch {
+            original.uncertain = true;
+            setUnresolved(true);
+            setError(
+                original.accepted
+                    ? 'The change was recorded, but this page could not load it. Check the original change.'
+                    : 'The change could not be confirmed. Check the original change before editing again.',
+            );
         } finally {
             inFlight.current = false;
             setBusy(false);
         }
     }
 
-    return { busy, error, errors, run };
+    async function run(
+        method: Attempt['method'],
+        url: string,
+        body: object,
+        onSuccess: Attempt['complete'],
+        { requireLocation = false }: { requireLocation?: boolean } = {},
+    ) {
+        if (inFlight.current) {
+            return;
+        }
+
+        attempt.current ??= {
+            method,
+            url,
+            body: structuredClone(body),
+            key: newIdempotencyKey(),
+            uncertain: false,
+            complete: onSuccess,
+            requireLocation,
+        };
+        await check();
+    }
+
+    return {
+        busy,
+        unresolved,
+        locked: busy || unresolved,
+        error,
+        errors,
+        run,
+        check,
+    };
 }

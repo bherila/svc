@@ -304,7 +304,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
             onSubmit={(event) => {
                 event.preventDefault();
                 const submitted = { ...form.data };
-                void change.run<{ version: string }>(
+                void change.run(
                     'PATCH',
                     company.update_url,
                     {
@@ -324,6 +324,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
                                 'project_create',
                                 'workspaceNavigation',
                             ],
+                            requireSuccess: true,
                         });
                     },
                 );
@@ -338,6 +339,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
             <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="company-name">Name</Label>
                 <Input
+                    disabled={change.locked}
                     id="company-name"
                     value={form.data.name}
                     onChange={(event) =>
@@ -354,6 +356,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
             <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="company-billing-email">Billing email</Label>
                 <Input
+                    disabled={change.locked}
                     id="company-billing-email"
                     type="email"
                     value={form.data.billing_email}
@@ -371,6 +374,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
 
             <div className="flex items-center gap-3">
                 <Switch
+                    disabled={change.locked}
                     id="company-active"
                     checked={form.data.is_active}
                     onCheckedChange={(next) =>
@@ -383,6 +387,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
             <div className="grid max-w-xl grid-cols-1 gap-3 rounded-lg border p-4">
                 <div className="flex items-center gap-3">
                     <Switch
+                        disabled={change.locked}
                         id="automatic-invoice-email"
                         checked={form.data.automatic_invoice_email_enabled}
                         onCheckedChange={(next) =>
@@ -403,6 +408,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
                             Days after issue
                         </Label>
                         <Input
+                            disabled={change.locked}
                             id="automatic-invoice-delay"
                             type="number"
                             min={0}
@@ -470,9 +476,19 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
                         {change.error}
                     </p>
                 )}
-                <Button type="submit" disabled={change.busy}>
+                <Button type="submit" disabled={change.locked}>
                     Save client
                 </Button>
+                {change.unresolved && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={change.busy}
+                        onClick={() => void change.check()}
+                    >
+                        Check original change
+                    </Button>
+                )}
             </div>
         </form>
     );

@@ -751,6 +751,88 @@ try {
                     ).toBeVisible();
                 }
 
+                const profileRequests = [];
+                const profileRoute = async (route) => {
+                    const request = route.request();
+
+                    if (request.method() !== 'PATCH') {
+                        return route.continue();
+                    }
+
+                    profileRequests.push({
+                        url: request.url(),
+                        method: request.method(),
+                        body: request.postData(),
+                        key: request.headers()['idempotency-key'],
+                    });
+
+                    if (profileRequests.length <= 2) {
+                        return route.fulfill({
+                            status: profileRequests.length === 1 ? 408 : 409,
+                            json: {
+                                message:
+                                    'Synthetic original change needs checking.',
+                            },
+                        });
+                    }
+
+                    return route.continue();
+                };
+                await page.route('**/api/v1/**', profileRoute);
+                await page
+                    .getByLabel('Phone', { exact: true })
+                    .first()
+                    .fill('555-0100');
+                await page
+                    .getByRole('button', {
+                        name: 'Save company profile',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await capture(screen, 'profile-unknown-change', width);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                expect(profileRequests[1]).toEqual(profileRequests[0]);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeEnabled();
+                expect(profileRequests[2]).toEqual(profileRequests[0]);
+                await page.unroute('**/api/v1/**', profileRoute);
+
                 await capture(screen, 'client-contact-form', width);
                 await page
                     .getByRole('button', {
@@ -783,10 +865,68 @@ try {
                     .getByLabel('Billing email', { exact: true })
                     .fill('billing@example.test');
                 await capture(screen, 'create-client-dialog', width);
+                const clientRequests = [];
+                const clientRoute = async (route) => {
+                    const request = route.request();
+
+                    if (request.method() !== 'POST') {
+                        return route.continue();
+                    }
+
+                    clientRequests.push({
+                        url: request.url(),
+                        method: request.method(),
+                        body: request.postData(),
+                        key: request.headers()['idempotency-key'],
+                    });
+
+                    return route.fulfill({
+                        status: clientRequests.length === 1 ? 408 : 403,
+                        json: {
+                            message: 'Synthetic client result is uncertain.',
+                        },
+                    });
+                };
+                await page.route('**/api/v1/**', clientRoute);
                 await page
                     .getByRole('dialog')
-                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .getByRole('button', { name: 'Add client', exact: true })
                     .click();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByRole('button', { name: 'Cancel', exact: true }),
+                ).toBeDisabled();
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await capture(screen, 'create-client-unknown-change', width);
+                await page
+                    .getByRole('dialog')
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('dialog').getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(clientRequests[1]).toEqual(clientRequests[0]);
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await page.unroute('**/api/v1/**', clientRoute);
+                // Each viewport starts from its own synthetic dialog attempt.
+                await page.goto(origin + fixture.settings);
             }
 
             if (screen === 'history_index') {

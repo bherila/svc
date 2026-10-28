@@ -5,6 +5,7 @@ import {
     waitFor,
     within,
 } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientContacts } from '@/components/clients/client-contacts';
 import { CompanyProfile } from '@/components/clients/company-profile';
@@ -61,6 +62,9 @@ const contact = {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(refreshPageProps).mockReset();
+    vi.mocked(refreshPageProps).mockResolvedValue();
     vi.mocked(apiRequest).mockResolvedValue({
         ok: true,
         status: 200,
@@ -125,6 +129,7 @@ describe('historical client details', () => {
         await waitFor(() =>
             expect(refreshPageProps).toHaveBeenCalledWith({
                 only: ['contacts'],
+                requireSuccess: true,
             }),
         );
         expect(apiRequest).toHaveBeenLastCalledWith(
@@ -200,7 +205,7 @@ describe('historical client details', () => {
             'Keep this edit',
         );
         fireEvent.click(
-            screen.getByRole('button', { name: 'Save company profile' }),
+            screen.getByRole('button', { name: 'Check original change' }),
         );
         await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2));
         expect(vi.mocked(apiRequest).mock.calls[0][3]).toBe(
@@ -239,5 +244,193 @@ describe('historical client details', () => {
             expect.any(String),
         );
         expect(refreshPageProps).not.toHaveBeenCalled();
+    });
+    it('freezes an unknown contact creation through changed destinations and later refusals, then retries only its failed read', async () => {
+        vi.mocked(apiRequest)
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 408,
+                message: 'Synthetic timeout',
+            })
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 409,
+                message: 'Synthetic current conflict',
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 201,
+                data: { version: 'created-version' },
+            });
+        vi.mocked(refreshPageProps).mockRejectedValueOnce(
+            new Error('Synthetic reload failed'),
+        );
+        const view = render(
+            <ClientContacts
+                contacts={[]}
+                createAction="/synthetic/original-create"
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('First name'), {
+            target: { value: 'Synthetic original contact' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Add contact' }));
+        await screen.findByText('Synthetic timeout');
+        const original = vi.mocked(apiRequest).mock.calls[0];
+        expect(screen.getByLabelText('First name')).toBeDisabled();
+        await userEvent.type(screen.getByLabelText('First name'), ' changed');
+        view.rerender(
+            <ClientContacts
+                contacts={[]}
+                createAction="/synthetic/changed-create"
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await screen.findByText('Synthetic current conflict');
+        expect(vi.mocked(apiRequest).mock.calls[1]).toEqual(original);
+        expect(screen.getByLabelText('First name')).toBeDisabled();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await screen.findByText(
+            'The change was recorded, but this page could not load it. Check the original change.',
+        );
+        expect(vi.mocked(apiRequest).mock.calls[2]).toEqual(original);
+        expect(screen.getByLabelText('First name')).toHaveValue(
+            'Synthetic original contact',
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await waitFor(() =>
+            expect(screen.getByLabelText('First name')).toHaveValue(''),
+        );
+        expect(apiRequest).toHaveBeenCalledTimes(3);
+        expect(refreshPageProps).toHaveBeenCalledTimes(2);
+        expect(refreshPageProps).toHaveBeenLastCalledWith({
+            only: ['contacts'],
+            requireSuccess: true,
+        });
+    });
+
+    it('preserves a dirty contact draft and its reviewed version across refreshed contact facts', async () => {
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            ok: false,
+            status: 409,
+            message: 'Synthetic contact revision conflict',
+        });
+        const editable = { ...contact, is_archived: false };
+        const view = render(
+            <ClientContacts
+                contacts={[editable]}
+                createAction="/synthetic/create"
+            />,
+        );
+        fireEvent.click(view.container.querySelector('summary')!);
+        const form = screen
+            .getByRole('button', { name: 'Save contact' })
+            .closest('form')!;
+        fireEvent.change(within(form).getByLabelText('Role or title'), {
+            target: { value: 'Synthetic retained draft' },
+        });
+        view.rerender(
+            <ClientContacts
+                contacts={[
+                    {
+                        ...editable,
+                        version: 'newer-version',
+                        title: 'Synthetic remote title',
+                    },
+                ]}
+                createAction="/synthetic/create"
+            />,
+        );
+        expect(within(form).getByLabelText('Role or title')).toHaveValue(
+            'Synthetic retained draft',
+        );
+        fireEvent.click(
+            within(form).getByRole('button', { name: 'Save contact' }),
+        );
+        await screen.findByText('Synthetic contact revision conflict');
+        expect(apiRequest).toHaveBeenLastCalledWith(
+            'PATCH',
+            contact.update_action,
+            expect.objectContaining({
+                title: 'Synthetic retained draft',
+                expected_version: contact.version,
+            }),
+            expect.any(String),
+        );
+    });
+
+    it('keeps a recorded profile edit frozen until its authoritative read succeeds', async () => {
+        vi.mocked(refreshPageProps).mockRejectedValueOnce(
+            new Error('Synthetic refresh failed'),
+        );
+        render(
+            <CompanyProfile
+                action="/synthetic/profile"
+                profile={profile}
+                version="original-version"
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('Internal company notes'), {
+            target: { value: 'Synthetic saved note' },
+        });
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Save company profile' }),
+        );
+        await screen.findByText(
+            'The change was recorded, but this page could not load it. Check the original change.',
+        );
+        expect(screen.getByLabelText('Internal company notes')).toBeDisabled();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await waitFor(() =>
+            expect(
+                screen.getByLabelText('Internal company notes'),
+            ).toBeEnabled(),
+        );
+        expect(apiRequest).toHaveBeenCalledTimes(1);
+        expect(refreshPageProps).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps contact archive confirmation bound to the reviewed version while props refresh', async () => {
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            ok: false,
+            status: 409,
+            message: 'Synthetic changed archive target',
+        });
+        const editable = { ...contact, is_archived: false };
+        const view = render(
+            <ClientContacts
+                contacts={[editable]}
+                createAction="/synthetic/create"
+            />,
+        );
+        fireEvent.click(view.container.querySelector('summary')!);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Archive contact' }),
+        );
+        view.rerender(
+            <ClientContacts
+                contacts={[{ ...editable, version: 'unreviewed-version' }]}
+                createAction="/synthetic/create"
+            />,
+        );
+        const dialog = screen.getByRole('alertdialog');
+        fireEvent.click(
+            within(dialog).getByRole('button', { name: 'Archive contact' }),
+        );
+        await within(dialog).findByText('Synthetic changed archive target');
+        expect(apiRequest).toHaveBeenLastCalledWith(
+            'POST',
+            contact.archive_action,
+            { expected_version: contact.version, confirm: true },
+            expect.any(String),
+        );
     });
 });
