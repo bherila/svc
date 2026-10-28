@@ -355,6 +355,19 @@ default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
 migration plus the approved confirmation design before general availability.
 
+`invoices.send` adds `data.delivery` beside the existing invoice result. It is
+the exact delivery registered by that idempotency receipt: `{id, status,
+error_summary}`, or `null` when an older receipt did not retain its delivery
+identity. `sent` means the mailer accepted the message, not that the recipient
+received it. `pending` and `sending` are unresolved; `sending` also covers a
+lost transport response or accepted mail whose local result could not be saved.
+Only a preparation failure before handoff is `failed`, with a sanitized error.
+The send still runs explicitly after commit in the request and needs no worker.
+Repeat an uncertain request with the same key and unchanged body to read its
+recorded outcome without another handoff. Do not automatically resend a `null`,
+`pending` or `sending` result. A proven `failed` result allows an operator to
+make a new confirmed attempt with a new key and current invoice version.
+
 `time_entries.log` accepts `approve: true` to approve the logged entries in
 the same transaction and under the same idempotency receipt, so a batch is
 either logged and approved or not written at all. It carries every gate

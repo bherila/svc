@@ -109,9 +109,9 @@ final class InvoiceEmailService
      * `pending`, which is the truth at that moment: nothing has been sent, and
      * nothing will be if the transaction rolls back.
      *
-     * A failure after commit has nowhere to be reported - the request that
-     * asked for this has been answered - so it lands on the delivery row and in
-     * the log rather than as an exception nobody is waiting for.
+     * The callback records its outcome on the delivery row and in the log;
+     * it cannot roll back the receipt that already committed. A caller may
+     * read that row after its transaction returns to project the outcome.
      *
      * @throws DomainException when the invoice cannot be emailed at all
      */
@@ -708,16 +708,31 @@ final class InvoiceEmailService
                 $mailer->bcc($draft->bcc);
             }
 
-            $sent = $mailer->send(new InvoiceMail(
+            $message = new InvoiceMail(
                 $invoice,
                 $draft->subject,
                 $draft->body,
                 $pdf,
                 $this->documents->filename($invoice),
-            ));
+            );
 
         } catch (Throwable $exception) {
             return $this->recordFailure($invoice, $delivery, $exception);
+        }
+
+        try {
+            $sent = $mailer->send($message);
+        } catch (Throwable $exception) {
+            // A transport can accept a message and lose its response. Once
+            // handoff starts, an exception proves neither acceptance nor
+            // rejection. Keep the durable sending claim so neither a manual
+            // retry nor the scheduler can duplicate this delivery.
+            Log::error('An invoice email handoff has an unknown outcome.', [
+                'delivery' => $delivery->public_id,
+                'exception' => $exception,
+            ]);
+
+            throw new DomainException('The mail handoff outcome is unknown. Delivery remains in progress for reconciliation.');
         }
 
         try {

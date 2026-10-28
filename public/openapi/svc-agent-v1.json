@@ -10198,7 +10198,7 @@
         "/workspaces/{workspace}/invoices/{invoice}/send": {
             "post": {
                 "operationId": "invoices.send",
-                "description": "Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits; repeating the same idempotency key sends nothing more.",
+                "description": "Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome.",
                 "security": [
                     {
                         "oauth2": [
@@ -10232,11 +10232,11 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Invoice delivery queued",
+                        "description": "Invoice and recorded delivery outcome",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/InvoiceMutationResponse"
+                                    "$ref": "#/components/schemas/InvoiceSendResponse"
                                 }
                             }
                         }
@@ -32076,6 +32076,116 @@
                         }
                     }
                 ]
+            },
+            "InvoiceSendMutation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "status",
+                    "linked_time_state",
+                    "invoice_number",
+                    "version",
+                    "web_url",
+                    "delivery"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/InvoiceStatus"
+                    },
+                    "linked_time_state": {
+                        "$ref": "#/components/schemas/LinkedTimeState"
+                    },
+                    "invoice_number": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "web_url": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "correction": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "required": [
+                            "id",
+                            "from_revision",
+                            "to_revision",
+                            "reason",
+                            "href"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "from_revision": {
+                                "type": "integer"
+                            },
+                            "to_revision": {
+                                "type": "integer"
+                            },
+                            "reason": {
+                                "type": "string"
+                            },
+                            "href": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "delivery": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "status",
+                            "error_summary"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "pending",
+                                    "sending",
+                                    "sent",
+                                    "failed"
+                                ]
+                            },
+                            "error_summary": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "InvoiceSendResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/InvoiceSendMutation"
+                    }
+                }
             }
         }
     }

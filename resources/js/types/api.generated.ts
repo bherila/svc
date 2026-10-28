@@ -1479,7 +1479,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits; repeating the same idempotency key sends nothing more. */
+        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome. */
         post: operations['invoices.send'];
         delete?: never;
         options?: never;
@@ -6113,6 +6113,32 @@ export interface components {
             currency?: string | null;
             notes?: string | null;
         } & unknown;
+        InvoiceSendMutation: {
+            id: components['schemas']['Uuid'];
+            status: components['schemas']['InvoiceStatus'];
+            linked_time_state: components['schemas']['LinkedTimeState'];
+            invoice_number: string;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+            correction?: {
+                /** Format: uuid */
+                id: string;
+                from_revision: number;
+                to_revision: number;
+                reason: string;
+                href: string;
+            } | null;
+            delivery: {
+                id: components['schemas']['Uuid'];
+                /** @enum {string} */
+                status: 'pending' | 'sending' | 'sent' | 'failed';
+                error_summary: string | null;
+            } | null;
+        };
+        InvoiceSendResponse: {
+            data: components['schemas']['InvoiceSendMutation'];
+        };
     };
     responses: {
         /** @description OAuth, authorization, tenant, conflict, validation, or rate-limit error */
@@ -11691,13 +11717,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Invoice delivery queued */
+            /** @description Invoice and recorded delivery outcome */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                    'application/json': components['schemas']['InvoiceSendResponse'];
                 };
             };
             default: components['responses']['Error'];
