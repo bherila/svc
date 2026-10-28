@@ -7,6 +7,13 @@ use App\Models\ClientAgreement;
 /** The public, derived agreement terms shared by SVC's bounded read surfaces. */
 final class AgreementReadPresenter
 {
+    /** @return array{id: string, title: string, status: string, billing_cadence: ?string} */
+    public static function summary(ClientAgreement $agreement): array
+    {
+        return ['id' => $agreement->public_id, 'title' => $agreement->title,
+            'status' => $agreement->status, 'billing_cadence' => $agreement->billing_cadence];
+    }
+
     /** @return array<string, mixed> */
     public function present(ClientAgreement $agreement, ?string $projectName): array
     {
@@ -15,11 +22,8 @@ final class AgreementReadPresenter
             && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null);
 
         return [
-            'id' => $agreement->public_id,
-            'title' => $agreement->title,
-            'status' => $agreement->status,
+            ...self::summary($agreement),
             'currency' => $agreement->currency,
-            'billing_cadence' => $agreement->billing_cadence,
             'effective_billing_cadence' => $isRecurring
                 ? $agreement->effectiveBillingCadence()->value
                 : null,
