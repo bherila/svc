@@ -262,6 +262,7 @@ final class AgentMcpContractTest extends TestCase
             'expenses.list' => ['expenses:read'],
             'expenses.log' => ['expenses:write'],
             'expenses.receipts.content' => ['expenses:read'],
+            'expenses.receipts.delete' => ['expenses:read', 'expenses:write'],
             'expenses.receipts.download' => ['expenses:read'],
             'expenses.receipts.list' => ['expenses:read'],
             'expenses.receipts.upload' => ['expenses:read', 'expenses:write'],

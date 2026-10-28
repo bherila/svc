@@ -418,7 +418,7 @@ final class AgentRestDocumentation
             'attachments.upload' => [
                 'method' => 'POST',
                 'scopes' => ['files:write'],
-                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -448,7 +448,7 @@ final class AgentRestDocumentation
                 'request' => 'AttachmentUploadRequest',
                 'request_types' => ['multipart/form-data'],
                 'response' => 'AttachmentResponse',
-                'response_description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'response_description' => 'Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
                 'errors' => [503 => 'The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.'],
             ],
             'attachments.upload_url' => [
@@ -968,6 +968,16 @@ final class AgentRestDocumentation
                 ],
                 'binary' => ['application/octet-stream', 'Receipt bytes'],
             ],
+            'expenses.receipts.delete' => [
+                'method' => 'DELETE',
+                'scopes' => ['expenses:read', 'expenses:write'],
+                'description' => 'Workspace-manager-only logical deletion of one receipt on this expense. Requires confirm true, current receipt expected_version, current expense expected_parent_version and Idempotency-Key. Checks tenant ownership and current role under the expense and receipt locks, advances expense revision once, and retains existing purge policy. No expense amount or posting changes. Completed receipt replay rechecks current authority and parent lineage. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access.',
+                'parameters' => ['WorkspaceId', 'ExpenseId', self::uuidPath('receipt'), 'IdempotencyKey'],
+                'request' => 'ExpenseReceiptDeleteRequest',
+                'response' => 'ExpenseReceiptUploadResponse',
+                'response_description' => 'Deleted expense receipt and current expense version',
+                'errors' => [409 => 'The receipt or expense revision changed, or the retry key was reused with different input.'],
+            ],
             'expenses.receipts.download' => [
                 'method' => 'GET',
                 'scopes' => ['expenses:read'],
@@ -979,7 +989,7 @@ final class AgentRestDocumentation
             'expenses.receipts.list' => [
                 'method' => 'GET',
                 'scopes' => ['expenses:read'],
-                'description' => 'Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied.',
+                'description' => 'Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access.',
                 'parameters' => ['WorkspaceId', 'ExpenseId', self::filePageLimit(), self::filePageCursor()],
                 'response' => 'ExpenseReceiptListResponse',
                 'response_description' => 'Successful operation',
@@ -987,7 +997,7 @@ final class AgentRestDocumentation
             'expenses.receipts.upload' => [
                 'method' => 'POST',
                 'scopes' => ['expenses:read', 'expenses:write'],
-                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
                 'parameters' => ['WorkspaceId', 'ExpenseId', 'IdempotencyKey'],
                 'request' => 'ExpenseReceiptUploadRequest',
                 'request_types' => ['multipart/form-data'],

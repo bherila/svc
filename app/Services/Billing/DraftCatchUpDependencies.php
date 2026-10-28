@@ -251,7 +251,7 @@ final class DraftCatchUpDependencies
             if ($hours === 0.0) {
                 continue;
             }
-            $undo = in_array($dependent->status, [InvoiceStatus::Paid->value, InvoiceStatus::PartiallyPaid->value], true)
+            $undo = in_array($dependent->status, [InvoiceStatus::Paid->value, InvoiceStatus::PartiallyPaid->value, InvoiceStatus::Disputed->value], true)
                 ? "{$dependent->invoice_number} has taken payment and cannot be voided, so neither can this while it stands."
                 : "Void or discard {$dependent->invoice_number} first.";
             throw new DomainException(sprintf(

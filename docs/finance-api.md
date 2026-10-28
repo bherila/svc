@@ -353,6 +353,36 @@ Where the facts come from:
   It also clears a processor review flag (below). Upserting it again with
   `is_active: true` reactivates it. Idempotent for the same tuple.
 
+## Disputed invoice state
+
+An invoice with any payment whose status is `disputed` has invoice status
+`disputed`, including a partial dispute or a balance already covered by a
+replacement payment. The invoice remains charged and immutable; authorized
+internal and portal readers can still see it, and `invoices.list` accepts
+`status=disputed`. It is excluded from `collectible` and `overdue` filters and
+collection summaries. Payment initiation, invoice collection email and payment
+reminders pause while the dispute remains. An operator may still explicitly
+record money already received against its remaining balance.
+
+The undisputed part of a partly disputed payment still reduces the invoice's
+balance. The entire disputed payment is withheld from the spendable credit pool;
+its undisputed remainder does not become credit. Once every disputed payment
+leaves that state, net payment contributions determine `issued`, `partially_paid`
+or `paid` again. A processor restoring a won dispute after replacement payment is
+recorded even when it creates excess credit; that restored excess is available
+to future drafts without a separate hold. A void invoice always stays void.
+
+Existing charged invoices with tenant-matching disputed payments are backfilled
+to this status with a new invoice revision. Draft, void, unknown-status invoices
+and malformed cross-workspace payment links are excluded.
+
+The processor follow-ups tracked in #481 are delivered: scheduled Square dispute
+recovery handles missed notifications and disputes arriving before payment;
+conditional reconciliation acknowledgement records a reviewed allocation;
+Stripe refund recovery rereads the refund list rather than trusting a stale
+charge aggregate. Synthetic regressions are in `SquareDisputeRecoveryTest`,
+`ReconciliationReviewAcknowledgementTest` and `StripeAuthoritativeRefundTest`.
+
 ## Recording a deposit and its allocation in one call
 
 A finance system that sees money arrive for an invoice SVC has not recorded -

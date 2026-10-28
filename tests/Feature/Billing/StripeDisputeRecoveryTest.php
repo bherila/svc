@@ -82,6 +82,7 @@ final class StripeDisputeRecoveryTest extends TestCase
         $this->assertSame('disputed', $payment->fresh()->status);
         $this->assertSame(400, $payment->fresh()->disputed_amount);
         $this->assertSame(400, $invoice->fresh()->balance_amount);
+        $this->assertSame('disputed', $invoice->fresh()->status);
     }
 
     public function test_preview_returns_the_complete_group_without_any_writes(): void
