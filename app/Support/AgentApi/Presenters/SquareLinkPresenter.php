@@ -8,6 +8,7 @@ use App\Models\InvoiceSquareLink;
 use App\Models\SquareInvoiceCoverage;
 use App\Models\User;
 use App\Services\Square\SquareCollectionGuard;
+use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\Square\SquarePaymentMismatchAudit;
 use App\Support\AgentApi\AgentApiVersion;
@@ -41,7 +42,10 @@ final class SquareLinkPresenter
             'invoice_id' => $invoice->public_id,
             'invoice_version' => AgentApiVersion::for($invoice),
             'link' => $link === null ? null : $this->link($link),
-            'covers' => $covers->map($this->coverage(...))->values()->all(),
+            'covers' => $covers->map(fn (SquareInvoiceCoverage $coverage): array => $this->coverage($coverage) + [
+                'review_href' => SquareConfiguration::fromConfig()->servesWorkspace($invoice->workspace)
+                    ? route('agent-api.v1.invoices.square-covered-payments.index', [$invoice->workspace, $invoice->public_id, $coverage->square_invoice_id], absolute: false) : null,
+            ])->values()->all(),
             'agreement_series_key' => $this->links->agreementSeriesKey($invoice),
             'square_collects' => $refusal !== null,
             'payment_mismatch' => app(SquarePaymentMismatchAudit::class)->invoice($invoice->workspace, $invoice),

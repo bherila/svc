@@ -39,6 +39,7 @@ const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
+const disputesOnly = process.argv.includes('--disputes');
 const timeOnly = process.argv.includes('--time');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
@@ -150,6 +151,7 @@ try {
         SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
         SVC_LAYOUT_TASKS: tasksOnly ? '1' : '0',
         SVC_LAYOUT_PROJECTS: projectsOnly ? '1' : '0',
+        SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
@@ -310,38 +312,40 @@ try {
 
         for (const screen of projectsOnly
             ? ['settings']
-            : tasksOnly
-              ? ['task_list', 'task_project', 'task_editor', 'task_portal']
-              : historyOnly
-                ? ['history_index', 'history_discussion', 'history_invoice']
-                : portalOnly
-                  ? ['settings']
-                  : correctionOnly
-                    ? ['invoice_review']
-                    : squareOnly
-                      ? ['square_explore', 'square_invoice', 'square_portal']
-                      : remindersOnly
-                        ? ['reminder_invoice', 'settings']
-                        : timeOnly
-                          ? ['time', 'draft_time']
-                          : backlogOnly
-                            ? ['agreement']
-                            : [
-                                  'mcp_setup',
-                                  'invoice',
-                                  'invoice_review',
-                                  'reminder_invoice',
-                                  'settings',
-                                  'draft_invoice',
-                                  'draft_time',
-                                  'proposal',
-                                  'proposal_acceptance',
-                                  'operations',
-                                  'time',
-                                  'expenses',
-                                  'receipts',
-                                  'expense_schedules',
-                              ]) {
+            : disputesOnly
+              ? ['invoice', 'square_portal']
+              : tasksOnly
+                ? ['task_list', 'task_project', 'task_editor', 'task_portal']
+                : historyOnly
+                  ? ['history_index', 'history_discussion', 'history_invoice']
+                  : portalOnly
+                    ? ['settings']
+                    : correctionOnly
+                      ? ['invoice_review']
+                      : squareOnly
+                        ? ['square_explore', 'square_invoice', 'square_portal']
+                        : remindersOnly
+                          ? ['reminder_invoice', 'settings']
+                          : timeOnly
+                            ? ['time', 'draft_time']
+                            : backlogOnly
+                              ? ['agreement']
+                              : [
+                                    'mcp_setup',
+                                    'invoice',
+                                    'invoice_review',
+                                    'reminder_invoice',
+                                    'settings',
+                                    'draft_invoice',
+                                    'draft_time',
+                                    'proposal',
+                                    'proposal_acceptance',
+                                    'operations',
+                                    'time',
+                                    'expenses',
+                                    'receipts',
+                                    'expense_schedules',
+                                ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -524,7 +528,34 @@ try {
                 ).toBeVisible();
             }
 
-            if (screen.startsWith('square_')) {
+            if (disputesOnly) {
+                await expect(
+                    page.getByText('Disputed', { exact: true }).first(),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Send reminder',
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Send invoice',
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+
+                if (screen === 'square_portal') {
+                    await expect(
+                        page.getByRole('link', {
+                            name: 'View or pay in Square',
+                            exact: true,
+                        }),
+                    ).toHaveCount(0);
+                }
+            }
+
+            if (screen.startsWith('square_') && !disputesOnly) {
                 await expect(
                     page
                         .getByRole('link', {
@@ -550,6 +581,79 @@ try {
                     'href',
                     'https://squareupsandbox.com/dashboard/invoices/inv_fixture_layout',
                 );
+
+                // Synthetic provider responses exercise review/confirmation layout
+                // without any network request to Square or ledger mutation.
+                let recordable = false;
+                const reviewPattern = '**/square-coverage/*/payments';
+                await page.route(reviewPattern, async (route) => {
+                    await route.fulfill({
+                        json: {
+                            data: {
+                                invoice_id:
+                                    '00000000-0000-4000-8000-000000000001',
+                                invoice_number:
+                                    'SYNTHETICCOVEREDINVOICE'.repeat(8),
+                                invoice_version: 'a'.repeat(64),
+                                balance_amount: 12345,
+                                currency: 'USD',
+                                square_invoice_id: 'inv_fixture_layout_covered',
+                                square_invoice_number:
+                                    'SYNTHETICCOVERED'.repeat(10),
+                                payments: [
+                                    {
+                                        square_payment_id:
+                                            'synthetic_payment_'.repeat(10),
+                                        amount: 12345,
+                                        refunded_amount: 0,
+                                        currency: 'USD',
+                                        received_on: '2030-02-01',
+                                        reviewed_version: 'b'.repeat(64),
+                                        recorded_payment_id: null,
+                                        refusal: recordable
+                                            ? null
+                                            : 'This payment includes a refund and requires manual review.',
+                                        record_href: recordable
+                                            ? '/synthetic-covered-record'
+                                            : null,
+                                    },
+                                ],
+                            },
+                        },
+                    });
+                });
+                await page
+                    .getByRole('button', {
+                        name: 'Review payments',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByText(
+                        'This payment includes a refund and requires manual review.',
+                        { exact: true },
+                    ),
+                ).toBeVisible();
+                await capture(screen, 'covered-payment-refused', width);
+                recordable = true;
+                await page
+                    .getByRole('button', {
+                        name: 'Review payments',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', {
+                        name: 'Record this payment',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'covered-payment-confirm', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page.unroute(reviewPattern);
             }
 
             if (screen === 'reminder_invoice') {
@@ -1212,6 +1316,7 @@ try {
     }
 
     if (
+        !disputesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
@@ -1247,6 +1352,7 @@ try {
     }
 
     if (
+        !disputesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
@@ -1404,19 +1510,21 @@ try {
             '',
             projectsOnly
                 ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
-                : clientsOnly
-                  ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
-                  : tasksOnly
-                    ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                    : portalOnly
-                      ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                      : squareOnly
-                        ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                        : remindersOnly
-                          ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                          : backlogOnly
-                            ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+                : disputesOnly
+                  ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                  : clientsOnly
+                    ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                    : tasksOnly
+                      ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                      : portalOnly
+                        ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                        : squareOnly
+                          ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                          : remindersOnly
+                            ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                            : backlogOnly
+                              ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                              : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

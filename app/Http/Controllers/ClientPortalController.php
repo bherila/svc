@@ -127,7 +127,7 @@ class ClientPortalController extends Controller
             // or pays it on Square's own page, whose address comes only from
             // Square's data. The invoice was already narrowed to this
             // client's company and to what the client may see.
-            'square_page_url' => $invoice->status === InvoiceStatus::Void->value ? null
+            'square_page_url' => in_array($invoice->status, [InvoiceStatus::Void->value, InvoiceStatus::Disputed->value], true) ? null
                 : app(SquareInvoicePage::class)->forInvoice($clientCompany->workspace, $invoice)['url'] ?? null,
             // The same itemisation the operator sees, narrowed to what the
             // client may read: only entries carrying a client-safe description,

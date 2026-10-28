@@ -31,11 +31,13 @@ final class SquareDisputeRecoveryTest extends TestCase
         $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
         $this->assertSame('disputed', $invoice->payments()->sole()->status);
         $this->assertSame(345, $invoice->fresh()->balance_amount);
+        $this->assertSame('disputed', $invoice->fresh()->status);
         $this->squareDisputes['dispute_fixture_1']['state'] = 'WON';
         $this->squareDisputes['dispute_fixture_1']['updated_at'] = '2030-02-02T11:00:00Z';
         $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
         $this->assertSame('succeeded', $invoice->payments()->sole()->status);
         $this->assertSame(0, $invoice->fresh()->balance_amount);
+        $this->assertSame('paid', $invoice->fresh()->status);
         Queue::assertNothingPushed();
         Http::assertNotSent(fn (Request $request): bool => $request->method() !== 'GET');
     }
@@ -74,6 +76,8 @@ final class SquareDisputeRecoveryTest extends TestCase
         $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
         $this->assertSame('disputed', $invoice->payments()->sole()->status);
         $this->assertSame('succeeded', $foreign->fresh()->status);
+        $this->assertSame('disputed', $invoice->fresh()->status);
+        $this->assertSame('issued', $foreignInvoice->fresh()->status);
         $this->assertNull($foreign->fresh()->provider_dispute_updated_at_ms);
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && str_contains($request->url(), '/v2/disputes?cursor=next-fixture')

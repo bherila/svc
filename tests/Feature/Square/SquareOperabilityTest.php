@@ -52,7 +52,7 @@ final class SquareOperabilityTest extends TestCase
         config(['agent_api.writes_enabled' => true]);
         $this->actingAsMcp($owner, self::SCOPES);
 
-        $rest = $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-reconcile-1'])->assertOk()->json();
+        $rest = $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-reconcile-1'], JSON_FORCE_OBJECT)->assertOk()->json();
 
         $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($rest, AgentApiResponseSchemaCatalog::forOperation('invoices.square_reconcile')));
         $this->assertSame([$invoice->public_id, 'inv_fixture_1'], [$rest['data']['invoice_id'], $rest['data']['link']['square_invoice_id']]);
@@ -63,7 +63,7 @@ final class SquareOperabilityTest extends TestCase
         $mcp = $this->callTool($this->initialize(), 'invoices.square_reconcile', ['workspace_id' => $workspace->public_id, 'invoice_id' => $invoice->public_id, 'idempotency_key' => 'synthetic-reconcile-2']);
         $this->assertFalse($mcp['result']['isError'] ?? false, (string) json_encode($mcp));
         $this->assertSame($rest['data']['link'], $mcp['result']['structuredContent']['data']['link']);
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-reconcile-1'])->assertOk();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-reconcile-1'], JSON_FORCE_OBJECT)->assertOk();
         $this->assertSame(1, $invoice->payments()->count());
         Http::assertNotSent(fn ($request): bool => $request->method() !== 'GET');
     }
@@ -75,16 +75,16 @@ final class SquareOperabilityTest extends TestCase
         $unlinked = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYNTHETIC-002', 'invoice_kind' => 'ad_hoc', 'status' => 'issued', 'currency' => 'USD', 'total_amount' => 100, 'balance_amount' => 100]);
         $this->actingAsMcp($owner, self::SCOPES);
 
-        $this->postJson($this->url($workspace, $unlinked), [], ['Idempotency-Key' => 'synthetic-unlinked'])->assertUnprocessable();
+        $this->postJson($this->url($workspace, $unlinked), [], ['Idempotency-Key' => 'synthetic-unlinked'], JSON_FORCE_OBJECT)->assertUnprocessable();
         $this->postJson($this->url($workspace, $invoice), ['square_invoice_id' => 'inv_fixture_1'], ['Idempotency-Key' => 'synthetic-body'])->assertUnprocessable();
         $other = Workspace::query()->create(['name' => 'Synthetic reconcile other', 'slug' => 'synthetic-reconcile-other']);
         $other->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
         // Square serves one workspace: another one's id never reaches this invoice.
-        $this->postJson('/api/v1/workspaces/'.$other->public_id.'/invoices/'.$invoice->public_id.'/square-reconcile', [], ['Idempotency-Key' => 'synthetic-foreign'])->assertNotFound();
+        $this->postJson('/api/v1/workspaces/'.$other->public_id.'/invoices/'.$invoice->public_id.'/square-reconcile', [], ['Idempotency-Key' => 'synthetic-foreign'], JSON_FORCE_OBJECT)->assertNotFound();
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
         $this->actingAsMcp($member, self::SCOPES);
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-member'])->assertForbidden();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-member'], JSON_FORCE_OBJECT)->assertForbidden();
         $this->assertSame(0, $invoice->payments()->count());
         $this->assertSame(0, Http::recorded()->count());
     }
@@ -97,29 +97,29 @@ final class SquareOperabilityTest extends TestCase
         $audits = static fn (string $outcome): int => AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'invoices.square_reconcile')->where('outcome', $outcome)->count();
 
         $this->squareInvoiceFailureStatus = 503;
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertStatus(503);
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'], JSON_FORCE_OBJECT)->assertStatus(503);
         $this->assertSame([0, 1], [$audits('success'), $audits('failed')]);
         $this->assertSame(0, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('operation', 'invoices.square_reconcile')->count());
 
         // The same key, once Square answers, reconciles: the failure left no receipt.
         $this->squareInvoiceFailureStatus = null;
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertOk();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'], JSON_FORCE_OBJECT)->assertOk();
         $this->assertSame([1, 1], [$audits('success'), $audits('failed')]);
         $this->assertSame('paid', $invoice->fresh()->status);
 
         // Replaying that completed key while Square is down is a failure, not a successful replay.
         $this->squareInvoiceFailureStatus = 503;
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertStatus(503);
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'], JSON_FORCE_OBJECT)->assertStatus(503);
         $this->assertSame([1, 2, 0], [$audits('success'), $audits('failed'), $audits('replay')]);
         $this->squareInvoiceFailureStatus = null;
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertOk();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'], JSON_FORCE_OBJECT)->assertOk();
         $this->assertSame(1, $audits('replay'));
 
         for ($attempt = 5; $attempt <= SquareInvoiceReconciliation::RECONCILES_PER_WINDOW; $attempt++) {
-            $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-budget-'.$attempt])->assertOk();
+            $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-budget-'.$attempt], JSON_FORCE_OBJECT)->assertOk();
         }
         $before = Http::recorded()->count();
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-over-budget'])->assertStatus(429)->assertHeader('Retry-After');
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-over-budget'], JSON_FORCE_OBJECT)->assertStatus(429)->assertHeader('Retry-After');
         $this->assertSame($before, Http::recorded()->count(), 'Over budget, Square is not read.');
         $this->assertSame(1, $invoice->payments()->count());
     }
@@ -132,12 +132,12 @@ final class SquareOperabilityTest extends TestCase
         $this->paymentInvoice['status'] = 'UNPAID';
         $this->squarePayments['pay_fixture_1']['status'] = 'PENDING';
 
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-early'])->assertOk();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-early'], JSON_FORCE_OBJECT)->assertOk();
         $this->assertSame(0, $invoice->payments()->count());
 
         $this->paymentInvoice['status'] = 'PAID';
         $this->squarePayments['pay_fixture_1']['status'] = 'COMPLETED';
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-early'])->assertOk();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-early'], JSON_FORCE_OBJECT)->assertOk();
         $this->assertSame(['paid', 1], [$invoice->fresh()->status, $invoice->payments()->count()]);
     }
 
@@ -165,7 +165,7 @@ final class SquareOperabilityTest extends TestCase
         });
         $this->actingAsMcp($owner, self::SCOPES);
 
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-relinked'])->assertUnprocessable()
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-relinked'], JSON_FORCE_OBJECT)->assertUnprocessable()
             ->assertJsonPath('message', 'The invoice\'s Square link changed while it was being reconciled. Read the invoice and try again.');
 
         $this->assertSame([0, 0], [$invoice->payments()->count(), $other->payments()->count()]);
@@ -209,7 +209,7 @@ final class SquareOperabilityTest extends TestCase
         });
         $this->actingAsMcp($owner, self::SCOPES);
 
-        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-relinked'])->assertUnprocessable();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-relinked'], JSON_FORCE_OBJECT)->assertUnprocessable();
 
         $this->assertTrue($relinked);
         $this->assertSame(0, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('operation', 'invoices.square_reconcile')->count());

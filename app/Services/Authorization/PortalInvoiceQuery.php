@@ -8,6 +8,7 @@ use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Billing\InvoiceStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +49,7 @@ final class PortalInvoiceQuery
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspaceId)
             ->where('is_visible_to_client', true)
-            ->whereIn('status', ['issued', 'partially_paid', 'paid']);
+            ->whereIn('status', InvoiceStatus::charged());
 
         if ($viewer === null) {
             return $invoices->whereRaw('1 = 0');
