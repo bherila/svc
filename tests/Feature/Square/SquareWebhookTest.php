@@ -129,7 +129,7 @@ final class SquareWebhookTest extends TestCase
         $this->assertSame('disputed', $payment->fresh()->status);
         $this->assertSame(5_000, $payment->fresh()->disputed_amount);
         $this->assertSame(5_000, $invoice->fresh()->balance_amount);
-        $this->assertSame('partially_paid', $invoice->fresh()->status);
+        $this->assertSame('disputed', $invoice->fresh()->status);
         $this->assertSame(ReconciliationReviewReason::ProcessorDispute, $allocation->fresh()->review_reason);
         $this->assertTrue($allocation->fresh()->is_active);
         Http::assertSent(fn ($request): bool => parse_url($request->url(), PHP_URL_PATH) === '/v2/disputes');

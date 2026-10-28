@@ -538,6 +538,7 @@ try {
                         exact: true,
                     }),
                 ).toHaveCount(0);
+
                 if (screen === 'square_portal') {
                     await expect(
                         page.getByRole('link', {
