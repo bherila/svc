@@ -38,6 +38,8 @@ final class AgentCapabilities
         $canDiscloseProjects = $allowsScope(AgentApiScopes::PROJECTS_READ);
         $portalCompanyIds = $this->access->portalCompanyIdsIn($user, $workspace);
         $portalViewer = $portalCompanyIds !== [];
+        $portalProjectIds = $portalViewer ? $this->portal->constrainProjectQuery(ClientProject::query()
+            ->where('workspace_id', $workspace->id), $user)->pluck('id')->all() : [];
         // Internal roles authorize writes independently of portal membership.
         // Keep those capabilities, adding portal grants only where they apply.
         $viewable = $this->projects->workspaceRole($user, $workspace) === null
@@ -54,15 +56,19 @@ final class AgentCapabilities
             ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id))
             ->when(! $manager, fn (Builder $query): Builder => $query->where(fn (Builder $grants): Builder => $grants
                 ->whereIn('id', $viewable ?? [])
-                ->orWhere(fn (Builder $portal): Builder => $this->portal->constrainProjectQuery(
-                    $portal->where('is_visible_to_client', true), $user))))
+                ->orWhere(fn (Builder $portal): Builder => $portal
+                    ->where('is_visible_to_client', true)->whereIn('id', $portalProjectIds))))
             ->with(['workspace', 'clientCompany'])
             ->orderBy('id')
             ->get();
 
         foreach ($projects as $project) {
             $role = $manager ? ProjectRole::Owner : $roles->get($project->id)?->role;
-            $capabilities = $this->forProject($role, in_array($project->client_company_id, $portalCompanyIds, true), $allowsScope, ! $portalViewer);
+            $portalGranted = in_array($project->id, $portalProjectIds, true);
+            // Project/task/file reads retain the adapters' portal audience;
+            // time reads separately allow internal roles or granted client time.
+            $projectReadsAllowed = ! $portalViewer || ($portalGranted && $project->is_visible_to_client);
+            $capabilities = $this->forProject($role, $portalGranted, $allowsScope, $projectReadsAllowed, ! $portalViewer);
             $workspaceCapabilities = [...$workspaceCapabilities, ...$capabilities];
             if ($canDiscloseProjects) {
                 $projectEntries[] = [
@@ -102,17 +108,17 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function forProject(?ProjectRole $role, bool $client, Closure $allowsScope, bool $fileWritesAllowed): array
+    private function forProject(?ProjectRole $role, bool $client, Closure $allowsScope, bool $projectReadsAllowed, bool $fileWritesAllowed): array
     {
         $capabilities = [];
 
-        if ($allowsScope(AgentApiScopes::PROJECTS_READ)) {
+        if ($projectReadsAllowed && $allowsScope(AgentApiScopes::PROJECTS_READ)) {
             $capabilities[] = 'projects:read';
         }
         if ($allowsScope(AgentApiScopes::EXPENSES_READ) && $role !== null) {
             $capabilities[] = 'expenses:read';
         }
-        if ($allowsScope(AgentApiScopes::TASKS_READ)) {
+        if ($projectReadsAllowed && $allowsScope(AgentApiScopes::TASKS_READ)) {
             $capabilities[] = 'tasks:read';
         }
         if ($this->writesEnabled() && $allowsScope(AgentApiScopes::TASKS_WRITE)
@@ -121,11 +127,11 @@ final class AgentCapabilities
         }
         // Scoped collaboration files use exact parent access, not the legacy
         // generic manager-only file surface. Both scope families are required.
-        if ($allowsScope(AgentApiScopes::FILES_READ) && $allowsScope(AgentApiScopes::COLLABORATION_READ)
+        if ($projectReadsAllowed && $allowsScope(AgentApiScopes::FILES_READ) && $allowsScope(AgentApiScopes::COLLABORATION_READ)
             && ($client || $role !== null)) {
             $capabilities[] = 'files:read';
         }
-        if ($fileWritesAllowed && ! $client && ($role?->canManageTasks() ?? false)
+        if ($fileWritesAllowed && ($role?->canManageTasks() ?? false)
             && $allowsScope(AgentApiScopes::FILES_WRITE) && $allowsScope(AgentApiScopes::COLLABORATION_WRITE)
             && AgentWriteCutover::files() && AgentWriteCutover::collaboration()
             && AttachmentSharingGate::available()) {

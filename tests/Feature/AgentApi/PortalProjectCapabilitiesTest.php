@@ -91,7 +91,10 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $user = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $user->id, 'role' => $workspaceRole]);
         $membership = ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_PROJECTS]);
-        DB::table('client_portal_project_access')->insert(['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $assigned->id]);
+        DB::table('client_portal_project_access')->insert([
+            ['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $assigned->id],
+            ['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $private->id],
+        ]);
         $this->actingAsMcp($user, array_keys(AgentApiScopes::descriptions()));
         $session = $transport === 'mcp' ? $this->initialize() : null;
         $workspaces = $transport === 'mcp'
@@ -103,10 +106,16 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $this->assertSame(array_map(fn (ClientProject $project): array => [
             'project_id' => $project->public_id,
             'role' => 'owner',
-            'capabilities' => ['projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read', 'files:read'],
+            'capabilities' => $project->is($assigned)
+                ? ['projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read', 'files:read']
+                : ['tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read'],
         ], [$assigned, $ungranted, $private, $other]), $context['project_capabilities']);
         foreach (['tasks:write', 'time:write', 'time:approve', 'billing:write', 'finance:read'] as $internalCapability) {
             $this->assertContains($internalCapability, $context['capabilities']);
+        }
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$assigned->public_id}")->assertOk();
+        foreach ([$ungranted, $private, $other] as $hidden) {
+            $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$hidden->public_id}")->assertNotFound();
         }
         // File adapters deliberately retain the portal audience for dual identities.
         $this->assertNotContains('files:write', $context['capabilities']);
@@ -134,7 +143,7 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $scoped = app(AgentCapabilities::class)->forWorkspace($user, $workspace, fn (string $scope): bool => $scope === AgentApiScopes::PROJECTS_READ);
         $this->assertSame(['projects:read'], $scoped['capabilities']);
         foreach ($scoped['project_capabilities'] as $entry) {
-            $this->assertSame(['projects:read'], $entry['capabilities']);
+            $this->assertSame($entry['project_id'] === $assigned->public_id ? ['projects:read'] : [], $entry['capabilities']);
         }
     }
 
@@ -158,7 +167,7 @@ final class PortalProjectCapabilitiesTest extends TestCase
             ? $this->callTool($this->initialize(), 'context.get', [])['result']['structuredContent']['data']['workspaces'][0]
             : $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0');
         $this->assertSame([
-            ['project_id' => $managed->public_id, 'role' => 'manager', 'capabilities' => ['projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read', 'files:read']],
+            ['project_id' => $managed->public_id, 'role' => 'manager', 'capabilities' => ['tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read']],
             ['project_id' => $portal->public_id, 'role' => 'client', 'capabilities' => ['projects:read', 'tasks:read', 'time:read', 'files:read']],
         ], $context['project_capabilities']);
         $this->assertNotContains('billing:write', $context['capabilities']);
