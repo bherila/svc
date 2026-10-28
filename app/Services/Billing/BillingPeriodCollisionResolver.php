@@ -245,7 +245,7 @@ final class BillingPeriodCollisionResolver
             // it is handled rather than assumed because this is the guard.
             match (InvoiceStatus::tryFrom((string) $claim->invoice()->status)) {
                 InvoiceStatus::Draft => $drafts[] = $claim,
-                InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid => $charged[] = $claim,
+                InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid, InvoiceStatus::Disputed => $charged[] = $claim,
                 InvoiceStatus::Void => $voids[] = $claim,
                 null => throw new LogicException('An exact claim with an unrecognised status should have been refused.'),
             };
@@ -670,7 +670,7 @@ final class BillingPeriodCollisionResolver
         return match ($status) {
             InvoiceStatus::Draft => 'Discard that draft, and the schedule will raise a correctly dated replacement.',
             InvoiceStatus::Issued => 'Void that invoice, and the schedule will raise a correctly dated replacement.',
-            InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid => 'Money has already been taken against that invoice, '
+            InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid, InvoiceStatus::Disputed => 'Money has already been taken against that invoice, '
                 .'so it can be neither voided nor re-dated here. It needs a financial correction first.',
             // Cleared long before this for a non-exact overlap, and returned as
             // already billed for an exact one. Present so the match stays

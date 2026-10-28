@@ -752,6 +752,14 @@ recorded still answers with it. The website's payment form, a payment folded
 into `invoices.issue`, the console and the processors' webhooks are not
 affected.
 
+An invoice with any disputed payment is `disputed`, even when only part of the
+payment is contested or replacement payments already cover its balance.
+`invoices.list` accepts that status. The invoice remains visible and charged;
+collection and reminders pause, while `payments.record` can still record money
+already received against the remaining balance. Disputed payments supply no
+spendable credit until restored; restored excess after a win is available to
+future drafts. See the [disputed invoice contract](finance-api.md#disputed-invoice-state).
+
 ### Correcting a recorded payment
 
 `payments.correct` corrects a payment's **descriptive** fields - `method`,

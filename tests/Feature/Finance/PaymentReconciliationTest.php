@@ -239,7 +239,7 @@ class PaymentReconciliationTest extends TestCase
         $this->assertSame(2500, $disputed->disputed_amount);
         $this->assertSame(7500, $invoice->paid_amount);
         $this->assertSame(2500, $invoice->balance_amount);
-        $this->assertSame('partially_paid', $invoice->status);
+        $this->assertSame('disputed', $invoice->status);
 
         // The processor raises the contested amount; then the whole payment.
         $this->assertSame(4000, $lifecycle->setPaymentDisputed($payment, 4000, $workspace)->disputed_amount);
