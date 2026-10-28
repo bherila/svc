@@ -71,4 +71,6 @@ export type WorkspaceNavigation = {
     /** The Square mirror's explore screen, for managers where Square is connected. */
     square_href: string | null;
     history_href?: string | null;
+    /** The authorized API destination for creating a client. */
+    create_client_url?: string | null;
 };
