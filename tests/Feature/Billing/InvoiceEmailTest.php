@@ -18,9 +18,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Attachment;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 /**
@@ -37,30 +37,21 @@ use Tests\TestCase;
  */
 class InvoiceEmailTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! Route::has('svc.billing.invoices.send')) {
-            require base_path('routes/billing.php');
-        }
-    }
 
     public function test_sending_delivers_the_message_and_records_what_was_sent(): void
     {
         Mail::fake();
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
 
-        $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice), [
-                'recipients' => ['ap@synthetic.test'],
-                'subject' => 'Your March invoice',
-                'message' => "Hello,\n\nThe usual monthly work.",
-                'bcc_self' => true,
-            ])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, [
+            'recipients' => ['ap@synthetic.test'],
+            'subject' => 'Your March invoice',
+            'message' => "Hello,\n\nThe usual monthly work.",
+            'bcc_self' => true,
+        ])
+            ->assertOk()->assertJsonPath('data.delivery.status', 'sent');
 
         Mail::assertSent(InvoiceMail::class, function (InvoiceMail $mail) use ($owner, $invoice): bool {
             $attachments = $mail->attachments();
@@ -95,7 +86,7 @@ class InvoiceEmailTest extends TestCase
         Mail::fake();
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
 
-        $this->actingAs($owner)->postJson($this->sendUrl($workspace, $invoice))->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)->assertOk()->assertJsonPath('data.delivery.status', 'sent');
 
         Mail::assertSent(
             InvoiceMail::class,
@@ -108,9 +99,8 @@ class InvoiceEmailTest extends TestCase
         Mail::fake();
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
 
-        $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice), ['bcc_self' => false])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, ['bcc_self' => false])
+            ->assertOk()->assertJsonPath('data.delivery.status', 'sent');
 
         $this->assertSame([], ClientInvoiceEmailDelivery::query()->sole()->bcc ?? []);
     }
@@ -120,12 +110,11 @@ class InvoiceEmailTest extends TestCase
         Mail::fake();
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
 
-        $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice), [
-                'recipients' => [$owner->email],
-                'bcc_self' => true,
-            ])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, [
+            'recipients' => [$owner->email],
+            'bcc_self' => true,
+        ])
+            ->assertOk()->assertJsonPath('data.delivery.status', 'sent');
 
         // Otherwise the sender receives the same message twice and cannot tell
         // which copy is which.
@@ -140,9 +129,8 @@ class InvoiceEmailTest extends TestCase
             ->once()
             ->andThrow(new TransportException('535 auth failed for postmaster@synthetic.test'));
 
-        $response = $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice))
-            ->assertStatus(422);
+        $response = $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)
+            ->assertOk()->assertJsonPath('data.delivery.status', 'failed');
 
         // The exact sentence, not a substring of it. Asserting only that the
         // class name appears somewhere passes just as happily when the pieces
@@ -150,12 +138,12 @@ class InvoiceEmailTest extends TestCase
         // is the entire explanation an operator gets for a message that did
         // not go.
         $this->assertSame(
-            'Invoice delivery failed (TransportException). Nothing was sent.',
-            $response->json('message'),
+            'Email delivery failed (TransportException).',
+            $response->json('data.delivery.error_summary'),
         );
         // Never the transport's own words: those quote the address it was
         // refused for and sometimes the credentials it used.
-        $this->assertStringNotContainsString('535', $response->json('message'));
+        $this->assertStringNotContainsString('535', $response->json('data.delivery.error_summary'));
 
         $delivery = ClientInvoiceEmailDelivery::query()->sole();
 
@@ -169,7 +157,7 @@ class InvoiceEmailTest extends TestCase
         );
     }
 
-    public function test_a_definitely_failed_keyed_delivery_can_be_retried_with_the_same_key(): void
+    public function test_a_definitely_failed_delivery_can_be_retried_with_a_new_confirmed_attempt(): void
     {
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
         $payload = [
@@ -179,23 +167,24 @@ class InvoiceEmailTest extends TestCase
         ];
 
         Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic refusal'));
-        $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice), $payload)
-            ->assertStatus(422);
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, $payload)
+            ->assertOk()->assertJsonPath('data.delivery.status', 'failed');
         $failed = ClientInvoiceEmailDelivery::query()->sole();
         $this->assertSame('failed', $failed->status);
 
         Mail::clearResolvedInstance('mail.manager');
         app()->forgetInstance('mail.manager');
         Mail::fake();
-        $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice), $payload)
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $payload['idempotency_key'] = '11111111-1111-4111-8111-333333333333';
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice->fresh(), $payload)
+            ->assertOk()->assertJsonPath('data.delivery.status', 'sent');
 
         Mail::assertSent(InvoiceMail::class, 1);
-        $retried = ClientInvoiceEmailDelivery::query()->sole();
-        $this->assertSame($failed->id, $retried->id);
-        $this->assertSame(2, $retried->attempt_number);
+        $retried = ClientInvoiceEmailDelivery::query()->where('status', 'sent')->sole();
+        $this->assertNotSame($failed->id, $retried->id);
+        $this->assertSame('failed', $failed->fresh()->status);
+        $this->assertSame(2, ClientInvoiceEmailDelivery::query()->count());
+        $this->assertSame(1, $retried->attempt_number);
         $this->assertSame('sent', $retried->status);
         $this->assertNull($retried->failed_at);
         $this->assertNull($retried->error_summary);
@@ -311,9 +300,8 @@ class InvoiceEmailTest extends TestCase
             Mail::fake();
         }
 
-        $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice))
-            ->assertStatus($refused ? 422 : 302);
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)
+            ->assertOk()->assertJsonPath('data.delivery.status', $refused ? 'failed' : 'sent');
 
         $this->assertSame($before + 2, (int) $invoice->fresh()->lock_version);
         $this->assertNotSame($before, (int) $invoice->fresh()->lock_version);
@@ -538,7 +526,7 @@ class InvoiceEmailTest extends TestCase
         $log = Log::spy();
         Mail::shouldReceive('to')->once()->andThrow(new TransportException('refused'));
 
-        $this->actingAs($owner)->postJson($this->sendUrl($workspace, $invoice))->assertStatus(422);
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)->assertOk()->assertJsonPath('data.delivery.status', 'failed');
 
         $delivery = ClientInvoiceEmailDelivery::query()->sole();
 
@@ -623,8 +611,7 @@ class InvoiceEmailTest extends TestCase
         $invoice = app(InvoiceLifecycleService::class)
             ->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
 
-        $this->actingAs($owner)
-            ->postJson($this->sendUrl($workspace, $invoice))
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)
             ->assertStatus(422);
 
         Mail::assertNothingSent();
@@ -638,16 +625,10 @@ class InvoiceEmailTest extends TestCase
         $viewer = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $viewer->id, 'role' => 'viewer']);
 
-        $this->actingAs($viewer)
-            ->postJson($this->sendUrl($workspace, $invoice))
+        $this->sendAndResolveInvoiceApi($viewer, $workspace, $invoice)
             ->assertForbidden();
 
         Mail::assertNotSent(InvoiceMail::class);
-    }
-
-    private function sendUrl(Workspace $workspace, ClientInvoice $invoice): string
-    {
-        return "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send";
     }
 
     private function attachmentData(Attachment $attachment): string

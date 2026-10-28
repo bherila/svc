@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
@@ -42,6 +43,7 @@ use Tests\TestCase;
  */
 final class SquareCollectionGuardTest extends TestCase
 {
+    use CallsInvoiceApi;
     use CallsMcp;
     use RefreshDatabase;
 
@@ -67,8 +69,7 @@ final class SquareCollectionGuardTest extends TestCase
     {
         [$workspace, $owner, , $invoice] = $this->squareCollected($reason);
 
-        $this->actingAs($owner)
-            ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send", ['recipients' => ['billing@synthetic.example.test']])
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice->fresh(), ['recipients' => ['billing@synthetic.example.test']])
             ->assertStatus(422)
             ->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'Square collects it'));
 
@@ -250,7 +251,7 @@ final class SquareCollectionGuardTest extends TestCase
         $this->makeSquareCollected($reason, $workspace, $invoice);
 
         if ($transport === 'web') {
-            $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertRedirect()->assertSessionHasNoErrors();
+            $this->invoiceApi($owner, $workspace, $invoice->fresh(), 'issue')->assertOk();
         } else {
             $this->actingAsMcp($owner, self::SCOPES);
             $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue", ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true], ['Idempotency-Key' => 'synthetic-issue'])->assertOk();
@@ -271,7 +272,7 @@ final class SquareCollectionGuardTest extends TestCase
         $this->makeSquareCollected($reason, $workspace, $invoice);
 
         if ($transport === 'web') {
-            $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release")->assertStatus(422);
+            $this->invoiceApi($owner, $workspace, $invoice->fresh(), 'release')->assertStatus(422);
         } else {
             $this->actingAsMcp($owner, self::SCOPES);
             $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release", ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true], ['Idempotency-Key' => 'synthetic-release'])
@@ -308,9 +309,8 @@ final class SquareCollectionGuardTest extends TestCase
         $this->assertSame($agreement->id, (int) $invoice->client_agreement_id);
         $this->assertNull(app(SquareCollectionGuard::class)->refusal($invoice));
 
-        $this->actingAs($owner)
-            ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send", ['recipients' => ['billing@synthetic.example.test']])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice->fresh(), ['recipients' => ['billing@synthetic.example.test']])
+            ->assertOk()->assertJsonPath('data.delivery.status', 'sent');
 
         $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('status', 'sent')->count());
     }
@@ -328,9 +328,8 @@ final class SquareCollectionGuardTest extends TestCase
         }
 
         $this->assertNull(app(SquareCollectionGuard::class)->refusal($invoice->refresh()));
-        $this->actingAs($owner)
-            ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send", ['recipients' => ['billing@synthetic.example.test']])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice->fresh(), ['recipients' => ['billing@synthetic.example.test']])
+            ->assertOk()->assertJsonPath('data.delivery.status', 'sent');
     }
 
     /** Recording a payment Square collected is bookkeeping, not collection. */
@@ -339,11 +338,10 @@ final class SquareCollectionGuardTest extends TestCase
     {
         [$workspace, $owner, , $invoice] = $this->squareCollected($reason);
 
-        $this->actingAs($owner)
-            ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
-                'amount' => 5000, 'currency' => 'USD', 'received_on' => '2026-10-08', 'method' => 'card', 'reference' => 'Synthetic Square payment',
-            ])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->recordPaymentApi($owner, $workspace, $invoice->fresh(), [
+            'amount' => 5000, 'currency' => 'USD', 'received_on' => '2026-10-08', 'method' => 'card', 'reference' => 'Synthetic Square payment',
+        ])
+            ->assertCreated();
 
         $this->assertSame('paid', $invoice->refresh()->status);
     }

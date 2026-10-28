@@ -13,6 +13,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 /**
@@ -21,6 +22,7 @@ use Tests\TestCase;
  */
 final class AgentInvoiceFieldParityTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     private User $owner;
@@ -201,9 +203,7 @@ final class AgentInvoiceFieldParityTest extends TestCase
         $fields = ['recipients' => ['billing@example.test'], 'subject' => 'Synthetic same subject', 'message' => 'Synthetic same note.', 'bcc_self' => true];
 
         $this->send('rest', $viaApi, ['expected_version' => AgentApiVersion::for($viaApi), 'confirm' => true, ...$fields], 'synthetic-parity-api');
-        $this->actingAs($this->owner)
-            ->post('/workspaces/'.$this->workspace->public_id.'/invoices/'.$viaScreen->public_id.'/send', [...$fields, 'idempotency_key' => 'synthetic-parity-screen'])
-            ->assertRedirect();
+        $this->invoiceApi($this->owner, $this->workspace, $viaScreen, 'send', $fields, 'synthetic-parity-screen')->assertOk();
 
         $shape = fn (ClientInvoice $invoice): array => ClientInvoiceEmailDelivery::query()->where('workspace_id', $this->workspace->id)
             ->where('client_invoice_id', $invoice->id)->get(['recipients', 'bcc', 'subject', 'body'])->map(fn (ClientInvoiceEmailDelivery $delivery): array => [

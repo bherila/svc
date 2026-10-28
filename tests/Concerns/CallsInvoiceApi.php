@@ -4,10 +4,13 @@ namespace Tests\Concerns;
 
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\InvoiceEmailService;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceEmailDraft;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 
@@ -43,13 +46,38 @@ trait CallsInvoiceApi
     protected function createInvoiceApi(User $actor, Workspace $workspace, ClientCompany $company, array $body, ?string $key = null): TestResponse
     {
         return $this->billingSessionRequest($actor, 'postJson', route('agent-api.v1.invoices.store', $workspace, absolute: false),
-            $body + ['company_id' => $company->public_id], ['Idempotency-Key' => $key ?? (string) Str::uuid()]);
+            $body + ['company_id' => $company->public_id, 'is_visible_to_client' => false], ['Idempotency-Key' => $key ?? (string) Str::uuid()]);
+    }
+
+    /**
+     * RefreshDatabase holds the outer transaction open. Register through the
+     * API, explicitly drive its registered callback, then replay to read the
+     * recorded outcome. InvoiceSendOutcomeTest separately proves real commits
+     * run this callback in the request and a rollback sends nothing.
+     */
+    protected function sendAndResolveInvoiceApi(User $actor, Workspace $workspace, ClientInvoice $invoice, array $body = [], ?string $key = null): TestResponse
+    {
+        $key ??= $body['idempotency_key'] ?? (string) Str::uuid();
+        unset($body['idempotency_key']);
+        $body += ['recipients' => array_values(array_filter([$invoice->clientCompany?->billing_email]))];
+        $registered = $this->invoiceApi($actor, $workspace, $invoice, 'send', $body, $key);
+        $id = $registered->json('data.delivery.id');
+        if (! $registered->isSuccessful() || ! is_string($id)) {
+            return $registered;
+        }
+        $delivery = ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)
+            ->where('client_invoice_id', $invoice->id)->where('public_id', $id)->firstOrFail();
+        app(InvoiceEmailService::class)->deliverRegistered($invoice, $delivery->id,
+            InvoiceEmailDraft::of($delivery->recipients, $delivery->bcc ?? [], $delivery->subject, $delivery->body));
+
+        return $this->invoiceApi($actor, $workspace, $invoice, 'send', $body, $key);
     }
 
     private function billingSessionRequest(User $actor, string $method, string $url, array $body, array $headers): TestResponse
     {
         $cookies = $this->unencryptedCookies;
         $credentials = $this->withCredentials;
+        $guard = $this->app['auth']->getDefaultDriver();
         try {
             return $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
                 ->{$method}($url, $body, $headers);
@@ -58,6 +86,7 @@ trait CallsInvoiceApi
             // request because this helper left a session cookie attached.
             $this->unencryptedCookies = $cookies;
             $this->withCredentials = $credentials;
+            $this->app['auth']->shouldUse($guard);
         }
     }
 }

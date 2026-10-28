@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 /**
@@ -27,6 +28,7 @@ use Tests\TestCase;
  */
 final class SystemOnlyLineTypesTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     private User $owner;
@@ -84,13 +86,12 @@ final class SystemOnlyLineTypesTest extends TestCase
     #[DataProvider('systemOnly')]
     public function test_the_operator_invoice_form_refuses_it(string $type): void
     {
-        $this->actingAs($this->owner)
-            ->postJson(route('svc.billing.invoices.store', [$this->workspace, $this->company]), [
-                'invoice_number' => 'GRAN-MANUAL-1', 'currency' => 'USD',
-                'lines' => [$this->line($type)],
-            ])
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
+            'invoice_number' => 'GRAN-MANUAL-1', 'currency' => 'USD',
+            'manual_lines' => [$this->line($type)],
+        ])
             ->assertStatus(422)
-            ->assertJsonValidationErrors('lines.0.type');
+            ->assertJsonValidationErrors('manual_lines.0.type');
 
         $this->assertSame(0, ClientInvoice::query()->count());
     }
@@ -214,12 +215,11 @@ final class SystemOnlyLineTypesTest extends TestCase
 
     public function test_an_ordinary_manual_line_is_still_accepted(): void
     {
-        $this->actingAs($this->owner)
-            ->postJson(route('svc.billing.invoices.store', [$this->workspace, $this->company]), [
-                'invoice_number' => 'GRAN-MANUAL-2', 'currency' => 'USD',
-                'lines' => [$this->line('adjustment')],
-            ])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
+            'invoice_number' => 'GRAN-MANUAL-2', 'currency' => 'USD',
+            'manual_lines' => [$this->line('adjustment')],
+        ])
+            ->assertCreated();
 
         $this->assertSame(1, ClientInvoice::query()->count());
     }

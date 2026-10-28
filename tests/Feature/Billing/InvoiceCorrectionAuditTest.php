@@ -20,10 +20,12 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 final class InvoiceCorrectionAuditTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     public static function surfaces(): iterable
@@ -53,10 +55,7 @@ final class InvoiceCorrectionAuditTest extends TestCase
                 ['expected_version' => AgentApiVersion::for($invoice), 'confirm' => true, 'reason' => $reason, 'lines' => $submitted],
             )->assertOk()->json('data.correction');
         } else {
-            $this->actingAs($owner)->post(
-                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct",
-                ['expected_revision' => 1, 'reason' => $reason, 'lines' => $submitted],
-            )->assertRedirect();
+            $this->invoiceApi($owner, $workspace, $invoice, 'correct', ['reason' => $reason, 'lines' => $submitted])->assertOk();
             $page = $this->get(route('clients.invoice', [$workspace, $invoice->clientCompany, $invoice]))
                 ->assertOk()->assertInertia(fn (Assert $page) => $page->has('corrections', 1));
             $summary = $page->viewData('page')['props']['corrections'][0];
