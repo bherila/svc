@@ -8,6 +8,12 @@ use App\Support\AgentApi\AgentApiVersion;
 
 final class AgentProjectPresenter
 {
+    /** @return array{id: string, name: string} */
+    public static function identity(ClientProject $project): array
+    {
+        return ['id' => $project->public_id, 'name' => $project->name];
+    }
+
     /**
      * @param  bool  $includeRepository  False for a portal client. The mapping
      *                                   names an internal host, organization and
@@ -19,11 +25,13 @@ final class AgentProjectPresenter
      */
     public function present(Workspace $workspace, ClientProject $project, bool $includeRepository): array
     {
+        $identity = self::identity($project);
+
         return [
-            'id' => $project->public_id,
+            'id' => $identity['id'],
             'company_id' => $project->clientCompany->public_id,
             'company_name' => $project->clientCompany->name,
-            'name' => $project->name,
+            'name' => $identity['name'],
             'description' => $project->description,
             // The canonical `host/owner/name` this project is worked in, or
             // null when nobody has said. An internal caller resolves its own

@@ -10,13 +10,21 @@ use App\Support\AgentApi\AgentApiVersion;
 
 final class AgentTaskPresenter
 {
+    /** @return array{id: string, title: string} */
+    public static function identity(ClientTask $task): array
+    {
+        return ['id' => $task->public_id, 'title' => $task->title];
+    }
+
     /** @return array<string, mixed> */
     public function present(Workspace $workspace, ClientTask $task, bool $includePlanning = false, bool $canManage = false): array
     {
+        $identity = self::identity($task);
+
         return [
-            'id' => $task->public_id,
+            'id' => $identity['id'],
             'project_id' => $task->project->public_id,
-            'title' => $task->title,
+            'title' => $identity['title'],
             'description' => $task->description,
             'status' => $task->status,
             'is_visible_to_client' => $task->is_visible_to_client,
