@@ -224,13 +224,21 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     response.url().startsWith(origin + '/api/v1/') &&
                     response.request().resourceType() === 'fetch'
                 ) {
+                    let body;
+
+                    try {
+                        body = (await response.text()).slice(0, 4000);
+                    } catch {
+                        body = 'Response body unavailable after cancellation.';
+                    }
+
                     logs.push(
                         JSON.stringify({
                             screen,
                             width,
                             url: response.url(),
                             status: response.status(),
-                            body: (await response.text()).slice(0, 4000),
+                            body,
                         }) + '\n',
                     );
                 }
