@@ -7,8 +7,8 @@ use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 /**
@@ -27,15 +27,6 @@ class AgreementCorrectionTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! Route::has('svc.engagement.agreements.update')) {
-            require base_path('routes/engagement.php');
-        }
-    }
-
     public function test_an_operator_renames_a_legacy_agreement_without_touching_its_terms(): void
     {
         [$owner, $workspace, $agreement] = $this->agreement([
@@ -46,9 +37,9 @@ class AgreementCorrectionTest extends TestCase
             'rollover_months' => 3,
         ]);
 
-        $this->actingAs($owner)
-            ->patchJson($this->url($workspace, $agreement), ['title' => 'Support retainer, 2026'])
-            ->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'title' => 'Support retainer, 2026'])
+            ->assertOk();
 
         $agreement->refresh();
 
@@ -65,9 +56,9 @@ class AgreementCorrectionTest extends TestCase
     {
         [$owner, $workspace, $agreement] = $this->agreement(['hourly_rate_amount' => 22500]);
 
-        $this->actingAs($owner)
-            ->patchJson($this->url($workspace, $agreement), ['hourly_rate_amount' => null])
-            ->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'hourly_rate_amount' => null])
+            ->assertOk();
 
         // Null is "this agreement states no rate", and the rate lookup refuses
         // rather than pricing the work at nothing. A zero would be a price.
@@ -78,9 +69,9 @@ class AgreementCorrectionTest extends TestCase
     {
         [$owner, $workspace, $agreement] = $this->agreement(['title' => 'Legacy Agreement']);
 
-        $this->actingAs($owner)
-            ->patchJson($this->url($workspace, $agreement), ['title' => 'Named at last'])
-            ->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'title' => 'Named at last'])
+            ->assertOk();
 
         $activity = ClientCompanyActivity::query()
             ->where('action', 'agreement.updated')
@@ -96,9 +87,9 @@ class AgreementCorrectionTest extends TestCase
     {
         [$owner, $workspace, $agreement] = $this->agreement(['title' => 'Already right']);
 
-        $this->actingAs($owner)
-            ->patchJson($this->url($workspace, $agreement), ['title' => 'Already right'])
-            ->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'title' => 'Already right'])
+            ->assertOk();
 
         $this->assertSame(
             0,
@@ -112,8 +103,8 @@ class AgreementCorrectionTest extends TestCase
 
         // The rule this replaces was `after_or_equal:starts_on`, which passes
         // anything when the request carries no start to compare against.
-        $this->actingAs($owner)
-            ->patchJson($this->url($workspace, $agreement), ['ends_on' => '2026-02-01'])
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'ends_on' => '2026-02-01'])
             ->assertStatus(422)
             ->assertJsonValidationErrors('ends_on');
 
@@ -130,8 +121,8 @@ class AgreementCorrectionTest extends TestCase
         // The model's own guard: a threshold the retainer cannot hold means
         // every invoice bills catch-up hours forever to restore a buffer that
         // does not fit, and that reads as a pricing decision nobody made.
-        $this->actingAs($owner)
-            ->patchJson($this->url($workspace, $agreement), ['catch_up_threshold_minutes' => 900])
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'catch_up_threshold_minutes' => 900])
             ->assertStatus(422);
 
         $this->assertNull($agreement->fresh()->catch_up_threshold_minutes);
@@ -155,11 +146,11 @@ class AgreementCorrectionTest extends TestCase
             'currency' => 'USD',
         ]);
 
-        $this->actingAs($owner)
-            ->patchJson($this->url($workspace, $agreement), ['ends_on' => '2026-07-31'])
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'ends_on' => '2026-07-31'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors([
-                'engagement' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
+                'agreement' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
             ]);
 
         $this->assertSame('2026-06-30', $agreement->fresh()->ends_on?->toDateString());
@@ -172,8 +163,8 @@ class AgreementCorrectionTest extends TestCase
         $viewer = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $viewer->id, 'role' => 'viewer']);
 
-        $this->actingAs($viewer)
-            ->patchJson($this->url($workspace, $agreement), ['title' => 'Renamed by a viewer'])
+        $this->actingAs($viewer)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($workspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'title' => 'Renamed by a viewer'])
             ->assertForbidden();
 
         $this->assertSame('Legacy Agreement', $agreement->fresh()->title);
@@ -188,8 +179,8 @@ class AgreementCorrectionTest extends TestCase
         // it. Agreement ids are unique across every tenant, so a pasted one
         // arrives bound and plausible - and the route's workspace gate passes,
         // because it is their workspace.
-        $this->actingAs($intruder)
-            ->patchJson($this->url($theirWorkspace, $agreement), ['title' => 'Renamed by a stranger'])
+        $this->actingAs($intruder)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->patchJson($this->url($theirWorkspace, $agreement), ['expected_version' => AgentApiVersion::for($agreement), 'title' => 'Renamed by a stranger'])
             ->assertNotFound();
 
         $this->assertSame('Legacy Agreement', $agreement->fresh()->title);
@@ -197,7 +188,7 @@ class AgreementCorrectionTest extends TestCase
 
     private function url(Workspace $workspace, ClientAgreement $agreement): string
     {
-        return "/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}";
+        return "/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}";
     }
 
     /**

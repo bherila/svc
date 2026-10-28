@@ -46,9 +46,7 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/automatic-delivery/release', [InvoiceController::class, 'releaseAutomatic'])->name('svc.billing.invoices.automatic-delivery.release');
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/void', [InvoiceController::class, 'void'])->name('svc.billing.invoices.void');
 
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/billing-schedules', [BillingScheduleController::class, 'store'])->name('svc.billing.schedules.store');
     Route::get('/workspaces/{workspace}/billing-schedules/{schedule}', [BillingScheduleController::class, 'show'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('svc.billing.schedules.show');
-    Route::post('/workspaces/{workspace}/billing-schedules/{schedule}/generate', [BillingScheduleController::class, 'generate'])->name('svc.billing.schedules.generate');
 });
