@@ -163,7 +163,7 @@ final class AttachmentSharingNativeTest extends TestCase
             $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[2]->public_id]))->assertOk()->assertStreamedContent('Synthetic commercial bytes');
             $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[0]->public_id]))->assertNotFound();
             if ($type === 'proposal') {
-                $membership = $company->portalUsers()->whereKey($portal->id)->firstOrFail()->pivot;
+                $membership = DB::table('client_company_memberships')->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->where('user_id', $portal->id)->firstOrFail();
                 DB::table('client_company_memberships')->where('id', $membership->id)->update(['access_scope' => 'projects']);
                 $this->get($detail)->assertNotFound();
                 DB::table('client_portal_project_access')->insert(['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $project->id]);
