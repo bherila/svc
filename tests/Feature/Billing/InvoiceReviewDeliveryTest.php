@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceEmailDraft;
 use Closure;
 use DateTimeInterface;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\TestCase;
@@ -223,50 +225,49 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'workspace_id' => $workspace->id,
             'role' => 'client',
         ]);
-        $url = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => null,
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 1,
-        ])->assertSessionHasErrors('automatic_invoice_email_enabled');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_enabled');
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => 'billing@synthetic.test',
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 366,
-        ])->assertSessionHasErrors('automatic_invoice_email_delay_days');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_delay_days');
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => 'billing@synthetic.test',
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 1.5,
-        ])->assertSessionHasErrors('automatic_invoice_email_delay_days');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_delay_days');
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => 'billing@synthetic.test',
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 0,
-        ])->assertRedirect();
+        ])->assertOk();
 
         $this->assertTrue($company->fresh()->automatic_invoice_email_enabled);
         $this->assertSame(0, $company->fresh()->automatic_invoice_email_delay_days);
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => null,
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 0,
-        ])->assertSessionHasErrors('automatic_invoice_email_enabled');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_enabled');
         $this->assertSame('billing@synthetic.test', $company->fresh()->billing_email);
         $this->assertDatabaseHas('client_company_activity', [
             'workspace_id' => $workspace->id,
@@ -281,7 +282,6 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $historical = app(InvoiceLifecycleService::class)->issue($historical, $workspace);
         $viewer = User::factory()->create(['email' => 'viewer@synthetic.test']);
         $workspace->memberships()->create(['user_id' => $viewer->id, 'role' => 'viewer']);
-        $url = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
         $enabled = [
             'name' => $company->name,
             'billing_email' => $company->billing_email,
@@ -290,8 +290,8 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'automatic_invoice_email_delay_days' => 0,
         ];
 
-        $this->actingAs($viewer)->patch($url, $enabled)->assertForbidden();
-        $this->actingAs($owner)->patch($url, $enabled)->assertRedirect();
+        $this->clientSettingsPatch($viewer, $workspace, $company, $enabled)->assertForbidden();
+        $this->clientSettingsPatch($owner, $workspace, $company, $enabled)->assertOk();
         $historical = $historical->fresh();
         $this->assertNull($historical->automatic_delivery_status);
         $this->assertNull($historical->automatic_delivery_delay_days);
@@ -303,14 +303,14 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $newInvoice = app(InvoiceLifecycleService::class)->issue($newInvoice, $workspace);
         $this->assertSame('scheduled', $newInvoice->automatic_delivery_status);
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             ...$enabled,
             'automatic_invoice_email_enabled' => false,
             'automatic_invoice_email_delay_days' => null,
-        ])->assertRedirect();
+        ])->assertOk();
         $this->assertSame('cancelled', $newInvoice->fresh()->automatic_delivery_status);
 
-        $this->actingAs($owner)->patch($url, $enabled)->assertRedirect();
+        $this->clientSettingsPatch($owner, $workspace, $company, $enabled)->assertOk();
         $this->assertSame('cancelled', $newInvoice->fresh()->automatic_delivery_status);
     }
 
@@ -858,6 +858,13 @@ final class InvoiceReviewDeliveryTest extends TestCase
                 'actions.release_automatic',
                 "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release",
             ));
+    }
+
+    private function clientSettingsPatch(User $user, Workspace $workspace, ClientCompany $company, array $fields): TestResponse
+    {
+        return $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-delivery-settings-'.str()->uuid())
+            ->patchJson(route('agent-api.v1.clients.update', [$workspace, $company]), $fields + ['expected_version' => AgentApiVersion::for($company->fresh())]);
     }
 
     private function attachmentData(Attachment $attachment): string
