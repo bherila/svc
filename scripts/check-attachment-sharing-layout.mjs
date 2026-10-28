@@ -153,8 +153,18 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         .poll(
             async () => {
                 try {
-                    return (await fetch(origin + fixture.note, { headers }))
-                        .status;
+                    const response = await fetch(origin + fixture.note, {
+                        headers,
+                    });
+
+                    if (response.status >= 500) {
+                        writeFileSync(
+                            path.join(artifacts, 'initial-error.html'),
+                            await response.text(),
+                        );
+                    }
+
+                    return response.status;
                 } catch {
                     return 0;
                 }

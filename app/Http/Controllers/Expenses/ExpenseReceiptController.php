@@ -44,7 +44,7 @@ class ExpenseReceiptController extends Controller
             'files_next_href' => $filePage->nextHref,
             'files_previous_href' => $filePage->previousHref,
             'upload' => ['href' => route('agent-api.v1.expense-receipts.upload-url', [$workspace, $record->public_id], absolute: false),
-                'parent_version' => AgentApiVersion::for($record), 'description' => 'New receipts are private to workspace managers.'],
+                'parent_version' => AgentApiVersion::for($record), 'method' => 'GET', 'description' => 'New receipts are private to workspace managers.'],
         ]);
     }
 }

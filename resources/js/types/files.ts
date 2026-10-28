@@ -28,6 +28,7 @@ export type AttachmentPanel = {
         href: string;
         parent_version: string;
         description?: string;
+        method?: 'GET' | 'POST';
     } | null;
     next_href: string | null;
     parent_version?: string;

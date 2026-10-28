@@ -214,6 +214,7 @@ export function UploadAttachment({
     const attempt = useRef<{
         file: File;
         parentVersion: string;
+        method: 'GET' | 'POST';
         href: string;
         key: string;
     } | null>(null);
@@ -232,6 +233,7 @@ export function UploadAttachment({
         attempt.current ??= {
             file,
             parentVersion: upload.parent_version,
+            method: upload.method ?? 'POST',
             href: upload.href,
             key: newIdempotencyKey(),
         };
