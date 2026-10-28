@@ -108,6 +108,21 @@ final class AttachmentSharingController extends Controller
             $attachment, $this->reader->nativePortalAudience($actor, $workspace));
     }
 
+    public function portalLegacyIndex(Request $request, ClientCompany $clientCompany, string $recordType, string $recordPublicId): JsonResponse
+    {
+        return response()->json($this->view->portalLegacy($this->actor($request), $clientCompany, $recordType, $recordPublicId,
+            AttachmentPageQuery::fromInput($request->query())));
+    }
+
+    public function portalLegacyDownload(Request $request, ClientCompany $clientCompany, string $recordType, string $recordPublicId, string $attachment): StreamedResponse
+    {
+        $actor = $this->actor($request);
+        $this->view->portalParent($actor, $clientCompany, $recordType, $recordPublicId);
+
+        return $this->files->download($actor, $clientCompany->workspace, new AttachmentParentReference($recordType, $recordPublicId), $attachment,
+            $this->reader->nativePortalAudience($actor, $clientCompany->workspace));
+    }
+
     private function actor(Request $request): User
     {
         $actor = $request->user();

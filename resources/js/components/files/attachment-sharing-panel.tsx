@@ -25,7 +25,7 @@ function MutationError({
                     <Button
                         type="button"
                         variant="outline"
-                        onClick={() => router.reload({ preserveScroll: true })}
+                        onClick={() => router.reload()}
                     >
                         Reload current files
                     </Button>
@@ -173,7 +173,7 @@ function RemoveAttachment({
         setBusy(false);
 
         if (result.ok) {
-            router.reload({ preserveScroll: true });
+            router.reload();
         } else {
             setError(result.message);
             setStale(result.status === 409);
@@ -311,7 +311,7 @@ function UploadAttachment({
                 setBusy(false);
 
                 if (result.ok) {
-                    router.reload({ preserveScroll: true });
+                    router.reload();
                 } else {
                     setError(result.message);
                     setStale(result.status === 409);

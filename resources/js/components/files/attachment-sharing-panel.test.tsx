@@ -248,7 +248,7 @@ describe('attachment sharing panel', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Reload current files' }),
         );
-        expect(reload).toHaveBeenCalledWith({ preserveScroll: true });
+        expect(reload).toHaveBeenCalledWith();
     });
 
     it('replaces parent-derived sharing state and captured versions when the authorized seed changes', async () => {

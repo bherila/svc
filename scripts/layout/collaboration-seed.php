@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\ClientAgreement;
-use App\Models\ClientCompany;
 use App\Models\ClientComment;
+use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
+use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
@@ -72,10 +74,14 @@ $action->createComment($manager, $workspace, $company, 'task', $task->public_id,
 $agreement = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'client_project_id' => $project->id, 'title' => str_repeat('SyntheticAgreement', 10), 'starts_on' => '2026-10-01',
     'currency' => 'USD', 'status' => 'active', 'is_visible_to_client' => true]);
+$portalProposal = ClientProposal::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+    'client_project_id' => $project->id, 'title' => str_repeat('SyntheticProposal', 12), 'status' => 'sent', 'currency' => 'USD', 'is_visible_to_client' => true]);
+$portalInvoice = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+    'invoice_number' => 'SYNTHETIC-SHARED-FILES', 'status' => 'issued', 'currency' => 'USD', 'is_visible_to_client' => true]);
 $expense = (new WorkspaceExpenses($workspace))->record($company, $project,
     new NewExpense(CarbonImmutable::parse('2026-10-01'), 10000, 'USD', str_repeat('SyntheticReceiptExpense', 10)), $manager);
 $storage = app(AttachmentStorageService::class);
-foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 : 101]] as [$parent, $count]) {
+foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 : 101], [$portalProposal, 2], [$portalInvoice, 2]] as [$parent, $count]) {
     $first = $storage->store($workspace, $parent, UploadedFile::fake()->createWithContent('SyntheticReaderFile.txt', 'Synthetic browser file bytes'), $manager);
     DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->update(['is_visible_to_client' => true]);
     $row = (array) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->first();
@@ -85,7 +91,7 @@ foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 
         $key = 'synthetic-reader/'.$id;
         $filename = $index === $count - 1 ? str_repeat('SyntheticLongUnbrokenFilename', 15).'.txt' : 'SyntheticFile-'.$index.'.txt';
         DB::table('client_attachments')->insert([...$row, 'public_id' => $id, 'object_key' => $key,
-            'original_filename' => Crypt::encryptString($filename)]);
+            'original_filename' => Crypt::encryptString($filename), 'is_visible_to_client' => ! ($parent instanceof ClientProposal || $parent instanceof ClientInvoice)]);
         Storage::disk('svc_files')->put($key, 'Synthetic browser file bytes');
     }
 }
@@ -111,6 +117,8 @@ if ($sharingLayout) {
 }
 file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->id, 'portal_user_id' => $portal->id,
     'company_name' => $company->name,
+    'portalproposalfiles' => route('portal.proposal', [$company, $portalProposal], absolute: false),
+    'portalinvoicefiles' => route('portal.invoice', [$company, $portalInvoice], absolute: false),
     'parentfiles' => route('svc.files.collaboration.show', [$workspace, $company->public_id, 'topic', $topics['note']->public_id], absolute: false),
     'dual_preview_user_id' => $dualPreview->id,
     'agreementfiles' => route('clients.agreement', [$workspace, $company, $agreement], absolute: false),

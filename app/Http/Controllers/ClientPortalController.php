@@ -19,6 +19,7 @@ use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Collaboration\CollaborationAccess;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Files\AttachmentReader;
+use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Tasks\TaskVisibility;
 use App\Support\Billing\InvoiceLineDetail;
@@ -100,6 +101,7 @@ class ClientPortalController extends Controller
             ->get();
 
         return Inertia::render('portal/invoice', [
+            'attachment_panel' => app(AttachmentSharingNativeView::class)->portalLegacy($this->fileViewer($request), $clientCompany, 'invoice', $invoice->public_id),
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -287,6 +289,7 @@ class ClientPortalController extends Controller
         $clientProposal->setRelation('items', $items);
 
         return Inertia::render('clients/proposal', [
+            'attachment_panel' => app(AttachmentSharingNativeView::class)->portalLegacy($this->fileViewer($request), $clientCompany, 'proposal', $clientProposal->public_id),
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -491,6 +494,14 @@ class ClientPortalController extends Controller
                 ->whereIn('id', $visibleProjectIds ?? []))
             ->orderBy('name')
             ->get();
+    }
+
+    private function fileViewer(Request $request): User
+    {
+        $viewer = $this->viewer($request);
+        abort_unless($viewer instanceof User, 401);
+
+        return $viewer;
     }
 
     /** The portal is a web surface; an agent principal never reaches it. */

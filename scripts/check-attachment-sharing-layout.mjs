@@ -174,13 +174,17 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
 
         for (const screen of process.argv.includes('--parent-only')
             ? ['parentfiles']
-            : [
-                  'note',
-                  'portal',
-                  'agreementfiles',
-                  'operationsfiles',
-                  'parentfiles',
-              ]) {
+            : process.argv.includes('--portal-commercial-only')
+              ? ['portalproposalfiles', 'portalinvoicefiles']
+              : [
+                    'note',
+                    'portal',
+                    'agreementfiles',
+                    'operationsfiles',
+                    'parentfiles',
+                    'portalproposalfiles',
+                    'portalinvoicefiles',
+                ]) {
             const errors = [];
             const requests = [];
             const onError = (error) => errors.push(error.message);
@@ -220,7 +224,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                           .first();
             await expect(panel).toBeVisible();
 
-            if (screen === 'portal') {
+            if (screen.startsWith('portal')) {
                 await expect(page.getByLabel('Visible to client')).toHaveCount(
                     0,
                 );

@@ -3,9 +3,16 @@
 namespace App\Services\Files;
 
 use App\Models\ClientAttachment;
+use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
+use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\AgentPageBudget;
+use App\Support\AgentApi\CursorPage;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -50,6 +57,36 @@ final class AttachmentSharingNativeView
                 'parent_version' => AgentApiVersion::for($view->parent)] : null,
             'next_href' => $cursor === null ? null : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', [...$readParameters,
                 'limit' => $page?->limit ?? 100, 'cursor' => $cursor], absolute: false)];
+    }
+
+    /** Current client-safe parent access precedes attachment rows or bytes. */
+    public function portalParent(User $actor, ClientCompany $company, string $type, string $id): Model
+    {
+        abort_unless(in_array($type, ['proposal', 'invoice'], true), 404);
+        $parent = app(AttachmentRecordResolver::class)->resolve($company->workspace, $type, $id);
+        abort_unless(($parent instanceof ClientProposal || $parent instanceof ClientInvoice) && $parent->client_company_id === $company->id, 404);
+        $this->reader->assertParentAccess($actor, $company->workspace, $type, $id, $this->reader->nativePortalAudience($actor, $company->workspace));
+
+        return $parent;
+    }
+
+    /** Read-only native Portal files, with no internal sharing notes or writer capabilities.
+     * @return array<string,mixed> */
+    public function portalLegacy(User $actor, ClientCompany $company, string $type, string $id, ?AttachmentPageQuery $page = null): array
+    {
+        $parent = $this->portalParent($actor, $company, $type, $id);
+        $workspace = $company->workspace;
+        $audience = $this->reader->nativePortalAudience($actor, $workspace);
+        $query = $this->reader->forParent($actor, $workspace, $type, $id, $audience);
+        $page ??= AttachmentPageQuery::fromInput(['limit' => 25]);
+        $parameters = ['clientCompany' => $company, 'recordType' => $type, 'recordPublicId' => $id];
+        $result = CursorPage::run($workspace, implode(':', ['native-portal-files', $company->public_id, $type, $id, $actor->public_id, $audience->name, 'id-desc']), $page->limit, $page->cursor,
+            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $rows) => $rows->where('id', '<', $after))->orderByDesc('id')->limit($take)->get(),
+            fn (ClientAttachment $file): array => AttachmentMetadata::native($file, route('portal.files.parent.download', [...$parameters, 'attachment' => $file->public_id], absolute: false), null, null),
+            maxDataBytes: AgentPageBudget::dataBytes(), allowLegacyCursor: false);
+
+        return ['files' => $result['data'], 'upload' => null, 'parent_version' => AgentApiVersion::for($parent),
+            'next_href' => $result['meta']['next_cursor'] === null ? null : route('portal.files.parent.index', [...$parameters, 'limit' => $page->limit, 'cursor' => $result['meta']['next_cursor']], absolute: false)];
     }
 
     /** Commercial pages may remain readable for repairing malformed old project references.

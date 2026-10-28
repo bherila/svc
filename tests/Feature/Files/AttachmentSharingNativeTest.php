@@ -3,6 +3,7 @@
 namespace Tests\Feature\Files;
 
 use App\Models\ClientCollaborationTopic;
+use App\Models\ClientInvoice;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Services\Files\AttachmentPrivacyLatch;
@@ -123,6 +124,66 @@ final class AttachmentSharingNativeTest extends TestCase
                 ->where('workspace.clients.0.proposals.0.attachment_panel.files.0.sharing.is_visible_to_client', false));
         }
         $this->assertSame($counts[0], $counts[3], 'Growing native file parents must not grow SQL query count.');
+    }
+
+    public function test_portal_commercial_file_panels_are_bounded_read_only_and_reauthorize_before_names_and_bytes(): void
+    {
+        [$workspace, $company, $project, $owner] = $this->fixture();
+        $project->update(['is_visible_to_client' => true]);
+        $portal = $this->syntheticUser('commercial-file-portal');
+        $company->portalUsers()->attach($portal->id, ['role' => 'viewer', 'access_scope' => 'company']);
+        $sibling = $this->syntheticCompany($workspace, 'commercial-file-sibling');
+        $sibling->portalUsers()->attach($portal->id, ['role' => 'viewer', 'access_scope' => 'company']);
+        $parents = [
+            'proposal' => ClientProposal::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+                'title' => 'Synthetic Portal proposal', 'status' => 'sent', 'currency' => 'USD', 'is_visible_to_client' => true]),
+            'invoice' => ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                'invoice_number' => 'SYNTHETIC-FILE-1', 'status' => 'issued', 'currency' => 'USD', 'is_visible_to_client' => true]),
+        ];
+        foreach ($parents as $type => $parent) {
+            $files = [];
+            foreach (range(1, 3) as $index) {
+                $file = app(AttachmentStorageService::class)->store($workspace, $parent, UploadedFile::fake()->createWithContent('Synthetic-'.$type.'-'.$index.'.txt', 'Synthetic commercial bytes'), $owner);
+                if ($index > 1) {
+                    $this->actingAs($owner)->withHeader('Idempotency-Key', 'commercial-share-'.$type.'-'.$index)
+                        ->patchJson(route('svc.files.visibility.update', [$workspace, $file->public_id]), ['is_visible_to_client' => true,
+                            'expected_version' => AgentApiVersion::for($file), 'expected_parent_version' => AgentApiVersion::for($parent)])
+                        ->assertOk();
+                }
+                $files[] = $file;
+            }
+            $parameters = ['clientCompany' => $company, 'recordType' => $type, 'recordPublicId' => $parent->public_id];
+            $detail = route('portal.'.$type, [$company, $parent]);
+            $this->actingAs($portal)->get($detail)->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('attachment_panel.files', 2)->where('attachment_panel.upload', null)->where('attachment_panel.files.0.sharing', null)
+                ->where('attachment_panel.files.0.delete_href', null)->where('attachment_panel.files.0.id', $files[2]->public_id));
+            $first = $this->getJson(route('portal.files.parent.index', $parameters + ['limit' => 1]))->assertOk()->assertJsonCount(1, 'files')->json();
+            $this->assertNotNull($first['next_href']);
+            $this->getJson($first['next_href'])->assertOk()->assertJsonCount(1, 'files')->assertJsonPath('files.0.id', $files[1]->public_id)->assertJsonPath('next_href', null);
+            $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[2]->public_id]))->assertOk()->assertStreamedContent('Synthetic commercial bytes');
+            $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[0]->public_id]))->assertNotFound();
+            if ($type === 'proposal') {
+                $membership = $company->portalUsers()->whereKey($portal->id)->firstOrFail()->pivot;
+                DB::table('client_company_memberships')->where('id', $membership->id)->update(['access_scope' => 'projects']);
+                $this->get($detail)->assertNotFound();
+                DB::table('client_portal_project_access')->insert(['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $project->id]);
+                $this->get($detail)->assertOk();
+                DB::table('client_portal_project_access')->where('client_company_membership_id', $membership->id)->delete();
+                $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[2]->public_id]))->assertNotFound();
+                DB::table('client_company_memberships')->where('id', $membership->id)->update(['access_scope' => 'company']);
+            }
+
+            $this->getJson(route('portal.files.parent.index', [...$parameters, 'clientCompany' => $sibling]))->assertNotFound();
+            $this->get(route('portal.files.parent.download', [...$parameters, 'clientCompany' => $sibling, 'attachment' => $files[2]->public_id]))->assertNotFound();
+            DB::table($parent->getTable())->where('workspace_id', $workspace->id)->where('id', $parent->id)->update(['is_visible_to_client' => false]);
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            $this->get($detail)->assertNotFound();
+            $fileQueries = array_filter(DB::getQueryLog(), fn (array $query): bool => str_contains($query['query'], 'client_attachments'));
+            DB::disableQueryLog();
+            $this->assertSame([], $fileQueries, 'A refused parent must not query or disclose file metadata.');
+            $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[2]->public_id]))->assertNotFound();
+        }
     }
 
     private function fixture(): array
