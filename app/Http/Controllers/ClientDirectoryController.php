@@ -54,6 +54,7 @@ use App\Support\AgentApi\Presenters\AgentProjectMemberPresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use App\Support\AgentApi\Presenters\AgentUserPresenter;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -718,23 +719,10 @@ class ClientDirectoryController extends Controller
             'task_management' => $canManageTasks
                 ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject, $taskRecords->assigneeOptions($workspace, $clientProject))]]
                 : null,
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
-            'project' => [
-                'id' => $clientProject->public_id,
-                'name' => $clientProject->name,
-                'description' => $clientProject->description,
-                'status' => $clientProject->status,
-                'is_visible_to_client' => (bool) $clientProject->is_visible_to_client,
-            ],
-            'tasks' => $tasks->map(fn (ClientTask $task): array => [
-                'id' => $task->public_id,
-                'title' => $task->title,
-                'status' => $task->status,
-                'is_visible_to_client' => (bool) $task->is_visible_to_client,
-                'completed_at' => $task->completed_at?->toDateString(),
+            'company' => AgentClientPresenter::identity($clientCompany),
+            'project' => AgentProjectPresenter::summary($clientProject),
+            'tasks' => $tasks->map(fn (ClientTask $task): array => AgentTaskPresenter::summary($task) + [
+                'completed_at' => AgentTaskPresenter::completedAt($task, dateOnly: true),
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
@@ -1041,10 +1029,7 @@ class ClientDirectoryController extends Controller
         $initialAssignees = $initialTaskProject === null ? null : $taskRecords->assigneeOptions($workspace, $initialTaskProject);
 
         return Inertia::render('clients/tasks', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             // Whether the "client sees" column appears. It is a statement about
             // disclosure, which is meaningless on the copy of this screen the
             // client is reading.
@@ -1055,17 +1040,10 @@ class ClientDirectoryController extends Controller
             'filters' => [
                 'project_id' => $selected?->public_id,
             ],
-            'projects' => $projects->map(fn (ClientProject $project): array => [
-                'id' => $project->public_id,
-                'name' => $project->name,
-            ])->values()->all(),
-            'tasks' => $tasks->map(fn (ClientTask $task): array => [
-                'id' => $task->public_id,
-                'title' => $task->title,
-                'status' => $task->status,
+            'projects' => $projects->map(fn (ClientProject $project): array => AgentProjectPresenter::identity($project))->values()->all(),
+            'tasks' => $tasks->map(fn (ClientTask $task): array => AgentTaskPresenter::summary($task) + [
                 'project' => $projectNames[$task->client_project_id] ?? null,
-                'is_visible_to_client' => (bool) $task->is_visible_to_client,
-                'completed_at' => $task->completed_at?->toDateString(),
+                'completed_at' => AgentTaskPresenter::completedAt($task, dateOnly: true),
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\AccessibleWorkspacesQuery;
+use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -35,9 +36,7 @@ class WorkspaceSelectorController extends Controller
         return Inertia::render('workspaces/index', [
             'create_url' => route('agent-api.v1.workspaces.store', absolute: false),
             'workspaces' => $accessible->for($user)
-                ->map(fn (Workspace $workspace): array => [
-                    'id' => (string) $workspace->public_id,
-                    'name' => (string) $workspace->name,
+                ->map(fn (Workspace $workspace): array => AgentWorkspacePresenter::identity($workspace) + [
                     // Entering resolves which client to open, so the row links
                     // at the resolver rather than guessing a destination here.
                     'enter_href' => route('workspaces.enter', $workspace, absolute: false),
