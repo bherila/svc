@@ -644,7 +644,7 @@ final class InvoiceLifecycleService
      * has, and it touches neither.
      *
      * So the only true instruction is to replace the row, and which replacement
-     * is possible depends on the link: `StoreInvoiceRequest` accepts both
+     * is possible depends on the link: the draft API accepts both
      * boundaries but neither `client_billing_schedule_id` nor
      * `client_agreement_id`, so a schedule-linked draft cannot be recreated by
      * hand without losing the link that makes it the schedule's.

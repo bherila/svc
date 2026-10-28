@@ -2,9 +2,9 @@
 
 namespace Tests\Feature\Billing;
 
-use App\Http\Requests\Billing\StorePaymentRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoicePayment;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Mcp\AgentMcpWriteTools;
@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Schema;
 use Mcp\Capability\Attribute\Schema as McpSchema;
 use ReflectionMethod;
 use ReflectionParameter;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 /**
@@ -27,6 +28,7 @@ use Tests\TestCase;
  */
 final class PaymentMethodWidthTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     public function test_the_column_is_the_declared_width(): void
@@ -59,7 +61,20 @@ final class PaymentMethodWidthTest extends TestCase
 
     public function test_the_operator_form_uses_the_column_width(): void
     {
-        $this->assertContains('max:'.ClientInvoicePayment::METHOD_MAX_LENGTH, (new StorePaymentRequest)->rules()['method']);
+        $owner = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic operator width', 'slug' => 'synthetic-operator-width']);
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic client', 'slug' => 'synthetic-client']);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $invoice = $lifecycle->issue($lifecycle->createDraft($workspace, $company, ['currency' => 'USD', 'invoice_number' => 'SYNTHETIC-OPERATOR-WIDTH'], [
+            ['type' => 'service', 'description' => 'Synthetic service', 'quantity' => '1', 'unit_amount' => 10000],
+        ]), $workspace);
+        $body = ['amount' => 100, 'currency' => 'USD', 'received_on' => now()->toDateString()];
+        $this->recordPaymentApi($owner, $workspace, $invoice, $body + ['method' => str_repeat('m', 41)])
+            ->assertUnprocessable()->assertJsonValidationErrors('payment.method');
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->recordPaymentApi($owner, $workspace, $invoice, $body + ['method' => str_repeat('m', 40)])->assertCreated();
+        $this->assertSame(str_repeat('m', 40), ClientInvoicePayment::query()->sole()->method);
     }
 
     /** The published agent contract offers no more than the column holds. */

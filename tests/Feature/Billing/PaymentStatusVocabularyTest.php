@@ -27,8 +27,8 @@ use Tests\TestCase;
  * nobody has classified: "this row moved no money" is a claim, and an
  * uninterpretable state cannot support it.
  *
- * It was reachable through an ordinary supported path. `StorePaymentRequest`
- * and the API listing constrained the value; `InvoiceLifecycleService` and
+ * It was reachable through an ordinary supported path. The API listing
+ * constrained the value; `InvoiceLifecycleService` and
  * `svc:billing:payment` did not, and the column is an unconstrained
  * `varchar(24)`. So `--status=paid` - the intuitive *invoice* word - or a
  * mistyped `suceeded` was accepted end to end, skipped the over-balance check
@@ -464,7 +464,7 @@ final class PaymentStatusVocabularyTest extends TestCase
         'app/Services/Finance/PaymentReconciliationService.php',
         'app/Support/Finance/FinancePaymentQuery.php',
         'app/Services/Finance/FinanceReconciliationOperations.php',
-        'app/Http/Requests/Billing/StorePaymentRequest.php',
+        'app/Services/AgentApi/RecordPaymentAction.php',
     ];
 
     public function test_no_service_enumerates_payment_statuses_by_hand(): void

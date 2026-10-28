@@ -2,6 +2,14 @@
 
 Recording and validating payments against client invoices, and the invoice status transitions they drive. Part of the [Billing & Invoicing System](billing.md). See also [Overpayment credits](overpayment-credits.md) (overpaid amounts carry forward) and [Stripe billing](stripe-billing.md) (online payments for issued invoices).
 
+The invoice screen, operations screen and time-selection dialog write through
+the canonical session-authenticated API. Invoice draft creation, issue, void,
+correction, received-payment recording/date correction, delivery hold/release
+and send no longer have separate web mutation routes. Requests carry the
+observed resource version, explicit confirmation where required and a stable
+idempotency key for a logical attempt. PDF and correction evidence remain read
+routes; Stripe intent creation remains its interactive payment handoff.
+
 ## Payment Methods
 
 `method` is free text in the database — imports carry whatever the source system
@@ -87,8 +95,8 @@ The system enforces strict payment validation to maintain data integrity:
      is entered, and the payments table marks the row; the write succeeds
    - The bounds live in `InvoiceLifecycleService::applyPayment()` as a
      `DomainException`, because `svc:billing:payment`, an import and a
-     hand-repair never cross the HTTP door. `StorePaymentRequest` keeps the
-     cheap format rule so the browser gets a field error
+     hand-repair never cross the HTTP door. The canonical payment API keeps the
+     format rule so the browser gets a field error
 
 ## Invoice Status Transitions
 
