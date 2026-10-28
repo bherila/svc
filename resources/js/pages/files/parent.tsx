@@ -18,7 +18,7 @@ export default function ParentFiles({
             >
                 <h1 className="text-2xl font-semibold">Files</h1>
                 <AttachmentSharingPanel
-                    key={attachment_panel.parent_version}
+                    key={attachment_panel.upload?.href}
                     panel={attachment_panel}
                     title="Attached files"
                 />
