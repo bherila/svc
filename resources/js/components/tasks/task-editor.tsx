@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 import { refreshPageProps } from '@/lib/refresh-page-props';
@@ -246,6 +247,11 @@ export function TaskEditor({
         uncertain: boolean;
         version?: string;
     } | null>(null);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.accepted,
+        () => setError('Check the original change before leaving this page.'),
+    );
+
     useEffect(() => {
         onLockedChange?.(pending || unresolved);
 

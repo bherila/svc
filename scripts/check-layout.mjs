@@ -579,6 +579,7 @@ try {
                 ).toBeDisabled();
                 await page.keyboard.press('Escape');
                 await expect(page.getByRole('dialog')).toBeVisible();
+                await check.scrollIntoViewIfNeeded();
                 await capture(screen, 'create-unknown', width);
                 await check.click();
                 await expect(page.getByRole('alert')).toContainText(
@@ -587,6 +588,7 @@ try {
                 await expect(check).toBeEnabled();
                 expect(writes).toHaveLength(2);
                 expect(writes[1]).toEqual(writes[0]);
+                await check.scrollIntoViewIfNeeded();
                 await capture(screen, 'create-refresh-failed', width);
                 await check.click();
                 await expect(page.getByRole('dialog')).toHaveCount(0);

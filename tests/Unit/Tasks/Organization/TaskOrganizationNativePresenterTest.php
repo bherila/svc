@@ -104,4 +104,41 @@ final class TaskOrganizationNativePresenterTest extends TestCase
             $this->assertSame([], $project->getRelations());
         }
     }
+
+    public function test_active_and_archived_lists_receive_their_exact_browse_and_lifecycle_capabilities(): void
+    {
+        $workspace = new Workspace;
+        $workspace->setRawAttributes(['id' => 1, 'public_id' => 'synthetic-workspace']);
+        $company = new ClientCompany;
+        $company->setRawAttributes(['public_id' => 'synthetic-company', 'name' => 'Synthetic client']);
+        $project = new ClientProject;
+        $project->setRawAttributes(['public_id' => 'synthetic-project', 'name' => 'Synthetic project', 'is_visible_to_client' => true]);
+        $models = new Collection;
+        $facts = [];
+        foreach ([false, true] as $index => $archived) {
+            $id = 'synthetic-list-'.$index;
+            $list = new ClientTaskList;
+            $list->setRawAttributes(['id' => $index + 1, 'public_id' => $id, 'name' => 'Synthetic list '.$index,
+                'organization_position' => $index, 'is_visible_to_client' => true, 'deleted_at' => $archived ? '2026-01-01 00:00:00' : null]);
+            $models->push($list);
+            $facts[$id] = ['id' => $index + 1, 'deleted' => $archived, 'position' => $index, 'version' => 'synthetic-version-'.$index];
+        }
+        $records = new TaskOrganizationRecords($project, new ClientTaskGraphState, new Collection, $models);
+        $view = (new TaskOrganizationNativePresenter)->present($workspace, $company, $records,
+            new TaskGraph([], $facts, 2), new TaskContainer(null, null), null)->data['organization'];
+        $this->assertSame(['synthetic-list-0'], $view['ordered_list_ids']);
+        foreach ([false, true] as $index => $archived) {
+            $id = 'synthetic-list-'.$index;
+            $path = ['workspace' => $workspace, 'project' => $project->public_id, 'list' => $id];
+            $this->assertSame([
+                'id' => $id, 'name' => 'Synthetic list '.$index, 'is_visible_to_client' => true,
+                'archived' => $archived, 'version' => 'synthetic-version-'.$index,
+                'browse_href' => route('tasks.organization.show', ['workspace' => $workspace, 'project' => $project->public_id, 'clientCompany' => $company, 'list_id' => $id]),
+                'update_href' => $archived ? null : route('agent-api.v1.task-organization.lists.update', $path),
+                'archive_href' => $archived ? null : route('agent-api.v1.task-organization.lists.archive', $path),
+                'restore_href' => $archived ? route('agent-api.v1.task-organization.lists.restore', $path) : null,
+                'move_target' => null,
+            ], $view['lists'][$index]);
+        }
+    }
 }

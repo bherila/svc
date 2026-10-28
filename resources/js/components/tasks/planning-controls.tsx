@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { PlanningPage } from '@/types/task-planning';
 
@@ -22,6 +23,11 @@ export function usePlanningMutation(
         uncertain: boolean;
         saved?: () => void;
     } | null>(null);
+
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.accepted,
+        () => setError('Check the original change before leaving this page.'),
+    );
 
     async function retry() {
         const original = attempt.current;
