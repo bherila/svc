@@ -3391,6 +3391,8 @@ export interface components {
             /** Format: date */
             next_on: string;
             version: components['schemas']['Version'];
+            /** @description Exact minor-unit amount for clients whose numbers cannot represent every 64-bit integer. */
+            amount_exact: string;
         };
         ExpenseScheduleCreateRequest: {
             /** Format: uuid */
@@ -3402,7 +3404,8 @@ export interface components {
             starts_on: string;
             /** @enum {string} */
             cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            amount: number;
+            /** @description Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision. */
+            amount: number | string;
             currency: components['schemas']['Currency'];
             description: string;
         };
@@ -3427,7 +3430,8 @@ export interface components {
             /** Format: uuid */
             project_id?: string | null;
             active: boolean;
-            amount: number;
+            /** @description Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision. */
+            amount: number | string;
             currency: components['schemas']['Currency'];
             description: string;
         };

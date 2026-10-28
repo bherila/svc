@@ -324,7 +324,12 @@ Task creation defaults to hidden in the API. The website request must send its
 visibility choice explicitly. Both creation surfaces accept titles up to 255
 characters and descriptions up to 10,000. Expense deletion requires draft status
 on every surface; unapprove an approved expense first. Web and API expense facts
-require uppercase three-letter currency codes.
+require uppercase three-letter currency codes. The browser expense list now
+uses the same `expenses.log/update/approve/unapprove/delete` operations on
+`/api/v1`: current opaque versions guard edits and lifecycle moves, and a dialog
+keeps one idempotency key across retries. Its rows extend the API presenter with
+scoped display names and finished action URLs. The retired expense web mutation
+routes have no remaining browser callers; recurrence is a separate migration.
 
 New archives validate confirmation inside their receipt callback. A completed
 archive receipt from before the confirmation requirement can replay its original

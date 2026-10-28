@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* global process */
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
     existsSync,
     mkdirSync,
@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const contentOnly = process.argv.includes('--content-only');
 
 if (existsSync(path.join(root, 'public/hot'))) {
     throw new Error('Stop Vite before running browser checks.');
@@ -58,6 +59,11 @@ try {
     );
     writeFileSync(path.join(runtime, '.env'), '');
     writeFileSync(path.join(runtime, 'database.sqlite'), '');
+    const oauthKeys = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
     const env = {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
@@ -73,7 +79,10 @@ try {
         CACHE_STORE: 'array',
         MAIL_MAILER: 'array',
         QUEUE_CONNECTION: 'sync',
+        PASSPORT_PRIVATE_KEY: oauthKeys.privateKey,
+        PASSPORT_PUBLIC_KEY: oauthKeys.publicKey,
         SVC_LAYOUT_RUNTIME: runtime,
+        SVC_LAYOUT_COLLABORATION_WRITES: contentOnly ? '1' : '0',
     };
     function run(command, args) {
         const result = spawnSync(command, args, {
@@ -100,7 +109,11 @@ try {
         `<?php
 $runtime = getenv('SVC_LAYOUT_RUNTIME');
 $settings = json_decode(file_get_contents($runtime.'/harness.json'), true);
-if (PHP_SAPI !== 'cli-server' || ($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' || ($_SERVER['HTTP_HOST'] ?? '') !== $settings['host'] || !hash_equals($settings['token'], $_SERVER['HTTP_X_SVC_Layout_TOKEN'] ?? $_SERVER['HTTP_X_SVC_LAYOUT_TOKEN'] ?? '') || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') { http_response_code(403); exit; }
+$fixture = json_decode(file_get_contents($runtime.'/fixture.json'), true);
+$method = $_SERVER['REQUEST_METHOD'] ?? '';
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+$write = getenv('SVC_LAYOUT_COLLABORATION_WRITES') === '1' && $method === 'POST' && in_array($requestPath, [$fixture['content_topic_create'], $fixture['content_comment_create']], true);
+if (PHP_SAPI !== 'cli-server' || ($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' || ($_SERVER['HTTP_HOST'] ?? '') !== $settings['host'] || !hash_equals($settings['token'], $_SERVER['HTTP_X_SVC_Layout_TOKEN'] ?? $_SERVER['HTTP_X_SVC_LAYOUT_TOKEN'] ?? '') || ($method !== 'GET' && ! $write)) { http_response_code(403); exit; }
 $root = ${JSON.stringify(root)};
 $file = realpath($root.'/public'.parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
 if ($file !== false && str_starts_with($file, $root.'/public/build/') && is_file($file)) { return false; }
@@ -143,19 +156,21 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         });
         const page = await context.newPage();
 
-        for (const screen of [
-            'index',
-            'note',
-            'discussion',
-            'portal',
-            'taskthread',
-            'agreementfiles',
-            'portalagreementfiles',
-            'nativeportalagreementfiles',
-            'dualportalagreementfiles',
-            'expensefiles',
-            'operationsfiles',
-        ]) {
+        for (const screen of contentOnly
+            ? ['index', 'note', 'discussion', 'portal', 'taskthread']
+            : [
+                  'index',
+                  'note',
+                  'discussion',
+                  'portal',
+                  'taskthread',
+                  'agreementfiles',
+                  'portalagreementfiles',
+                  'nativeportalagreementfiles',
+                  'dualportalagreementfiles',
+                  'expensefiles',
+                  'operationsfiles',
+              ]) {
             await page.setExtraHTTPHeaders({
                 ...headers,
                 ...(screen === 'nativeportalagreementfiles'
@@ -457,6 +472,48 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     ),
                 ).toBeLessThanOrEqual(width);
             }
+
+            if (contentOnly && width === 1440 && screen === 'index') {
+                const title = 'Synthetic topic created through the browser API';
+                await page
+                    .getByRole('textbox', { name: 'Title', exact: true })
+                    .fill(title);
+                await page
+                    .getByRole('textbox', { name: 'Content', exact: true })
+                    .fill('Synthetic API topic body.');
+                await page
+                    .getByRole('button', { name: 'Create', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('heading', { name: title, exact: true }),
+                ).toBeVisible();
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: path.join(artifacts, 'created-topic-1440.png'),
+                });
+            }
+
+            if (contentOnly && width === 1440 && screen === 'note') {
+                const body = 'Synthetic reply created through the browser API';
+                await page
+                    .getByRole('textbox', { name: 'New comment', exact: true })
+                    .fill(body);
+                await page
+                    .getByRole('button', { name: 'Add comment', exact: true })
+                    .click();
+                await expect(
+                    page.getByText(body, { exact: true }),
+                ).toBeVisible();
+                await expect(page).toHaveURL(/comment=.*#comment-/);
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: path.join(artifacts, 'created-comment-1440.png'),
+                });
+            }
+
+            expect(
+                await page.evaluate(() => document.documentElement.scrollWidth),
+            ).toBeLessThanOrEqual(width);
 
             results.push({ screen, width, ...layout });
         }

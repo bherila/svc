@@ -12751,8 +12751,18 @@
                                 ]
                             },
                             "amount": {
-                                "type": "integer",
-                                "minimum": 1
+                                "oneOf": [
+                                    {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    {
+                                        "type": "string",
+                                        "pattern": "^[1-9][0-9]*$",
+                                        "maxLength": 19
+                                    }
+                                ],
+                                "description": "Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision."
                             },
                             "currency": {
                                 "$ref": "#/$defs/Currency"
@@ -12835,7 +12845,8 @@
                                     "description",
                                     "active",
                                     "next_on",
-                                    "version"
+                                    "version",
+                                    "amount_exact"
                                 ],
                                 "properties": {
                                     "id": {
@@ -12887,6 +12898,12 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "amount_exact": {
+                                        "type": "string",
+                                        "pattern": "^[1-9][0-9]*$",
+                                        "maxLength": 19,
+                                        "description": "Exact minor-unit amount for clients whose numbers cannot represent every 64-bit integer."
                                     }
                                 }
                             },
@@ -12982,7 +12999,8 @@
                                     "description",
                                     "active",
                                     "next_on",
-                                    "version"
+                                    "version",
+                                    "amount_exact"
                                 ],
                                 "properties": {
                                     "id": {
@@ -13034,6 +13052,12 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "amount_exact": {
+                                        "type": "string",
+                                        "pattern": "^[1-9][0-9]*$",
+                                        "maxLength": 19,
+                                        "description": "Exact minor-unit amount for clients whose numbers cannot represent every 64-bit integer."
                                     }
                                 }
                             },
@@ -13127,7 +13151,8 @@
                                     "description",
                                     "active",
                                     "next_on",
-                                    "version"
+                                    "version",
+                                    "amount_exact"
                                 ],
                                 "properties": {
                                     "id": {
@@ -13179,6 +13204,12 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "amount_exact": {
+                                        "type": "string",
+                                        "pattern": "^[1-9][0-9]*$",
+                                        "maxLength": 19,
+                                        "description": "Exact minor-unit amount for clients whose numbers cannot represent every 64-bit integer."
                                     }
                                 }
                             },
@@ -13225,8 +13256,18 @@
                                 "type": "boolean"
                             },
                             "amount": {
-                                "type": "integer",
-                                "minimum": 1
+                                "oneOf": [
+                                    {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    {
+                                        "type": "string",
+                                        "pattern": "^[1-9][0-9]*$",
+                                        "maxLength": 19
+                                    }
+                                ],
+                                "description": "Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision."
                             },
                             "currency": {
                                 "$ref": "#/$defs/Currency"
@@ -13308,7 +13349,8 @@
                                     "description",
                                     "active",
                                     "next_on",
-                                    "version"
+                                    "version",
+                                    "amount_exact"
                                 ],
                                 "properties": {
                                     "id": {
@@ -13360,6 +13402,12 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "amount_exact": {
+                                        "type": "string",
+                                        "pattern": "^[1-9][0-9]*$",
+                                        "maxLength": 19,
+                                        "description": "Exact minor-unit amount for clients whose numbers cannot represent every 64-bit integer."
                                     }
                                 }
                             },
@@ -38442,10 +38490,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -39588,7 +39636,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -40384,10 +40432,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -40601,10 +40649,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -41665,10 +41713,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -41882,10 +41930,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -43049,7 +43097,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -43265,7 +43313,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -44317,7 +44365,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -44531,7 +44579,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -45592,7 +45640,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -45808,7 +45856,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -46837,10 +46885,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -47053,10 +47101,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -48178,7 +48226,7 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -48392,7 +48440,7 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.list": "dd1832f42c8c0514",
+                "expense_schedules.list": "76e4435a86872fa6",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "9152229f75f498f8",
@@ -49387,10 +49435,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -49602,10 +49650,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -50681,10 +50729,10 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -50895,10 +50943,10 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -53117,10 +53165,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",
@@ -53334,10 +53382,10 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "f665d97c87e0842c",
                 "deferred_backlog.preview": "4ee96b9b41bb24dd",
-                "expense_schedules.create": "834a8f44b0d1627b",
-                "expense_schedules.generate": "0ecf05f1b8467dd3",
-                "expense_schedules.list": "dd1832f42c8c0514",
-                "expense_schedules.update": "176a9b2059abe3ed",
+                "expense_schedules.create": "2dd86924650cb47c",
+                "expense_schedules.generate": "b1bc1e3620d2e363",
+                "expense_schedules.list": "76e4435a86872fa6",
+                "expense_schedules.update": "e77953f900287ab5",
                 "expenses.approve": "41e9075b5177e12f",
                 "expenses.delete": "a7a0dbe01de0b03a",
                 "expenses.list": "b86229a48aa32918",

@@ -1,8 +1,10 @@
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { CollaborationErrors } from '@/components/collaboration/content-controls';
+import { useCollaborationMutation } from '@/components/collaboration/use-collaboration-mutation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useVersionedDraft } from '@/hooks/use-versioned-draft';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -15,24 +17,30 @@ function NewTopic({
     href: string;
     scopes: CollaborationIndexProps['create_scopes'];
 }) {
-    const form = useForm({
-        kind: 'note',
-        title: '',
-        body: '',
-        project_id: scopes[0]?.id ?? '',
-        is_visible_to_client: false,
-    });
+    const form = useVersionedDraft(
+        {
+            kind: 'note',
+            title: '',
+            body: '',
+            project_id: scopes[0]?.id ?? '',
+            is_visible_to_client: false as boolean,
+        },
+        'new-topic',
+    );
+    const mutation = useCollaborationMutation();
 
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-3 rounded-lg border p-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.transform((data) => ({
-                    ...data,
-                    project_id: data.project_id || null,
-                }));
-                form.post(href);
+                void mutation.run(
+                    'POST',
+                    href,
+                    { ...form.data, project_id: form.data.project_id || null },
+                    undefined,
+                    true,
+                );
             }}
         >
             <h2 className="text-lg font-semibold">
@@ -41,6 +49,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Type
                 <select
+                    disabled={mutation.locked}
                     className="min-w-0 rounded-md border bg-background p-2"
                     value={form.data.kind}
                     onChange={(event) =>
@@ -54,6 +63,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Scope
                 <select
+                    disabled={mutation.locked}
                     className="min-w-0 rounded-md border bg-background p-2"
                     value={form.data.project_id}
                     onChange={(event) =>
@@ -70,6 +80,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Title
                 <Input
+                    disabled={mutation.locked}
                     required
                     maxLength={255}
                     value={form.data.title}
@@ -81,6 +92,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Content
                 <Textarea
+                    disabled={mutation.locked}
                     required
                     maxLength={50000}
                     className="min-h-48"
@@ -93,6 +105,7 @@ function NewTopic({
             <label className="flex items-center gap-2 text-sm">
                 <input
                     type="checkbox"
+                    disabled={mutation.locked}
                     checked={form.data.is_visible_to_client}
                     onChange={(event) =>
                         form.setData(
@@ -103,13 +116,13 @@ function NewTopic({
                 />
                 Visible to client
             </label>
-            <CollaborationErrors errors={form.errors} />
+            <CollaborationErrors errors={mutation.errors} />
             <Button
                 type="submit"
-                disabled={form.processing}
+                disabled={mutation.pending}
                 className="justify-self-start"
             >
-                Create
+                {mutation.unresolved ? 'Check original change' : 'Create'}
             </Button>
         </form>
     );
