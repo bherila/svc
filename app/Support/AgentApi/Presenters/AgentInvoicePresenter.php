@@ -13,7 +13,7 @@ use App\Support\Billing\InvoiceKind;
 final class AgentInvoicePresenter
 {
     /** Safe scalar fields common to list rows and the canonical resource; no relation reads.
-     * @return array<string, mixed> */
+     * @return array{id:string,invoice_number:string,status:string,total_amount:int,paid_amount:int,balance_amount:int,currency:string,issue_date:?string,due_date:?string} */
     public static function summary(ClientInvoice $invoice): array
     {
         return ['id' => $invoice->public_id, 'invoice_number' => $invoice->invoice_number,
@@ -23,6 +23,41 @@ final class AgentInvoicePresenter
             'due_date' => $invoice->due_date?->toDateString()];
     }
 
+    /** @return array{service_period_start:?string,service_period_end:?string} */
+    public static function servicePeriod(ClientInvoice $invoice): array
+    {
+        return ['service_period_start' => $invoice->service_period_start?->toDateString(),
+            'service_period_end' => $invoice->service_period_end?->toDateString()];
+    }
+
+    /** Client-safe invoice facts, without manager capabilities or internal notes.
+     * @return array<string, mixed> */
+    public static function portalDetails(ClientInvoice $invoice): array
+    {
+        return self::summary($invoice) + self::servicePeriod($invoice) + [
+            'subtotal_amount' => (int) $invoice->subtotal_amount,
+            'tax_amount' => (int) $invoice->tax_amount,
+        ];
+    }
+
+    /** @return array{description:string,unit_amount:int,total_amount:int} */
+    private static function lineAmounts(ClientInvoiceLine $line): array
+    {
+        return ['description' => $line->description, 'unit_amount' => (int) $line->unit_amount,
+            'total_amount' => (int) $line->total_amount];
+    }
+
+    /** Existing browser quantities are numeric; the API retains decimal strings.
+     * @return array<string, mixed> */
+    public static function portalLine(ClientInvoiceLine $line): array
+    {
+        return ['id' => $line->public_id] + self::lineAmounts($line) + [
+            'quantity' => (float) $line->quantity,
+            'hours' => $line->hours === null ? null : (float) $line->hours,
+            'line_date' => $line->line_date?->toDateString(),
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function present(Workspace $workspace, ClientInvoice $invoice, bool $includeNotes = false): array
     {
@@ -30,8 +65,7 @@ final class AgentInvoicePresenter
             ...self::summary($invoice),
             'company_id' => $invoice->clientCompany->public_id,
             'company_name' => $invoice->clientCompany->name,
-            'service_period_start' => $invoice->service_period_start?->toDateString(),
-            'service_period_end' => $invoice->service_period_end?->toDateString(),
+            ...self::servicePeriod($invoice),
             'invoice_kind' => $invoice->invoiceKindValue(),
             // What `invoices.update_draft` accepts (#349): a generated draft
             // is regenerated, never edited by hand.
@@ -77,11 +111,9 @@ final class AgentInvoicePresenter
         return [
             'project_id' => $line->project?->public_id,
             'type' => $line->type,
-            'description' => $line->description,
+            ...self::lineAmounts($line),
             'quantity' => (string) $line->quantity,
-            'unit_amount' => $line->unit_amount,
             'tax_amount' => $line->tax_amount,
-            'total_amount' => $line->total_amount,
         ];
     }
 

@@ -10,12 +10,21 @@ use App\Support\AgentApi\TimeEntryAllocation;
 final class AgentTimeEntryPresenter
 {
     /** Pure summary preserves the caller's explicit internal/client description policy.
-     * @return array<string, mixed> */
+     * @return array{id:string,worked_on:string,minutes:int,description:?string,status:string,is_billable:bool,is_deferred:bool} */
     public static function summary(ClientTimeEntry $entry, bool $useClientDescription = false, bool $compact = false): array
     {
         return ['id' => $entry->public_id, 'worked_on' => $entry->worked_on->toDateString(),
             'minutes' => $entry->minutes, 'description' => $compact ? null : ($useClientDescription ? $entry->client_visible_description : $entry->description),
             'status' => $entry->status, 'is_billable' => $entry->is_billable, 'is_deferred' => $entry->is_deferred];
+    }
+
+    /** @return array{id:string,worked_on:string,project:?string,description:?string,minutes:int} */
+    public static function clientRow(ClientTimeEntry $entry, ?string $project): array
+    {
+        $facts = self::summary($entry, useClientDescription: true);
+
+        return ['id' => $facts['id'], 'worked_on' => $facts['worked_on'], 'project' => $project,
+            'description' => $facts['description'], 'minutes' => $facts['minutes']];
     }
 
     /** @return array<string, \Closure> */
