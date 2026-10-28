@@ -138,6 +138,17 @@ record confirmed offline acceptance with `proposals.accept`. Inertia resource
 props use the same pure resource presenters as API responses, with explicit
 safe field selections and page navigation/capability extras.
 
+The one read-only browser UI helper is `GET /search`, used by the command
+palette to jump between already-authorized destinations across the operator's
+workspaces, including manager-only History links and the workspace selector.
+It returns only navigation rows (`kind`, stable `id`, `title`, distinguishing
+`subtitle`, finished `href`, and workspace label); selecting one navigates to
+its page. It does not refetch resource facts or supply mutation inputs. Business
+resource search remains the scoped `workspace.search` API operation and shared
+`WorkspaceSearch` query, with API read-scope filtering unchanged. This navigation
+helper is separate from the twelve mutation exceptions above; resource option
+lookups and JSON list appends use the canonical API.
+
 Apps that use the REST API without MCP connect one of two ways (#384). A person
 registers an OAuth app on the setup page - exact HTTPS or loopback redirect URIs,
 public (PKCE only) or confidential (a client secret shown once, used with
