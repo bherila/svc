@@ -20,7 +20,7 @@ final class TaskRow
     {
         $facts = AgentTaskPresenter::identity($task);
 
-        return new self(id: $facts['id'], title: $facts['title'], project: $project, status: (string) $task->status, filesHref: $filesHref);
+        return new self(id: $facts['id'], title: $facts['title'], project: $project, status: $task->status, filesHref: $filesHref);
     }
 
     /**

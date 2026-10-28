@@ -63,9 +63,9 @@ final class AgreementReadPresenter
     {
         return ['id' => $item->public_id, 'description' => $item->description, 'cadence' => $item->cadence,
             'quantity' => $item->quantity === null ? null : (float) $item->quantity,
-            'amount' => $item->amount === null ? null : (int) $item->amount, 'currency' => $item->currency,
+            'amount' => $item->amount, 'currency' => $item->currency,
             'effective_on' => $item->effective_on?->toDateString(), 'expires_on' => $item->expires_on?->toDateString(),
-            'is_active' => (bool) $item->is_active];
+            'is_active' => $item->is_active];
     }
 
     public function grantsRecurringRetainer(ClientAgreement $agreement): bool

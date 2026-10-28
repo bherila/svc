@@ -49,6 +49,12 @@ final class PortalReadProjectionTest extends TestCase
         ksort($expectedHome);
         ksort($actualHome);
         $this->assertSame($expectedHome, $actualHome);
+        $invoice->service_period_start = null;
+        $invoice->service_period_end = null;
+        $line->line_date = null;
+        $this->assertNull(AgentInvoicePresenter::portalDetails($invoice)['service_period_start']);
+        $this->assertNull(AgentInvoicePresenter::portalDetails($invoice)['service_period_end']);
+        $this->assertNull(AgentInvoicePresenter::portalLine($line)['line_date']);
         $this->assertSame([], DB::getQueryLog());
     }
 
@@ -91,7 +97,13 @@ final class PortalReadProjectionTest extends TestCase
         $item->public_id = 'SYN-ITEM';
         DB::enableQueryLog();
         DB::flushQueryLog();
+        $agreement->public_id = 'SYN-AGREEMENT';
+        $this->assertSame(['id' => 'SYN-AGREEMENT', 'title' => 'Synthetic quarterly agreement',
+            'status' => 'active', 'billing_cadence' => 'quarterly'], AgreementReadPresenter::summary($agreement));
         $operator = app(AgreementReadPresenter::class)->present($agreement, 'Synthetic project');
+        $this->assertSame('quarterly', $operator['effective_billing_cadence']);
+        $this->assertSame('prorate_hours', $operator['effective_first_cycle_proration']);
+        $this->assertSame(80, $operator['retainer_minutes_per_month']);
         $portal = AgreementTermsPayload::for($agreement, 'Synthetic project');
         foreach (['effective_billing_cadence', 'effective_first_cycle_proration', 'retainer_minutes_per_month'] as $key) {
             $this->assertNull($portal[$key]);
@@ -107,9 +119,20 @@ final class PortalReadProjectionTest extends TestCase
         $this->assertSame(['id' => 'SYN-ITEM', 'description' => 'Synthetic recurring item', 'cadence' => 'monthly',
             'quantity' => 1.125, 'amount' => 1200, 'currency' => 'EUR', 'effective_on' => '2026-10-28',
             'expires_on' => null, 'is_active' => true], AgreementReadPresenter::recurringItem($item));
+        // Fractional monthly grants distinguish rounding from either directional truncation.
+        $agreement->period_retainer_minutes = 241;
+        $this->assertSame(80, app(AgreementReadPresenter::class)->present($agreement, null)['retainer_minutes_per_month']);
+        $agreement->period_retainer_minutes = 242;
+        $this->assertSame(81, app(AgreementReadPresenter::class)->present($agreement, null)['retainer_minutes_per_month']);
         $agreement->billing_cadence = 'one_time';
+        $oneTime = app(AgreementReadPresenter::class)->present($agreement, null);
+        $this->assertNull($oneTime['effective_billing_cadence']);
+        $this->assertNull($oneTime['effective_first_cycle_proration']);
+        $this->assertNull($oneTime['retainer_minutes_per_month']);
         $this->assertNull(AgreementTermsPayload::for($agreement, null)['retainer_minutes_per_period']);
         $this->assertNull(AgreementTermsPayload::for($agreement, null)['retainer_amount_per_period']);
+        $item->effective_on = null;
+        $this->assertNull(AgreementReadPresenter::recurringItem($item)['effective_on']);
         $item->quantity = null;
         $item->amount = null;
         $this->assertNull(AgreementReadPresenter::recurringItem($item)['quantity']);

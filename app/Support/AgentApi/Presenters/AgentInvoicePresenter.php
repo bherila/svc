@@ -24,7 +24,7 @@ final class AgentInvoicePresenter
     }
 
     /** @return array{service_period_start:?string,service_period_end:?string} */
-    public static function servicePeriod(ClientInvoice $invoice): array
+    private static function servicePeriod(ClientInvoice $invoice): array
     {
         return ['service_period_start' => $invoice->service_period_start?->toDateString(),
             'service_period_end' => $invoice->service_period_end?->toDateString()];
@@ -35,16 +35,16 @@ final class AgentInvoicePresenter
     public static function portalDetails(ClientInvoice $invoice): array
     {
         return self::summary($invoice) + self::servicePeriod($invoice) + [
-            'subtotal_amount' => (int) $invoice->subtotal_amount,
-            'tax_amount' => (int) $invoice->tax_amount,
+            'subtotal_amount' => $invoice->subtotal_amount,
+            'tax_amount' => $invoice->tax_amount,
         ];
     }
 
     /** @return array{description:string,unit_amount:int,total_amount:int} */
     private static function lineAmounts(ClientInvoiceLine $line): array
     {
-        return ['description' => $line->description, 'unit_amount' => (int) $line->unit_amount,
-            'total_amount' => (int) $line->total_amount];
+        return ['description' => $line->description, 'unit_amount' => $line->unit_amount,
+            'total_amount' => $line->total_amount];
     }
 
     /** Existing browser quantities are numeric; the API retains decimal strings.
