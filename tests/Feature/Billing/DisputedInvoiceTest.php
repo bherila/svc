@@ -41,7 +41,7 @@ final class DisputedInvoiceTest extends TestCase
         $this->actingAs($owner)->get(route('clients.invoice', [$workspace, $company, $invoice]))->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('invoice.status', 'disputed')
-                ->where('actions.payment', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments")
+                ->where('actions.payment', route('agent-api.v1.payments.store', $workspace, absolute: false))
                 ->where('actions.send', null)->where('actions.correct', null)
                 ->where('payment_reminders.send_href', null));
 
