@@ -4,7 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceSelector from '@/pages/workspaces/index';
 import { sharedPageProps } from '@/test/shared-page-props';
 
-const inertia = vi.hoisted(() => ({ visit: vi.fn() }));
+const inertia = vi.hoisted(() => ({
+    visit: vi.fn(
+        (
+            _url: string,
+            options?: { onSuccess?: () => void; onFinish?: () => void },
+        ) => {
+            options?.onSuccess?.();
+            options?.onFinish?.();
+        },
+    ),
+}));
 
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
@@ -99,7 +109,10 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    inertia.visit.mockClear();
+    inertia.visit.mockReset().mockImplementation((_url, options) => {
+        options?.onSuccess?.();
+        options?.onFinish?.();
+    });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -148,6 +161,7 @@ describe('workspace creation through the API', () => {
         await waitFor(() =>
             expect(inertia.visit).toHaveBeenCalledWith(
                 '/synthetic/created-workspace-destination',
+                expect.any(Object),
             ),
         );
         expect(request()).toMatchObject({
@@ -172,6 +186,7 @@ describe('workspace creation through the API', () => {
         await waitFor(() =>
             expect(inertia.visit).toHaveBeenCalledWith(
                 '/synthetic/replayed-workspace',
+                expect.any(Object),
             ),
         );
         expect(request(0)).toEqual(request(1));
@@ -191,36 +206,40 @@ describe('workspace creation through the API', () => {
         );
         expect(inertia.visit).not.toHaveBeenCalled();
     });
-    it('unlocks correction after an uncertain request is definitively refused as invalid', async () => {
-        fetchMock.mockRejectedValueOnce(
-            new TypeError('Synthetic network loss'),
-        );
-        respond(422, {
-            message: 'Validation failed.',
-            errors: { name: ['Correct the name.'] },
-        });
-        respond(201, { data: { web_url: '/synthetic/corrected-workspace' } });
-        openCreate();
-        await screen.findByRole('alert');
-        fireEvent.click(screen.getByRole('button', { name: 'Check creation' }));
-        await waitFor(() =>
+    it.each([401, 403, 404, 409, 422])(
+        'keeps an unknown workspace creation latched after later status %s',
+        async (status) => {
+            fetchMock.mockRejectedValueOnce(
+                new TypeError('Synthetic network loss'),
+            );
+            respond(status, { message: 'Synthetic later refusal.' });
+            respond(201, {
+                data: { web_url: '/synthetic/recovered-workspace' },
+            });
+            openCreate();
+            await screen.findByRole('alert');
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check creation' }),
+            );
+            await screen.findByText(
+                status === 401
+                    ? /Your session has expired/
+                    : 'Synthetic later refusal.',
+            );
             expect(
                 screen.getByLabelText('Name', { exact: true }),
-            ).toBeEnabled(),
-        );
-        fireEvent.change(screen.getByLabelText('Name', { exact: true }), {
-            target: { value: 'Corrected workspace' },
-        });
-        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-        await waitFor(() =>
-            expect(inertia.visit).toHaveBeenCalledWith(
-                '/synthetic/corrected-workspace',
-            ),
-        );
-        expect(request(0)).toEqual(request(1));
-        expect(request(2).key).not.toBe(request(0).key);
-        expect(request(2).body).toEqual({ name: 'Corrected workspace' });
-    });
+            ).toBeDisabled();
+            expect(
+                screen.getByRole('button', { name: 'Cancel' }),
+            ).toBeDisabled();
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check creation' }),
+            );
+            await waitFor(() => expect(inertia.visit).toHaveBeenCalled());
+            expect(request(0)).toEqual(request(1));
+            expect(request(0)).toEqual(request(2));
+        },
+    );
 
     it('replays safely after the successful response body is interrupted', async () => {
         fetchMock.mockResolvedValueOnce(
@@ -237,27 +256,78 @@ describe('workspace creation through the API', () => {
         await waitFor(() =>
             expect(inertia.visit).toHaveBeenCalledWith(
                 '/synthetic/body-recovered-workspace',
+                expect.any(Object),
             ),
         );
         expect(request(0)).toEqual(request(1));
     });
 
-    it('keeps an uncertain receipt across closing and reopening the dialog', async () => {
+    it('keeps cancellation from abandoning an uncertain workspace creation', async () => {
         fetchMock.mockRejectedValueOnce(
             new TypeError('Synthetic network loss'),
         );
         respond(201, { data: { web_url: '/synthetic/reopened-workspace' } });
         openCreate();
         await screen.findByRole('alert');
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-        fireEvent.click(screen.getByRole('button', { name: 'New workspace' }));
+        expect(screen.getByRole('dialog')).toBeVisible();
         expect(screen.getByLabelText('Name', { exact: true })).toBeDisabled();
         fireEvent.click(screen.getByRole('button', { name: 'Check creation' }));
         await waitFor(() =>
             expect(inertia.visit).toHaveBeenCalledWith(
                 '/synthetic/reopened-workspace',
+                expect.any(Object),
             ),
         );
         expect(request(0)).toEqual(request(1));
     });
 });
+
+it.each([
+    'onCancel',
+    'onError',
+    'onNetworkError',
+    'onHttpException',
+    'onFinish',
+] as const)(
+    'recovers a created workspace after navigation %s without another create',
+    async (callback) => {
+        inertia.visit.mockImplementationOnce((_url, options) => {
+            const handlers = options as unknown as Record<
+                string,
+                () => boolean | void
+            >;
+            const result = handlers[callback]();
+
+            if (
+                callback === 'onNetworkError' ||
+                callback === 'onHttpException'
+            ) {
+                expect(result).toBe(false);
+            }
+        });
+        respond(201, {
+            data: { web_url: '/synthetic/already-created-workspace' },
+        });
+        openCreate();
+        await screen.findByText(
+            /workspace was created, but its page could not open/,
+        );
+        expect(screen.getByLabelText('Name', { exact: true })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        const recovery = screen.getByRole('button', {
+            name: 'Open created workspace',
+        });
+        expect(recovery).toBeEnabled();
+        fireEvent.click(recovery);
+        await waitFor(() => expect(inertia.visit).toHaveBeenCalledTimes(2));
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(inertia.visit.mock.calls[0][0]).toBe(
+            '/synthetic/already-created-workspace',
+        );
+        expect(inertia.visit.mock.calls[1][0]).toBe(
+            '/synthetic/already-created-workspace',
+        );
+    },
+);
