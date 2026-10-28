@@ -2,6 +2,7 @@
 
 namespace App\Services\Tasks\Organization;
 
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use DomainException;
 
 /** Public immutable facts exclude internal keys and unbounded task descriptions. */
@@ -31,8 +32,7 @@ final readonly class TaskOrganizationSnapshot
             $rows = [];
             foreach ($ids as $id) {
                 $task = $models[$id];
-                $rows[] = ['id' => $id, 'title' => $task->title, 'status' => $task->status,
-                    'is_visible_to_client' => $task->is_visible_to_client, 'version' => $graph->tasks[$id]['version']];
+                $rows[] = AgentTaskPresenter::summary($task) + ['version' => $graph->tasks[$id]['version']];
             }
             $siblings = ['parent_id' => $container->parentId, 'list_id' => $container->listId,
                 'version' => $graph->containerVersion($container), 'tasks' => $rows];
