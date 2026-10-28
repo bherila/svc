@@ -20,6 +20,7 @@ use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
+use App\Services\Mcp\AgentMcpSquareCoveredPaymentTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
@@ -69,6 +70,7 @@ final class AgentOperationCatalog
         ...TaskOrganizationOperations::ROUTES,
         ...TaskPlanningOperations::ROUTES,
         ...AttachmentSharingOperations::ROUTES,
+        ...SquareCoveredPaymentOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -962,7 +964,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.square_cover',
                 'Record Square invoice as covered',
-                'Workspace managers only. When one invoice covers what Square split into several, record another Square invoice as covered by this one, after the person confirms it. The invoice must already be linked to its primary Square invoice; a Square invoice linked or covered anywhere is refused. Not a link: SVC collects, reconciles and records nothing through it, and the billing audit stops reporting it as an unmirrored period. Nothing is sent to Square.',
+                'Workspace managers only. When one invoice covers what Square split into several, record another Square invoice as covered by this one, after the person confirms it. The invoice must already be linked to its primary Square invoice; a Square invoice linked or covered anywhere is refused. Not a link: SVC never automatically collects or allocates payments through it, and the billing audit stops reporting it as an unmirrored period. Nothing is sent to Square.',
                 [AgentMcpSquareLinkTools::class, 'cover'],
                 Effect::LocalWrite,
                 true,
@@ -1618,6 +1620,8 @@ final class AgentOperationCatalog
     {
         $this->external['square.sync'] = true;
         $this->external['invoices.square_reconcile'] = true;
+        $this->external['invoices.square_covered_payments'] = true;
+        $this->external['invoices.square_covered_payment_record'] = true;
         $reads = [];
         foreach ([
             'square.mirror.invoices.list' => ['List mirrored Square invoices', 'invoices'],
@@ -1650,6 +1654,29 @@ final class AgentOperationCatalog
                 true,
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.square_covered_payments',
+                'Review covered Square payments',
+                self::documented('invoices.square_covered_payments'),
+                [AgentMcpSquareCoveredPaymentTools::class, 'review'],
+                Effect::Read,
+                true,
+                'mcp.read',
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.square_covered_payment_record',
+                'Record a reviewed covered Square payment',
+                self::documented('invoices.square_covered_payment_record'),
+                [AgentMcpSquareCoveredPaymentTools::class, 'record'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::PAYMENTS],
                 availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             ),
