@@ -204,7 +204,7 @@ export function ExpenseDialog({
 
         if (result.ok) {
             onOpenChange(false);
-            router.reload({ only: ['expenses'], preserveScroll: true });
+            router.reload({ only: ['expenses'] });
         } else {
             setError(result.message);
         }

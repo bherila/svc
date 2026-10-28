@@ -240,7 +240,6 @@ describe('the expense list', () => {
         );
         expect(inertia.reload).toHaveBeenCalledWith({
             only: ['expenses'],
-            preserveScroll: true,
         });
     });
 
@@ -255,9 +254,7 @@ describe('the expense list', () => {
             screen.getByLabelText('Description'),
             'Synthetic API expense',
         );
-        await user.click(
-            screen.getByRole('button', { name: 'Record', exact: true }),
-        );
+        await user.click(screen.getByRole('button', { name: 'Record' }));
         expect(apiRequest).toHaveBeenCalledWith(
             'POST',
             '/api/v1/workspaces/w/expenses',
@@ -284,9 +281,7 @@ describe('the expense list', () => {
         });
         render(<ClientExpenses {...props()} />);
         await user.click(screen.getByRole('button', { name: 'Edit expense' }));
-        await user.click(
-            screen.getByRole('button', { name: 'Save', exact: true }),
-        );
+        await user.click(screen.getByRole('button', { name: 'Save' }));
         expect(apiRequest).toHaveBeenCalledWith(
             'PATCH',
             '/api/v1/workspaces/w/expenses/expense-1',
@@ -302,9 +297,7 @@ describe('the expense list', () => {
         ).toBeInTheDocument();
         expect(inertia.reload).not.toHaveBeenCalled();
         const firstKey = vi.mocked(apiRequest).mock.calls[0][3];
-        await user.click(
-            screen.getByRole('button', { name: 'Save', exact: true }),
-        );
+        await user.click(screen.getByRole('button', { name: 'Save' }));
         expect(vi.mocked(apiRequest).mock.calls[1][3]).toBe(firstKey);
     });
 
@@ -319,9 +312,7 @@ describe('the expense list', () => {
         await user.click(
             screen.getByRole('button', { name: 'Discard expense' }),
         );
-        await user.click(
-            screen.getByRole('button', { name: 'Discard', exact: true }),
-        );
+        await user.click(screen.getByRole('button', { name: 'Discard' }));
         expect(apiRequest).toHaveBeenCalledWith(
             'DELETE',
             '/api/v1/workspaces/w/expenses/expense-1',

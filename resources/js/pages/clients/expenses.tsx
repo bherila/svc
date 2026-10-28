@@ -122,7 +122,7 @@ export default function ClientExpenses({
 
         if (result.ok) {
             setPendingDiscard(null);
-            router.reload({ only: ['expenses'], preserveScroll: true });
+            router.reload({ only: ['expenses'] });
         } else {
             setNotice(result.message);
         }
