@@ -84,7 +84,7 @@ class WorkspaceOperationsController extends Controller
             : ClientProposal::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('client_company_id', $companyIds)
-                ->with('items')
+                ->with(['items' => fn ($items) => $items->where('workspace_id', $workspace->id)])
                 ->latest('id')
                 ->get();
         $proposalsByCompany = $proposals->groupBy('client_company_id');

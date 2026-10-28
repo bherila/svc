@@ -15,11 +15,13 @@ use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 final class SharedReadProjectionParityTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_native_rows_keep_their_exact_fields_while_sharing_canonical_resource_values(): void
     {
@@ -39,6 +41,11 @@ final class SharedReadProjectionParityTest extends TestCase
             'currency' => 'USD', 'status' => 'sent', 'sent_at' => '2026-10-28 09:10:11']);
         $proposal->items()->create(['workspace_id' => $workspace->id, 'description' => 'Synthetic fractional item',
             'quantity' => '1.125', 'unit_amount' => 2500, 'cadence' => 'one_time', 'sort_order' => 3]);
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Synthetic Other Tenant', 'slug' => 'synthetic-other-tenant']);
+        $this->writingLegacyCrossTenantRows(fn () => $proposal->items()->create([
+            'workspace_id' => $foreignWorkspace->id, 'description' => 'Synthetic foreign item must not affect totals',
+            'quantity' => '1.000', 'unit_amount' => 999999, 'cadence' => 'one_time', 'sort_order' => 4,
+        ]));
         $invoice = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
             'invoice_number' => 'SYN-SHARED-READ', 'status' => 'issued', 'currency' => 'USD', 'subtotal_amount' => 2813,
             'total_amount' => 2813, 'paid_amount' => 0, 'balance_amount' => 2813, 'issue_date' => '2026-10-28',
