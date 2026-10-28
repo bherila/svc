@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import {
+    PlanningMutationError,
     PlanningPicker,
     usePlanningMutation,
 } from '@/components/tasks/planning-controls';
@@ -81,7 +82,7 @@ function SelectionForm<T extends { id: string }>({
                 selected={selected}
                 limit={limit}
                 display={display}
-                disabled={mutation.pending}
+                disabled={mutation.locked}
                 onChange={(rows) =>
                     setDraft((current) => ({
                         selected: rows,
@@ -89,25 +90,18 @@ function SelectionForm<T extends { id: string }>({
                     }))
                 }
             />
-            {mutation.error && (
-                <p
-                    role="alert"
-                    className="text-sm wrap-anywhere text-destructive"
-                >
-                    {mutation.error}
-                </p>
-            )}
+            {mutation.error && <PlanningMutationError mutation={mutation} />}
             <div className="flex flex-wrap gap-2">
                 <Button
                     type="submit"
-                    disabled={mutation.pending || draft === null}
+                    disabled={mutation.locked || draft === null}
                 >
                     Save {name.toLowerCase()}
                 </Button>
                 <Button
                     type="button"
                     variant="outline"
-                    disabled={mutation.pending}
+                    disabled={mutation.locked}
                     onClick={() =>
                         void mutation.reload(() => {
                             setDraft(null);
@@ -297,7 +291,7 @@ function Dependencies({
                             selected={selected}
                             limit={25}
                             display={referenceName}
-                            disabled={mutation.pending}
+                            disabled={mutation.locked}
                             onChange={(rows) =>
                                 setDraft((current) => ({
                                     selected: rows,
@@ -309,24 +303,19 @@ function Dependencies({
                             }
                         />
                         {mutation.error && (
-                            <p
-                                role="alert"
-                                className="text-sm wrap-anywhere text-destructive"
-                            >
-                                {mutation.error}
-                            </p>
+                            <PlanningMutationError mutation={mutation} />
                         )}
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 type="submit"
-                                disabled={mutation.pending || draft === null}
+                                disabled={mutation.locked || draft === null}
                             >
                                 Save prerequisites
                             </Button>
                             <Button
                                 type="button"
                                 variant="outline"
-                                disabled={mutation.pending}
+                                disabled={mutation.locked}
                                 onClick={() =>
                                     void mutation.reload(() => {
                                         setDraft(null);

@@ -223,15 +223,23 @@ describe('task planning panel', () => {
         expect(
             screen.getByRole('checkbox', { name: label.name }),
         ).toBeChecked();
-        fireEvent.click(screen.getByRole('button', { name: 'Reload labels' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
         await screen.findByText(
-            /Planning could not be refreshed. Your choices are preserved/,
+            /change was saved, but current planning could not be refreshed/,
         );
         expect(
             screen.getByRole('checkbox', { name: label.name }),
         ).toBeChecked();
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(
+            screen.getByRole('checkbox', { name: label.name }),
+        ).toBeDisabled();
         refresh.mockResolvedValue(undefined);
-        fireEvent.click(screen.getByRole('button', { name: 'Reload labels' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
         await waitFor(() =>
             expect(
                 screen.getByRole('checkbox', { name: label.name }),

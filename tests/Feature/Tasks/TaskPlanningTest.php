@@ -45,46 +45,46 @@ final class TaskPlanningTest extends TestCase
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
         $assignee = $this->staff($workspace, $project);
-        $this->actingAs($owner)->post($this->createPath($workspace, $project), [
+        $this->browser($owner)->postJson('/api/v1'.$this->createPath($workspace, $project), [
             'title' => 'Synthetic planned task', 'description' => 'Synthetic description', 'is_visible_to_client' => false,
             'starts_on' => '2026-10-31', 'due_on' => '2026-11-02', 'assignee_ids' => [$assignee->public_id],
-        ])->assertRedirect();
+        ])->assertCreated();
         $task = app(WorkspaceTaskRepository::class)->find($workspace, ClientTask::query()->sole()->public_id);
         $this->assertSame('2026-10-31', $task->getRawOriginal('starts_on'));
         $this->assertSame('2026-11-02', $task->due_on->toDateString());
         $this->assertSame([$assignee->public_id], array_column(app(TaskPlanningPresenter::class)->fields($task)['assignees'], 'id'));
         $version = AgentApiVersion::for($task);
-        $this->actingAs($owner)->get(route('tasks.show', [$workspace, $task]))->assertOk()->assertInertia(fn (Assert $page) => $page
+        $this->browser($owner)->get(route('tasks.show', [$workspace, $task]))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('clients/task')->where('task.version', $version)->where('task.starts_on', '2026-10-31')
-            ->where('task.assignees.0.id', $assignee->public_id)->where('task.update_action', route('tasks.update', [$workspace, $task]))
+            ->where('task.assignees.0.id', $assignee->public_id)->where('task.update_action', route('agent-api.v1.tasks.update', [$workspace, $task->public_id]))
             ->where('workspaceNavigation.current_client_id', $company->public_id)
             ->where('workspaceNavigation.clients.0.destinations.tasks', route('clients.tasks', [$workspace, $company], absolute: false)));
-        $this->patch($this->updatePath($workspace, $task), ['expected_version' => $version, 'title' => 'Synthetic revised task'])->assertRedirect();
+        $this->native()->patchJson('/api/v1'.$this->updatePath($workspace, $task), ['expected_version' => $version, 'title' => 'Synthetic revised task'])->assertOk();
         $task->refresh();
         $this->assertSame('Synthetic description', $task->description);
         $this->assertFalse($task->is_visible_to_client);
         $this->assertSame('2026-10-31', $task->starts_on->toDateString());
         $this->assertSame(1, ClientTaskAssignment::query()->where('workspace_id', $workspace->id)->count());
-        $this->patchJson($this->updatePath($workspace, $task), ['expected_version' => $version, 'is_visible_to_client' => true])->assertConflict();
+        $this->native()->patchJson('/api/v1'.$this->updatePath($workspace, $task), ['expected_version' => $version, 'is_visible_to_client' => true])->assertConflict();
         $this->assertFalse($task->fresh()->is_visible_to_client);
-        $this->patchJson($this->updatePath($workspace, $task), ['title' => 'Missing version'])->assertUnprocessable()->assertJsonValidationErrors('expected_version');
+        $this->native()->patchJson('/api/v1'.$this->updatePath($workspace, $task), ['title' => 'Missing version'])->assertUnprocessable()->assertJsonValidationErrors('expected_version');
     }
 
     public function test_merged_date_order_clearing_and_strict_calendar_formats(): void
     {
         [$workspace, , $project, $owner] = $this->fixture();
         $task = $this->create($workspace, $project, $owner, ['starts_on' => '2026-10-20', 'due_on' => '2026-10-30']);
-        $this->actingAs($owner)->patchJson($this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task), 'starts_on' => '2026-11-01'])
+        $this->browser($owner)->patchJson('/api/v1'.$this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task), 'starts_on' => '2026-11-01'])
             ->assertUnprocessable()->assertJsonValidationErrors('due_on');
         $this->assertSame('2026-10-20', $task->fresh()->starts_on->toDateString());
-        $this->patch($this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task->fresh()), 'starts_on' => null, 'due_on' => null, 'description' => null])->assertRedirect();
+        $this->native()->patchJson('/api/v1'.$this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task->fresh()), 'starts_on' => null, 'due_on' => null, 'description' => null])->assertOk();
         $this->assertNull($task->fresh()->starts_on);
         $this->assertNull($task->fresh()->due_on);
         foreach (['2026-02-30', '2026-10-22T12:00:00Z', 'tomorrow'] as $invalid) {
-            $this->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic invalid date', 'is_visible_to_client' => false, 'due_on' => $invalid])
+            $this->native()->postJson('/api/v1'.$this->createPath($workspace, $project), ['title' => 'Synthetic invalid date', 'is_visible_to_client' => false, 'due_on' => $invalid])
                 ->assertUnprocessable()->assertJsonValidationErrors('due_on');
         }
-        $this->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic reversed dates', 'is_visible_to_client' => false, 'starts_on' => '2026-11-01', 'due_on' => '2026-10-31'])
+        $this->native()->postJson('/api/v1'.$this->createPath($workspace, $project), ['title' => 'Synthetic reversed dates', 'is_visible_to_client' => false, 'starts_on' => '2026-11-01', 'due_on' => '2026-10-31'])
             ->assertUnprocessable()->assertJsonValidationErrors('due_on');
     }
 
@@ -98,9 +98,9 @@ final class TaskPlanningTest extends TestCase
         ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $portal->id, 'role' => 'client']);
         $otherProject = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Other synthetic project']);
         $otherStaff = $this->staff($workspace, $otherProject);
-        $this->actingAs($owner);
+        $this->browser($owner);
         foreach ([$foreignOwner, $unassigned, $portal, $otherStaff] as $ineligible) {
-            $this->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic refused assignment', 'is_visible_to_client' => false, 'assignee_ids' => [$ineligible->public_id]])
+            $this->native()->postJson('/api/v1'.$this->createPath($workspace, $project), ['title' => 'Synthetic refused assignment', 'is_visible_to_client' => false, 'assignee_ids' => [$ineligible->public_id]])
                 ->assertUnprocessable()->assertJsonValidationErrors('assignee_ids');
         }
         $this->assertDatabaseCount('client_tasks', 0);
@@ -109,6 +109,7 @@ final class TaskPlanningTest extends TestCase
         $task = $this->create($workspace, $project, $owner, ['assignee_ids' => [$owner->public_id, $viewer->public_id]]);
         $this->assertDatabaseCount('client_project_memberships', 2);
         $this->assertDatabaseCount('workspace_memberships', 5);
+        $this->unencryptedCookies = [];
         $this->actingAsMcp($viewer, ['tasks:write']);
         $this->withHeader('Idempotency-Key', 'synthetic-assignee-no-promotion')->patchJson('/api/v1'.$this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task), 'title' => 'Synthetic refused promotion'])->assertForbidden();
         $this->assertSame('Synthetic task', $task->fresh()->title);
@@ -131,7 +132,7 @@ final class TaskPlanningTest extends TestCase
         $this->assertSame([], app(WorkspaceTaskRepository::class)->assigneeOptions($workspace, $project, $assignee->name)['data']);
         $task = $action->update($owner, $workspace, $task->public_id, TaskPatchData::fromValidated(['assignee_ids' => []]), AgentApiVersion::for($task));
         $this->assertSame(0, $task->assignments->count());
-        $this->actingAs($owner)->patchJson($this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task), 'assignee_ids' => [$assignee->public_id]])->assertUnprocessable();
+        $this->browser($owner)->patchJson('/api/v1'.$this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task), 'assignee_ids' => [$assignee->public_id]])->assertUnprocessable();
     }
 
     public function test_agent_replays_and_partial_updates_preserve_planning_and_hide_it_by_default(): void
@@ -172,13 +173,13 @@ final class TaskPlanningTest extends TestCase
         [$foreign, , $foreignProject] = $this->fixture();
         $this->staff($foreign, $foreignProject);
         $staff = $this->staff($workspace, $project);
-        $this->actingAs($owner);
+        $this->browser($owner);
         foreach ([[$staff->public_id, $staff->public_id], ['not-a-list' => $staff->public_id], array_map(fn () => (string) Str::uuid(), range(1, 11))] as $ids) {
-            $this->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic bound', 'is_visible_to_client' => false, 'assignee_ids' => $ids])->assertUnprocessable();
+            $this->native()->postJson('/api/v1'.$this->createPath($workspace, $project), ['title' => 'Synthetic bound', 'is_visible_to_client' => false, 'assignee_ids' => $ids])->assertUnprocessable();
         }
-        $this->getJson(route('tasks.assignees', [$workspace, $project], false).'?q='.urlencode($staff->name))->assertOk()->assertJsonPath('data.0.id', $staff->public_id)->assertJsonCount(1, 'data');
+        $this->browser($owner)->getJson(route('tasks.assignees', [$workspace, $project], false).'?q='.urlencode($staff->name))->assertOk()->assertJsonPath('data.0.id', $staff->public_id)->assertJsonCount(1, 'data');
         $this->getJson(route('tasks.assignees', [$workspace, $foreignProject], false))->assertNotFound();
-        $this->actingAs($staff)->getJson(route('tasks.assignees', [$workspace, $project], false))->assertForbidden();
+        $this->browser($staff)->getJson(route('tasks.assignees', [$workspace, $project], false))->assertForbidden();
     }
 
     public function test_assignee_lookup_is_bounded_and_search_can_reach_later_matches(): void
@@ -188,9 +189,9 @@ final class TaskPlanningTest extends TestCase
         for ($index = 0; $index < 26; $index++) {
             $last = $this->staff($workspace, $project);
         }
-        $this->actingAs($owner)->getJson(route('tasks.assignees', [$workspace, $project], false))
+        $this->browser($owner)->getJson(route('tasks.assignees', [$workspace, $project], false))
             ->assertOk()->assertJsonCount(25, 'data')->assertJsonPath('has_more', true);
-        $this->getJson(route('tasks.assignees', [$workspace, $project], false).'?q='.urlencode($last->name))
+        $this->browser($owner)->getJson(route('tasks.assignees', [$workspace, $project], false).'?q='.urlencode($last->name))
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $last->public_id)->assertJsonPath('has_more', false);
     }
 
@@ -291,5 +292,17 @@ final class TaskPlanningTest extends TestCase
     private function updatePath(Workspace $workspace, ClientTask $task): string
     {
         return '/workspaces/'.$workspace->public_id.'/tasks/'.$task->public_id;
+    }
+
+    private function browser(User $actor): static
+    {
+        $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
+
+        return $this->native();
+    }
+
+    private function native(): static
+    {
+        return $this->withHeader('Idempotency-Key', 'synthetic-native-'.Str::uuid());
     }
 }

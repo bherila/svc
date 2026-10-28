@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -69,23 +70,25 @@ class SvcFoundationWorkflowTest extends TestCase
             ])->assertCreated();
 
         $project = ClientProject::query()->sole();
-        $this->actingAs($owner, 'web')
-            ->post("/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-foundation-task-post')
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", [
                 'title' => 'Prepare discovery notes',
                 'is_visible_to_client' => true,
-            ])->assertRedirect('/');
+            ])->assertCreated();
 
         $task = ClientTask::query()->sole();
         $this->assertSame($workspace->id, $company->workspace_id);
         $this->assertSame($workspace->id, $project->workspace_id);
         $this->assertSame($workspace->id, $task->workspace_id);
 
-        $this->actingAs($owner, 'web')
-            ->patch("/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-foundation-task-patch')
+            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
                 'expected_version' => AgentApiVersion::for($task),
                 'status' => 'completed',
                 'is_visible_to_client' => true,
-            ])->assertRedirect('/');
+            ])->assertOk();
 
         $this->assertSame('completed', $task->fresh()->status);
         $this->assertNotNull($task->fresh()->completed_at);
