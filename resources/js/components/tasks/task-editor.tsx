@@ -1,5 +1,5 @@
 import { useForm } from '@inertiajs/react';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,9 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 
 export type TaskAssignee = { id: string; name: string };
 export type TaskAssigneeOptions = {
@@ -229,6 +231,10 @@ export function TaskEditor({
         assignee_ids: task?.assignees.map((person) => person.id) ?? [],
         expected_version: task?.version ?? '',
     });
+    const [pending, setPending] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const inFlight = useRef(false);
+    const attempt = useRef<{ signature: string; key: string } | null>(null);
     const action = task?.update_action ?? project?.create_action;
     const assigneesAction = task?.assignees_action ?? project?.assignees_action;
     const assigneeOptions =
@@ -240,48 +246,99 @@ export function TaskEditor({
         return null;
     }
 
-    const submit = (event: FormEvent) => {
+    const submit = async (event: FormEvent) => {
         event.preventDefault();
-        form.transform((data) => ({
-            title: data.title,
-            description: data.description || null,
-            is_visible_to_client: data.is_visible_to_client,
-            starts_on: data.starts_on || null,
-            due_on: data.due_on || null,
-            assignee_ids: data.assignee_ids,
+
+        if (inFlight.current) {
+            return;
+        }
+
+        const body = {
+            title: form.data.title,
+            description: form.data.description || null,
+            is_visible_to_client: form.data.is_visible_to_client,
+            starts_on: form.data.starts_on || null,
+            due_on: form.data.due_on || null,
+            assignee_ids: form.data.assignee_ids,
             ...(task === null
                 ? {}
                 : {
-                      status: data.status,
-                      expected_version: data.expected_version,
+                      status: form.data.status,
+                      expected_version: form.data.expected_version,
                   }),
-        }));
-        const options = {
-            preserveScroll: true,
-            onHttpException: (response: { status: number }) => {
-                if (response.status === 409) {
+        };
+        const method = task === null ? 'POST' : 'PATCH';
+        const signature = JSON.stringify([method, action, body]);
+
+        if (attempt.current?.signature !== signature) {
+            attempt.current = { signature, key: newIdempotencyKey() };
+        }
+
+        inFlight.current = true;
+        setPending(true);
+        setError(null);
+        form.clearErrors();
+
+        try {
+            const result = await apiRequest<{ version: string }>(
+                method,
+                action,
+                body,
+                attempt.current.key,
+            );
+
+            if (!result.ok) {
+                setError(result.message);
+
+                if (result.status === 409) {
                     form.setError(
                         'expected_version',
                         'This task has changed. Reload it before saving your changes.',
                     );
-
-                    return false;
+                } else {
+                    for (const [field, messages] of Object.entries(
+                        result.errors ?? {},
+                    )) {
+                        form.setError(
+                            field as keyof typeof form.data,
+                            messages[0],
+                        );
+                    }
                 }
-            },
-            onSuccess: () => {
-                if (task === null) {
-                    form.reset();
-                    setSelected([]);
+
+                if (result.status >= 400 && result.status < 500) {
+                    attempt.current = null;
                 }
 
-                onSaved?.();
-            },
-        };
+                return;
+            }
 
-        if (task === null) {
-            form.post(action, options);
-        } else {
-            form.patch(action, options);
+            await refreshPageProps({
+                requireSuccess: true,
+                only: ['task', 'tasks', 'task_management', 'planning_details'],
+            });
+
+            // Keep the original body/key until the refresh also succeeds, so
+            // retrying a saved creation cannot create a second task.
+            attempt.current = null;
+
+            if (task !== null) {
+                form.setData('expected_version', result.data.version);
+            }
+
+            if (task === null) {
+                form.reset();
+                setSelected([]);
+            }
+
+            onSaved?.();
+        } catch {
+            setError(
+                'The task was saved, but current tasks could not be refreshed. Reload before making another change.',
+            );
+        } finally {
+            inFlight.current = false;
+            setPending(false);
         }
     };
 
@@ -395,6 +452,14 @@ export function TaskEditor({
                     Visible to client
                 </Label>
             </div>
+            {error && !form.errors.expected_version && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-destructive"
+                >
+                    {error}
+                </p>
+            )}
             {Object.entries(form.errors).map(([key, error]) => (
                 <p
                     key={key}
@@ -413,7 +478,7 @@ export function TaskEditor({
                     Reload task
                 </Button>
             )}
-            <Button type="submit" disabled={form.processing}>
+            <Button type="submit" disabled={pending}>
                 {task === null ? 'Create task' : 'Save task'}
             </Button>
         </form>

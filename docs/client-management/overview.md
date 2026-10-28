@@ -74,8 +74,7 @@ asks depends on what is being written:
 | write | asks |
 | --- | --- |
 | client company, project, project access | `manage` on the workspace |
-| task, **through the web routes** (`ClientTaskController`) | `manage` on the workspace |
-| task, **through the agent API or MCP** (`AgentTaskMutationAction`, shared by both) | `ProjectAccess::canManageTasks()` on the project |
+| task, through the website session, agent API or MCP (`AgentTaskMutationAction`) | `ProjectAccess::canManageTasks()` on the project; the trusted website session retains Internal authority for dual-role staff |
 | invoices, payments, billing schedules | `manage` on the workspace |
 | expenses (read `view`, write `manage`) | `manage` on the workspace |
 | **log time** | `ProjectAccess::canLogTime()` on the entry's project |
@@ -406,8 +405,6 @@ PATCH  /workspaces/{workspace}/clients/{clientCompany}
 POST   /workspaces/{workspace}/clients/{clientCompany}/projects
 PATCH  /workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}
 PUT    /workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access
-POST   /workspaces/{workspace}/projects/{clientProject}/tasks
-PATCH  /workspaces/{workspace}/tasks/{clientTask}
 ```
 
 **Portal** — every read is authorized by `viewPortal` and then narrowed by
@@ -870,12 +867,13 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
     `/oauth/callback`, `POST /oauth/register` (throttled) and the
     `/.well-known/oauth-*` documents.
 - Reads require `view` on the workspace. Writes split two ways: client,
-  project, project-access, **web** task, invoice, billing-schedule and expense
-  routes require `manage`, while the time-entry writes and the **agent and MCP**
-  task writes ask a `ProjectAccess` predicate about the record's own project —
+  project, project-access, invoice, billing-schedule and expense
+  routes require `manage`, while time-entry and task writes, including website
+  session requests to `/api/v1`, ask a `ProjectAccess` predicate about the record's
+  own project —
   `canLogTime()`, `canApproveTime()`, `canManageTasks()`. So a project owner or
   manager who is an ordinary workspace member can log, edit and approve time,
-  and can create and update tasks through the agent API and MCP, without being a
+  and can create and update tasks through the website, agent API and MCP, without being a
   workspace owner or admin. See the table under
   [Authorization](#authorization).
 - The portal requires `viewPortal`, and reads are then narrowed by

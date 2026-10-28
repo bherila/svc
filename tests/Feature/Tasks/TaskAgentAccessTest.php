@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 final class TaskAgentAccessTest extends TestCase
@@ -47,8 +48,20 @@ final class TaskAgentAccessTest extends TestCase
         $this->assertSame($privateVersion, AgentApiVersion::for($task->fresh()));
         $this->assertDatabaseCount('client_tasks', 1);
         // The authenticated staff website is a trusted Internal adapter.
-        $this->actingAs($owner)->get(route('tasks.show', [$workspace, $task]))->assertOk();
-        $this->patch(route('tasks.update', [$workspace, $task]), ['expected_version' => $privateVersion, 'description' => 'Synthetic internal edit'])->assertRedirect();
+        $this->browser($owner)->get(route('tasks.show', [$workspace, $task]))->assertOk();
+        $this->native()->patchJson(route('agent-api.v1.tasks.update', [$workspace, $task->public_id]), ['expected_version' => $privateVersion, 'description' => 'Synthetic internal edit'])->assertOk();
         $this->assertSame('Synthetic internal edit', $task->fresh()->description);
+    }
+
+    private function browser(User $actor): static
+    {
+        $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
+
+        return $this->native();
+    }
+
+    private function native(): static
+    {
+        return $this->withHeader('Idempotency-Key', 'synthetic-native-'.Str::uuid());
     }
 }

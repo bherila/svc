@@ -37,6 +37,9 @@ final class TaskPlanningAdaptersTest extends TestCase
                     ['post', '/labels/{label}/restore', 'labels.restore'], ['get', '/projects/{project}/labels', 'labels.options'], ['put', '/tasks/{task}/labels', 'labels.replace'],
                     ['get', '/tasks/{task}/dependencies', 'dependencies.get'], ['get', '/tasks/{task}/dependency-options', 'dependencies.options'], ['put', '/tasks/{task}/dependencies', 'dependencies.replace'],
                     ['get', '/tasks/{task}/contacts', 'contacts.get'], ['get', '/tasks/{task}/contact-options', 'contacts.options'], ['put', '/tasks/{task}/contacts', 'contacts.replace']] as [$verb, $uri, $operation]) {
+                    if ($prefix === 'synthetic-planning' && $verb !== 'get') {
+                        continue;
+                    }
                     $route = Route::$verb($uri, [$controller, $verb === 'get' ? 'show' : 'mutate'])->defaults('task_planning_operation', $operation);
                     if ($prefix === 'synthetic-planning') {
                         $route->name('tasks.planning.'.$operation);

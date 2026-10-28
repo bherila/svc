@@ -2,7 +2,7 @@
 /* global process */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import {
     existsSync,
     mkdirSync,
@@ -473,12 +473,15 @@ try {
                     origin + fixture.task_update,
                     {
                         data: { expected_version: version },
-                        headers: { 'Sec-Fetch-Site': 'same-origin' },
+                        headers: {
+                            'Sec-Fetch-Site': 'same-origin',
+                            'Idempotency-Key': randomUUID(),
+                        },
                         maxRedirects: 0,
                     },
                 );
 
-                expect([302, 303]).toContain(revised.status());
+                expect(revised.status()).toBe(200);
 
                 await page
                     .getByRole('button', { name: 'Save task', exact: true })

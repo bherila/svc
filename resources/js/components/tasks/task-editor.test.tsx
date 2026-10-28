@@ -2,9 +2,17 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskEditor } from '@/components/tasks/task-editor';
 import type { EditableTask } from '@/components/tasks/task-editor';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 
 const { submit } = vi.hoisted(() => ({ submit: vi.fn() }));
+vi.mock('@/lib/api', () => ({
+    apiRequest: submit,
+    newIdempotencyKey: () => crypto.randomUUID(),
+}));
+vi.mock('@/lib/refresh-page-props', () => ({
+    refreshPageProps: vi.fn(async () => {}),
+}));
 vi.mock('@inertiajs/react', async () => {
     const React = await import('react');
 
@@ -14,25 +22,15 @@ vi.mock('@inertiajs/react', async () => {
             const [errors, setErrors] = React.useState<Record<string, string>>(
                 {},
             );
-            const transform = React.useRef<
-                (value: Record<string, unknown>) => Record<string, unknown>
-            >((value) => value);
 
             return {
                 data,
                 errors,
-                processing: false,
+                clearErrors: () => setErrors({}),
                 setData: (key: string, value: unknown) =>
                     setData((current) => ({ ...current, [key]: value })),
                 setError: (key: string, value: string) =>
                     setErrors((current) => ({ ...current, [key]: value })),
-                transform: (callback: typeof transform.current) => {
-                    transform.current = callback;
-                },
-                post: (url: string, options: object) =>
-                    submit('POST', url, transform.current(data), options),
-                patch: (url: string, options: object) =>
-                    submit('PATCH', url, transform.current(data), options),
                 reset: () => setData(initial),
             };
         },
@@ -60,7 +58,14 @@ const task: EditableTask = {
 
 beforeEach(() => {
     vi.useFakeTimers();
-    submit.mockClear();
+    submit.mockReset();
+    vi.mocked(refreshPageProps).mockReset();
+    vi.mocked(refreshPageProps).mockResolvedValue();
+    submit.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: { version: 'saved-version' },
+    });
     vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({
@@ -401,7 +406,7 @@ describe('task editor', () => {
                 assignee_ids: [person.id],
                 is_visible_to_client: false,
             }),
-            expect.any(Object),
+            expect.any(String),
         );
     });
 
@@ -433,7 +438,7 @@ describe('task editor', () => {
                 assignee_ids: [person.id],
                 is_visible_to_client: false,
             },
-            expect.any(Object),
+            expect.any(String),
         );
     });
 
@@ -468,12 +473,15 @@ describe('task editor', () => {
     });
 
     it('explains stale conflicts and offers to reload without retrying the stale form', async () => {
+        submit.mockResolvedValueOnce({
+            ok: false,
+            status: 409,
+            message: 'Synthetic stale task',
+        });
         render(<TaskEditor task={task} />);
         await loadOptions();
-        fireEvent.click(screen.getByRole('button', { name: 'Save task' }));
-        const options = submit.mock.calls[0][3];
         await act(async () => {
-            expect(options.onHttpException({ status: 409 })).toBe(false);
+            fireEvent.click(screen.getByRole('button', { name: 'Save task' }));
         });
         expect(screen.getByRole('alert')).toHaveTextContent(
             'This task has changed. Reload',
@@ -482,6 +490,84 @@ describe('task editor', () => {
             screen.getByRole('button', { name: 'Reload task' }),
         ).toBeVisible();
         expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a task creation draft and receipt key after an uncertain failure', async () => {
+        submit.mockResolvedValueOnce({
+            ok: false,
+            status: 503,
+            message: 'Synthetic retryable failure',
+        });
+        render(
+            <TaskEditor
+                project={{
+                    id: 'synthetic-project',
+                    name: 'Synthetic project',
+                    create_action: '/synthetic/create',
+                    assignees_action: '/synthetic/lookup',
+                    assignee_options: { data: [], has_more: false },
+                }}
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('Title'), {
+            target: { value: 'Keep this synthetic draft' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Create task' }),
+            );
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Synthetic retryable failure',
+        );
+        expect(screen.getByLabelText('Title')).toHaveValue(
+            'Keep this synthetic draft',
+        );
+        const key = submit.mock.calls[0][3];
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Create task' }),
+            );
+        });
+        expect(submit.mock.calls[1][3]).toBe(key);
+        expect(screen.getByLabelText('Title')).toHaveValue('');
+    });
+
+    it('replays a saved creation when refreshing its list fails', async () => {
+        vi.mocked(refreshPageProps).mockRejectedValueOnce(
+            new Error('Synthetic refresh failure'),
+        );
+        render(
+            <TaskEditor
+                project={{
+                    id: 'synthetic-project',
+                    name: 'Synthetic project',
+                    create_action: '/synthetic/create',
+                    assignees_action: '/synthetic/lookup',
+                    assignee_options: { data: [], has_more: false },
+                }}
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('Title'), {
+            target: { value: 'Save this synthetic draft once' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Create task' }),
+            );
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'saved, but current tasks could not be refreshed',
+        );
+        const key = submit.mock.calls[0][3];
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Create task' }),
+            );
+        });
+        expect(submit.mock.calls[1][3]).toBe(key);
+        expect(submit.mock.calls[1][2]).toEqual(submit.mock.calls[0][2]);
+        expect(screen.getByLabelText('Title')).toHaveValue('');
     });
 
     it('gives oversized identities and descriptions room to wrap', async () => {

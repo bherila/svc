@@ -49,15 +49,15 @@ final class TaskWebAccessTest extends TestCase
         if ($portal) {
             ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $actor->id, 'role' => 'client']);
         }
-        $this->actingAs($actor)->get(route('tasks.show', [$workspace, $task]))->assertStatus($allowed ? 200 : 403);
+        $this->browser($actor)->get(route('tasks.show', [$workspace, $task]))->assertStatus($allowed ? 200 : 403);
         $this->getJson(route('tasks.assignees', [$workspace, $project]))->assertStatus($allowed ? 200 : 403);
         if ($allowed) {
             $this->get(route('tasks.show', [$workspace, $task]))->assertInertia(fn (Assert $page) => $page
-                ->where('task.update_action', route('tasks.update', [$workspace, $task]))
+                ->where('task.update_action', route('agent-api.v1.tasks.update', [$workspace, $task->public_id]))
                 ->where('workspaceNavigation.current_client_id', $company->public_id));
             $this->get(route('clients.project', [$workspace, $company, $project]))->assertOk()->assertInertia(fn (Assert $page) => $page
                 ->has('task_management.projects', 1)->where('tasks.0.detail_url', route('tasks.show', [$workspace, $task])));
-            $this->patch(route('tasks.update', [$workspace, $task]), ['expected_version' => AgentApiVersion::for($task), 'title' => 'Synthetic internal manager edit'])->assertRedirect();
+            $this->native()->patchJson(route('agent-api.v1.tasks.update', [$workspace, $task->public_id]), ['expected_version' => AgentApiVersion::for($task), 'title' => 'Synthetic internal manager edit'])->assertOk();
             $this->assertSame('Synthetic internal manager edit', $task->fresh()->title);
             if (! $portal) {
                 $this->actingAsMcp($actor, ['tasks:read', 'projects:read']);
@@ -78,7 +78,7 @@ final class TaskWebAccessTest extends TestCase
         $other = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic view-only project']);
         ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $other->id, 'user_id' => $manager->id, 'role' => 'viewer']);
         $otherTask = app(WorkspaceTaskMutationAction::class)->create($owner, $workspace, $other->public_id, ['title' => 'Synthetic view-only task']);
-        $this->actingAs($manager);
+        $this->browser($manager);
         $expected = 1;
         $render = function () use ($workspace, $company, &$expected): void {
             $this->get(route('clients.tasks', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $page) => $page
@@ -95,9 +95,9 @@ final class TaskWebAccessTest extends TestCase
         $this->get(route('clients.project', [$workspace, $company, $other]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('task_management', null)->where('tasks.0.detail_url', null));
         $this->get(route('tasks.show', [$workspace, $otherTask]))->assertForbidden();
         $this->getJson(route('tasks.assignees', [$workspace, $other]))->assertForbidden();
-        $this->postJson(route('tasks.store', [$workspace, $other]), ['title' => 'Synthetic refused task', 'is_visible_to_client' => false])->assertForbidden();
-        $this->patchJson(route('tasks.update', [$workspace, $otherTask]), ['expected_version' => AgentApiVersion::for($otherTask), 'title' => 'Synthetic refused edit'])->assertForbidden();
-        $this->get(route('tasks.show', [$workspace, $task]))->assertOk();
+        $this->native()->postJson(route('agent-api.v1.tasks.store', [$workspace, $other->public_id]), ['title' => 'Synthetic refused task', 'is_visible_to_client' => false])->assertForbidden();
+        $this->native()->patchJson(route('agent-api.v1.tasks.update', [$workspace, $otherTask->public_id]), ['expected_version' => AgentApiVersion::for($otherTask), 'title' => 'Synthetic refused edit'])->assertForbidden();
+        $this->browser($manager)->get(route('tasks.show', [$workspace, $task]))->assertOk();
     }
 
     /** @return array{Workspace,ClientCompany,ClientProject,User,ClientTask} */
@@ -111,5 +111,17 @@ final class TaskWebAccessTest extends TestCase
         $task = app(WorkspaceTaskMutationAction::class)->create($owner, $workspace, $project->public_id, TaskCreateData::fromValidated(['title' => 'Synthetic private task']));
 
         return [$workspace, $company, $project, $owner, $task];
+    }
+
+    private function browser(User $actor): static
+    {
+        $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
+
+        return $this->native();
+    }
+
+    private function native(): static
+    {
+        return $this->withHeader('Idempotency-Key', 'synthetic-native-'.Str::uuid());
     }
 }
