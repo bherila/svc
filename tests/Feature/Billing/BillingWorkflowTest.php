@@ -17,6 +17,7 @@ use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\OverpaymentCreditService;
 use App\Services\Billing\StripePaymentIntentService;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
@@ -1202,16 +1203,16 @@ class BillingWorkflowTest extends TestCase
             'client_agreement_id' => $agreement->id, 'cadence' => 'monthly', 'next_run_on' => '2026-10-01',
             'due_days' => 14, 'currency' => 'USD', 'line_template' => [$this->line()],
         ]);
-        $url = route('svc.billing.schedules.generate', [$workspace, $schedule]);
+        $url = route('agent-api.v1.billing-schedules.generate', [$workspace, $schedule]);
 
         $billed = fn (): int => ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_billing_schedule_id', $schedule->id)->count();
 
         $this->travelTo(CarbonImmutable::parse('2026-10-01 03:00:00 UTC'));
-        $this->actingAs($owner)->post($url)->assertRedirect()->assertSessionHasNoErrors();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($url, ['expected_version' => AgentApiVersion::for($schedule->fresh()), 'confirm' => true])->assertOk();
         $this->assertSame(0, $billed());
 
         $this->travelTo(CarbonImmutable::parse('2026-10-01 20:00:00 UTC'));
-        $this->actingAs($owner)->post($url)->assertRedirect()->assertSessionHasNoErrors();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($url, ['expected_version' => AgentApiVersion::for($schedule->fresh()), 'confirm' => true])->assertOk();
         $this->assertSame(1, $billed());
         $this->assertSame('2026-10-01', ClientInvoice::query()->where('client_billing_schedule_id', $schedule->id)->sole()->issue_date?->toDateString());
     }

@@ -13,11 +13,11 @@ use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
@@ -27,22 +27,14 @@ class EngagementWorkflowTest extends TestCase
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! Route::has('svc.engagement.proposals.store')) {
-            require base_path('routes/engagement.php');
-        }
-    }
-
     public function test_accepting_a_visible_sent_proposal_materializes_an_idempotent_agreement(): void
     {
         $owner = User::factory()->create();
         $clientUser = User::factory()->create();
         [$workspace, $company] = $this->clientFor($owner, $clientUser);
 
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/proposals", [
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/proposals", [
+            'company_id' => $company->public_id, 'expected_version' => AgentApiVersion::for($company),
             'title' => 'Synthetic support plan',
             'summary' => 'A synthetic summary.',
             'terms' => 'A synthetic set of terms.',
@@ -56,24 +48,24 @@ class EngagementWorkflowTest extends TestCase
                 'cadence' => 'monthly',
                 'sort_order' => 0,
             ]],
-        ])->assertRedirect();
+        ])->assertCreated();
 
         $proposal = ClientProposal::query()->sole();
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
-            ->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send", ['expected_version' => AgentApiVersion::for($proposal), 'confirm' => true])
+            ->assertOk();
 
         $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
-        $this->actingAs($clientUser)->postJson($acceptPath, [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Synthetic Signer',
             'signer_title' => 'Synthetic Buyer',
         ])->assertRedirect();
 
-        $this->actingAs($clientUser)->postJson($acceptPath, [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Synthetic Signer',
             'signer_title' => 'Synthetic Buyer',
         ])->assertRedirect();
 
-        $this->actingAs($clientUser)->postJson($acceptPath, [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Different Replay Value',
             'signer_title' => 'Different Replay Title',
         ])->assertUnprocessable()->assertJsonPath('message', 'This proposal was already accepted with different signer details.');
@@ -129,7 +121,7 @@ class EngagementWorkflowTest extends TestCase
             'sent_at' => now()->subDays(2),
         ]);
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertUnprocessable()->assertJsonPath('message', 'This proposal has expired.');
@@ -143,7 +135,8 @@ class EngagementWorkflowTest extends TestCase
         $owner = User::factory()->create();
         [$workspace, $company] = $this->clientFor($owner);
 
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements", [
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements", [
+            'expected_version' => AgentApiVersion::for($company),
             'title' => 'Synthetic agreement',
             'starts_on' => '2026-08-15',
             'ends_on' => '2027-08-14',
@@ -154,15 +147,15 @@ class EngagementWorkflowTest extends TestCase
             'hourly_rate_amount' => 18000,
             'retainer_amount' => 72000,
             'retainer_minutes' => 240,
-        ])->assertRedirect();
+        ])->assertCreated();
 
         $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->sole();
         $this->assertSame('Synthetic agreement', $agreement->title);
 
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/activate")
-            ->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/activate", ['expected_version' => AgentApiVersion::for($agreement), 'confirm' => true])
+            ->assertOk();
 
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/sign", [
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/sign", [
             'signer_name' => 'Synthetic Owner',
         ])->assertRedirect();
 
@@ -293,17 +286,18 @@ class EngagementWorkflowTest extends TestCase
         [$workspace, $company] = $this->clientFor($owner, $clientUser);
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
 
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/proposals", [
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/proposals", [
+            'company_id' => $company->public_id, 'expected_version' => AgentApiVersion::for($company),
             'title' => 'Synthetic member-gate plan',
             'currency' => 'USD',
             'is_visible_to_client' => true,
             'items' => [['description' => 'Support', 'quantity' => '1.000', 'unit_amount' => 10000, 'cadence' => 'monthly', 'sort_order' => 0]],
-        ])->assertRedirect();
+        ])->assertCreated();
         $proposal = ClientProposal::query()->sole();
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send", ['expected_version' => AgentApiVersion::for($proposal), 'confirm' => true])->assertOk();
 
         $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
-        $this->actingAs($member)->postJson($acceptPath, [
+        $this->actingAs($member)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Forged Signer',
         ])->assertNotFound();
         $this->assertSame('sent', $proposal->fresh()->status);
@@ -311,7 +305,7 @@ class EngagementWorkflowTest extends TestCase
 
         // Owner/admin staff may still record an offline acceptance; the client's
         // own portal user path is pinned by the acceptance test above.
-        $this->actingAs($owner)->postJson($acceptPath, [
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Recorded Offline Signer',
         ])->assertRedirect();
         $this->assertSame('accepted', $proposal->fresh()->status);
@@ -329,7 +323,8 @@ class EngagementWorkflowTest extends TestCase
         $clientUser = User::factory()->create();
         [$workspace, $company] = $this->clientFor($owner, $clientUser);
 
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/proposals", [
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/proposals", [
+            'company_id' => $company->public_id, 'expected_version' => AgentApiVersion::for($company),
             'title' => 'Synthetic support plan',
             'currency' => 'USD',
             'is_visible_to_client' => true,
@@ -340,11 +335,11 @@ class EngagementWorkflowTest extends TestCase
                 'cadence' => 'monthly',
                 'sort_order' => 0,
             ]],
-        ])->assertRedirect();
+        ])->assertCreated();
 
         $proposal = ClientProposal::query()->sole();
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
-            ->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send", ['expected_version' => AgentApiVersion::for($proposal), 'confirm' => true])
+            ->assertOk();
 
         // The agreement this proposal may already have produced, with its link
         // lost. There is no safe evidence here that lets acceptance repair it.
@@ -365,7 +360,7 @@ class EngagementWorkflowTest extends TestCase
             app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
         );
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer', 'signer_title' => 'Synthetic Buyer'],
         )->assertUnprocessable()->assertJsonValidationErrors([
@@ -407,7 +402,7 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2025-01-01',
         ]);
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertRedirect();
@@ -435,7 +430,7 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2025-01-01',
             'ends_on' => '2026-09-03',
         ]);
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertRedirect();
@@ -468,7 +463,7 @@ class EngagementWorkflowTest extends TestCase
             app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
         );
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertUnprocessable()->assertJsonValidationErrors([
@@ -536,7 +531,7 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2025-01-01',
         ]);
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertRedirect();
@@ -571,7 +566,7 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2025-01-01',
         ]);
 
-        $response = $this->actingAs($clientUser)->postJson(
+        $response = $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertUnprocessable()->assertJsonValidationErrors([
@@ -610,10 +605,10 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2026-09-01',
         ]);
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate", ['expected_version' => AgentApiVersion::for($draft), 'confirm' => true],
         )->assertUnprocessable()->assertJsonValidationErrors([
-            'engagement' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
+            'agreement' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
         ]);
 
         $this->assertSame('draft', $draft->fresh()->status);
@@ -656,9 +651,9 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2026-09-01',
         ]);
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
-        )->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate", ['expected_version' => AgentApiVersion::for($draft), 'confirm' => true],
+        )->assertOk();
 
         $this->assertSame('active', $draft->fresh()->status);
         $this->assertSame(1, ClientCompanyActivity::query()->where('subject_public_id', $draft->public_id)->count());
@@ -708,9 +703,9 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2026-09-01',
         ]);
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
-        )->assertRedirect();
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
+            "/api/v1/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate", ['expected_version' => AgentApiVersion::for($draft), 'confirm' => true],
+        )->assertOk();
 
         $this->assertSame('active', $draft->fresh()->status);
     }
@@ -733,7 +728,7 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2025-01-01',
         ]);
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertRedirect();
@@ -767,7 +762,7 @@ class EngagementWorkflowTest extends TestCase
             'starts_on' => '2025-01-01',
         ]);
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertRedirect();
@@ -815,7 +810,7 @@ class EngagementWorkflowTest extends TestCase
             app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->withAnActiveUnlinkedAgreement,
         );
 
-        $this->actingAs($clientUser)->postJson(
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertRedirect();
@@ -863,7 +858,7 @@ class EngagementWorkflowTest extends TestCase
             app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->sentWithoutALinkedAgreement,
         );
 
-        $response = $this->actingAs($clientUser)->postJson(
+        $response = $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
         )->assertUnprocessable();

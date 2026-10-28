@@ -22,6 +22,7 @@ use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Tasks\TaskVisibility;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
@@ -194,6 +195,7 @@ class ClientPortalController extends Controller
                 // does - so there is nothing here they could not otherwise see.
                 null,
             ) + [
+                'version' => AgentApiVersion::for($clientAgreement),
                 // Internal engine behaviour: what the biller does when a term
                 // is unstated. Sent as null rather than omitted so both
                 // audiences share one payload shape, and the page renders none
