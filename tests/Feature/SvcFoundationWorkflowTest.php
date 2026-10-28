@@ -60,15 +60,16 @@ class SvcFoundationWorkflowTest extends TestCase
             ])->assertCreated()->assertHeader('Location', route('clients.show', [$workspace, ClientCompany::query()->sole()], absolute: false));
 
         $company = ClientCompany::query()->sole();
-        $this->actingAs($owner)
-            ->post("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('p', 40))
+            ->withHeader('Idempotency-Key', 'foundation-project-create')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects", [
+                'company_id' => $company->public_id, 'expected_version' => AgentApiVersion::for($company), 'confirm' => true,
                 'name' => 'Website refresh',
                 'description' => 'Synthetic project description.',
                 'is_visible_to_client' => true,
-            ])->assertRedirect('/');
+            ])->assertCreated();
 
         $project = ClientProject::query()->sole();
-        $this->actingAs($owner)
+        $this->actingAs($owner, 'web')
             ->post("/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", [
                 'title' => 'Prepare discovery notes',
                 'is_visible_to_client' => true,
@@ -79,7 +80,7 @@ class SvcFoundationWorkflowTest extends TestCase
         $this->assertSame($workspace->id, $project->workspace_id);
         $this->assertSame($workspace->id, $task->workspace_id);
 
-        $this->actingAs($owner)
+        $this->actingAs($owner, 'web')
             ->patch("/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
                 'expected_version' => AgentApiVersion::for($task),
                 'status' => 'completed',
@@ -101,8 +102,9 @@ class SvcFoundationWorkflowTest extends TestCase
             'slug' => 'other-client',
         ]);
 
-        $this->actingAs($owner)
-            ->post("/workspaces/{$workspace->public_id}/clients/{$otherCompany->public_id}/projects", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('p', 40))
+            ->withHeader('Idempotency-Key', 'foundation-foreign-project')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects", [
+                'company_id' => $otherCompany->public_id, 'expected_version' => AgentApiVersion::for($otherCompany), 'confirm' => true,
                 'name' => 'Cross-tenant project',
             ])->assertNotFound();
 

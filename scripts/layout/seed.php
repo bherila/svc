@@ -174,6 +174,11 @@ $project = ClientProject::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'name' => str_repeat('SyntheticProject', 10), 'status' => 'active',
 ]);
+if (getenv('SVC_LAYOUT_PROJECTS') === '1') {
+    $project->update(['description' => $description, 'repository' => 'git.internal.example.test/platform-engineering-group/synthetic-project-layout-repository']);
+    $projectMember = User::factory()->create(['name' => str_repeat('SyntheticProjectMember', 12), 'email' => 'synthetic-project-member@example.test']);
+    $workspace->memberships()->create(['user_id' => $projectMember->id, 'role' => 'member']);
+}
 $planningTask = null;
 if (getenv('SVC_LAYOUT_TASKS') === '1') {
     $taskAssignees = [];
@@ -463,6 +468,11 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'invoice_review' => route('clients.invoice', [$workspace, $company, $reviewInvoice], absolute: false),
+    'project_writes' => [
+        'POST' => [route('agent-api.v1.projects.store', $workspace, absolute: false)],
+        'PATCH' => [route('agent-api.v1.projects.update', [$workspace, $project->public_id], absolute: false)],
+        'PUT' => [route('agent-api.v1.projects.members.update', [$workspace, $project->public_id], absolute: false)],
+    ],
     'contact_restore' => route('agent-api.v1.clients.contacts.restore', [$workspace, $company, $historicalContact], absolute: false),
     'settings' => route('clients.settings', [$workspace, $company], absolute: false),
     'portal_settings' => route('clients.settings', [$workspace, $company], absolute: false).'?invitation_page=2',
