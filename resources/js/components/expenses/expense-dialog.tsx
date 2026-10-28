@@ -20,6 +20,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { todayIn } from '@/lib/time';
 import type { ClientExpenseRow, ExpenseProject } from '@/types/expenses';
 
@@ -122,6 +123,7 @@ export function ExpenseDialog({
     open,
     onOpenChange,
     storeUrl,
+    companyId,
     workspace,
     projects,
     expense,
@@ -129,6 +131,7 @@ export function ExpenseDialog({
     open: boolean;
     onOpenChange: (open: boolean) => void;
     storeUrl: string;
+    companyId: string;
     workspace: { timezone: string; default_currency: string };
     projects: ExpenseProject[];
     expense: ClientExpenseRow | null;
@@ -143,8 +146,15 @@ export function ExpenseDialog({
     );
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    // One opening is one logical attempt: retrying a lost response must not
+    // record the same reimbursable cost twice.
+    const [attemptKey] = useState(newIdempotencyKey);
 
-    const submit = () => {
+    const submit = async () => {
+        if (saving) {
+            return;
+        }
+
         const amount = parseAmount(draft.amount);
 
         if (amount === null) {
@@ -170,21 +180,33 @@ export function ExpenseDialog({
 
         setSaving(true);
 
-        const options = {
-            preserveScroll: true,
-            onSuccess: () => onOpenChange(false),
-            onError: (errors: Record<string, string>) =>
-                setError(
-                    Object.values(errors)[0] ??
-                        'That expense could not be saved.',
-                ),
-            onFinish: () => setSaving(false),
-        };
+        setError(null);
+        const result =
+            expense === null
+                ? await apiRequest(
+                      'POST',
+                      storeUrl,
+                      {
+                          entries: [{ ...payload, company_id: companyId }],
+                      },
+                      attemptKey,
+                  )
+                : await apiRequest(
+                      'PATCH',
+                      expense.urls.update,
+                      {
+                          ...payload,
+                          expected_version: expense.version,
+                      },
+                      attemptKey,
+                  );
+        setSaving(false);
 
-        if (expense === null) {
-            router.post(storeUrl, payload, options);
+        if (result.ok) {
+            onOpenChange(false);
+            router.reload({ only: ['expenses'], preserveScroll: true });
         } else {
-            router.patch(expense.urls.update, payload, options);
+            setError(result.message);
         }
     };
 

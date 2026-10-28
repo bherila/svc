@@ -42,6 +42,7 @@ const timeOnly = process.argv.includes('--time');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
 const tasksOnly = process.argv.includes('--tasks');
+const expensesOnly = process.argv.includes('--expenses');
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -304,38 +305,40 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of tasksOnly
-            ? ['task_list', 'task_project', 'task_editor', 'task_portal']
-            : historyOnly
-              ? ['history_index', 'history_discussion', 'history_invoice']
-              : portalOnly
-                ? ['settings']
-                : correctionOnly
-                  ? ['invoice_review']
-                  : squareOnly
-                    ? ['square_explore', 'square_invoice', 'square_portal']
-                    : remindersOnly
-                      ? ['reminder_invoice', 'settings']
-                      : timeOnly
-                        ? ['time', 'draft_time']
-                        : backlogOnly
-                          ? ['agreement']
-                          : [
-                                'mcp_setup',
-                                'invoice',
-                                'invoice_review',
-                                'reminder_invoice',
-                                'settings',
-                                'draft_invoice',
-                                'draft_time',
-                                'proposal',
-                                'proposal_acceptance',
-                                'operations',
-                                'time',
-                                'expenses',
-                                'receipts',
-                                'expense_schedules',
-                            ]) {
+        for (const screen of expensesOnly
+            ? ['expenses']
+            : tasksOnly
+              ? ['task_list', 'task_project', 'task_editor', 'task_portal']
+              : historyOnly
+                ? ['history_index', 'history_discussion', 'history_invoice']
+                : portalOnly
+                  ? ['settings']
+                  : correctionOnly
+                    ? ['invoice_review']
+                    : squareOnly
+                      ? ['square_explore', 'square_invoice', 'square_portal']
+                      : remindersOnly
+                        ? ['reminder_invoice', 'settings']
+                        : timeOnly
+                          ? ['time', 'draft_time']
+                          : backlogOnly
+                            ? ['agreement']
+                            : [
+                                  'mcp_setup',
+                                  'invoice',
+                                  'invoice_review',
+                                  'reminder_invoice',
+                                  'settings',
+                                  'draft_invoice',
+                                  'draft_time',
+                                  'proposal',
+                                  'proposal_acceptance',
+                                  'operations',
+                                  'time',
+                                  'expenses',
+                                  'receipts',
+                                  'expense_schedules',
+                              ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -807,6 +810,19 @@ try {
                         )
                         .first(),
                 ).toBeVisible();
+                await page
+                    .getByRole('button', {
+                        name: 'Record expense',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByLabel('Description', { exact: true })
+                    .fill('SyntheticUnbrokenExpense'.repeat(10));
+                await capture(screen, 'record-dialog', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
             }
 
             if (screen === 'draft_time') {
@@ -1041,6 +1057,7 @@ try {
     }
 
     if (
+        !expensesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
@@ -1076,6 +1093,7 @@ try {
     }
 
     if (
+        !expensesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
@@ -1210,6 +1228,30 @@ try {
             .filter({ hasText: 'Synthetic precision journey edited' });
         await expect(expense).toHaveCount(1);
         await expect(expense).toContainText('Draft');
+    }
+
+    if (expensesOnly) {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.goto(origin + fixture.expenses);
+        await page
+            .getByRole('button', { name: 'Record expense', exact: true })
+            .click();
+        await page.getByLabel('Amount', { exact: true }).fill('12.50');
+        await page
+            .getByLabel('Description', { exact: true })
+            .fill('Synthetic API browser journey');
+        await page.getByRole('button', { name: 'Record', exact: true }).click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        const row = page
+            .getByRole('row')
+            .filter({ hasText: 'Synthetic API browser journey' });
+        await expect(row).toContainText('$12.50');
+        await row.getByRole('button', { name: 'Approve', exact: true }).click();
+        await expect(row).toContainText('Approved');
+        await row
+            .getByRole('button', { name: 'Return to draft', exact: true })
+            .click();
+        await expect(row).toContainText('Draft');
     }
 } catch (error) {
     failures.push(error.stack ?? String(error));
