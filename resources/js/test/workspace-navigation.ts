@@ -37,6 +37,10 @@ export function workspaceNavigation(
     overrides: Partial<WorkspaceNavigation> = {},
 ): WorkspaceNavigation {
     return {
+        create_client_url:
+            (overrides.permissions?.create_client ?? true)
+                ? '/api/v1/workspaces/workspace-1/clients'
+                : null,
         workspace_id: 'workspace-1',
         workspace_name: 'Synthetic Workspace',
         current_client_id: 'company-1',

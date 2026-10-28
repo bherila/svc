@@ -11,6 +11,7 @@ use App\Services\AgentApi\AgentClientContactReadService;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Clients\ContactMutationOrigin;
+use App\Support\AgentApi\FirstPartySession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -53,8 +54,9 @@ final class AgentClientContactController extends Controller
     private function change(Request $request, Workspace $workspace, string $client, string $operation, ?string $contact = null): JsonResponse
     {
         $context = $this->contexts->from($request);
-        abort_if($this->access->isWorkspaceClient($context->user, $workspace), 403);
-        $id = $this->mutations->perform($context->user, $workspace, $client, $operation, $contact, $request->all(), $context->oauthClientId, $context->idempotencyKey, ContactMutationOrigin::Agent);
+        $internal = FirstPartySession::is($request);
+        abort_if(! $internal && $this->access->isWorkspaceClient($context->user, $workspace), 403);
+        $id = $this->mutations->perform($context->user, $workspace, $client, $operation, $contact, $request->all(), $context->oauthClientId, $context->idempotencyKey, $internal ? ContactMutationOrigin::Internal : ContactMutationOrigin::Agent);
 
         return response()->json(['data' => $this->contacts->get($this->principal($request, $workspace), $workspace, $client, $id)], $operation === 'create' ? 201 : 200);
     }
@@ -64,7 +66,7 @@ final class AgentClientContactController extends Controller
         $principal = $request->user();
         abort_unless($principal instanceof User || $principal instanceof AgentPrincipal, 401);
 
-        abort_if($this->access->isWorkspaceClient($principal, $workspace), 404);
+        abort_if(! FirstPartySession::is($request) && $this->access->isWorkspaceClient($principal, $workspace), 404);
 
         return $principal;
     }

@@ -1151,6 +1151,22 @@ project/date filters to narrow the result. Pagination cursors are bound to all
 filters; fetch a new first page when changing them. Pages default to 25 rows and
 are capped at 100; descriptions are preserved.
 
+## Browser client records
+
+Client creation, company details and business contacts on Settings use the same
+`clients.*` and `clients.contacts.*` operations as REST and MCP. Their former web
+mutation routes are retired (#385). Settings reads share the API presenters and
+opaque versions; edits send `expected_version` and an idempotency key. A lost
+response retains the key for the same edit, while a refusal keeps the entered
+values visible. Successful changes reload the affected props.
+
+Existing contacts archive through the explicit-confirmation operation and restore
+through its lifecycle twin. Updating contact details does not change archival
+state. Adding a contact still creates no login or invitation. The signed-in
+browser remains usable when agent write cutovers are off, under the same role and
+workspace checks. Client creation returns a finished `Location` for its new home;
+the client switcher follows that server URL.
+
 ## Expense finance provenance
 
 `expenses.log` accepts optional `external_finance_transaction_uuid` on each

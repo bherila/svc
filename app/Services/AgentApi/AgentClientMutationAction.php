@@ -59,7 +59,12 @@ final class AgentClientMutationAction
     public function updateClient(User $user, Workspace $workspace, string $oauthClientId, string $key, string $clientId, array $payload): string
     {
         return $this->execute('clients.update', $user, $workspace, $oauthClientId, $key, ['client_id' => $clientId, ...$payload], function () use ($workspace, $clientId, $payload): string {
-            $data = Validator::make($payload, ClientMutationRules::clientUpdate() + self::versionRules())->validate();
+            $rules = ClientMutationRules::clientUpdate() + self::versionRules();
+            $unknown = array_diff(array_keys($payload), array_keys($rules));
+            if ($unknown !== []) {
+                throw ValidationException::withMessages(array_fill_keys($unknown, 'This field is not supported.'));
+            }
+            $data = Validator::make($payload, $rules)->validate();
 
             return $this->updateClient->handle($workspace, $this->client($workspace, $clientId), $data, $data['expected_version'])->public_id;
         });
