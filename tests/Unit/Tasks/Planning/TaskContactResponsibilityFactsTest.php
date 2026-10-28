@@ -28,6 +28,15 @@ final class TaskContactResponsibilityFactsTest extends TestCase
         $this->assertSame(['archived'], $facts->replace(['archived'])->ids);
     }
 
+    public function test_mixed_retained_added_and_removed_contacts_remain_dense_identity_lists(): void
+    {
+        $facts = new TaskContactResponsibilityFacts('company', ['a', 'b', 'c'], [new TaskContactFact('a', 'company', false), new TaskContactFact('c', 'company', true), new TaskContactFact('z', 'company', false)]);
+        $selection = $facts->replace(['z', 'c', 'a']);
+        $this->assertSame(['a', 'c', 'z'], $selection->ids);
+        $this->assertSame(['z'], $selection->addedIds);
+        $this->assertSame(['b'], $selection->removedIds);
+    }
+
     public function test_unchanged_set_is_a_noop_but_clearing_retained_responsibility_is_valid(): void
     {
         $facts = new TaskContactResponsibilityFacts('company', ['a', 'b'], [new TaskContactFact('a', 'company', true), new TaskContactFact('b', 'company', false)]);

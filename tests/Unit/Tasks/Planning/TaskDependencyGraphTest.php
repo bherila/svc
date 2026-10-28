@@ -66,6 +66,17 @@ final class TaskDependencyGraphTest extends TestCase
         $this->assertTrue($clear->changed());
     }
 
+    public function test_unsorted_facts_produce_deterministic_edges_dependents_and_list_shaped_mixed_deltas(): void
+    {
+        $graph = TaskDependencyGraph::fromFacts(['z', 'd', 'c', 'a', 'b'], [new TaskDependencyEdge('z', 'b'), new TaskDependencyEdge('c', 'd'), new TaskDependencyEdge('a', 'd')]);
+        $this->assertSame([['a', 'd'], ['c', 'd'], ['z', 'b']], $this->pairs($graph));
+        $this->assertSame(['a', 'c'], $graph->dependents('d'));
+        $mixed = TaskDependencyGraph::fromFacts(['a', 'b', 'c', 'd', 'z'], [new TaskDependencyEdge('a', 'b'), new TaskDependencyEdge('a', 'c'), new TaskDependencyEdge('a', 'd')])->changePrerequisites('a', ['b', 'd', 'z']);
+        $this->assertSame(['z'], $mixed->addedIds);
+        $this->assertSame(['c'], $mixed->removedIds);
+        $this->assertSame(['a', 'c', 'z'], $mixed->taskIdsToAdvance);
+    }
+
     public function test_long_acyclic_chains_and_exact_task_and_prerequisite_limits_are_supported(): void
     {
         $ids = array_map(static fn (int $id): string => 'task'.$id, range(1, 1000));

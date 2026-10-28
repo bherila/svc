@@ -24,9 +24,11 @@ final readonly class TaskPlanningCommand
             'labels.create', 'labels.update', 'labels.archive', 'labels.restore' => null,
             default => abort(404),
         };
+        // TaskLabelName below owns name presence, type, Unicode normalization
+        // and length. The empty rule set keeps the closed field in validated data.
         $rules = match ($operation) {
-            'labels.create' => ['name' => ['required', 'string', 'max:80']],
-            'labels.update' => ['name' => ['required', 'string', 'max:80'], 'expected_version' => $version],
+            'labels.create' => ['name' => []],
+            'labels.update' => ['name' => [], 'expected_version' => $version],
             'labels.archive' => ['expected_version' => $version, 'confirm' => ['required', new ExplicitConfirmation]],
             'labels.restore' => ['expected_version' => $version],
             default => ['expected_version' => $version],
@@ -40,7 +42,7 @@ final readonly class TaskPlanningCommand
                 'prerequisite_ids' => TaskDependencyGraph::MAX_PREREQUISITES,
                 'contact_ids' => TaskContactResponsibilityFacts::MAX_CONTACTS,
             };
-            $rules += [$field => ['present', 'array', 'list', 'max:'.$limit], $field.'.*' => ['required', 'string', 'uuid', 'distinct']];
+            $rules += [$field => ['list', 'max:'.$limit], $field.'.*' => ['required', 'string', 'uuid', 'distinct']];
         }
         if ($operation === 'dependencies.replace') {
             $rules['expected_graph_version'] = $version;
@@ -69,15 +71,10 @@ final readonly class TaskPlanningCommand
             default => throw new \LogicException('This command has no association set.'),
         };
 
+        // Construction is private: fromInput already checked the explicit array,
+        // list shape and every UUID. The readonly data cannot be edited afterward.
+        /** @var list<string> $ids */
         $ids = $this->data[$field];
-        if (! is_array($ids) || ! array_is_list($ids)) {
-            throw new \LogicException('Invalid association command.');
-        }
-        foreach ($ids as $id) {
-            if (! is_string($id)) {
-                throw new \LogicException('Invalid association identity.');
-            }
-        }
 
         return $ids;
     }

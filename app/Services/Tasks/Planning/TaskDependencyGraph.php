@@ -71,7 +71,8 @@ final readonly class TaskDependencyGraph
         $after = $next->prerequisites($taskId);
         $added = array_values(array_diff($after, $before));
         $removed = array_values(array_diff($before, $after));
-        $advance = array_values(array_unique([$taskId, ...$added, ...$removed]));
+        // Added/removed sets are disjoint; validated prerequisites exclude self.
+        $advance = [$taskId, ...$added, ...$removed];
         sort($advance, SORT_STRING);
 
         return new TaskDependencyChange($next, $added, $removed, $advance);

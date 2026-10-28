@@ -9,6 +9,7 @@ use App\Services\Tasks\Planning\TaskPlanningCommand;
 use App\Support\AgentApi\ExplicitConfirmation;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
 
 #[CoversClass(TaskPlanningCommand::class)]
@@ -40,6 +41,52 @@ final class TaskPlanningCommandTest extends TestCase
         $label = TaskPlanningCommand::fromInput('labels.create', ['name' => "\u{00a0}Équipe\u{3000}"]);
         $this->assertSame('Équipe', $label->data['name']);
         $this->assertSame(TaskLabelName::fromInput('équipe')->key, $label->name->key);
+    }
+
+    public function test_catalog_commands_and_complete_sets_accept_the_exact_public_caps_and_preserve_all_ids(): void
+    {
+        $version = str_repeat('v', 64);
+        foreach (['labels.update' => ['name' => 'Synthetic rename', 'expected_version' => $version],
+            'labels.archive' => ['expected_version' => $version, 'confirm' => true], 'labels.restore' => ['expected_version' => $version]] as $operation => $input) {
+            $command = TaskPlanningCommand::fromInput($operation, $input);
+            $this->assertSame($operation, $command->operation);
+            $this->assertSame($input, $command->data);
+            $this->assertSame($version, $command->version());
+        }
+        foreach (['labels.replace' => ['label_ids', 20], 'dependencies.replace' => ['prerequisite_ids', 25], 'contacts.replace' => ['contact_ids', 10]] as $operation => [$field, $cap]) {
+            $ids = array_map(static fn (int $id): string => sprintf('00000000-0000-4000-8000-%012d', $id), range(1, $cap));
+            $body = [$field => $ids, 'expected_version' => $version] + ($operation === 'dependencies.replace' ? ['expected_graph_version' => $version] : []);
+            $this->assertSame($ids, TaskPlanningCommand::fromInput($operation, $body)->ids());
+        }
+        try {
+            TaskPlanningCommand::fromInput('unknown-operation', []);
+            $this->fail('An unknown command was accepted.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(404, $exception->getStatusCode());
+        }
+        $catalog = TaskPlanningCommand::fromInput('labels.create', ['name' => 'Synthetic label']);
+        try {
+            $catalog->ids();
+            $this->fail('A catalog command claimed to hold an association set.');
+        } catch (\LogicException $exception) {
+            $this->assertSame('This command has no association set.', $exception->getMessage());
+        }
+    }
+
+    public function test_closed_validation_reports_the_original_invalid_field_and_requires_explicit_confirmation(): void
+    {
+        foreach ([['labels.create', [], 'name'], ['labels.create', ['name' => ''], 'name'],
+            ['labels.archive', ['expected_version' => str_repeat('v', 64)], 'confirm'],
+            ['labels.archive', ['confirm' => true], 'expected_version'],
+            ['labels.replace', ['label_ids' => [''], 'expected_version' => str_repeat('v', 64)], 'label_ids.0'],
+            ['labels.replace', ['label_ids' => [], 'label_ids.*' => 'forged', 'expected_version' => str_repeat('v', 64)], 'planning']] as [$operation, $input, $field]) {
+            try {
+                TaskPlanningCommand::fromInput($operation, $input);
+                $this->fail('An invalid command was accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey($field, $exception->errors());
+            }
+        }
     }
 
     public static function invalidInputs(): iterable

@@ -6,6 +6,7 @@ use App\Http\Requests\TaskPlanningInput;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
 
 final class TaskPlanningInputTest extends TestCase
@@ -38,6 +39,75 @@ final class TaskPlanningInputTest extends TestCase
             } catch (ValidationException) {
                 $this->addToAssertionCount(1);
             }
+        }
+    }
+
+    public function test_every_trusted_route_operation_has_its_exact_target_and_invalid_defaults_refuse_with_404(): void
+    {
+        foreach (['get' => 'task', 'labels.list' => null, 'labels.get' => 'label', 'labels.create' => null, 'labels.update' => 'label',
+            'labels.archive' => 'label', 'labels.restore' => 'label', 'labels.options' => 'project', 'labels.replace' => 'task',
+            'dependencies.get' => 'task', 'dependencies.options' => 'task', 'dependencies.replace' => 'task',
+            'contacts.get' => 'task', 'contacts.options' => 'task', 'contacts.replace' => 'task'] as $operation => $target) {
+            $request = $this->routeRequest($operation);
+            $this->assertSame($operation, TaskPlanningInput::operation($request));
+            $this->assertSame($target, TaskPlanningInput::targetName($operation));
+            $this->assertSame([], TaskPlanningInput::query($operation === 'labels.create' || in_array($operation, ['labels.update', 'labels.archive', 'labels.restore', 'labels.replace', 'dependencies.replace', 'contacts.replace'], true) ? 'get' : $operation, []));
+        }
+        foreach ([null, 123, [], 'unknown-operation'] as $operation) {
+            $this->assertHttp404(fn () => TaskPlanningInput::operation($this->routeRequest($operation)));
+        }
+        $this->assertHttp404(fn () => TaskPlanningInput::targetName('unknown-operation'));
+        $this->assertHttp404(fn () => TaskPlanningInput::query('unknown-operation', []));
+    }
+
+    public function test_missing_non_string_empty_and_invalid_route_identities_are_never_body_fallbacks(): void
+    {
+        foreach ([null, 123, []] as $identity) {
+            $this->assertHttp404(fn () => TaskPlanningInput::target($this->routeRequest('get', $identity), 'get'));
+        }
+        foreach (['', 'not-a-uuid'] as $identity) {
+            try {
+                TaskPlanningInput::target($this->routeRequest('get', $identity), 'get');
+                $this->fail('An invalid target was accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('target', $exception->errors());
+            }
+        }
+    }
+
+    public function test_dependency_page_bounds_and_query_refusals_keep_explicit_error_fields(): void
+    {
+        $this->assertSame(['limit' => 1, 'cursor' => null], TaskPlanningInput::query('dependencies.get', ['limit' => '1', 'cursor' => null]));
+        $this->assertSame(['limit' => 25, 'cursor' => 'opaque'], TaskPlanningInput::query('dependencies.get', ['limit' => 25, 'cursor' => 'opaque']));
+        foreach ([['get', ['foreign' => true], 'planning'], ['dependencies.get', ['limit' => false], 'limit'],
+            ['dependencies.get', ['limit' => '1.5'], 'limit'], ['dependencies.get', ['limit' => 0], 'limit'], ['dependencies.get', ['limit' => 26], 'limit'],
+            ['labels.list', ['status' => ['active']], 'status'], ['labels.list', ['status' => 'deleted'], 'status']] as [$operation, $query, $field]) {
+            try {
+                TaskPlanningInput::query($operation, $query);
+                $this->fail('An invalid query was accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey($field, $exception->errors());
+            }
+        }
+    }
+
+    private function routeRequest(mixed $operation, mixed $target = '00000000-0000-4000-8000-000000000001'): Request
+    {
+        $request = Request::create('/synthetic', 'GET', ['task' => 'forged-body-target']);
+        $route = new Route('GET', '/synthetic', []);
+        $route->defaults('task_planning_operation', $operation)->defaults('task', $target)->bind($request);
+        $request->setRouteResolver(fn (): Route => $route);
+
+        return $request;
+    }
+
+    private function assertHttp404(callable $action): void
+    {
+        try {
+            $action();
+            $this->fail('An invalid route selector was accepted.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(404, $exception->getStatusCode());
         }
     }
 
