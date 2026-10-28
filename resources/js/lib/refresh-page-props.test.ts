@@ -120,3 +120,31 @@ it('rejects a required read refused by a global before listener without waiting 
     expect(finished).toHaveBeenCalledOnce();
     expect(stop).toHaveBeenCalled();
 });
+
+it.each([false, true])(
+    'delivers authoritative refreshed props to the consumer before finishing (strict=%s)',
+    async (requireSuccess) => {
+        const saved = vi.fn();
+        const finished = vi.fn();
+        const refresh = refreshPageProps({
+            requireSuccess,
+            onSuccess: saved,
+            onFinish: finished,
+        });
+        const page = {
+            props: {
+                task: {
+                    title: 'Synthetic current title',
+                    version: 'v'.repeat(64),
+                },
+            },
+        };
+        expect(saved).not.toHaveBeenCalled();
+        reload.mock.calls[0][0].onSuccess(page);
+        expect(saved).toHaveBeenCalledWith(page);
+        expect(finished).not.toHaveBeenCalled();
+        reload.mock.calls[0][0].onFinish();
+        await refresh;
+        expect(finished).toHaveBeenCalledOnce();
+    },
+);
