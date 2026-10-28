@@ -11,7 +11,9 @@ use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentExpensePresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\Expenses\ExpenseStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -85,10 +87,7 @@ class ExpenseController extends Controller
             ->get();
 
         return Inertia::render('clients/expenses', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             // Finished capabilities rather than a role for the browser to
             // interpret. A viewer who cannot manage the workspace reads the
             // list and is offered nothing to press.
@@ -125,24 +124,12 @@ class ExpenseController extends Controller
                 )
                 ->orderBy('name')
                 ->get()
-                ->map(fn (ClientProject $project): array => [
-                    'id' => $project->public_id,
-                    'name' => $project->name,
-                ])
+                ->map(AgentProjectPresenter::identity(...))
                 ->values(),
             'expenses' => $expenses->map(fn (ClientExpense $expense): array => [
                 ...app(AgentExpensePresenter::class)->present($expense, $isManager, $isManager),
-                'id' => $expense->public_id,
-                'spent_on' => $expense->spent_on->toDateString(),
-                'amount' => (int) $expense->amount,
-                'currency' => (string) $expense->currency,
-                'description' => (string) $expense->description,
-                'status' => (string) $expense->status,
                 'billing' => $isManager ? $this->billingState($workspace, $expense) : null,
-                'project' => $expense->project === null ? null : [
-                    'id' => $expense->project->public_id,
-                    'name' => $expense->project->name,
-                ],
+                'project' => $expense->project === null ? null : AgentProjectPresenter::identity($expense->project),
                 'approved_by' => $expense->approvedBy?->name,
                 // `spent_on` is a date and stands on its own; `approved_at` is
                 // an instant, and reducing it to a day in UTC reports the
@@ -154,7 +141,6 @@ class ExpenseController extends Controller
                 // The row states what may be done to it, rather than the
                 // browser re-deriving the lifecycle from a status string. The
                 // rules are the enum's and they are asked here once.
-                'can_edit' => $isManager && ExpenseStatus::isEditableValue($expense->status),
                 'can_approve' => $isManager && ExpenseStatus::mayTransitionValue($expense->status, ExpenseStatus::Approved),
                 'can_unapprove' => $isManager && ExpenseStatus::mayTransitionValue($expense->status, ExpenseStatus::Draft),
                 'can_discard' => $isManager && ExpenseStatus::isEditableValue($expense->status),
