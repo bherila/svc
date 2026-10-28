@@ -1,0 +1,149 @@
+name: Pilot Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy this reviewed main revision to the isolated pilot
+        type: boolean
+        required: true
+        default: false
+      expected_sha:
+        description: Full main commit SHA whose required CI gate succeeded
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pilot-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    environment: pilot
+    env:
+      PILOT_DEPLOY: ${{ inputs.deploy }}
+      PILOT_OPERATOR_SHA: ${{ inputs.expected_sha }}
+      PILOT_APPLICATION_SHA: ${{ github.sha }}
+      PILOT_TOOLING_SHA: 57aacf3e6f7c1972e1fd0f09eb459c85635900e7
+      PILOT_CI_WORKFLOW: tests.yml
+      PILOT_CI_GATE: ci
+      PILOT_DEPLOY_DIR: ${{ vars.PILOT_DEPLOY_DIR }}
+      PILOT_ENV_SOURCE: ${{ vars.PILOT_ENV_SOURCE }}
+      PILOT_SITE_URL: ${{ vars.PILOT_SITE_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Require explicit reviewed main and its successful CI gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/deploy/pilot/gate.mjs
+
+      - name: Validate isolated pilot settings
+        env:
+          PILOT_ENABLED: ${{ vars.PILOT_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          test "$PILOT_ENABLED" = true
+          test -n "$PILOT_DEPLOY_DIR"
+          test -n "$PILOT_ENV_SOURCE"
+          node -e 'const u = new URL(process.env.PILOT_SITE_URL); if (u.protocol !== "https:" || u.username || u.password || u.pathname !== "/" || u.search || u.hash) process.exit(1)'
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Authorize the private build dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      - name: Build this exact source revision
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@12.11.2 --activate
+          composer install --no-dev --no-interaction --optimize-autoloader
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm run build
+          test "$(git rev-parse HEAD)" = "$PILOT_APPLICATION_SHA"
+          node scripts/deploy/pilot/manifest.mjs
+
+      - name: Checkout the independently pinned deployment tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bherila/shared-cpanel-deployment
+          ref: 57aacf3e6f7c1972e1fd0f09eb459c85635900e7
+          path: .pilot-tooling
+          persist-credentials: false
+
+      - name: Configure pilot-only SSH transport
+        env:
+          SSH_ALIAS: pilot-bootstrap
+          SSH_HOST_NAME: ${{ secrets.PILOT_SSH_HOST }}
+          SSH_USER_NAME: ${{ secrets.PILOT_SSH_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.PILOT_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PILOT_SSH_KNOWN_HOSTS }}
+        run: bash .pilot-tooling/scripts/configure-ssh.sh
+
+      - name: Recheck main before preparing the isolated target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/deploy/pilot/gate.mjs
+          # shellcheck disable=SC2029
+          ssh pilot-bootstrap "bash -s -- $(printf '%q ' "$PILOT_DEPLOY_DIR" "$PILOT_ENV_SOURCE" /usr/bin/php)" < scripts/deploy/pilot/prepare-host.sh
+
+      - name: Publish the isolated native PHP release
+        uses: bherila/shared-cpanel-deployment@57aacf3e6f7c1972e1fd0f09eb459c85635900e7 # v2.4.0
+        with:
+          ssh-host: ${{ secrets.PILOT_SSH_HOST }}
+          ssh-username: ${{ secrets.PILOT_SSH_USERNAME }}
+          ssh-private-key: ${{ secrets.PILOT_SSH_PRIVATE_KEY }}
+          ssh-known-hosts: ${{ secrets.PILOT_SSH_KNOWN_HOSTS }}
+          ssh-alias: pilot-release
+          deploy-dir: ${{ vars.PILOT_DEPLOY_DIR }}
+          env-source: ${{ vars.PILOT_ENV_SOURCE }}
+          site-url: ${{ vars.PILOT_SITE_URL }}
+          php-binary: /usr/bin/php
+          php-version: '8.5'
+          set-php-handler: false
+          deployment-mode: atomic
+          atomic-layout: stable-directory
+          persistent-paths: storage
+          passport-key-directory: storage/app/private/oauth
+          retain-releases: '3'
+          failure-policy: rollback
+          recovery-release-id: ${{ vars.PILOT_RECOVERY_RELEASE_ID }}
+          env-assert: |
+            PILOT_DEPLOYMENT=1
+            APP_DEBUG=false
+            MAIL_MAILER=log
+            DB_HOST=127.0.0.1
+          artisan-memory-limit: 1G
+          web-memory-limit: 1G
+          operational-audit: 'true'
+          runtime-audit: 'true'
+          install-cron: false
+          preflight-script: scripts/deploy/pilot/preflight.sh
+          quiesce-script: scripts/deploy/pilot/quiesce.sh
+          post-activate-script: scripts/deploy/pilot/post-activate.sh
+          verification-script: scripts/deploy/pilot/verify-live.sh
