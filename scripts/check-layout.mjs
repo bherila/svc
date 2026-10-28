@@ -1087,7 +1087,7 @@ try {
                     .selectOption('projects');
                 await capture(screen, 'portal-project-selection', width);
                 await card
-                    .getByRole('button', { name: 'Remove file', exact: true })
+                    .getByRole('button', { name: 'Remove', exact: true })
                     .first()
                     .click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
