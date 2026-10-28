@@ -350,6 +350,15 @@ class TimeSheetTest extends TestCase
                 'expected_version' => $version,
                 'minutes' => 75,
             ])
+            ->assertConflict();
+        $this->assertSame(60, (int) $onDraft->fresh()?->minutes);
+        $currentVersion = AgentApiVersion::for($onDraft->fresh());
+        $this->assertNotSame($version, $currentVersion);
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$onDraft->public_id}", [
+                'expected_version' => $currentVersion,
+                'minutes' => 75,
+            ])
             ->assertSuccessful();
 
         $this->actingAs($this->manager, 'web')
