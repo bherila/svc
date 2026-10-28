@@ -15,7 +15,7 @@ final class PublishApiDocumentation
         $response = $next($request);
         if ($response instanceof JsonResponse && $response->getStatusCode() === 200) {
             $metadata = $response->getData(true);
-            $metadata['service_documentation'] = rtrim((string) config('app.url'), '/').route('openapi.document', absolute: false);
+            $metadata['service_documentation'] = rtrim(config()->string('app.url'), '/').route('openapi.document', absolute: false);
             $response->setData($metadata);
         }
 
