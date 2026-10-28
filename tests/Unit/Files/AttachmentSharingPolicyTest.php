@@ -128,6 +128,27 @@ final class AttachmentSharingPolicyTest extends TestCase
         AttachmentDeletion::fromInput(['confirm' => true, 'expected_version' => str_repeat('a', 64)]);
     }
 
+    public function test_closed_payload_errors_name_the_field_and_deletion_requires_the_file_version(): void
+    {
+        $valid = ['expected_version' => str_repeat('a', 64), 'expected_parent_version' => str_repeat('b', 64)];
+        foreach ([fn () => AttachmentDeletion::fromInput($valid + ['confirm' => true, 'origin' => 'Native']),
+            fn () => AttachmentVisibilityChange::fromInput($valid + ['is_visible_to_client' => false, 'origin' => 'Native'])] as $attempt) {
+            try {
+                $attempt();
+                $this->fail('A closed payload accepted an unsupported origin.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('attachment', $exception->errors());
+                $this->assertNotEmpty($exception->errors()['attachment']);
+            }
+        }
+        try {
+            AttachmentDeletion::fromInput(['confirm' => true, 'expected_parent_version' => str_repeat('b', 64)]);
+            $this->fail('Deletion accepted a missing captured file version.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('expected_version', $exception->errors());
+        }
+    }
+
     private function assertRefused(int $status, callable $attempt): void
     {
         try {
