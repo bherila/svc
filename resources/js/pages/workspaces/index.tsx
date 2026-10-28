@@ -1,10 +1,9 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { ChevronRightIcon, PlusIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
-    DialogClose,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -18,6 +17,7 @@ import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
+import { visitPage } from '@/lib/visit-page';
 
 /**
  * Choose a workspace. That is the whole screen.
@@ -56,74 +56,140 @@ function NewWorkspaceDialog({
     const [name, setName] = useState('');
     const attempt = useRef<{
         name: string;
+        url: string;
+        savedUrl?: string;
         key: string;
         uncertain: boolean;
     } | null>(null);
     const [unresolved, setUnresolved] = useState(false);
+    const [created, setCreated] = useState(false);
+    const running = useRef(false);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
-    async function create() {
-        if (saving) {
+    useEffect(() => {
+        if (!saving && !unresolved) {
             return;
         }
 
+        const stopNavigation = router.on?.('before', (event) => {
+            if (
+                attempt.current !== null &&
+                attempt.current.savedUrl === undefined
+            ) {
+                event.preventDefault();
+                setError(
+                    'Check the original workspace result before leaving this page.',
+                );
+            }
+        });
+        const stopUnload = (event: BeforeUnloadEvent) => {
+            if (
+                attempt.current !== null &&
+                attempt.current.savedUrl === undefined
+            ) {
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('beforeunload', stopUnload);
+
+        return () => {
+            stopNavigation?.();
+            window.removeEventListener('beforeunload', stopUnload);
+        };
+    }, [saving, unresolved]);
+
+    const close = (next: boolean) => {
+        if (!running.current && !unresolved) {
+            onOpenChange(next);
+        }
+    };
+    async function create() {
+        if (running.current) {
+            return;
+        }
+
+        running.current = true;
         setSaving(true);
         setError(null);
         attempt.current ??= {
             name,
+            url: createUrl,
             key: newIdempotencyKey(),
             uncertain: false,
         };
         const original = attempt.current;
-        const result = await apiRequest<
-            ApiSchema<'WorkspaceCreateResponse'>['data']
-        >('POST', createUrl, { name: original.name }, original.key);
 
-        if (!result.ok) {
-            original.uncertain =
-                result.status !== 422 &&
-                (original.uncertain ||
-                    result.status === 0 ||
-                    result.status === 408 ||
-                    result.status >= 500);
-            setUnresolved(original.uncertain);
+        try {
+            if (original.savedUrl === undefined) {
+                const result = await apiRequest<
+                    ApiSchema<'WorkspaceCreateResponse'>['data']
+                >('POST', original.url, { name: original.name }, original.key);
 
-            if (!original.uncertain) {
-                attempt.current = null;
+                if (!result.ok) {
+                    original.uncertain ||=
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    setUnresolved(original.uncertain);
+
+                    if (!original.uncertain) {
+                        attempt.current = null;
+                    }
+
+                    setError(
+                        Object.values(result.errors ?? {})
+                            .flat()
+                            .join(' ') || result.message,
+                    );
+
+                    return;
+                }
+
+                if (
+                    !result.data ||
+                    typeof result.data.web_url !== 'string' ||
+                    result.data.web_url.trim() === ''
+                ) {
+                    original.uncertain = true;
+                    setUnresolved(true);
+                    setError(
+                        'SVC’s response could not be read. Check the original creation.',
+                    );
+
+                    return;
+                }
+
+                original.savedUrl = result.data.web_url;
+                setCreated(true);
+                setUnresolved(true);
             }
 
-            setError(
-                Object.values(result.errors ?? {})
-                    .flat()
-                    .join(' ') || result.message,
-            );
-            setSaving(false);
-
-            return;
-        }
-
-        if (
-            !result.data ||
-            typeof result.data.web_url !== 'string' ||
-            result.data.web_url.trim() === ''
-        ) {
+            await visitPage(original.savedUrl);
+            attempt.current = null;
+            setUnresolved(false);
+            setCreated(false);
+            onOpenChange(false);
+        } catch {
             original.uncertain = true;
             setUnresolved(true);
             setError(
-                'SVC’s response could not be read. Check the original creation.',
+                original.savedUrl
+                    ? 'The workspace was created, but its page could not open. Open the created workspace to continue.'
+                    : 'The original workspace result could not be checked. Check the original creation before starting another.',
             );
+        } finally {
+            running.current = false;
             setSaving(false);
-
-            return;
         }
-
-        router.visit(result.data.web_url);
     }
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+        <Dialog open={open} onOpenChange={close}>
+            <DialogContent
+                className="sm:max-w-md"
+                showCloseButton={!saving && !unresolved}
+            >
                 <DialogHeader>
                     <DialogTitle>New workspace</DialogTitle>
                     <DialogDescription>
@@ -162,20 +228,26 @@ function NewWorkspaceDialog({
                             role="status"
                             className="text-sm wrap-anywhere text-muted-foreground"
                         >
-                            The result is unknown. Check the original creation
-                            before editing again.
+                            {created
+                                ? 'The workspace is created. Open it before starting another creation.'
+                                : 'The result is unknown. Check the original creation before editing again.'}
                         </p>
                     )}
                     <DialogFooter>
-                        <DialogClose
-                            render={
-                                <Button variant="outline" type="button">
-                                    Cancel
-                                </Button>
-                            }
-                        />
+                        <Button
+                            variant="outline"
+                            type="button"
+                            disabled={saving || unresolved}
+                            onClick={() => close(false)}
+                        >
+                            Cancel
+                        </Button>
                         <Button type="submit" disabled={saving || name === ''}>
-                            {unresolved ? 'Check creation' : 'Create'}
+                            {created
+                                ? 'Open created workspace'
+                                : unresolved
+                                  ? 'Check creation'
+                                  : 'Create'}
                         </Button>
                     </DialogFooter>
                 </form>
