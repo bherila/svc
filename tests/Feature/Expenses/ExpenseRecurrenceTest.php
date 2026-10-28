@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Expenses;
 
+use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientExpenseSchedule;
+use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Queries\Expenses\WorkspaceExpenseSchedules;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
@@ -14,6 +17,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia;
 use Tests\Concerns\BuildsSyntheticExpenses;
 use Tests\TestCase;
@@ -22,16 +27,21 @@ final class ExpenseRecurrenceTest extends TestCase
 {
     use BuildsSyntheticExpenses, RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
+    }
+
     public function test_manager_request_materializes_only_due_drafts_and_retries_do_not_recreate_discarded_occurrences(): void
     {
         $this->travelTo(CarbonImmutable::parse('2028-03-31 12:00:00 UTC'));
         $workspace = $this->syntheticWorkspace('Recurring');
         $company = $this->syntheticCompany($workspace, 'Recurring');
         $manager = $this->syntheticMember($workspace, 'Recurring manager');
-        $this->actingAs($manager)->post(route('svc.expense-schedules.store', [$workspace, $company]), $this->facts() + ['starts_on' => '2028-01-31', 'cadence' => 'monthly'])->assertRedirect();
+        $this->actingAs($manager)->createSchedule($workspace, $company, $this->facts() + ['starts_on' => '2028-01-31', 'cadence' => 'monthly'])->assertSuccessful();
         $schedule = ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->sole();
-        $url = route('svc.expense-schedules.generate', [$workspace, $schedule->public_id]);
-        $this->post($url)->assertRedirect();
+        $this->generateSchedule($workspace, $schedule)->assertSuccessful();
         $rows = ClientExpense::query()->where('workspace_id', $workspace->id)->orderBy('id')->get();
         $this->assertSame(['2028-01-31', '2028-02-29', '2028-03-31'], $rows->map(fn ($row): string => $row->spent_on->toDateString())->all());
         foreach ($rows as $row) {
@@ -42,7 +52,7 @@ final class ExpenseRecurrenceTest extends TestCase
         }
         (new WorkspaceExpenses($workspace))->discard($rows->first());
         $schedule->refresh()->update(['next_occurrence' => 0]); // Simulate a recovered cursor; discarded rows remain proof.
-        $this->post($url)->assertRedirect();
+        $this->generateSchedule($workspace, $schedule)->assertSuccessful();
         $this->assertSame(3, ClientExpense::withTrashed()->where('workspace_id', $workspace->id)->count());
         $this->assertSame(3, $schedule->refresh()->next_occurrence);
     }
@@ -59,11 +69,11 @@ final class ExpenseRecurrenceTest extends TestCase
         $this->assertSame(24, $repository->generate($schedule->public_id, $manager));
         $this->assertContains(LockResource::ClientExpenseSchedule, array_merge(...LockOrderRecorder::sequences()));
         LockOrderRecorder::stop();
-        $this->actingAs($manager)->patch(route('svc.expense-schedules.update', [$workspace, $schedule->public_id]), $this->facts(2400) + ['active' => false])->assertRedirect();
+        $this->actingAs($manager)->updateSchedule($workspace, $schedule, $this->facts(2400) + ['active' => false])->assertSuccessful();
         $this->assertSame(0, $repository->generate($schedule->public_id, $manager));
         $this->assertSame(24, $schedule->refresh()->next_occurrence);
-        $this->patch(route('svc.expense-schedules.update', [$workspace, $schedule->public_id]), $this->facts(2400) + ['active' => true, 'starts_on' => '2019-01-01'])->assertSessionHasErrors('starts_on');
-        $this->patch(route('svc.expense-schedules.update', [$workspace, $schedule->public_id]), $this->facts(2400) + ['active' => true])->assertRedirect();
+        $this->updateSchedule($workspace, $schedule, $this->facts(2400) + ['active' => true, 'starts_on' => '2019-01-01'])->assertUnprocessable()->assertJsonValidationErrors('body');
+        $this->updateSchedule($workspace, $schedule, $this->facts(2400) + ['active' => true])->assertSuccessful();
         $this->assertSame(24, $repository->generate($schedule->public_id, $manager));
         $this->assertSame(24, ClientExpense::query()->where('workspace_id', $workspace->id)->where('amount', 1200)->count());
         $this->assertSame(24, ClientExpense::query()->where('workspace_id', $workspace->id)->where('amount', 2400)->count());
@@ -102,14 +112,14 @@ final class ExpenseRecurrenceTest extends TestCase
         $otherManager = $this->syntheticMember($other, 'Other schedule manager');
         $project = $this->syntheticProject($otherCompany, 'Foreign project');
         $this->actingAs($otherManager)->get(route('clients.expense-schedules', [$other, $company]))->assertNotFound();
-        $this->patch(route('svc.expense-schedules.update', [$other, $schedule->public_id]), $this->facts() + ['active' => false])->assertNotFound();
-        $this->post(route('svc.expense-schedules.generate', [$other, $schedule->public_id]))->assertNotFound();
-        $this->actingAs($manager)->post(route('svc.expense-schedules.store', [$workspace, $company]), $this->facts() + ['starts_on' => '2028-01-01', 'cadence' => 'monthly', 'project_id' => $project->public_id])->assertNotFound();
+        $this->updateSchedule($other, $schedule, $this->facts() + ['active' => false])->assertNotFound();
+        $this->generateSchedule($other, $schedule)->assertNotFound();
+        $this->actingAs($manager)->createSchedule($workspace, $company, $this->facts() + ['starts_on' => '2028-01-01', 'cadence' => 'monthly', 'project_id' => $project->public_id])->assertNotFound();
         $member = $this->syntheticMember($workspace, 'Ordinary member', 'member');
         $this->actingAs($member)->get(route('clients.expense-schedules', [$workspace, $company]))->assertForbidden();
-        $this->post(route('svc.expense-schedules.store', [$workspace, $company]), $this->facts() + ['starts_on' => '2028-01-01', 'cadence' => 'monthly'])->assertForbidden();
-        $this->patch(route('svc.expense-schedules.update', [$workspace, $schedule->public_id]), $this->facts() + ['active' => false])->assertForbidden();
-        $this->post(route('svc.expense-schedules.generate', [$workspace, $schedule->public_id]))->assertForbidden();
+        $this->createSchedule($workspace, $company, $this->facts() + ['starts_on' => '2028-01-01', 'cadence' => 'monthly'])->assertForbidden();
+        $this->updateSchedule($workspace, $schedule, $this->facts() + ['active' => false])->assertForbidden();
+        $this->generateSchedule($workspace, $schedule)->assertForbidden();
         $this->assertSame(0, ClientExpense::query()->count());
         $this->assertTrue($schedule->refresh()->is_active);
     }
@@ -142,7 +152,7 @@ final class ExpenseRecurrenceTest extends TestCase
         $workspace = $this->syntheticWorkspace('Currency validation');
         $company = $this->syntheticCompany($workspace, 'Currency validation');
         $manager = $this->syntheticMember($workspace, 'Currency manager');
-        $this->actingAs($manager)->postJson(route('svc.expense-schedules.store', [$workspace, $company]),
+        $this->actingAs($manager)->createSchedule($workspace, $company,
             array_replace($this->facts(), ['starts_on' => '2028-01-01', 'cadence' => 'monthly', 'currency' => 'αβγ']))
             ->assertUnprocessable()->assertJsonValidationErrors('currency');
         $this->assertSame(0, ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->count());
@@ -154,13 +164,13 @@ final class ExpenseRecurrenceTest extends TestCase
         $company = $this->syntheticCompany($workspace, 'Date floor');
         $manager = $this->syntheticMember($workspace, 'Date floor manager');
         foreach (['0001-01-01', '0999-12-31'] as $date) {
-            $this->actingAs($manager)->postJson(route('svc.expense-schedules.store', [$workspace, $company]),
+            $this->actingAs($manager)->createSchedule($workspace, $company,
                 $this->facts() + ['starts_on' => $date, 'cadence' => 'monthly'])
                 ->assertUnprocessable()->assertJsonValidationErrors('starts_on');
         }
         $this->assertSame(0, ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->count());
-        $this->post(route('svc.expense-schedules.store', [$workspace, $company]),
-            $this->facts() + ['starts_on' => '1000-01-01', 'cadence' => 'monthly'])->assertRedirect();
+        $this->createSchedule($workspace, $company,
+            $this->facts() + ['starts_on' => '1000-01-01', 'cadence' => 'monthly'])->assertSuccessful();
         $this->assertSame('1000-01-01', ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->sole()->starts_on->toDateString());
     }
 
@@ -170,15 +180,50 @@ final class ExpenseRecurrenceTest extends TestCase
         $company = $this->syntheticCompany($workspace, 'Exact amount');
         $manager = $this->syntheticMember($workspace, 'Exact amount manager');
         $amount = '9007199254740993';
-        $this->actingAs($manager)->post(route('svc.expense-schedules.store', [$workspace, $company]),
-            array_replace($this->facts(), ['amount' => $amount, 'starts_on' => '2028-01-01', 'cadence' => 'monthly']))->assertRedirect();
+        $this->actingAs($manager)->createSchedule($workspace, $company,
+            array_replace($this->facts(), ['amount' => $amount, 'starts_on' => '2028-01-01', 'cadence' => 'monthly']))->assertSuccessful();
         $schedule = ClientExpenseSchedule::query()->where('workspace_id', $workspace->id)->sole();
         $this->get(route('clients.expense-schedules', [$workspace, $company]))->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('schedules.0.amount', $amount));
-        $this->patch(route('svc.expense-schedules.update', [$workspace, $schedule->public_id]),
-            array_replace($this->facts(), ['amount' => $amount, 'description' => 'Synthetic edited description', 'active' => true]))->assertRedirect();
+            ->where('schedules.0.amount_exact', $amount));
+        $this->updateSchedule($workspace, $schedule,
+            array_replace($this->facts(), ['amount' => $amount, 'description' => 'Synthetic edited description', 'active' => true]))->assertSuccessful();
         $this->assertSame(9007199254740993, $schedule->refresh()->amount);
         $this->assertSame('Synthetic edited description', $schedule->description);
+    }
+
+    /** @param array<string, mixed> $facts */
+    private function createSchedule(Workspace $workspace, ClientCompany $company, array $facts): TestResponse
+    {
+        $response = $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson(
+            route('agent-api.v1.expense-schedules.store', $workspace),
+            ['company_id' => $company->public_id, 'expected_version' => AgentApiVersion::for($company->fresh()), ...$facts],
+        );
+        app('auth')->shouldUse('web');
+
+        return $response;
+    }
+
+    /** @param array<string, mixed> $facts */
+    private function updateSchedule(Workspace $workspace, ClientExpenseSchedule $schedule, array $facts): TestResponse
+    {
+        $response = $this->withHeader('Idempotency-Key', (string) Str::uuid())->patchJson(
+            route('agent-api.v1.expense-schedules.update', [$workspace, $schedule->public_id]),
+            ['expected_version' => AgentApiVersion::for($schedule->fresh()), ...$facts],
+        );
+        app('auth')->shouldUse('web');
+
+        return $response;
+    }
+
+    private function generateSchedule(Workspace $workspace, ClientExpenseSchedule $schedule): TestResponse
+    {
+        $response = $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson(
+            route('agent-api.v1.expense-schedules.generate', [$workspace, $schedule->public_id]),
+            ['expected_version' => AgentApiVersion::for($schedule->fresh()), 'confirm' => true],
+        );
+        app('auth')->shouldUse('web');
+
+        return $response;
     }
 
     private function facts(int $amount = 1200): array

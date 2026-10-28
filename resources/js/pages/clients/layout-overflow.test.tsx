@@ -621,7 +621,11 @@ describe('recurring expense layout', () => {
         const project = 'SyntheticProjectWithoutBreaks'.repeat(8);
         const { container, getByRole, getByLabelText } = render(
             <ExpenseSchedules
-                company={{ name: LONG_NAME.repeat(4) }}
+                company={{
+                    id: 'synthetic-company',
+                    name: LONG_NAME.repeat(4),
+                    version: 'synthetic-company-version',
+                }}
                 today="2028-03-31"
                 currency="USD"
                 urls={{ store: '/synthetic/schedules' }}
@@ -632,7 +636,9 @@ describe('recurring expense layout', () => {
                     {
                         id: 'synthetic-schedule',
                         description,
-                        amount: '1200',
+                        amount: 1200,
+                        amount_exact: '1200',
+                        version: 'synthetic-schedule-version',
                         currency: 'USD',
                         project_id: 'synthetic-project',
                         starts_on: '2028-01-31',

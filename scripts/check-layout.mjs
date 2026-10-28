@@ -42,6 +42,7 @@ const timeOnly = process.argv.includes('--time');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
 const tasksOnly = process.argv.includes('--tasks');
+const schedulesOnly = process.argv.includes('--expense-schedules');
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -304,38 +305,40 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of tasksOnly
-            ? ['task_list', 'task_project', 'task_editor', 'task_portal']
-            : historyOnly
-              ? ['history_index', 'history_discussion', 'history_invoice']
-              : portalOnly
-                ? ['settings']
-                : correctionOnly
-                  ? ['invoice_review']
-                  : squareOnly
-                    ? ['square_explore', 'square_invoice', 'square_portal']
-                    : remindersOnly
-                      ? ['reminder_invoice', 'settings']
-                      : timeOnly
-                        ? ['time', 'draft_time']
-                        : backlogOnly
-                          ? ['agreement']
-                          : [
-                                'mcp_setup',
-                                'invoice',
-                                'invoice_review',
-                                'reminder_invoice',
-                                'settings',
-                                'draft_invoice',
-                                'draft_time',
-                                'proposal',
-                                'proposal_acceptance',
-                                'operations',
-                                'time',
-                                'expenses',
-                                'receipts',
-                                'expense_schedules',
-                            ]) {
+        for (const screen of schedulesOnly
+            ? ['expense_schedules']
+            : tasksOnly
+              ? ['task_list', 'task_project', 'task_editor', 'task_portal']
+              : historyOnly
+                ? ['history_index', 'history_discussion', 'history_invoice']
+                : portalOnly
+                  ? ['settings']
+                  : correctionOnly
+                    ? ['invoice_review']
+                    : squareOnly
+                      ? ['square_explore', 'square_invoice', 'square_portal']
+                      : remindersOnly
+                        ? ['reminder_invoice', 'settings']
+                        : timeOnly
+                          ? ['time', 'draft_time']
+                          : backlogOnly
+                            ? ['agreement']
+                            : [
+                                  'mcp_setup',
+                                  'invoice',
+                                  'invoice_review',
+                                  'reminder_invoice',
+                                  'settings',
+                                  'draft_invoice',
+                                  'draft_time',
+                                  'proposal',
+                                  'proposal_acceptance',
+                                  'operations',
+                                  'time',
+                                  'expenses',
+                                  'receipts',
+                                  'expense_schedules',
+                              ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -1041,6 +1044,7 @@ try {
     }
 
     if (
+        !schedulesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
@@ -1076,6 +1080,7 @@ try {
     }
 
     if (
+        !schedulesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
@@ -1148,6 +1153,15 @@ try {
         await capture('draft_invoice', 'paid-after-correction', 1440);
         run('php', ['scripts/layout/verify-draft-time.php'], env);
 
+        await checkScheduleWrites();
+    }
+
+    if (schedulesOnly) {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await checkScheduleWrites();
+    }
+
+    async function checkScheduleWrites() {
         // Exercise real saves against the isolated database after layout capture,
         // so the additional schedule cannot change the fixtures used at each width.
         await page.goto(origin + fixture.expense_schedules);

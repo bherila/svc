@@ -1,9 +1,10 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { formatScheduleAmount } from '@/lib/expense-schedule-amount';
 import { SHELL_CONTAINER } from '@/lib/layout';
 
@@ -11,7 +12,9 @@ type Option = { value: string; label: string };
 type Schedule = {
     id: string;
     description: string;
-    amount: string;
+    amount: number;
+    amount_exact: string;
+    version: string;
     currency: string;
     project_id: string;
     starts_on: string;
@@ -25,7 +28,7 @@ type Schedule = {
 };
 type Props = {
     pagination: { next: string | null; previous: string | null };
-    company: { name: string };
+    company: { id: string; name: string; version: string };
     today: string;
     currency: string;
     urls: { store: string };
@@ -45,13 +48,16 @@ function ScheduleForm({
 }) {
     const form = useForm({
         description: schedule?.description ?? '',
-        amount: schedule?.amount ?? '',
+        amount: schedule?.amount_exact ?? '',
         currency: schedule?.currency ?? page.currency,
         project_id: schedule?.project_id ?? '',
         active: schedule?.active ?? true,
         starts_on: page.today,
         cadence: 'monthly',
     });
+    const [saving, setSaving] = useState(false);
+    const [failure, setFailure] = useState<string | null>(null);
+    const [attemptKey] = useState(newIdempotencyKey);
     const field = (
         name: 'description' | 'amount' | 'currency',
         label: string,
@@ -73,32 +79,49 @@ function ScheduleForm({
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-4 rounded border p-4"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
                 event.preventDefault();
-                form.transform((data) =>
+
+                if (saving) {
+                    return;
+                }
+
+                setSaving(true);
+                setFailure(null);
+                const data = form.data;
+                const facts = {
+                    description: data.description,
+                    amount: data.amount,
+                    currency: data.currency,
+                    project_id: data.project_id || null,
+                };
+                const result = await apiRequest(
+                    schedule ? 'PATCH' : 'POST',
+                    schedule?.update_url ?? page.urls.store,
                     schedule
                         ? {
-                              description: data.description,
-                              amount: data.amount,
-                              currency: data.currency,
-                              project_id: data.project_id || null,
+                              ...facts,
                               active: data.active,
+                              expected_version: schedule.version,
                           }
                         : {
-                              description: data.description,
-                              amount: data.amount,
-                              currency: data.currency,
-                              project_id: data.project_id || null,
+                              ...facts,
+                              company_id: page.company.id,
+                              expected_version: page.company.version,
                               starts_on: data.starts_on,
                               cadence: data.cadence,
                           },
+                    attemptKey,
                 );
-                const options = { preserveScroll: true, onSuccess: onDone };
+                setSaving(false);
 
-                if (schedule) {
-                    form.patch(schedule.update_url, options);
+                if (result.ok) {
+                    router.reload({
+                        only: ['schedules', 'company', 'pagination'],
+                    });
+                    onDone();
                 } else {
-                    form.post(page.urls.store, options);
+                    setFailure(result.message);
                 }
             }}
         >
@@ -174,6 +197,11 @@ function ScheduleForm({
                 catch-up drafts. The original calendar and existing expenses
                 stay fixed.
             </p>
+            {failure && (
+                <p role="alert" className="wrap-anywhere text-destructive">
+                    {failure}
+                </p>
+            )}
             {Object.entries(form.errors).map(([key, error]) => (
                 <p
                     role="alert"
@@ -184,7 +212,7 @@ function ScheduleForm({
                 </p>
             ))}
             <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={form.processing}>
+                <Button type="submit" disabled={saving}>
                     Save schedule
                 </Button>
                 <Button type="button" variant="outline" onClick={onDone}>
@@ -198,6 +226,8 @@ function ScheduleForm({
 export default function ExpenseSchedules(page: Props) {
     const [editing, setEditing] = useState<string | null>(null);
     const [failure, setFailure] = useState<string | null>(null);
+    const [generating, setGenerating] = useState<string | null>(null);
+    const attempts = useRef<Record<string, string>>({});
 
     return (
         <WorkspaceShell activeModule="expenses">
@@ -241,7 +271,7 @@ export default function ExpenseSchedules(page: Props) {
                             </h2>
                             <p>
                                 {formatScheduleAmount(
-                                    schedule.amount,
+                                    schedule.amount_exact,
                                     schedule.currency,
                                 )}{' '}
                                 ·{' '}
@@ -270,27 +300,45 @@ export default function ExpenseSchedules(page: Props) {
                                 </Button>
                                 {schedule.generate_url && (
                                     <Button
-                                        onClick={() => {
+                                        disabled={generating !== null}
+                                        onClick={async () => {
                                             setFailure(null);
 
                                             if (!schedule.generate_url) {
                                                 return;
                                             }
 
-                                            router.post(
+                                            if (generating !== null) {
+                                                return;
+                                            }
+
+                                            setGenerating(schedule.id);
+                                            const attempt = `${schedule.id}:${schedule.version}`;
+                                            attempts.current[attempt] ??=
+                                                newIdempotencyKey();
+                                            const result = await apiRequest(
+                                                'POST',
                                                 schedule.generate_url,
-                                                {},
                                                 {
-                                                    preserveScroll: true,
-                                                    onError: (errors) =>
-                                                        setFailure(
-                                                            Object.values(
-                                                                errors,
-                                                            )[0] ??
-                                                                'Generation failed.',
-                                                        ),
+                                                    expected_version:
+                                                        schedule.version,
+                                                    confirm: true,
                                                 },
+                                                attempts.current[attempt],
                                             );
+                                            setGenerating(null);
+
+                                            if (result.ok) {
+                                                router.reload({
+                                                    only: [
+                                                        'schedules',
+                                                        'company',
+                                                        'pagination',
+                                                    ],
+                                                });
+                                            } else {
+                                                setFailure(result.message);
+                                            }
                                         }}
                                     >
                                         Generate due drafts

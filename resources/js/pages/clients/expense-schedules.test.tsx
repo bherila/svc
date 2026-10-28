@@ -1,16 +1,24 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { apiRequest } from '@/lib/api';
 import ExpenseSchedules from './expense-schedules';
 
-const submitted = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/api', () => ({
+    apiRequest: vi.fn(),
+    newIdempotencyKey: () => `synthetic-${Math.random()}`,
+}));
+beforeEach(() => {
+    vi.mocked(apiRequest)
+        .mockReset()
+        .mockResolvedValue({ ok: true, status: 200, data: {} });
+});
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
-    router: { post: vi.fn() },
+    router: { reload: vi.fn() },
     useForm: function useForm(initial: Record<string, unknown>) {
         const [data, setData] = useState(initial);
-        let transform = (value: Record<string, unknown>) => value;
 
         return {
             data,
@@ -18,11 +26,6 @@ vi.mock('@inertiajs/react', () => ({
             processing: false,
             setData: (key: string, value: unknown) =>
                 setData((current) => ({ ...current, [key]: value })),
-            transform: (callback: typeof transform) => {
-                transform = callback;
-            },
-            patch: (url: string) => submitted(url, transform(data)),
-            post: (url: string) => submitted(url, transform(data)),
         };
     },
 }));
@@ -31,10 +34,14 @@ vi.mock('@/layouts/workspace-shell', () => ({
 }));
 
 describe('recurring expense amount editing', () => {
-    it('creates a schedule using the real save button and string amount', () => {
+    it('creates a schedule using the real save button and string amount', async () => {
         render(
             <ExpenseSchedules
-                company={{ name: 'Synthetic create client' }}
+                company={{
+                    id: 'synthetic-company',
+                    name: 'Synthetic create client',
+                    version: 'company-version',
+                }}
                 today="2028-03-31"
                 currency="USD"
                 urls={{ store: '/synthetic/store' }}
@@ -52,19 +59,32 @@ describe('recurring expense amount editing', () => {
             target: { value: '9007199254740993' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
-        expect(submitted).toHaveBeenCalledWith('/synthetic/store', {
-            description: 'Synthetic new cost',
-            amount: '9007199254740993',
-            currency: 'USD',
-            project_id: null,
-            starts_on: '2028-03-31',
-            cadence: 'monthly',
-        });
+        await vi.waitFor(() =>
+            expect(apiRequest).toHaveBeenCalledWith(
+                'POST',
+                '/synthetic/store',
+                {
+                    description: 'Synthetic new cost',
+                    amount: '9007199254740993',
+                    currency: 'USD',
+                    project_id: null,
+                    starts_on: '2028-03-31',
+                    cadence: 'monthly',
+                    company_id: 'synthetic-company',
+                    expected_version: 'company-version',
+                },
+                expect.any(String),
+            ),
+        );
     });
-    it('submits the exact large amount when only the description changes', () => {
+    it('submits the exact large amount when only the description changes', async () => {
         render(
             <ExpenseSchedules
-                company={{ name: 'Synthetic exact amount client' }}
+                company={{
+                    id: 'synthetic-company',
+                    name: 'Synthetic exact amount client',
+                    version: 'company-version',
+                }}
                 today="2028-03-31"
                 currency="USD"
                 urls={{ store: '/synthetic/store' }}
@@ -74,7 +94,9 @@ describe('recurring expense amount editing', () => {
                 schedules={[
                     {
                         id: 'synthetic-schedule',
-                        amount: '9007199254740993',
+                        amount: 9007199254740992,
+                        amount_exact: '9007199254740993',
+                        version: 'schedule-version',
                         currency: 'USD',
                         description: 'Synthetic original',
                         project_id: '',
@@ -100,12 +122,20 @@ describe('recurring expense amount editing', () => {
             target: { value: 'Synthetic corrected description' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
-        expect(submitted).toHaveBeenCalledWith('/synthetic/update', {
-            amount: '9007199254740993',
-            currency: 'USD',
-            description: 'Synthetic corrected description',
-            project_id: null,
-            active: true,
-        });
+        await vi.waitFor(() =>
+            expect(apiRequest).toHaveBeenCalledWith(
+                'PATCH',
+                '/synthetic/update',
+                {
+                    amount: '9007199254740993',
+                    currency: 'USD',
+                    description: 'Synthetic corrected description',
+                    project_id: null,
+                    active: true,
+                    expected_version: 'schedule-version',
+                },
+                expect.any(String),
+            ),
+        );
     });
 });

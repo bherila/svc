@@ -129,6 +129,20 @@ final class AgentExpenseParityTest extends TestCase
         $this->patchJson($url.'/'.$id, [...$this->facts(), 'active' => true, 'expected_version' => $generated->json('data.version'), 'cadence' => 'annual'], ['Idempotency-Key' => 'synthetic-anchor-injection'])->assertUnprocessable();
     }
 
+    public function test_schedule_amounts_above_javascript_precision_remain_exact_across_rest_and_mcp(): void
+    {
+        [$workspace, $company, $owner] = $this->fixture();
+        $this->actingAsMcp($owner, ['mcp:use', 'clients:read', 'expenses:read', 'expenses:write']);
+        $body = [...$this->facts(), 'project_id' => null, 'amount' => '9007199254740993', 'company_id' => $company->public_id,
+            'expected_version' => AgentApiVersion::for($company), 'starts_on' => '2030-01-01', 'cadence' => 'monthly'];
+        $session = $this->mcpSession();
+        $created = $this->mcpCall('expense_schedules.create', ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'synthetic-exact-schedule', ...$body], $session)
+            ->assertJsonPath('result.structuredContent.data.amount_exact', '9007199254740993')->json('result.structuredContent');
+        $this->postJson($this->base($workspace).'/expense-schedules', $body, ['Idempotency-Key' => 'synthetic-exact-schedule'])
+            ->assertCreated()->assertJsonPath('data', $created['data']);
+        $this->assertDatabaseHas('client_expense_schedules', ['workspace_id' => $workspace->id, 'amount' => 9007199254740993]);
+    }
+
     public function test_receipts_upload_list_download_urls_and_idempotent_content(): void
     {
         [$workspace, $company, $owner, $project] = $this->fixture();
