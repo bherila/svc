@@ -129,6 +129,15 @@ operation as a finished URL plus the record's opaque version, call it through
 generated from the OpenAPI document (`pnpm run api:types`; CI fails when the
 generated file is stale).
 
+The browser mutation allowlist is closed to business operations. Its twelve
+named exceptions cover four credential-management actions, sign-out, the client
+management redirect, three provider/email webhooks, the Stripe payment hand-off,
+and interactive agreement/proposal signing. The portal recipient's proposal
+signature remains a browser act; authorized REST/MCP clients can separately
+record confirmed offline acceptance with `proposals.accept`. Inertia resource
+props use the same pure resource presenters as API responses, with explicit
+safe field selections and page navigation/capability extras.
+
 Apps that use the REST API without MCP connect one of two ways (#384). A person
 registers an OAuth app on the setup page - exact HTTPS or loopback redirect URIs,
 public (PKCE only) or confidential (a client secret shown once, used with

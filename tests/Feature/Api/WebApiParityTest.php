@@ -7,29 +7,18 @@ use Illuminate\Support\Facades\Route as RouteFacade;
 use Tests\TestCase;
 
 /**
- * Every action the website can take is an API operation, or says why not.
+ * Business mutations use /api/v1 for browsers, REST clients and MCP (#385, #387).
  *
- * The web UI, REST clients and MCP are meant to share one API (#387). This
- * ratchet makes the gap visible and stops it growing: every state-changing web
- * route must be classified below, and a new one fails until it is. The
- * `missing` and `mcp-only` entries are the backlog (#386, #383); each should
- * become an `operation:` entry, after which the web route can be retired in
- * favour of the API (#385).
- *
- * Classifications:
- * - `operation:<operationId>`: the same action exists in the OpenAPI contract.
- * - `mcp-only:<tool>`: an MCP tool exists, but no REST route yet (#383).
- * - `missing`: no API equivalent yet (#386).
- * - `web-only:<reason>`: stays a browser route by design: sign-in, inbound
- *   webhooks, redirects, or the hand-off to the payment processor.
- * - `deliberate:<reason>`: a product decision recorded on #386.
+ * Only the named authentication, protocol/provider and interactive signing
+ * exceptions below may remain as state-changing browser routes. Adding an API
+ * equivalent is not a reason to retain a second browser mutation transport.
+ * Portal proposal signing stays interactive; REST/MCP can still record a
+ * confirmed offline acceptance through the canonical proposals.accept action.
  */
 final class WebApiParityTest extends TestCase
 {
-    private const array CLASSIFIED = [
-        // Credentials are minted only by the signed-in person in the browser, so
-        // no OAuth credential can create another (#384). Served by the auth
-        // package's credential routes (#408).
+    private const array BROWSER_ONLY = [
+        // A credential may never mint another credential (#384).
         'bherila-auth.credentials.apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.apps.store' => 'deliberate:credentials are issued only by the signed-in person',
         'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
@@ -37,47 +26,14 @@ final class WebApiParityTest extends TestCase
         'clients.manage' => 'web-only:redirect',
         'logout' => 'web-only:sign-out',
         'svc.billing.brevo.webhook' => 'web-only:inbound webhook',
-        'svc.billing.invoices.automatic-delivery.hold' => 'operation:invoices.hold_delivery',
-        'svc.billing.invoices.automatic-delivery.release' => 'operation:invoices.release_delivery',
-        'svc.billing.invoices.correct' => 'operation:invoices.correct',
-        'svc.billing.invoices.issue' => 'operation:invoices.issue',
-        'svc.billing.invoices.payments.received-on' => 'operation:payments.correct',
-        'svc.billing.invoices.payments.store' => 'operation:payments.record',
-        'svc.billing.invoices.send' => 'operation:invoices.send',
-        'svc.billing.invoices.store' => 'operation:invoices.create_draft',
         'svc.billing.invoices.stripe-payment-intent' => 'web-only:payment processor hand-off',
-        'svc.billing.invoices.void' => 'operation:invoices.void',
         'svc.billing.stripe.webhook' => 'web-only:inbound webhook',
         'svc.billing.square.webhook' => 'web-only:inbound webhook',
         'svc.engagement.agreements.sign' => 'deliberate:a signature is an interactive act by the signer',
-        'svc.engagement.proposals.accept' => 'operation:proposals.accept',
-
-        'svc.files.destroy' => 'operation:attachments.delete',
-        'svc.files.store' => 'operation:attachments.upload',
-        'svc.files.visibility.update' => 'operation:attachments.visibility.update',
-        'svc.files.collaboration.upload' => 'operation:collaboration.attachments.upload',
-        'svc.files.collaboration.visibility.update' => 'operation:collaboration.attachments.visibility.update',
-        'svc.files.collaboration.destroy' => 'operation:collaboration.attachments.delete',
-        'tasks.organization.lists.archive' => 'operation:task_organization.lists.archive',
-        'tasks.organization.lists.reorder' => 'operation:task_organization.lists.reorder',
-        'tasks.organization.lists.restore' => 'operation:task_organization.lists.restore',
-        'tasks.organization.lists.store' => 'operation:task_organization.lists.create',
-        'tasks.organization.lists.update' => 'operation:task_organization.lists.update',
-        'tasks.organization.tasks.move' => 'operation:task_organization.tasks.move',
-        'tasks.organization.tasks.reorder' => 'operation:task_organization.tasks.reorder',
-        'tasks.organization.tasks.store' => 'operation:task_organization.tasks.create',
-        'tasks.planning.labels.create' => 'operation:task_planning.labels.create',
-        'tasks.planning.labels.update' => 'operation:task_planning.labels.update',
-        'tasks.planning.labels.archive' => 'operation:task_planning.labels.archive',
-        'tasks.planning.labels.restore' => 'operation:task_planning.labels.restore',
-        'tasks.planning.labels.replace' => 'operation:task_planning.labels.replace',
-        'tasks.planning.dependencies.replace' => 'operation:task_planning.dependencies.replace',
-        'tasks.planning.contacts.replace' => 'operation:task_planning.contacts.replace',
-        'tasks.store' => 'operation:tasks.create',
-        'tasks.update' => 'operation:tasks.update',
+        'svc.engagement.proposals.accept' => 'deliberate:portal acceptance is an interactive signature by the recipient; REST/MCP separately support confirmed offline acceptance',
     ];
 
-    public function test_every_state_changing_web_route_is_classified(): void
+    public function test_every_state_changing_web_route_is_a_named_browser_exception(): void
     {
         $routes = $this->webMutationRoutes();
         $unnamed = array_keys(array_filter($routes, static fn (?string $name): bool => $name === null));
@@ -85,13 +41,13 @@ final class WebApiParityTest extends TestCase
 
         $names = array_values(array_filter($routes));
         sort($names);
-        $classified = array_keys(self::CLASSIFIED);
+        $classified = array_keys(self::BROWSER_ONLY);
         sort($classified);
 
         $this->assertSame(
             [],
             array_values(array_diff($names, $classified)),
-            'Classify each new state-changing web route in WebApiParityTest: add the API operation first, or record why not.',
+            'Business mutations must use /api/v1. Only explicitly documented browser exceptions belong in WebApiParityTest.',
         );
         $this->assertSame(
             [],
@@ -102,15 +58,9 @@ final class WebApiParityTest extends TestCase
 
     public function test_every_classification_is_well_formed_and_current(): void
     {
-        $operations = $this->openApiOperationIds();
-
-        foreach (self::CLASSIFIED as $route => $classification) {
+        foreach (self::BROWSER_ONLY as $route => $classification) {
             [$kind, $detail] = array_pad(explode(':', $classification, 2), 2, null);
             match ($kind) {
-                'operation' => $this->assertContains($detail, $operations, "{$route}: {$detail} is not an OpenAPI operation"),
-                // Once the REST route lands, the entry must say so.
-                'mcp-only' => $this->assertNotContains($detail, $operations, "{$route}: {$detail} is now an OpenAPI operation; classify it as operation:{$detail}"),
-                'missing' => $this->assertNull($detail, $route),
                 'web-only', 'deliberate' => $this->assertNotEmpty($detail, "{$route}: give a reason"),
                 default => $this->fail("{$route}: unknown classification {$classification}"),
             };
@@ -158,19 +108,5 @@ final class WebApiParityTest extends TestCase
         }
 
         return $routes;
-    }
-
-    /** @return list<string> */
-    private function openApiOperationIds(): array
-    {
-        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
-        $ids = [];
-        foreach ($document['paths'] as $path) {
-            foreach ($path as $operation) {
-                $ids[] = $operation['operationId'];
-            }
-        }
-
-        return $ids;
     }
 }

@@ -79,6 +79,20 @@ final class RetiredWebMutationRoutesTest extends TestCase
         }
     }
 
+    public function test_interactive_proposal_acceptance_is_the_only_remaining_inertia_mutation(): void
+    {
+        $writers = [];
+        foreach ((new Finder)->files()->in([resource_path('js/pages'), resource_path('js/components')])->name(['*.ts', '*.tsx'])->notName(['*.test.ts', '*.test.tsx']) as $file) {
+            preg_match_all('/\b(?:router|form)\s*\.\s*(?:post|put|patch|delete)\s*\(/', $file->getContents(), $matches);
+            foreach ($matches[0] as $call) {
+                $writers[] = $file->getRelativePathname().':'.preg_replace('/\s+/', '', $call);
+            }
+        }
+        sort($writers);
+        $this->assertSame(['clients/proposal.tsx:form.post('], $writers,
+            'Use the canonical session API for business writes. Only the recipient signing a proposal keeps an Inertia mutation.');
+    }
+
     public function test_frontend_does_not_reference_retired_mutation_routes(): void
     {
         $violations = [];
