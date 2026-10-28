@@ -1,14 +1,17 @@
+import type { Page } from '@inertiajs/core';
 import { router } from '@inertiajs/react';
 
 type RefreshPagePropsOptions = {
     only?: string[];
     requireSuccess?: boolean;
     onFinish?: () => void;
+    onSuccess?: (page: Page) => void;
 };
 
 /** Refresh authoritative props; callers retain their own mutation/retry policy. */
 export function refreshPageProps({
     onFinish,
+    onSuccess,
     requireSuccess = false,
     ...options
 }: RefreshPagePropsOptions = {}): Promise<void> {
@@ -56,14 +59,16 @@ export function refreshPageProps({
             : undefined;
         router.reload({
             ...options,
+            ...(onSuccess ? { onSuccess } : {}),
             ...(requireSuccess
                 ? {
                       // The caller renders a recoverable failure after onFinish.
                       // Suppress Inertia's default error modal/global network throw.
                       onNetworkError: () => false,
                       onHttpException: () => false,
-                      onSuccess: () => {
+                      onSuccess: (page) => {
                           succeeded = true;
+                          onSuccess?.(page);
                       },
                   }
                 : {}),
