@@ -125,12 +125,12 @@ final class AgentWorkspaceMiscTest extends TestCase
         $upload = $prepare->json('data.url');
         $version = $prepare->json('data.expected_version');
         $created = $this->withHeader('Idempotency-Key', 'synthetic-upload')->post($upload,
-            ['file' => $this->file(), 'expected_version' => $version], ['Accept' => 'application/json'])->assertCreated();
+            ['file' => $this->file(), 'expected_version' => $version], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertCreated();
         $id = $created->json('data.id');
         $this->assertSchema('attachments.upload', $created->json());
-        $this->post($upload, ['file' => $this->file(), 'expected_version' => $version], ['Accept' => 'application/json'])
+        $this->post($upload, ['file' => $this->file(), 'expected_version' => $version], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])
             ->assertCreated()->assertJsonPath('data.id', $id);
-        $this->post($upload, ['file' => $this->file('Different synthetic bytes'), 'expected_version' => $version], ['Accept' => 'application/json'])->assertConflict();
+        $this->post($upload, ['file' => $this->file('Different synthetic bytes'), 'expected_version' => $version], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertConflict();
         $this->assertDatabaseCount('client_attachments', 1);
         $listed = $this->getJson($this->recordUrl($workspace, $project))->assertOk()->assertJsonCount(1, 'data');
         $this->assertSchema('attachments.list', $listed->json());
@@ -153,7 +153,7 @@ final class AgentWorkspaceMiscTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'attachments.delete', 'outcome' => 'failed', 'error_category' => 'conflict']);
         $workspace->memberships()->where('user_id', $owner->id)->update(['role' => 'member']);
         $this->deleteJson($base.'/attachments/'.$id, $deletion)->assertForbidden();
-        $this->post($upload, ['file' => $this->file(), 'expected_version' => $version], ['Accept' => 'application/json'])->assertForbidden();
+        $this->post($upload, ['file' => $this->file(), 'expected_version' => $version], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertForbidden();
     }
 
     public function test_file_routes_are_tenant_scoped_exclude_receipts_and_check_parent_edits_and_expiry(): void
@@ -167,10 +167,10 @@ final class AgentWorkspaceMiscTest extends TestCase
         $this->postJson($this->base($workspace).'/records/expense/'.$project->public_id.'/attachments/upload-url')->assertUnprocessable();
         $prep = $this->postJson($this->recordUrl($workspace, $project).'/upload-url')->assertOk()->json('data');
         $project->update(['name' => 'Synthetic Edited Parent']);
-        $this->withHeader('Idempotency-Key', 'stale-parent')->post($prep['url'], ['file' => $this->file(), 'expected_version' => $prep['expected_version']], ['Accept' => 'application/json'])->assertConflict();
+        $this->withHeader('Idempotency-Key', 'stale-parent')->post($prep['url'], ['file' => $this->file(), 'expected_version' => $prep['expected_version']], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertConflict();
         $this->assertDatabaseCount('client_attachments', 1);
         $this->travel(11)->minutes();
-        $this->withHeader('Idempotency-Key', 'expired-url')->post($prep['url'], ['file' => $this->file(), 'expected_version' => AgentApiVersion::for($project)], ['Accept' => 'application/json'])->assertForbidden();
+        $this->withHeader('Idempotency-Key', 'expired-url')->post($prep['url'], ['file' => $this->file(), 'expected_version' => AgentApiVersion::for($project)], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertForbidden();
     }
 
     public function test_signed_urls_require_current_scope_and_manager_permission(): void
@@ -182,7 +182,7 @@ final class AgentWorkspaceMiscTest extends TestCase
         $upload = $this->postJson($this->recordUrl($workspace, $project).'/upload-url')->assertOk()->json('data');
         $this->actingAsMcp($owner, ['identity:read']);
         $this->get($download)->assertForbidden();
-        $this->withHeader('Idempotency-Key', 'missing-scope')->post($upload['url'], ['file' => $this->file(), 'expected_version' => $upload['expected_version']], ['Accept' => 'application/json'])->assertForbidden();
+        $this->withHeader('Idempotency-Key', 'missing-scope')->post($upload['url'], ['file' => $this->file(), 'expected_version' => $upload['expected_version']], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertForbidden();
         $this->actingAsMcp($owner, ['files:read', 'files:write']);
         $workspace->memberships()->where('user_id', $owner->id)->update(['role' => 'member']);
         $this->get($download)->assertForbidden();
@@ -226,7 +226,7 @@ final class AgentWorkspaceMiscTest extends TestCase
         $this->assertDatabaseCount('client_attachments', 0);
         $prepared = $upload['result']['structuredContent']['data'];
         $uploaded = $this->withHeader('Idempotency-Key', 'mcp-prepared-upload')->post($prepared['url'],
-            ['file' => $this->file(), 'expected_version' => $prepared['expected_version']], ['Accept' => 'application/json'])->assertCreated();
+            ['file' => $this->file(), 'expected_version' => $prepared['expected_version']], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertCreated();
         $fileId = $uploaded->json('data.id');
         $listed = $this->callTool($session, 'attachments.list', ['workspace_id' => $workspace->public_id, 'record_type' => 'project', 'record_id' => $project->public_id]);
         $this->assertSame($fileId, $listed['result']['structuredContent']['data'][0]['id']);
@@ -302,7 +302,7 @@ final class AgentWorkspaceMiscTest extends TestCase
             }
         });
         $this->withHeader('Idempotency-Key', 'rollback-file')->post($prepared['url'],
-            ['file' => $this->file(), 'expected_version' => $prepared['expected_version']], ['Accept' => 'application/json'])->assertStatus(500);
+            ['file' => $this->file(), 'expected_version' => $prepared['expected_version']], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertStatus(500);
         $this->assertFalse($fail, 'The audit insert fault must execute on the active database driver.');
         $this->assertDatabaseCount('client_attachments', 0);
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
@@ -327,7 +327,7 @@ final class AgentWorkspaceMiscTest extends TestCase
             $before = AgentApiVersion::for($record);
             $prep = $this->postJson($url.'/upload-url')->assertOk()->assertJsonPath('data.expected_version', $before)->json('data');
             $this->withHeader('Idempotency-Key', 'generic-'.$type)->post($prep['url'],
-                ['file' => $this->file(), 'expected_version' => $prep['expected_version']], ['Accept' => 'application/json'])->assertCreated()->assertJsonPath('data.record_type', $type);
+                ['file' => $this->file(), 'expected_version' => $prep['expected_version']], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertCreated()->assertJsonPath('data.record_type', $type);
             $this->getJson($url)->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('parent_version', $before);
             $this->assertSame($before, AgentApiVersion::for($record->fresh()));
         }
@@ -345,7 +345,7 @@ final class AgentWorkspaceMiscTest extends TestCase
             $this->withHeader('Idempotency-Key', 'lock-workspace')->postJson('/api/v1/workspaces', ['name' => 'Synthetic Lock Tenant'])->assertCreated();
             $prep = $this->postJson($this->recordUrl($workspace, $project).'/upload-url')->assertOk()->json('data');
             $file = $this->withHeader('Idempotency-Key', 'lock-upload')->post($prep['url'],
-                ['file' => $this->file(), 'expected_version' => $prep['expected_version']], ['Accept' => 'application/json'])->assertCreated()->json('data');
+                ['file' => $this->file(), 'expected_version' => $prep['expected_version']], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertCreated()->json('data');
             $this->withHeader('Idempotency-Key', 'lock-delete')->deleteJson($this->base($workspace).'/attachments/'.$file['id'],
                 ['expected_version' => $file['version'], 'confirm' => true])->assertAccepted();
             $seen = [];

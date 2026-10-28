@@ -473,6 +473,19 @@ The operation is removed only by its removal issue, after the deprecation window
 | ------------------------------------------------- | ----- | ------- | ----------- |
 | `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | None: the #134 repair it sized is done |
 
+Every feature-test HTTP exchange under `/api/v1` now checks the published
+OpenAPI contract through `Tests\TestCase`: accepted requests validate their
+parameters and bodies, and all responses, including refusals, validate their
+status, media type and JSON shape. Deliberately invalid negative-test inputs may
+be refused; they cannot be accepted outside the schema. The MCP transport
+endpoint retains its separate JSON-RPC envelope and tool-schema contract tests.
+Historical receipt replays and ignored-input security regressions explicitly pin
+a closed request schema for that one named operation at the test call; their
+responses still use the current published schema.
+Tests disable debug responses so refusal shapes match the deployed API rather
+than Laravel's development exception traces. Protected-resource discovery links
+the public contract with `service_documentation`.
+
 Current coverage includes initialization, scope-filtered discovery, prompts,
 tool schema closure, input and output validation, REST parity, credential
 session isolation, route authentication, origin handling, optimistic versions,
@@ -738,6 +751,14 @@ completed receipt replays before either check, so a retry of a payment already
 recorded still answers with it. The website's payment form, a payment folded
 into `invoices.issue`, the console and the processors' webhooks are not
 affected.
+
+An invoice with any disputed payment is `disputed`, even when only part of the
+payment is contested or replacement payments already cover its balance.
+`invoices.list` accepts that status. The invoice remains visible and charged;
+collection and reminders pause, while `payments.record` can still record money
+already received against the remaining balance. Disputed payments supply no
+spendable credit until restored; restored excess after a win is available to
+future drafts. See the [disputed invoice contract](finance-api.md#disputed-invoice-state).
 
 ### Correcting a recorded payment
 
@@ -1141,6 +1162,22 @@ selector, including flat-hourly subcontractor pricing. Combine it with existing
 project/date filters to narrow the result. Pagination cursors are bound to all
 filters; fetch a new first page when changing them. Pages default to 25 rows and
 are capped at 100; descriptions are preserved.
+
+## Browser client records
+
+Client creation, company details and business contacts on Settings use the same
+`clients.*` and `clients.contacts.*` operations as REST and MCP. Their former web
+mutation routes are retired (#385). Settings reads share the API presenters and
+opaque versions; edits send `expected_version` and an idempotency key. A lost
+response retains the key for the same edit, while a refusal keeps the entered
+values visible. Successful changes reload the affected props.
+
+Existing contacts archive through the explicit-confirmation operation and restore
+through its lifecycle twin. Updating contact details does not change archival
+state. Adding a contact still creates no login or invitation. The signed-in
+browser remains usable when agent write cutovers are off, under the same role and
+workspace checks. Client creation returns a finished `Location` for its new home;
+the client switcher follows that server URL.
 
 ## Expense finance provenance
 

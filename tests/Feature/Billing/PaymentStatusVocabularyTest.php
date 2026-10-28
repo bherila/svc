@@ -154,9 +154,9 @@ final class PaymentStatusVocabularyTest extends TestCase
 
         $this->assertSame($status, $payment->status);
         $this->assertSame(
-            $status === 'succeeded' ? 'paid' : 'issued',
+            $status === 'succeeded' ? 'paid' : ($status === 'disputed' ? 'disputed' : 'issued'),
             $invoice->refresh()->status,
-            'Only a succeeded payment moves the invoice',
+            'Succeeded payments settle the invoice; disputed payments mark it disputed.',
         );
     }
 
