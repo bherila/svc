@@ -30,8 +30,8 @@ Route::middleware(['web', 'auth', ResolveWorkspaceNavigation::class])->group(fun
         ->whereIn('recordType', ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'])->whereUuid('recordPublicId')->name('svc.files.parent.index');
     Route::patch('/workspaces/{workspace}/attachments/{attachment}/visibility', [AttachmentSharingController::class, 'legacyVisibilityUpdate'])
         ->whereUuid('attachment')->name('svc.files.visibility.update');
-    Route::prefix('/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}')
-        ->whereIn('recordType', ['topic', 'comment'])->whereUuid(['client', 'recordPublicId'])->group(function (): void {
+    Route::prefix('/workspaces/{workspace}/clients/{clientCompany}/collaboration/attachments/{recordType}/{recordPublicId}')
+        ->whereIn('recordType', ['topic', 'comment'])->whereUuid(['clientCompany', 'recordPublicId'])->group(function (): void {
             Route::get('/', [AttachmentSharingController::class, 'collaborationPage'])->name('svc.files.collaboration.show');
             Route::get('/data', [AttachmentSharingController::class, 'collaborationIndex'])->name('svc.files.collaboration.index');
             Route::post('/upload', [AttachmentSharingController::class, 'collaborationUpload'])->name('svc.files.collaboration.upload');

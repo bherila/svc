@@ -44,8 +44,9 @@ final class AttachmentSharingNativeTest extends TestCase
     {
         [$workspace, $company, $project, $owner, $topic] = $this->fixture();
         $company->portalUsers()->attach($owner->id, ['role' => 'viewer', 'access_scope' => 'company']);
-        $parameters = ['workspace' => $workspace, 'client' => $company->public_id, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
+        $parameters = ['workspace' => $workspace, 'clientCompany' => $company->public_id, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
         $version = AgentApiVersion::for($topic);
+        $this->actingAs($owner)->get(route('svc.files.collaboration.show', $parameters))->assertOk()->assertInertia(fn (Assert $page) => $page->where('workspaceNavigation.current_client_id', $company->public_id));
         $created = $this->actingAs($owner)->withHeader('Idempotency-Key', 'synthetic-native-upload')
             ->postJson(route('svc.files.collaboration.upload', $parameters), ['file' => UploadedFile::fake()->createWithContent('synthetic-native.txt', 'Synthetic native bytes'), 'expected_version' => $version])
             ->assertOk()->assertJsonPath('data.is_visible_to_client', false)->json('data');
@@ -68,7 +69,7 @@ final class AttachmentSharingNativeTest extends TestCase
         [$workspace, $company, $project, $owner, $topic] = $this->fixture();
         $project->update(['is_visible_to_client' => true]);
         $topic->update(['is_visible_to_client' => true]);
-        $parameters = ['workspace' => $workspace, 'client' => $company->public_id, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
+        $parameters = ['workspace' => $workspace, 'clientCompany' => $company->public_id, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
         $version = AgentApiVersion::for($topic);
         $created = $this->actingAs($owner)->withHeader('Idempotency-Key', 'synthetic-portal-upload')
             ->postJson(route('svc.files.collaboration.upload', $parameters), ['file' => UploadedFile::fake()->createWithContent('synthetic-private.txt', 'Synthetic private bytes'), 'expected_version' => $version])

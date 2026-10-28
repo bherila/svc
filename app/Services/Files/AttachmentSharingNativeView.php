@@ -24,7 +24,7 @@ final class AttachmentSharingNativeView
         $ids = array_column($result['data'], 'id');
         $rows = $this->reader->forParent($actor, $workspace, $reference->type, $reference->publicId, $audience)
             ->whereIn('public_id', $ids)->get()->keyBy('public_id');
-        $parameters = ['workspace' => $workspace, 'client' => $reference->companyId,
+        $parameters = ['workspace' => $workspace, 'clientCompany' => $reference->companyId,
             'recordType' => $reference->type, 'recordPublicId' => $reference->publicId];
         $portal = in_array($audience, [AttachmentAudience::Portal, AttachmentAudience::PortalPreview], true);
         $readParameters = $portal ? ['clientCompany' => $reference->companyId, 'recordType' => $reference->type,

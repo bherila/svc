@@ -47,8 +47,9 @@ final class CollaborationAttachmentPreview
             $reference = new AttachmentParentReference('comment', $comment->public_id, $company->public_id);
             $view = new AttachmentSharingView($reference, $comment, $parentVisible && $comment->is_visible_to_client, $publisher);
             $parameters = ['workspace' => $workspace, 'client' => $company->public_id, 'recordType' => 'comment', 'recordPublicId' => $comment->public_id];
+            $nativeParameters = ['workspace' => $workspace, 'clientCompany' => $company, 'recordType' => 'comment', 'recordPublicId' => $comment->public_id];
             $portal = in_array($audience, [AttachmentAudience::Portal, AttachmentAudience::PortalPreview], true);
-            $readParameters = $portal ? ['clientCompany' => $company, 'recordType' => 'comment', 'recordPublicId' => $comment->public_id] : $parameters;
+            $readParameters = $portal ? ['clientCompany' => $company, 'recordType' => 'comment', 'recordPublicId' => $comment->public_id] : $nativeParameters;
             $rows = $groups->get($comment->public_id, collect());
             $files = [];
             foreach ($rows->take(3) as $file) {
@@ -58,11 +59,11 @@ final class CollaborationAttachmentPreview
                     continue;
                 }
                 $sharing = $portal ? null : $this->presenter->nativeControl($file, $view,
-                    route('svc.files.collaboration.visibility.update', [...$parameters, 'attachment' => $file->public_id], absolute: false), $audience);
+                    route('svc.files.collaboration.visibility.update', [...$nativeParameters, 'attachment' => $file->public_id], absolute: false), $audience);
                 $files[] = AttachmentMetadata::native($file,
                     $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $file->public_id], absolute: false)
                         : route('svc.files.download', [$workspace, $file->public_id], absolute: false),
-                    $sharing === null ? null : route('svc.files.collaboration.destroy', [...$parameters, 'attachment' => $file->public_id], absolute: false), $sharing);
+                    $sharing === null ? null : route('svc.files.collaboration.destroy', [...$nativeParameters, 'attachment' => $file->public_id], absolute: false), $sharing);
             }
             $canWrite = ! $agent && $audience === AttachmentAudience::Internal && $publisher && AttachmentSharingGate::available();
             $page = $agent ? route('agent-api.v1.collaboration.attachments.index', $parameters, absolute: false)
@@ -74,7 +75,7 @@ final class CollaborationAttachmentPreview
                 continue;
             }
             $panels[$comment->public_id] = ['files' => $files, 'upload' => $canWrite ? [
-                'href' => route('svc.files.collaboration.upload', $parameters, absolute: false), 'parent_version' => AgentApiVersion::for($comment)] : null,
+                'href' => route('svc.files.collaboration.upload', $nativeParameters, absolute: false), 'parent_version' => AgentApiVersion::for($comment)] : null,
                 'parent_version' => AgentApiVersion::for($comment), 'next_href' => $rows->count() > 3 ? $page : null];
         }
 

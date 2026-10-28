@@ -28,7 +28,7 @@ final class AgentMcpAttachmentSharingTools
     /** @return array<string,mixed> */
     public function collaborationList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $client_id,
         #[Schema(enum: ['topic', 'comment'])] string $record_type, #[Schema(format: 'uuid')] string $record_id,
-        #[Schema(minimum: 1, maximum: 100)] int $limit = 100, ?string $cursor = null): array
+        #[Schema(minimum: 1, maximum: 100)] int $limit = 100, #[Schema(maxLength: 4096)] ?string $cursor = null): array
     {
         return $this->rest->call('collaboration.attachments.list', $this->path($workspace_id, $client_id, $record_type, $record_id),
             query: compact('limit', 'cursor'));

@@ -46,36 +46,36 @@ final class AttachmentSharingController extends Controller
         return response()->json($this->legacyPanel($request, $workspace, $recordType, $recordPublicId));
     }
 
-    public function collaborationPage(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): Response
+    public function collaborationPage(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $recordType, string $recordPublicId): Response
     {
-        return Inertia::render('files/parent', ['attachment_panel' => $this->view->collaboration($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
+        return Inertia::render('files/parent', ['attachment_panel' => $this->view->collaboration($this->actor($request), $workspace, $this->reference($clientCompany, $recordType, $recordPublicId),
             AttachmentAudience::Internal, AttachmentPageQuery::fromInput($request->query()))]);
     }
 
-    public function collaborationIndex(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): JsonResponse
+    public function collaborationIndex(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $recordType, string $recordPublicId): JsonResponse
     {
-        return response()->json($this->view->collaboration($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
+        return response()->json($this->view->collaboration($this->actor($request), $workspace, $this->reference($clientCompany, $recordType, $recordPublicId),
             AttachmentAudience::Internal, AttachmentPageQuery::fromInput($request->query())));
     }
 
-    public function collaborationUpload(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): JsonResponse
+    public function collaborationUpload(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $recordType, string $recordPublicId): JsonResponse
     {
         $file = $request->file('file');
         abort_unless($file instanceof UploadedFile, 422);
 
-        return response()->json($this->files->upload($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
+        return response()->json($this->files->upload($this->actor($request), $workspace, $this->reference($clientCompany, $recordType, $recordPublicId),
             $file, $request->all(), 'svc-native:attachments', $this->key($request), AttachmentMutationOrigin::Native));
     }
 
-    public function collaborationVisibilityUpdate(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId, string $attachment): JsonResponse
+    public function collaborationVisibilityUpdate(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $recordType, string $recordPublicId, string $attachment): JsonResponse
     {
-        return response()->json($this->files->updateVisibility($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
+        return response()->json($this->files->updateVisibility($this->actor($request), $workspace, $this->reference($clientCompany, $recordType, $recordPublicId),
             $attachment, $request->all(), 'svc-native:attachments', $this->key($request), AttachmentMutationOrigin::Native));
     }
 
-    public function collaborationDelete(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId, string $attachment): JsonResponse
+    public function collaborationDelete(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $recordType, string $recordPublicId, string $attachment): JsonResponse
     {
-        return response()->json($this->files->delete($this->actor($request), $workspace, $this->reference($client, $recordType, $recordPublicId),
+        return response()->json($this->files->delete($this->actor($request), $workspace, $this->reference($clientCompany, $recordType, $recordPublicId),
             $attachment, $request->all(), 'svc-native:attachments', $this->key($request), AttachmentMutationOrigin::Native));
     }
 
@@ -85,7 +85,7 @@ final class AttachmentSharingController extends Controller
         $workspace = $clientCompany->workspace;
 
         return Inertia::render('files/parent', ['attachment_panel' => $this->view->collaboration($actor, $workspace,
-            $this->reference($clientCompany->public_id, $recordType, $recordPublicId), $this->reader->nativePortalAudience($actor, $workspace),
+            $this->reference($clientCompany, $recordType, $recordPublicId), $this->reader->nativePortalAudience($actor, $workspace),
             AttachmentPageQuery::fromInput($request->query()))]);
     }
 
@@ -95,7 +95,7 @@ final class AttachmentSharingController extends Controller
         $workspace = $clientCompany->workspace;
 
         return response()->json($this->view->collaboration($actor, $workspace,
-            $this->reference($clientCompany->public_id, $recordType, $recordPublicId), $this->reader->nativePortalAudience($actor, $workspace),
+            $this->reference($clientCompany, $recordType, $recordPublicId), $this->reader->nativePortalAudience($actor, $workspace),
             AttachmentPageQuery::fromInput($request->query())));
     }
 
@@ -104,7 +104,7 @@ final class AttachmentSharingController extends Controller
         $actor = $this->actor($request);
         $workspace = $clientCompany->workspace;
 
-        return $this->files->download($actor, $workspace, $this->reference($clientCompany->public_id, $recordType, $recordPublicId),
+        return $this->files->download($actor, $workspace, $this->reference($clientCompany, $recordType, $recordPublicId),
             $attachment, $this->reader->nativePortalAudience($actor, $workspace));
     }
 
@@ -130,10 +130,10 @@ final class AttachmentSharingController extends Controller
         return $request->header('Idempotency-Key') ?? '';
     }
 
-    private function reference(string $client, string $type, string $id): AttachmentParentReference
+    private function reference(ClientCompany $clientCompany, string $type, string $id): AttachmentParentReference
     {
         abort_unless(in_array($type, ['topic', 'comment'], true), 404);
 
-        return new AttachmentParentReference($type, $id, $client);
+        return new AttachmentParentReference($type, $id, $clientCompany->public_id);
     }
 }
