@@ -2,8 +2,6 @@
 
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
-use App\Http\Controllers\ClientProjectAccessController;
-use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\ClientTaskOrganizationController;
 use App\Http\Controllers\ClientTaskPlanningController;
@@ -142,12 +140,6 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
 
-    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientProjectController::class, 'update'])
-        ->name('projects.update');
-    Route::put('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access', [ClientProjectAccessController::class, 'update'])
-        ->name('projects.access.update');
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
-        ->name('projects.store');
     foreach (TaskPlanningOperations::DEFINITIONS as $suffix => [$verb]) {
         $path = TaskPlanningOperations::ROUTES['task_planning.'.$suffix][1];
         if ($suffix === 'labels.list') {
