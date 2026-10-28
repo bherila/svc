@@ -3,6 +3,7 @@
 namespace App\Services\Authorization;
 
 use App\Models\AgentPrincipal;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
@@ -38,10 +39,15 @@ final class AgentCapabilities
         $canDiscloseProjects = $allowsScope(AgentApiScopes::PROJECTS_READ);
         $portalCompanyIds = $this->access->portalCompanyIdsIn($user, $workspace);
         $portalViewer = $portalCompanyIds !== [];
+        // Task/file writers fail closed on any portal membership row, like
+        // their current locked authority checks, including legacy orphan rows.
+        $taskAndFileWritesAllowed = ! ClientCompanyMembership::query()
+            ->where('workspace_id', $workspace->id)->where('user_id', $user->id)->exists();
         $portalProjectIds = $portalViewer ? $this->portal->constrainProjectQuery(ClientProject::query()
             ->where('workspace_id', $workspace->id), $user)->pluck('id')->all() : [];
-        // Internal roles authorize writes independently of portal membership.
-        // Keep those capabilities, adding portal grants only where they apply.
+        // Time/billing authorize internal roles even for dual identities.
+        // Project/task/file reads retain portal grants; task/file writes refuse
+        // portal identities. Discovery must describe each adapter's decision.
         $viewable = $this->projects->workspaceRole($user, $workspace) === null
             ? [] : $this->projects->viewableProjectIds($user, $workspace);
         $manager = $viewable === null;
@@ -68,7 +74,7 @@ final class AgentCapabilities
             // Project/task/file reads retain the adapters' portal audience;
             // time reads separately allow internal roles or granted client time.
             $projectReadsAllowed = ! $portalViewer || ($portalGranted && $project->is_visible_to_client);
-            $capabilities = $this->forProject($role, $portalGranted, $allowsScope, $projectReadsAllowed, ! $portalViewer);
+            $capabilities = $this->forProject($role, $portalGranted, $allowsScope, $projectReadsAllowed, $taskAndFileWritesAllowed);
             $workspaceCapabilities = [...$workspaceCapabilities, ...$capabilities];
             if ($canDiscloseProjects) {
                 $projectEntries[] = [
@@ -80,7 +86,7 @@ final class AgentCapabilities
         }
 
         if ($manager) {
-            $workspaceCapabilities = [...$workspaceCapabilities, ...$this->managerCapabilities($allowsScope, ! $portalViewer)];
+            $workspaceCapabilities = [...$workspaceCapabilities, ...$this->managerCapabilities($allowsScope, $taskAndFileWritesAllowed)];
         }
         if ($allowsScope(AgentApiScopes::BILLING_READ)
             && ($manager || $portalCompanyIds !== [])) {
@@ -108,7 +114,7 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function forProject(?ProjectRole $role, bool $client, Closure $allowsScope, bool $projectReadsAllowed, bool $fileWritesAllowed): array
+    private function forProject(?ProjectRole $role, bool $client, Closure $allowsScope, bool $projectReadsAllowed, bool $taskAndFileWritesAllowed): array
     {
         $capabilities = [];
 
@@ -121,7 +127,7 @@ final class AgentCapabilities
         if ($projectReadsAllowed && $allowsScope(AgentApiScopes::TASKS_READ)) {
             $capabilities[] = 'tasks:read';
         }
-        if ($this->writesEnabled() && $allowsScope(AgentApiScopes::TASKS_WRITE)
+        if ($taskAndFileWritesAllowed && $this->writesEnabled() && $allowsScope(AgentApiScopes::TASKS_WRITE)
             && ($role?->canManageTasks() ?? false)) {
             $capabilities[] = 'tasks:write';
         }
@@ -131,7 +137,7 @@ final class AgentCapabilities
             && ($client || $role !== null)) {
             $capabilities[] = 'files:read';
         }
-        if ($fileWritesAllowed && ($role?->canManageTasks() ?? false)
+        if ($taskAndFileWritesAllowed && ($role?->canManageTasks() ?? false)
             && $allowsScope(AgentApiScopes::FILES_WRITE) && $allowsScope(AgentApiScopes::COLLABORATION_WRITE)
             && AgentWriteCutover::files() && AgentWriteCutover::collaboration()
             && AttachmentSharingGate::available()) {
@@ -154,7 +160,7 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function managerCapabilities(Closure $allowsScope, bool $fileWritesAllowed): array
+    private function managerCapabilities(Closure $allowsScope, bool $taskAndFileWritesAllowed): array
     {
         $mapping = [
             AgentApiScopes::PROJECTS_READ => 'projects:read',
@@ -178,7 +184,7 @@ final class AgentCapabilities
         }
         // File and collaboration adapters still enforce a portal audience for
         // dual identities, including an explicit prohibition on file writes.
-        if ($fileWritesAllowed && AgentWriteCutover::files()) {
+        if ($taskAndFileWritesAllowed && AgentWriteCutover::files()) {
             $mapping[AgentApiScopes::FILES_WRITE] = 'files:write';
         }
         if (AgentWriteCutover::expenses()) {
@@ -192,9 +198,11 @@ final class AgentCapabilities
         }
         if ($this->writesEnabled()) {
             $mapping += [
-                AgentApiScopes::TASKS_WRITE => 'tasks:write',
                 AgentApiScopes::TIME_APPROVE => 'time:approve',
             ];
+        }
+        if ($taskAndFileWritesAllowed && $this->writesEnabled()) {
+            $mapping[AgentApiScopes::TASKS_WRITE] = 'tasks:write';
         }
         // Advertised only when the surface behind them exists. A capability
         // list is what an agent plans against, so naming `billing:deliver`

@@ -107,10 +107,10 @@ final class PortalProjectCapabilitiesTest extends TestCase
             'project_id' => $project->public_id,
             'role' => 'owner',
             'capabilities' => $project->is($assigned)
-                ? ['projects:read', 'tasks:read', 'tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read', 'files:read']
-                : ['tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read'],
+                ? ['projects:read', 'tasks:read', 'time:read', 'time:write', 'time:approve', 'expenses:read', 'files:read']
+                : ['time:read', 'time:write', 'time:approve', 'expenses:read'],
         ], [$assigned, $ungranted, $private, $other]), $context['project_capabilities']);
-        foreach (['tasks:write', 'time:write', 'time:approve', 'billing:write', 'finance:read'] as $internalCapability) {
+        foreach (['time:write', 'time:approve', 'billing:write', 'finance:read'] as $internalCapability) {
             $this->assertContains($internalCapability, $context['capabilities']);
         }
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$assigned->public_id}")->assertOk();
@@ -119,6 +119,19 @@ final class PortalProjectCapabilitiesTest extends TestCase
         }
         // File adapters deliberately retain the portal audience for dual identities.
         $this->assertNotContains('files:write', $context['capabilities']);
+        $this->assertNotContains('tasks:write', $context['capabilities']);
+
+        foreach ([$assigned, $ungranted, $private, $other] as $target) {
+            if ($transport === 'mcp') {
+                $refused = $this->callTool((string) $session, 'tasks.create', ['workspace_id' => $workspace->public_id,
+                    'project_id' => $target->public_id, 'title' => 'Synthetic refused dual task', 'idempotency_key' => 'synthetic-dual-task-'.$target->public_id]);
+                $this->assertTrue($refused['result']['isError']);
+            } else {
+                $this->withHeader('Idempotency-Key', 'synthetic-dual-task-'.$target->public_id)
+                    ->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$target->public_id}/tasks", ['title' => 'Synthetic refused dual task'])->assertForbidden();
+            }
+        }
+        $this->assertDatabaseCount('client_tasks', 0);
 
         $entries = array_map(fn (ClientProject $project): array => ['project_id' => $project->public_id,
             'worked_on' => '2026-10-27', 'minutes' => 15, 'description' => 'Synthetic dual-role work'], [$assigned, $ungranted, $private, $other]);
@@ -167,12 +180,13 @@ final class PortalProjectCapabilitiesTest extends TestCase
             ? $this->callTool($this->initialize(), 'context.get', [])['result']['structuredContent']['data']['workspaces'][0]
             : $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0');
         $this->assertSame([
-            ['project_id' => $managed->public_id, 'role' => 'manager', 'capabilities' => ['tasks:write', 'time:read', 'time:write', 'time:approve', 'expenses:read']],
+            ['project_id' => $managed->public_id, 'role' => 'manager', 'capabilities' => ['time:read', 'time:write', 'time:approve', 'expenses:read']],
             ['project_id' => $portal->public_id, 'role' => 'client', 'capabilities' => ['projects:read', 'tasks:read', 'time:read', 'files:read']],
         ], $context['project_capabilities']);
         $this->assertNotContains('billing:write', $context['capabilities']);
         $this->assertNotContains('finance:read', $context['capabilities']);
         $this->assertNotContains('files:write', $context['capabilities']);
+        $this->assertNotContains('tasks:write', $context['capabilities']);
         $entry = fn (ClientProject $project): array => ['project_id' => $project->public_id, 'worked_on' => '2026-10-27', 'minutes' => 15, 'description' => 'Synthetic mixed-role work'];
         $this->withHeader('Idempotency-Key', 'synthetic-mixed-managed-time')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$entry($managed)]])->assertCreated();
         $this->withHeader('Idempotency-Key', 'synthetic-mixed-portal-time')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$entry($portal)]])->assertNotFound();
@@ -258,6 +272,28 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $this->writingLegacyCrossTenantRows(fn () => ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $user->id, 'role' => 'viewer']));
         $this->actingAsMcp($user, [AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ]);
         $this->getJson('/api/v1/context')->assertOk()->assertJsonCount(0, 'data.workspaces.0.project_capabilities');
+    }
+
+    public function test_legacy_orphan_portal_membership_still_withholds_task_and_file_writes(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.file_writes_enabled' => true]);
+        $workspace = Workspace::query()->create(['name' => 'Synthetic orphan workspace', 'slug' => 'synthetic-orphan-workspace']);
+        $foreign = Workspace::query()->create(['name' => 'Synthetic orphan foreign', 'slug' => 'synthetic-orphan-foreign']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic orphan client', 'slug' => 'synthetic-orphan-client']);
+        $foreignCompany = ClientCompany::query()->create(['workspace_id' => $foreign->id, 'name' => 'Synthetic foreign orphan client', 'slug' => 'synthetic-foreign-orphan-client']);
+        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic orphan project']);
+        $user = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
+        $membership = ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'client']);
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_company_memberships')->where('id', $membership->id)->update(['client_company_id' => $foreignCompany->id]));
+        $data = app(AgentCapabilities::class)->forWorkspace($user, $workspace, fn (): bool => true);
+        $this->assertNotContains('tasks:write', $data['capabilities']);
+        $this->assertNotContains('files:write', $data['capabilities']);
+        $this->assertNotContains('tasks:write', $data['project_capabilities'][0]['capabilities']);
+        $this->assertNotContains('files:write', $data['project_capabilities'][0]['capabilities']);
+        $this->assertContains('time:write', $data['project_capabilities'][0]['capabilities']);
+        $this->actingAsMcp($user, [AgentApiScopes::TASKS_WRITE]);
+        $this->withHeader('Idempotency-Key', 'synthetic-orphan-task')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", ['title' => 'Synthetic orphan task'])->assertForbidden();
     }
 
     public function test_a_portal_membership_owned_by_another_tenant_adds_no_capabilities(): void
