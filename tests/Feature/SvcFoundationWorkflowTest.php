@@ -39,9 +39,10 @@ class SvcFoundationWorkflowTest extends TestCase
         $outsider = User::factory()->create();
         $workspace = $this->workspaceOwnedBy($owner);
 
-        $this->actingAs($outsider)
-            ->post("/workspaces/{$workspace->public_id}/clients", ['name' => 'Forbidden Client'])
-            ->assertForbidden();
+        $this->actingAs($outsider, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-refused-client-create')
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/clients", ['name' => 'Forbidden Client'])
+            ->assertNotFound();
 
         $this->assertDatabaseCount('client_companies', 0);
     }
@@ -51,11 +52,12 @@ class SvcFoundationWorkflowTest extends TestCase
         $owner = User::factory()->create();
         $workspace = $this->workspaceOwnedBy($owner);
 
-        $this->actingAs($owner)
-            ->post("/workspaces/{$workspace->public_id}/clients", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-client-create')
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/clients", [
                 'name' => 'Example Client',
                 'billing_email' => 'billing@example.test',
-            ])->assertRedirect(route('clients.show', [$workspace, ClientCompany::query()->sole()]));
+            ])->assertCreated()->assertHeader('Location', route('clients.show', [$workspace, ClientCompany::query()->sole()], absolute: false));
 
         $company = ClientCompany::query()->sole();
         $this->actingAs($owner)

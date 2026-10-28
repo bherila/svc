@@ -111,6 +111,7 @@ final class WorkspaceNavigationFactory
             // workspace Square is connected to.
             squareHref: $manages && SquareConfiguration::fromConfig()->servesWorkspace($workspace) ? route('square.explore', $workspace, absolute: false) : null,
             historyHref: $manages ? route('history.index', $workspace, absolute: false) : null,
+            createClientUrl: $manages ? route('agent-api.v1.clients.store', $workspace, absolute: false) : null,
         );
     }
 
