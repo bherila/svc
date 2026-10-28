@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import type {
     AttachmentPanel,
@@ -660,11 +661,9 @@ export default function AttachmentSharingPanel({
                         disabled={busy}
                         onClick={async () => {
                             setPages((current) => ({ ...current, busy: true }));
-                            const result = await apiRequest<AttachmentPanel>(
-                                'GET',
-                                next,
-                                {},
-                            );
+                            const result = await apiRequest<
+                                ApiSchema<'NativeAttachmentPanel'>
+                            >('GET', next, {});
                             setPages((current) => {
                                 if (current.source !== panel) {
                                     return current;

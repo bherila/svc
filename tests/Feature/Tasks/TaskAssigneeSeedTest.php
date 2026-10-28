@@ -37,15 +37,15 @@ final class TaskAssigneeSeedTest extends TestCase
         [$foreignWorkspace, , $foreignProject] = $this->fixture();
         $foreign = $this->staff($foreignWorkspace, $foreignProject, 'Synthetic foreign identity');
 
-        $this->actingAs($owner);
-        $lookup = $this->getJson(route('tasks.assignees', [$workspace, $project]))->assertOk()->json();
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie(config('session.cookie'), Str::random(40));
+        $lookup = $this->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $project]))->assertOk()->json();
         $this->assertCount(25, $lookup['data']);
         $this->assertTrue($lookup['has_more']);
         foreach ($lookup['data'] as $person) {
             $this->assertSame(['id', 'name'], array_keys($person));
             $this->assertNotContains($person['id'], [$outsider->public_id, $foreign->public_id]);
         }
-        $this->get(route('tasks.show', [$workspace, $task]))->assertOk()->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($owner, 'web')->get(route('tasks.show', [$workspace, $task]))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('task.assignee_options', $lookup));
         $this->get(route('clients.project', [$workspace, $company, $project]))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('task_management.projects.0.assignee_options', $lookup));

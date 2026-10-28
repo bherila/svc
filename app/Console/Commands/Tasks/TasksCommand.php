@@ -6,6 +6,7 @@ use App\Console\Commands\Concerns\FindsUserByPublicId;
 use App\Console\Commands\MutationCommand;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
+use App\Services\Tasks\TaskAssigneeReadService;
 use App\Services\Tasks\TaskInputRules;
 use App\Services\Tasks\TaskMutationOrigin;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -19,10 +20,11 @@ final class TasksCommand extends MutationCommand
     use FindsUserByPublicId;
 
     protected $signature = 'svc:tasks
-        {operation : list, get, create or update}
+        {operation : list, get, assignees, create or update}
         {workspace : Workspace public UUID}
         {--actor= : Current internal account public UUID}
-        {--project= : Project public UUID, required for create and optional for list}
+        {--project= : Project public UUID, required for create/assignees and optional for list}
+        {--q= : Assignee name search, at most 100 characters}
         {--task= : Task public UUID for get/update}
         {--input= : JSON request file, or - for standard input}
         {--key= : Retry key for a mutation}
@@ -45,14 +47,17 @@ final class TasksCommand extends MutationCommand
         $operation = (string) $this->argument('operation');
         try {
             $options = validator(['project' => $this->option('project'), 'task' => $this->option('task'),
-                'key' => $this->option('key'), 'limit' => $this->option('limit'), 'cursor' => $this->option('cursor')], [
-                    'project' => [$operation === 'create' ? 'required' : 'nullable', 'uuid'],
+                'q' => $this->option('q'), 'key' => $this->option('key'), 'limit' => $this->option('limit'), 'cursor' => $this->option('cursor')], [
+                    'project' => [in_array($operation, ['create', 'assignees'], true) ? 'required' : 'nullable', 'uuid'],
                     'task' => [in_array($operation, ['get', 'update'], true) ? 'required' : 'nullable', 'uuid'],
                     'key' => [in_array($operation, ['create', 'update'], true) ? 'required' : 'nullable', 'string', 'max:255'],
+                    'q' => ['nullable', 'string', 'max:100'],
                     'limit' => ['required', 'integer', 'min:1', 'max:100'], 'cursor' => ['nullable', 'string', 'max:2048'],
                 ])->validate();
             if ($operation === 'list') {
                 $result = $reads->tasks($actor, $workspace, $options['project'], (int) $options['limit'], $options['cursor'], TaskMutationOrigin::Internal);
+            } elseif ($operation === 'assignees') {
+                $result = app(TaskAssigneeReadService::class)->list($actor, $workspace, $options['project'], $options['q'], TaskMutationOrigin::Internal);
             } elseif ($operation === 'get') {
                 $result = ['data' => $reads->task($actor, $workspace, $options['task'], TaskMutationOrigin::Internal)];
             } elseif (in_array($operation, ['create', 'update'], true)) {
@@ -94,7 +99,7 @@ final class TasksCommand extends MutationCommand
                 });
                 $result['dry_run'] = ! $this->applying();
             } else {
-                $this->error('Use list, get, create or update.');
+                $this->error('Use list, get, assignees, create or update.');
 
                 return self::INVALID;
             }

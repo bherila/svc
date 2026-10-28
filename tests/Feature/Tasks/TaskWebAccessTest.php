@@ -50,9 +50,9 @@ final class TaskWebAccessTest extends TestCase
             ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $actor->id, 'role' => 'client']);
         }
         $this->browser($actor)->get(route('tasks.show', [$workspace, $task]))->assertStatus($allowed ? 200 : 403);
-        $this->getJson(route('tasks.assignees', [$workspace, $project]))->assertStatus($allowed ? 200 : 403);
+        $this->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $project]))->assertStatus($allowed ? 200 : 403);
         if ($allowed) {
-            $this->get(route('tasks.show', [$workspace, $task]))->assertInertia(fn (Assert $page) => $page
+            $this->browser($actor)->get(route('tasks.show', [$workspace, $task]))->assertInertia(fn (Assert $page) => $page
                 ->where('task.update_action', route('agent-api.v1.tasks.update', [$workspace, $task->public_id]))
                 ->where('workspaceNavigation.current_client_id', $company->public_id));
             $this->get(route('clients.project', [$workspace, $company, $project]))->assertOk()->assertInertia(fn (Assert $page) => $page
@@ -94,7 +94,7 @@ final class TaskWebAccessTest extends TestCase
         });
         $this->get(route('clients.project', [$workspace, $company, $other]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('task_management', null)->where('tasks.0.detail_url', null));
         $this->get(route('tasks.show', [$workspace, $otherTask]))->assertForbidden();
-        $this->getJson(route('tasks.assignees', [$workspace, $other]))->assertForbidden();
+        $this->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $other]))->assertForbidden();
         $this->native()->postJson(route('agent-api.v1.tasks.store', [$workspace, $other->public_id]), ['title' => 'Synthetic refused task', 'is_visible_to_client' => false])->assertForbidden();
         $this->native()->patchJson(route('agent-api.v1.tasks.update', [$workspace, $otherTask->public_id]), ['expected_version' => AgentApiVersion::for($otherTask), 'title' => 'Synthetic refused edit'])->assertForbidden();
         $this->browser($manager)->get(route('tasks.show', [$workspace, $task]))->assertOk();

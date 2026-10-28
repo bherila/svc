@@ -50,6 +50,11 @@ final class AttachmentSharingOperationContractTest extends TestCase
                 $download = $id === 'collaboration.attachments.download';
                 $preparation = $id === 'collaboration.attachments.upload_url';
                 $document = $documents[$id];
+                if ($id === 'collaboration.attachments.list') {
+                    $this->assertStringStartsWith('Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs.', $document['description']);
+                } else {
+                    $this->assertStringNotContainsString('presentation=native', $document['description']);
+                }
                 $operation = $registry->find($id);
                 $this->assertNotNull($operation, $id);
                 $this->assertSame($write, AttachmentSharingOperations::writes($id), $id);
@@ -79,6 +84,8 @@ final class AttachmentSharingOperationContractTest extends TestCase
                 if ($id === 'collaboration.attachments.list') {
                     $parameters[] = ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 100]];
                     $parameters[] = ['name' => 'cursor', 'in' => 'query', 'schema' => ['type' => 'string', 'maxLength' => 4096]];
+                    $parameters[] = ['name' => 'presentation', 'in' => 'query', 'description' => 'Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused.',
+                        'schema' => ['type' => 'string', 'enum' => ['native', 'portal']]];
                 }
                 if ($write && ! $preparation) {
                     $parameters[] = 'IdempotencyKey';

@@ -116,8 +116,18 @@ if ($sharingLayout) {
         }
     }
 }
+if (getenv('SVC_LAYOUT_ATTACHMENT_PAGINATION') === 'true') {
+    foreach (range(1, 2) as $number) {
+        $file = $storage->store($workspace, $project, UploadedFile::fake()->createWithContent(str_repeat('SyntheticPaginationFile', 12).'-'.$number.'.txt', 'Synthetic pagination bytes'), $manager);
+        DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $file->id)->update(['is_visible_to_client' => true]);
+    }
+}
 file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->id, 'portal_user_id' => $portal->id,
     'company_name' => $company->name,
+    'pagination_native_parent' => route('svc.files.parent.show', [$workspace, 'project', $project->public_id, 'limit' => 1], absolute: false),
+    'pagination_portal_parent' => route('portal.files.parent.show', [$company, 'project', $project->public_id, 'limit' => 1], absolute: false),
+    'pagination_native_collaboration' => route('svc.files.collaboration.show', [$workspace, $company->public_id, 'topic', $topics['discussion']->public_id, 'limit' => 1], absolute: false),
+    'pagination_portal_collaboration' => route('portal.files.collaboration.show', [$company, 'topic', $topics['discussion']->public_id, 'limit' => 1], absolute: false),
     'attachment_visibility' => route('agent-api.v1.attachments.visibility.update', [$workspace, ClientAttachment::query()->where('workspace_id', $workspace->id)->where('record_type', 'agreement')->where('record_public_id', $agreement->public_id)->orderBy('id')->firstOrFail()->public_id], absolute: false),
     'portalprojectfiles' => route('portal.files.parent.show', [$company, 'project', $project->public_id], absolute: false),
     'portaltaskfiles' => route('portal.files.parent.show', [$company, 'task', $task->public_id], absolute: false),

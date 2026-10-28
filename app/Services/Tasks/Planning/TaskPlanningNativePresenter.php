@@ -135,9 +135,7 @@ final class TaskPlanningNativePresenter
             $parameters[$targetName] = $target;
         }
 
-        return route(in_array($operation, TaskPlanningInput::WRITES, true)
-            ? 'agent-api.v1.task-planning.'.$operation
-            : 'tasks.planning.'.$operation, $parameters);
+        return route($operation === 'labels.page' ? 'tasks.planning.labels.page' : 'agent-api.v1.task-planning.'.$operation, $parameters);
     }
 
     /** @return array<string,mixed> */

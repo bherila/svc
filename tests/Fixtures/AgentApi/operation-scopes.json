@@ -2162,6 +2162,16 @@
             "mcp.switch:task_planning.labels.update"
         ]
     },
+    "tasks.assignees.list": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:tasks.assignees.list"
+        ]
+    },
     "tasks.create": {
         "scopes": [
             "tasks:write"

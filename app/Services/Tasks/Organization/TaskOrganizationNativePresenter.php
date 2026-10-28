@@ -97,7 +97,7 @@ final class TaskOrganizationNativePresenter
             'organization' => ['graph_version' => $graph->graphVersion(), 'lists_version' => $graph->graphVersion(),
                 'create_list_href' => count($graph->lists) < TaskGraph::MAX_LISTS ? route('agent-api.v1.task-organization.lists.store', $path) : null,
                 'reorder_lists_href' => route('agent-api.v1.task-organization.lists.reorder', $path), 'ordered_list_ids' => $orderedListIds,
-                'assignees_href' => route('tasks.assignees', [$workspace, $records->project]),
+                'assignees_href' => route('agent-api.v1.tasks.assignees.index', [$workspace, $records->project]),
                 'unlisted' => ['browse_href' => $browse(new TaskContainer(null, null), $movingId), 'move_target' => $moveTarget(new TaskContainer(null, null))],
                 'lists' => $listRows, 'moving' => $moving,
                 'container' => ['title' => $title, 'target' => $this->target($container), 'move_target' => $moveTarget($container), 'version' => $graph->containerVersion($container),
