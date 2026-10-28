@@ -53,7 +53,7 @@ Existing credential commands that already emit JSON by default keep doing so.
 
 ## Tasks
 
-`svc:tasks list|get|create|update WORKSPACE_UUID --actor=USER_UUID` uses the same
+`svc:tasks list|get|assignees|create|update WORKSPACE_UUID --actor=USER_UUID` uses the same
 workspace-scoped reads, task lifecycle, calendar dates, assignee eligibility,
 versions and retry receipts as REST/MCP. Use `--project=PROJECT_UUID` to create or
 filter a list, and `--task=TASK_UUID` to read or update one task. List accepts
@@ -498,3 +498,5 @@ true`. The explicit actor's current staff role and parent access are checked,
 even on receipt replay. Native CLI is independent of agent deployment flags;
 portal access does not become a client write grant. No history or email is
 changed.
+
+Task assignee lookup: `svc:tasks assignees WORKSPACE_UUID --actor=USER_UUID --project=PROJECT_UUID --q=NAME --format=json` returns at most 25 eligible staff public IDs/names and `has_more`. It uses current internal project management permission, including dual-role native accounts. REST/MCP `tasks.assignees.list` requires `tasks:read` and excludes portal identities. Native search uses the canonical read endpoint. Planning search and continuation capabilities also use canonical API URLs, with `meta.next_cursor` retained alongside server-generated `next_href`/`previous_href`; label catalog page navigation stays native.

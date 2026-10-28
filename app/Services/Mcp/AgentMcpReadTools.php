@@ -14,6 +14,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Services\Tasks\TaskAssigneeReadService;
 use App\Support\AgentApi\InvoiceListFilters;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use LogicException;
@@ -131,6 +132,14 @@ final class AgentMcpReadTools
         } catch (InvalidAgentApiCursor) {
             throw new ToolCallException('The pagination cursor is not valid for this request.');
         }
+    }
+
+    /** @return array<string, mixed> */
+    public function taskAssignees(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(maxLength: 100)] string $q = ''): array
+    {
+        $context = $this->workspace($workspace_id, 'tasks:read');
+
+        return app(TaskAssigneeReadService::class)->list($context->principal->subject, $context->workspace, $project_id, $q);
     }
 
     /** @return array<string, mixed> */

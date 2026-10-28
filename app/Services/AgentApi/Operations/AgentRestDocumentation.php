@@ -1488,6 +1488,11 @@ final class AgentRestDocumentation
                 'response' => 'SearchResponse',
                 'response_description' => 'Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.',
             ],
+            'tasks.assignees.list' => [
+                'method' => 'GET', 'scopes' => ['tasks:read'], 'description' => false,
+                'parameters' => ['WorkspaceId', 'ProjectId', self::query('q', ['type' => 'string', 'maxLength' => 100])],
+                'response' => 'TaskAssigneeOptionsResponse', 'response_description' => 'Bounded eligible staff identities',
+            ],
             'tasks.create' => [
                 'method' => 'POST',
                 'scopes' => ['tasks:write'],

@@ -16621,6 +16621,57 @@
                 "x-mcp-tool": "task_planning.labels.restore"
             }
         },
+        "/workspaces/{workspace}/projects/{project}/task-assignees": {
+            "get": {
+                "operationId": "tasks.assignees.list",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Bounded eligible staff identities",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskAssigneeOptionsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "tasks.assignees.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "tasks.assignees.list"
+            }
+        },
         "/workspaces/{workspace}/projects/{project}/tasks": {
             "post": {
                 "operationId": "tasks.create",
@@ -30092,6 +30143,40 @@
                     }
                 }
             },
+            "TaskAssigneeOptionsResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "has_more"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "name"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "name": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "has_more": {
+                        "type": "boolean"
+                    }
+                }
+            },
             "TaskContactOptionListResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -30122,6 +30207,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },
@@ -30296,6 +30391,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },
@@ -30329,6 +30434,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },
@@ -30505,6 +30620,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },

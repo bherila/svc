@@ -88,7 +88,6 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/workspaces/{workspace}/task-labels', [ClientTaskPlanningController::class, 'page'])->name('tasks.planning.labels.page');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{project}/task-organization', [ClientTaskOrganizationController::class, 'page'])->whereUuid('project')->name('tasks.organization.show');
         Route::get('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'show'])->name('tasks.show');
-        Route::get('/workspaces/{workspace}/projects/{clientProject}/task-assignees', [ClientTaskController::class, 'assignees'])->name('tasks.assignees');
         Route::get('/workspaces/{workspace}/history', [HistoricalLibraryController::class, 'index'])->name('history.index');
         Route::get('/workspaces/{workspace}/history/{historicalEntry}', [HistoricalLibraryController::class, 'show'])->name('history.show');
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');

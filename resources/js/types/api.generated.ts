@@ -2478,6 +2478,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/projects/{project}/task-assignees': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['tasks.assignees.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/tasks': {
         parameters: {
             query?: never;
@@ -5668,11 +5684,22 @@ export interface components {
             completion_advisory?: string | null;
             planning_details?: components['schemas']['TaskPlanningFields'];
         };
+        TaskAssigneeOptionsResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            }[];
+            has_more: boolean;
+        };
         TaskContactOptionListResponse: {
             data: components['schemas']['TaskResponsibilityContact'][];
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskContactResponsibilities: {
             /** Format: uuid */
@@ -5712,12 +5739,18 @@ export interface components {
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskDependencyOptionListResponse: {
             data: components['schemas']['TaskDependencyReference'][];
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskDependencyReference: {
             /** Format: uuid */
@@ -5759,6 +5792,9 @@ export interface components {
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskLabelReplacementRequest: {
             expected_version: components['schemas']['Version'];
@@ -15411,6 +15447,32 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'tasks.assignees.list': {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded eligible staff identities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskAssigneeOptionsResponse'];
                 };
             };
             default: components['responses']['Error'];

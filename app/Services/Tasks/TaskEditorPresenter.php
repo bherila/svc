@@ -21,7 +21,7 @@ final class TaskEditorPresenter
     {
         return AgentProjectPresenter::identity($project) + [
             'create_action' => route('agent-api.v1.tasks.store', [$workspace, $project->public_id]),
-            'assignees_action' => route('tasks.assignees', [$workspace, $project]),
+            'assignees_action' => route('agent-api.v1.tasks.assignees.index', [$workspace, $project]),
         ] + ($assigneeOptions === null ? [] : ['assignee_options' => $assigneeOptions]);
     }
 
@@ -33,7 +33,7 @@ final class TaskEditorPresenter
     {
         return AgentTaskPresenter::details($task) + [
             'update_action' => route('agent-api.v1.tasks.update', [$workspace, $task->public_id]),
-            'assignees_action' => route('tasks.assignees', [$workspace, $task->project]),
+            'assignees_action' => route('agent-api.v1.tasks.assignees.index', [$workspace, $task->project]),
         ] + $this->planning->fields($task) + ($assigneeOptions === null ? [] : ['assignee_options' => $assigneeOptions]);
     }
 }

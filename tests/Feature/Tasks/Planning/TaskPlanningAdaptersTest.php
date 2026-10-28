@@ -132,20 +132,21 @@ final class TaskPlanningAdaptersTest extends TestCase
         for ($i = 0; $i < 27; $i++) {
             ClientTaskLabel::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic label '.$i, 'name_key' => hash('sha256', 'synthetic label '.$i)]);
         }
-        $this->actingAs($owner, 'web');
-        $base = '/synthetic-planning/'.$workspace->public_id;
-        $page = $this->getJson($base.'/projects/'.$project->public_id.'/labels?q=Synthetic&limit=25')->assertOk()
-            ->assertJsonCount(25, 'data')->assertJsonMissingPath('meta')->assertJsonPath('previous_href', null);
+        $this->actingAsMcp($owner, ['tasks:read', 'clients:read']);
+        $base = '/api/v1/workspaces/'.$workspace->public_id;
+        $page = $this->getJson($base.'/projects/'.$project->public_id.'/task-label-options?q=Synthetic&limit=25')->assertOk()
+            ->assertJsonCount(25, 'data')->assertJsonPath('previous_href', null);
         $next = $page->json('next_href');
         $this->assertIsString($next);
+        $this->assertStringContainsString('/api/v1/', $next);
         $this->assertStringContainsString('q=Synthetic', $next);
-        $this->assertStringContainsString('cursor=', $next);
-        $this->getJson($next)->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('next_href', null);
-        $this->getJson($base.'/tasks/'.$task->public_id.'/dependencies')->assertOk()->assertJsonPath('next_href', null)->assertJsonMissingPath('meta');
-        $this->actingAsMcp($owner, ['tasks:read']);
-        $this->getJson('/synthetic-api/planning/'.$workspace->public_id.'/projects/'.$project->public_id.'/labels')
-            ->assertOk()->assertJsonCount(25, 'data')->assertJsonMissingPath('next_href');
-        $this->assertDatabaseCount('client_task_graph_states', 0);
+        $this->assertStringContainsString('limit=25', $next);
+        $this->assertStringContainsString('cursor='.urlencode($page->json('meta.next_cursor')), $next);
+        $this->getJson($next)->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('next_href', null)->assertJsonPath('meta.next_cursor', null);
+        $this->getJson($base.'/tasks/'.$task->public_id.'/dependencies')->assertOk()->assertJsonPath('next_href', null)->assertJsonPath('meta.next_cursor', null);
+        foreach (['dependency-options', 'contact-responsibility-options'] as $suffix) {
+            $this->getJson($base.'/tasks/'.$task->public_id.'/'.$suffix)->assertOk()->assertJsonPath('next_href', null)->assertJsonPath('previous_href', null)->assertJsonPath('meta.next_cursor', null);
+        }
     }
 
     public function test_cli_preview_rolls_back_receipts_catalog_and_associations_while_apply_and_replay_commit(): void

@@ -59,7 +59,7 @@ final class TaskEditorPresenterTest extends TestCase
             } else {
                 $this->assertSame($seed, $view['assignee_options']);
             }
-            $this->assertSame(route('tasks.assignees', [$workspace, $project]), $view['assignees_action']);
+            $this->assertSame(route('agent-api.v1.tasks.assignees.index', [$workspace, $project]), $view['assignees_action']);
         }
         $this->assertSame([['id' => $user->public_id, 'name' => $user->name]], $taskView['assignees']);
         $this->assertSame('2026-10-20', $taskView['starts_on']);
