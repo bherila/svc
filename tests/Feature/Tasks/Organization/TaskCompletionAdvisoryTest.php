@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
+use App\Models\ClientTaskDependency;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Tasks\TaskCompletionAdvisory;
@@ -159,6 +160,64 @@ final class TaskCompletionAdvisoryTest extends TestCase
         $this->assertNull($child->fresh()->completed_at);
         $this->assertSame(4200, $child->fresh()->milestone_price_amount);
         $this->assertNull($child->fresh()->client_invoice_line_id);
+    }
+
+    public function test_subtask_and_prerequisite_advisories_have_independent_switches_and_bounded_scoped_facts(): void
+    {
+        [$workspace, , $project, , $parent] = $this->fixture();
+        $prerequisite = $this->task($workspace, $project, 'Synthetic unfinished prerequisite');
+        ClientTaskDependency::query()->create(['workspace_id' => $workspace->id,
+            'client_project_id' => $project->id, 'client_task_id' => $parent->id, 'prerequisite_task_id' => $prerequisite->id]);
+        foreach ([[false, true, 'This task has unfinished prerequisites. Completing it leaves those prerequisites unchanged.'],
+            [true, false, $this->message()],
+            [true, true, 'This task has unfinished subtasks and prerequisites. Completing it leaves them unchanged.'],
+            [false, false, null]] as [$organization, $planning, $message]) {
+            config(['task_organization.enabled' => $organization, 'task_planning_details.enabled' => $planning]);
+            $record = $parent->fresh();
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            app(TaskCompletionAdvisory::class)->load($workspace, [$record]);
+            $this->assertCount((int) $organization + (int) $planning, DB::getQueryLog());
+            DB::disableQueryLog();
+            $fields = app(TaskCompletionAdvisory::class)->fields($record);
+            if ($message === null) {
+                $this->assertSame([], $fields);
+            } else {
+                $this->assertSame($message, $fields['completion_advisory']);
+            }
+            $this->assertFalse($record->isDirty());
+        }
+        config(['task_planning_details.enabled' => true]);
+        $prerequisite->update(['status' => 'completed']);
+        $record = $parent->fresh();
+        app(TaskCompletionAdvisory::class)->load($workspace, [$record]);
+        $this->assertNull(app(TaskCompletionAdvisory::class)->fields($record)['completion_advisory']);
+        $this->assertSame('open', $parent->fresh()->status);
+        $this->assertDatabaseCount('client_task_graph_states', 0);
+    }
+
+    public function test_unfinished_prerequisite_warns_on_completion_without_changing_prerequisite_or_financial_state(): void
+    {
+        [$workspace, , $project, $owner, $parent] = $this->fixture();
+        config(['task_organization.enabled' => false, 'task_planning_details.enabled' => true, 'agent_api.writes_enabled' => true]);
+        $prerequisite = $this->task($workspace, $project, 'Synthetic independent prerequisite');
+        $prerequisite->forceFill(['milestone_price_amount' => 4200])->save();
+        $version = AgentApiVersion::for($prerequisite);
+        ClientTaskDependency::query()->create(['workspace_id' => $workspace->id,
+            'client_project_id' => $project->id, 'client_task_id' => $parent->id, 'prerequisite_task_id' => $prerequisite->id]);
+        $this->actingAsMcp($owner, ['tasks:read', 'tasks:write']);
+        $this->withHeader('Idempotency-Key', 'synthetic-complete-with-prerequisite')
+            ->patchJson('/api/v1/workspaces/'.$workspace->public_id.'/tasks/'.$parent->public_id,
+                ['expected_version' => AgentApiVersion::for($parent), 'status' => 'completed'])
+            ->assertOk()->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.completion_advisory', 'This task has unfinished prerequisites. Completing it leaves those prerequisites unchanged.');
+        $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/tasks/'.$parent->public_id)->assertOk()
+            ->assertJsonPath('data.planning_details.dependency_summary.blocked', true);
+        $this->assertSame('open', $prerequisite->fresh()->status);
+        $this->assertSame($version, AgentApiVersion::for($prerequisite->fresh()));
+        $this->assertSame(4200, $prerequisite->fresh()->milestone_price_amount);
+        $this->assertNull($prerequisite->fresh()->client_invoice_line_id);
+        $this->assertDatabaseCount('client_task_dependencies', 1);
     }
 
     private function message(): string

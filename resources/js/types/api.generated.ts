@@ -5372,7 +5372,7 @@ export interface components {
             id: string;
             title: string;
             /** @enum {string} */
-            status: 'open' | 'in_progress' | 'blocked' | 'completed';
+            status: 'open' | 'in_progress' | 'completed';
             version: components['schemas']['Version'];
             web_url: string;
         };

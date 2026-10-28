@@ -18,7 +18,6 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
-use App\Services\Tasks\Planning\TaskPlanningDetailsPresenter;
 use App\Services\Tasks\Planning\TaskPlanningDetailsLoader;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskCompletionAdvisory;

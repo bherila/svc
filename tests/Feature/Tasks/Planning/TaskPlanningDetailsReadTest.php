@@ -16,6 +16,7 @@ use App\Models\ClientTaskLabelAssignment;
 use App\Models\ClientTaskList;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentReadService;
 use App\Services\Tasks\Planning\TaskPlanningDetailsPresenter;
 use App\Services\Tasks\Planning\TaskPlanningDetailsReadService;
 use App\Services\Tasks\TaskMutationOrigin;
@@ -433,6 +434,65 @@ final class TaskPlanningDetailsReadTest extends TestCase
         $this->assertSame($incoming, $actual);
         config(['agent_api.mcp_max_result_bytes' => 20_000]);
         $this->expectReadStatus(422, fn () => $this->reader()->dependencies($owner, $workspace, TaskMutationOrigin::Agent, $source->public_id));
+    }
+
+    public function test_ordinary_task_get_list_and_project_embed_recompute_enrichment_but_never_disclose_contacts_or_portal_facts(): void
+    {
+        [$workspace, $project, $owner, $task] = $this->fixture();
+        $project->update(['is_visible_to_client' => true]);
+        $task->update(['is_visible_to_client' => true]);
+        $label = $this->label($workspace, 'Synthetic original label');
+        $this->attach($workspace, $task, $label);
+        $prerequisite = $this->task($workspace, $project, 'Synthetic prerequisite');
+        $this->edge($workspace, $project, $task, $prerequisite);
+        $token = AgentApiVersion::for($task);
+        $reads = app(AgentReadService::class);
+        $row = $reads->task($owner, $workspace, $task->public_id);
+        $this->assertSame('Synthetic original label', $row['planning_details']['labels'][0]['name']);
+        $this->assertTrue($row['planning_details']['dependency_summary']['blocked']);
+        $this->assertArrayNotHasKey('contacts', $row['planning_details']);
+        $this->assertArrayNotHasKey('planningDetails', $task->fresh()->toArray());
+        $prerequisite->update(['status' => 'completed']);
+        $label->update(['name' => 'Synthetic current label']);
+        $row = $reads->task($owner, $workspace, $task->public_id);
+        $this->assertSame($token, $row['version']);
+        $this->assertFalse($row['planning_details']['dependency_summary']['blocked']);
+        $this->assertSame('Synthetic current label', $row['planning_details']['labels'][0]['name']);
+        $list = $reads->tasks($owner, $workspace, $project->public_id, 25, null);
+        $this->assertSame($row['planning_details'], $list['data'][0]['planning_details']);
+        $this->actingAsMcp($owner, ['projects:read', 'tasks:read']);
+        $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id)->assertOk()
+            ->assertJsonPath('data.tasks.0.planning_details.labels.0.name', 'Synthetic current label');
+        config(['task_planning_details.enabled' => false]);
+        $this->assertArrayNotHasKey('planning_details', $reads->task($owner, $workspace, $task->public_id));
+        config(['task_planning_details.enabled' => true]);
+        $project->clientCompany->portalUsers()->attach($owner->id, ['role' => 'client', 'access_scope' => 'company']);
+        $this->assertArrayNotHasKey('planning_details', $reads->task($owner, $workspace, $task->public_id));
+        $this->assertArrayNotHasKey('planning_details', $reads->tasks($owner, $workspace, $project->public_id, 25, null)['data'][0]);
+        $this->assertDatabaseCount('client_task_graph_states', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    public function test_task_page_sentinel_is_loaded_in_bounded_batches_and_every_enriched_id_survives_continuation(): void
+    {
+        [$workspace, $project, $owner, $source] = $this->fixture();
+        for ($index = 1; $index <= 100; $index++) {
+            $this->task($workspace, $project, 'Synthetic ordinary page '.$index);
+        }
+        $reads = app(AgentReadService::class);
+        $first = $reads->tasks($owner, $workspace, $project->public_id, 100, null);
+        $this->assertCount(100, $first['data']);
+        $this->assertNotNull($first['meta']['next_cursor']);
+        $next = $reads->tasks($owner, $workspace, $project->public_id, 100, $first['meta']['next_cursor']);
+        $this->assertCount(1, $next['data']);
+        $this->assertNull($next['meta']['next_cursor']);
+        $ids = [];
+        foreach ([...$first['data'], ...$next['data']] as $row) {
+            $this->assertSame([], $row['planning_details']['labels']);
+            $ids[] = $row['id'];
+        }
+        $this->assertCount(101, array_unique($ids));
+        $this->assertDatabaseCount('client_task_graph_states', 0);
     }
 
     /** @return array{Workspace,ClientProject,User,ClientTask} */

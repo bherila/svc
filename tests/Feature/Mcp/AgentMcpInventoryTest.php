@@ -172,6 +172,21 @@ final class AgentMcpInventoryTest extends TestCase
         'task_organization.tasks.create',
         'task_organization.tasks.move',
         'task_organization.tasks.reorder',
+        'task_planning.contacts.get',
+        'task_planning.contacts.options',
+        'task_planning.contacts.replace',
+        'task_planning.dependencies.get',
+        'task_planning.dependencies.options',
+        'task_planning.dependencies.replace',
+        'task_planning.get',
+        'task_planning.labels.archive',
+        'task_planning.labels.create',
+        'task_planning.labels.get',
+        'task_planning.labels.list',
+        'task_planning.labels.options',
+        'task_planning.labels.replace',
+        'task_planning.labels.restore',
+        'task_planning.labels.update',
         'tasks.create',
         'tasks.get',
         'tasks.list',
@@ -209,7 +224,7 @@ final class AgentMcpInventoryTest extends TestCase
         foreach (self::gatedTools() as $flag => $names) {
             yield $flag => [$flag, $names];
         }
-        $outer = ['task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
+        $outer = ['task_planning.labels.create', 'task_planning.labels.update', 'task_planning.labels.archive', 'task_planning.labels.restore', 'task_planning.labels.replace', 'task_planning.dependencies.replace', 'task_planning.contacts.replace', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             if ($flag !== 'time_entry_writes_enabled') {
                 $outer = [...$outer, ...$names];
@@ -234,10 +249,10 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_162_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_177_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
-        $disabled = ['task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
+        $disabled = ['task_planning.labels.create', 'task_planning.labels.update', 'task_planning.labels.archive', 'task_planning.labels.restore', 'task_planning.labels.replace', 'task_planning.dependencies.replace', 'task_planning.contacts.replace', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             config(['agent_api.'.$flag => false]);
             $disabled = [...$disabled, ...$names];
@@ -245,14 +260,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(162, self::TOOLS);
+        $this->assertCount(177, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_162_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_177_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -404,7 +419,7 @@ final class AgentMcpInventoryTest extends TestCase
     private function enableAll(): void
     {
         $configuration = ['agent_api.writes_enabled' => true, 'agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'task_planning_details.enabled' => true];
         foreach (array_keys(self::gatedTools()) as $name) {
             $configuration['agent_api.'.$name] = true;
         }

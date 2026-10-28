@@ -1,12 +1,12 @@
 import { Head, Link } from '@inertiajs/react';
 import { TaskEditor } from '@/components/tasks/task-editor';
-import { TaskPlanningPanel } from '@/components/tasks/task-planning-panel';
-import type { TaskPlanningNativeDetails } from '@/types/task-planning';
 import type { EditableTask } from '@/components/tasks/task-editor';
+import { TaskPlanningPanel } from '@/components/tasks/task-planning-panel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
+import type { TaskPlanningNativeDetails } from '@/types/task-planning';
 
 export default function ClientTaskDetail({
     company,
