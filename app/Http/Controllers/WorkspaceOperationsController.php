@@ -260,7 +260,7 @@ class WorkspaceOperationsController extends Controller
                         'pdf_href' => route('svc.billing.invoices.pdf', [$workspace, $invoice], absolute: false),
                         'issue_href' => $canManage && $invoice->status === InvoiceStatus::Draft->value
                             ? route('agent-api.v1.invoices.issue', [$workspace, $invoice->public_id], absolute: false) : null,
-                        'payment_href' => $canManage && in_array($invoice->status, InvoiceStatus::collectible(), true) && $invoice->balance_amount > 0
+                        'payment_href' => $canManage && in_array($invoice->status, InvoiceStatus::recordable(), true) && $invoice->balance_amount > 0
                             ? route('agent-api.v1.payments.store', $workspace, absolute: false) : null,
                         'total_amount' => $invoice->total_amount,
                         'paid_amount' => $invoice->paid_amount,

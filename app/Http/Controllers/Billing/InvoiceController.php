@@ -28,6 +28,7 @@ use App\Services\Billing\StripePaymentIntentService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\InvoiceLineDetail;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -389,7 +390,7 @@ class InvoiceController extends Controller
         abort_unless(
             $user instanceof User
                 && $invoice->is_visible_to_client
-                && in_array($invoice->status, ['issued', 'partially_paid'], true)
+                && in_array($invoice->status, InvoiceStatus::collectible(), true)
                 && $invoice->clientCompany?->portalUsers()->whereKey($user->id)->exists() === true,
             403,
         );
@@ -423,7 +424,7 @@ class InvoiceController extends Controller
         }
         abort_unless(
             $invoice->is_visible_to_client
-                && in_array($invoice->status, ['issued', 'partially_paid', 'paid'], true)
+                && in_array($invoice->status, InvoiceStatus::charged(), true)
                 && $invoice->clientCompany->portalUsers()->whereKey($request->user()->id)->exists(),
             403,
         );

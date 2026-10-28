@@ -29,7 +29,9 @@ final class TaskPlanningAdaptersTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach ([['api/v1/synthetic-planning', AgentTaskPlanningController::class, ['api', 'auth:api']],
+        // Isolated controller probes are not published API routes; registry tests
+        // cover the real /api/v1 bindings and their OpenAPI contracts.
+        foreach ([['synthetic-api/planning', AgentTaskPlanningController::class, ['api', 'auth:api']],
             ['synthetic-planning', ClientTaskPlanningController::class, ['web', 'auth:web']]] as [$prefix, $controller, $middleware]) {
             Route::prefix($prefix.'/{workspace}')->middleware($middleware)->group(function () use ($controller, $prefix): void {
                 foreach ([['get', '/tasks/{task}', 'get'], ['get', '/labels', 'labels.list'], ['post', '/labels', 'labels.create'],
@@ -54,7 +56,7 @@ final class TaskPlanningAdaptersTest extends TestCase
     {
         [$workspace, $project, $owner, $task] = $this->fixture();
         $this->actingAsMcp($owner, ['tasks:read', 'tasks:write', 'clients:read']);
-        $base = '/api/v1/synthetic-planning/'.$workspace->public_id;
+        $base = '/synthetic-api/planning/'.$workspace->public_id;
         $version = $this->getJson($base.'/tasks/'.$task->public_id)->assertOk()->json('data.version');
         $id = $this->withHeader('Idempotency-Key', 'synthetic-label')->postJson($base.'/labels', ['name' => 'Synthetic HTTP label'])->assertCreated()->json('data.id');
         $input = ['expected_version' => $version, 'label_ids' => [$id]];
@@ -76,7 +78,7 @@ final class TaskPlanningAdaptersTest extends TestCase
     {
         [$workspace, $project, $owner, $task] = $this->fixture();
         $this->actingAsMcp($owner, ['tasks:read', 'tasks:write', 'clients:read']);
-        $base = '/api/v1/synthetic-planning/'.$workspace->public_id;
+        $base = '/synthetic-api/planning/'.$workspace->public_id;
         config(['task_planning_details.enabled' => false]);
         $this->getJson($base.'/tasks/'.$task->public_id)->assertNotFound();
         $this->withHeader('Idempotency-Key', 'synthetic-off')->postJson($base.'/labels', ['name' => 'Synthetic refused'])->assertNotFound();
@@ -138,7 +140,7 @@ final class TaskPlanningAdaptersTest extends TestCase
         $this->getJson($next)->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('next_href', null);
         $this->getJson($base.'/tasks/'.$task->public_id.'/dependencies')->assertOk()->assertJsonPath('next_href', null)->assertJsonMissingPath('meta');
         $this->actingAsMcp($owner, ['tasks:read']);
-        $this->getJson('/api/v1/synthetic-planning/'.$workspace->public_id.'/projects/'.$project->public_id.'/labels')
+        $this->getJson('/synthetic-api/planning/'.$workspace->public_id.'/projects/'.$project->public_id.'/labels')
             ->assertOk()->assertJsonCount(25, 'data')->assertJsonMissingPath('next_href');
         $this->assertDatabaseCount('client_task_graph_states', 0);
     }

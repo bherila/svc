@@ -1651,7 +1651,7 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending. OAuth/MCP callers also refuse invoices Square collects (invoices.get reports pending_payments and collection_owner). The trusted first-party website session may explicitly record money already received on a Square-collected invoice as operator bookkeeping; this server-selected policy is not a request field. A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
         delete?: never;
         options?: never;
@@ -3205,12 +3205,39 @@ export interface components {
         DeletionResponse: {
             data: components['schemas']['DeletionReceipt'];
         };
-        Error: {
-            message: string;
-            errors?: {
-                [key: string]: string[];
-            };
-        };
+        Error:
+            | {
+                  message: string;
+                  errors?: {
+                      [key: string]: string[];
+                  };
+              }
+            | {
+                  /** @enum {string} */
+                  error: 'invalid_token' | 'insufficient_scope';
+              }
+            | {
+                  message: string;
+                  operation: string;
+                  /** @enum {string} */
+                  reason:
+                      | 'deployment_flag'
+                      | 'unauthenticated'
+                      | 'missing_scope'
+                      | 'missing_permission'
+                      | 'group_not_granted'
+                      | 'policy'
+                      | 'depends_on';
+                  detail: string;
+              }
+            | {
+                  /** @enum {string} */
+                  error:
+                      | 'invalid_token'
+                      | 'temporarily_unavailable'
+                      | 'access_denied';
+                  message: string;
+              };
         ExpectedVersionRequest: {
             expected_version: components['schemas']['Version'];
         };
@@ -4198,8 +4225,17 @@ export interface components {
             /** @constant */
             confirm: true;
         };
-        /** @enum {string} */
-        InvoiceStatus: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'void';
+        /**
+         * @description An unresolved disputed payment keeps its invoice disputed, including partial disputes and invoices covered by replacement payments. Disputed invoices remain charged and visible but collection and reminders are suspended; resolving all disputes restores the status derived from net payments. Void remains terminal.
+         * @enum {string}
+         */
+        InvoiceStatus:
+            | 'draft'
+            | 'issued'
+            | 'partially_paid'
+            | 'paid'
+            | 'disputed'
+            | 'void';
         InvoiceUpdateRequest: {
             expected_version: components['schemas']['Version'];
             currency?: string | null;
@@ -4608,11 +4644,11 @@ export interface components {
             /** @description The operator's private note. */
             notes?: string | null;
             /**
-             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status.
+             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status. Omitted or null means succeeded.
              * @default succeeded
-             * @enum {string}
+             * @enum {string|null}
              */
-            status: 'pending' | 'succeeded';
+            status: 'pending' | 'succeeded' | null;
             /**
              * Format: uuid
              * @description The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers.
@@ -6481,7 +6517,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             default: components['responses']['Error'];
@@ -8478,7 +8514,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             /** @description Authentication is missing, expired or revoked. */
@@ -10461,7 +10497,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             default: components['responses']['Error'];

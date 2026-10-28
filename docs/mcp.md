@@ -486,6 +486,19 @@ The operation is removed only by its removal issue, after the deprecation window
 | ------------------------------------------------- | ----- | ------- | ----------- |
 | `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | None: the #134 repair it sized is done |
 
+Every feature-test HTTP exchange under `/api/v1` now checks the published
+OpenAPI contract through `Tests\TestCase`: accepted requests validate their
+parameters and bodies, and all responses, including refusals, validate their
+status, media type and JSON shape. Deliberately invalid negative-test inputs may
+be refused; they cannot be accepted outside the schema. The MCP transport
+endpoint retains its separate JSON-RPC envelope and tool-schema contract tests.
+Historical receipt replays and ignored-input security regressions explicitly pin
+a closed request schema for that one named operation at the test call; their
+responses still use the current published schema.
+Tests disable debug responses so refusal shapes match the deployed API rather
+than Laravel's development exception traces. Protected-resource discovery links
+the public contract with `service_documentation`.
+
 Current coverage includes initialization, scope-filtered discovery, prompts,
 tool schema closure, input and output validation, REST parity, credential
 session isolation, route authentication, origin handling, optimistic versions,
@@ -740,7 +753,7 @@ receipt, as `finance.reconciliations.upsert` would. It needs the
 audited under both operations. Null means none. See
 [the finance API](finance-api.md#recording-a-deposit-and-its-allocation-in-one-call).
 
-Whatever it carries, `payments.record` refuses a new payment, under the
+For OAuth and MCP callers, `payments.record` refuses a new payment, under the
 invoice lock, while another payment on the invoice is `pending`, is a Stripe
 payment stored as `failed` (whose intent can still be confirmed), or carries a
 status SVC cannot read exactly, and while Square collects the invoice. Recording
@@ -748,9 +761,23 @@ any payment, even a pending one, advances the invoice's version. `invoices.get`
 shows owners and admins `pending_payments` and `collection_owner` (`svc` or
 `square`) for exactly these two checks; both are null for other readers. A
 completed receipt replays before either check, so a retry of a payment already
-recorded still answers with it. The website's payment form, a payment folded
-into `invoices.issue`, the console and the processors' webhooks are not
-affected.
+recorded still answers with it.
+
+The website calls the same operation with a server-selected operator
+bookkeeping policy: an owner/admin may explicitly record money already
+received on an invoice Square collects, preserving that website capability.
+Only the trusted authenticated session adapter can select this policy; it is
+not a request field and OAuth/MCP callers cannot select it. The invoice version,
+agreement/snapshot checks and in-flight payment refusal still apply. Recording
+this money initiates no processor charge and does not remove the Square link.
+
+An invoice with any disputed payment is `disputed`, even when only part of the
+payment is contested or replacement payments already cover its balance.
+`invoices.list` accepts that status. The invoice remains visible and charged;
+collection and reminders pause, while `payments.record` can still record money
+already received against the remaining balance. Disputed payments supply no
+spendable credit until restored; restored excess after a win is available to
+future drafts. See the [disputed invoice contract](finance-api.md#disputed-invoice-state).
 
 ### Correcting a recorded payment
 

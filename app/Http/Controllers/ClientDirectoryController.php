@@ -358,7 +358,7 @@ class ClientDirectoryController extends Controller
                     && ! (bool) $clientInvoice->getAttribute('send_has_blocking_delivery')
                     ? route('agent-api.v1.invoices.send', [$workspace, $clientInvoice->public_id], absolute: false)
                     : null,
-                'payment' => $manages && in_array($status, InvoiceStatus::collectible(), true)
+                'payment' => $manages && in_array($status, InvoiceStatus::recordable(), true) && $clientInvoice->balance_amount > 0
                     ? route('agent-api.v1.payments.store', $workspace, absolute: false)
                     : null,
                 'correct' => $canCorrect ? route('agent-api.v1.invoices.correct', [$workspace, $clientInvoice->public_id], absolute: false) : null,

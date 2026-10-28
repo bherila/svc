@@ -15,6 +15,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Billing\PaymentRecordingPolicy;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Support\Facades\Validator;
@@ -39,7 +40,10 @@ use Illuminate\Validation\ValidationException;
  *
  * Under the invoice lock, after a completed receipt has had the chance to
  * replay, {@see PaymentCollectionGuard} refuses a payment while another is
- * still in flight on the invoice, or when Square collects it.
+ * still in flight on the invoice. Its default agent policy also refuses
+ * invoices Square collects. The trusted website adapter explicitly selects
+ * operator bookkeeping to preserve recording money already received there;
+ * a request body cannot select that policy.
  */
 final class RecordPaymentAction
 {
@@ -56,7 +60,7 @@ final class RecordPaymentAction
 
     /** @param array<string, mixed> $payload
      * @return list<string> */
-    public function run(User $user, Workspace $workspace, string $clientId, string $key, array $payload, bool $allowsReconcileScope = false): array
+    public function run(User $user, Workspace $workspace, string $clientId, string $key, array $payload, bool $allowsReconcileScope = false, PaymentRecordingPolicy $policy = PaymentRecordingPolicy::Agent): array
     {
         abort_unless(trim($key) !== '' && strlen($key) <= 255, 422, 'An idempotency key is required.');
 
@@ -75,7 +79,7 @@ final class RecordPaymentAction
         $reconciling = array_key_exists('finance_reconciliation', $payload);
 
         $ids = $this->mutations->run($user, $workspace, $clientId, 'payments.record', $key, $payload,
-            function () use ($user, $workspace, $clientId, $key, $payload, $reconciling, $allowsReconcileScope): array {
+            function () use ($user, $workspace, $clientId, $key, $payload, $reconciling, $allowsReconcileScope, $policy): array {
                 $this->authorize($user, $workspace, $reconciling, $allowsReconcileScope);
                 $data = Validator::make(['payment' => $payload], [
                     'payment' => ['required', 'array:invoice_id,amount,currency,received_on,method,reference,notes,status,external_finance_transaction_uuid,finance_reconciliation,expected_version,confirm'],
@@ -101,9 +105,9 @@ final class RecordPaymentAction
                 // Domain keys are workspace-wide; namespace them by caller and operation
                 // so an agent receipt cannot collide with a CLI/import receipt.
                 $payment = $this->receivedPayments->record($workspace, $invoice, $facts, RecordReceivedPayment::agentKey($user->id, $clientId, $key),
-                    function (ClientInvoice $locked) use ($data, $agreement): void {
+                    function (ClientInvoice $locked) use ($data, $agreement, $policy): void {
                         abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
-                        $this->collection->assertMayRecord($locked, $agreement);
+                        $this->collection->assertMayRecord($locked, $agreement, $policy);
                     });
                 if ($allocation !== null) {
                     $reconciliation = $this->reconciliations->upsert($workspace, $payment, $user, [

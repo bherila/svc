@@ -714,7 +714,7 @@
                     "200": {
                         "description": "Stream the private file using the signed URL, same bearer credential and current manager permission.",
                         "content": {
-                            "application/octet-stream": {
+                            "*/*": {
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
@@ -4276,7 +4276,7 @@
                     "200": {
                         "description": "Authorized attachment content.",
                         "content": {
-                            "application/octet-stream": {
+                            "*/*": {
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
@@ -7745,7 +7745,7 @@
                     "200": {
                         "description": "Receipt bytes",
                         "content": {
-                            "application/octet-stream": {
+                            "*/*": {
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
@@ -10991,7 +10991,7 @@
             },
             "post": {
                 "operationId": "payments.record",
-                "description": "Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.",
+                "description": "Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending. OAuth/MCP callers also refuse invoices Square collects (invoices.get reports pending_payments and collection_owner). The trusted first-party website session may explicitly record money already received on a Square-collected invoice as operator bookkeeping; this server-selected policy is not a request field. A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.",
                 "security": [
                     {
                         "oauth2": [
@@ -20049,25 +20049,99 @@
                 }
             },
             "Error": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                    "message"
-                ],
-                "properties": {
-                    "message": {
-                        "type": "string"
-                    },
-                    "errors": {
+                "oneOf": [
+                    {
                         "type": "object",
-                        "additionalProperties": {
-                            "type": "array",
-                            "items": {
+                        "additionalProperties": false,
+                        "required": [
+                            "message"
+                        ],
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            },
+                            "errors": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "error"
+                        ],
+                        "properties": {
+                            "error": {
+                                "type": "string",
+                                "enum": [
+                                    "invalid_token",
+                                    "insufficient_scope"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "message",
+                            "operation",
+                            "reason",
+                            "detail"
+                        ],
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            },
+                            "operation": {
+                                "type": "string"
+                            },
+                            "reason": {
+                                "type": "string",
+                                "enum": [
+                                    "deployment_flag",
+                                    "unauthenticated",
+                                    "missing_scope",
+                                    "missing_permission",
+                                    "group_not_granted",
+                                    "policy",
+                                    "depends_on"
+                                ]
+                            },
+                            "detail": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "error",
+                            "message"
+                        ],
+                        "properties": {
+                            "error": {
+                                "type": "string",
+                                "enum": [
+                                    "invalid_token",
+                                    "temporarily_unavailable",
+                                    "access_denied"
+                                ]
+                            },
+                            "message": {
                                 "type": "string"
                             }
                         }
                     }
-                }
+                ]
             },
             "ExpectedVersionRequest": {
                 "type": "object",
@@ -23630,11 +23704,13 @@
             },
             "InvoiceStatus": {
                 "type": "string",
+                "description": "An unresolved disputed payment keeps its invoice disputed, including partial disputes and invoices covered by replacement payments. Disputed invoices remain charged and visible but collection and reminders are suspended; resolving all disputes restores the status derived from net payments. Void remains terminal.",
                 "enum": [
                     "draft",
                     "issued",
                     "partially_paid",
                     "paid",
+                    "disputed",
                     "void"
                 ]
             },
@@ -25193,13 +25269,17 @@
                         "description": "The operator's private note."
                     },
                     "status": {
-                        "type": "string",
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "enum": [
                             "pending",
-                            "succeeded"
+                            "succeeded",
+                            null
                         ],
                         "default": "succeeded",
-                        "description": "succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status."
+                        "description": "succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status. Omitted or null means succeeded."
                     },
                     "external_finance_transaction_uuid": {
                         "type": [

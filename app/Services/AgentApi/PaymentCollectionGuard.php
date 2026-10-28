@@ -11,6 +11,7 @@ use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Billing\PaymentRecordingPolicy;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use DomainException;
@@ -58,10 +59,12 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * `invoices.get` reports the same two facts ({@see self::summary()}) so a
  * caller can tell, before it tries, why a payment would be refused.
  *
- * Recording a payment is not collection in {@see SquareCollectionGuard}'s
- * sense, and this is not one of its sites: the website's payment form,
- * `invoices.issue` with a payment, the console and the processors' webhooks
- * record as they always have.
+ * The trusted website adapter may explicitly select operator bookkeeping to
+ * preserve recording money already received on a Square-collected invoice.
+ * That exception skips only the Square ownership refusal; snapshot, version,
+ * agreement and in-flight checks above remain mandatory. Other callers keep
+ * the default agent policy. Recording is not collection in
+ * {@see SquareCollectionGuard}'s sense: no adapter is asked to charge money.
  */
 final class PaymentCollectionGuard
 {
@@ -113,7 +116,7 @@ final class PaymentCollectionGuard
      * @throws HttpException 409 when the invoice moved after this transaction's snapshot
      * @throws DomainException when a payment may not be recorded by hand
      */
-    public function assertMayRecord(ClientInvoice $locked, array $agreement): void
+    public function assertMayRecord(ClientInvoice $locked, array $agreement, PaymentRecordingPolicy $policy = PaymentRecordingPolicy::Agent): void
     {
         $seen = ClientInvoice::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->id)->firstOrFail(['id', 'workspace_id', 'lock_version']);
         abort_unless(AgentApiVersion::matches($seen, AgentApiVersion::for($locked)), 409, 'The invoice changed while this payment waited for it; read it and retry.');
@@ -134,7 +137,11 @@ final class PaymentCollectionGuard
         // invoice's revision, so the snapshot read is current once the
         // revision check above has passed; the marker is the one read under
         // the agreement's share lock.
-        if ($this->links->activeLink($locked) !== null || $agreement['series_key'] !== null) {
+        $requiresSvcCollection = match ($policy) {
+            PaymentRecordingPolicy::Agent => true,
+            PaymentRecordingPolicy::OperatorBookkeeping => false,
+        };
+        if ($requiresSvcCollection && ($this->links->activeLink($locked) !== null || $agreement['series_key'] !== null)) {
             throw new DomainException(sprintf(
                 'Invoice %s is collected through Square, which records its own payments, so SVC does not record one by hand. Unlink it from Square, or clear its agreement\'s Square marker, to record a payment in SVC.',
                 (string) $locked->invoice_number,

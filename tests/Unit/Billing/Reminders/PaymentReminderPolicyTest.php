@@ -39,6 +39,7 @@ final class PaymentReminderPolicyTest extends TestCase
     {
         yield 'draft' => [['status' => 'draft'], PaymentReminderRefusal::NotOpen];
         yield 'paid' => [['status' => 'paid'], PaymentReminderRefusal::NotOpen];
+        yield 'disputed' => [['status' => 'disputed'], PaymentReminderRefusal::NotOpen];
         yield 'void' => [['status' => 'void'], PaymentReminderRefusal::NotOpen];
         yield 'an unknown status' => [['status' => 'mystery'], PaymentReminderRefusal::NotOpen];
         yield 'no balance' => [['balance' => 0], PaymentReminderRefusal::NothingDue];

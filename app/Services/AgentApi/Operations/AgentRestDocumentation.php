@@ -373,7 +373,7 @@ final class AgentRestDocumentation
                     ],
                 ],
                 'binary' => [
-                    'application/octet-stream',
+                    '*/*',
                     'Stream the private file using the signed URL, same bearer credential and current manager permission.',
                 ],
             ],
@@ -966,7 +966,7 @@ final class AgentRestDocumentation
                         'schema' => ['type' => 'string'],
                     ],
                 ],
-                'binary' => ['application/octet-stream', 'Receipt bytes'],
+                'binary' => ['*/*', 'Receipt bytes'],
             ],
             'expenses.receipts.download' => [
                 'method' => 'GET',
@@ -1300,7 +1300,7 @@ final class AgentRestDocumentation
             'payments.record' => [
                 'method' => 'POST',
                 'scopes' => ['payments:record', 'billing:read'],
-                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment\'s finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment\'s finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending. OAuth/MCP callers also refuse invoices Square collects (invoices.get reports pending_payments and collection_owner). The trusted first-party website session may explicitly record money already received on a Square-collected invoice as operator bookkeeping; this server-selected policy is not a request field. A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentRecordRequest',
                 'response' => 'ReceivedPaymentBatchResponse',
