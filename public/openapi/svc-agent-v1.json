@@ -23246,6 +23246,104 @@
                     }
                 }
             },
+            "InvoiceSendMutation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "status",
+                    "linked_time_state",
+                    "invoice_number",
+                    "version",
+                    "web_url",
+                    "delivery"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/InvoiceStatus"
+                    },
+                    "linked_time_state": {
+                        "$ref": "#/components/schemas/LinkedTimeState"
+                    },
+                    "invoice_number": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "web_url": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "correction": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "required": [
+                            "id",
+                            "from_revision",
+                            "to_revision",
+                            "reason",
+                            "href"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "from_revision": {
+                                "type": "integer"
+                            },
+                            "to_revision": {
+                                "type": "integer"
+                            },
+                            "reason": {
+                                "type": "string"
+                            },
+                            "href": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "delivery": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "status",
+                            "error_summary"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "pending",
+                                    "sending",
+                                    "sent",
+                                    "failed"
+                                ]
+                            },
+                            "error_summary": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
             "InvoiceSendRequest": {
                 "type": "object",
                 "additionalProperties": false,
@@ -23291,6 +23389,18 @@
                         "type": "boolean",
                         "default": false,
                         "description": "Send a blind copy to the signed-in user's own address. No other blind copy can be named."
+                    }
+                }
+            },
+            "InvoiceSendResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/InvoiceSendMutation"
                     }
                 }
             },
@@ -32076,116 +32186,6 @@
                         }
                     }
                 ]
-            },
-            "InvoiceSendMutation": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                    "id",
-                    "status",
-                    "linked_time_state",
-                    "invoice_number",
-                    "version",
-                    "web_url",
-                    "delivery"
-                ],
-                "properties": {
-                    "id": {
-                        "$ref": "#/components/schemas/Uuid"
-                    },
-                    "status": {
-                        "$ref": "#/components/schemas/InvoiceStatus"
-                    },
-                    "linked_time_state": {
-                        "$ref": "#/components/schemas/LinkedTimeState"
-                    },
-                    "invoice_number": {
-                        "type": "string"
-                    },
-                    "version": {
-                        "$ref": "#/components/schemas/Version"
-                    },
-                    "web_url": {
-                        "type": "string",
-                        "format": "uri"
-                    },
-                    "correction": {
-                        "type": [
-                            "object",
-                            "null"
-                        ],
-                        "required": [
-                            "id",
-                            "from_revision",
-                            "to_revision",
-                            "reason",
-                            "href"
-                        ],
-                        "properties": {
-                            "id": {
-                                "type": "string",
-                                "format": "uuid"
-                            },
-                            "from_revision": {
-                                "type": "integer"
-                            },
-                            "to_revision": {
-                                "type": "integer"
-                            },
-                            "reason": {
-                                "type": "string"
-                            },
-                            "href": {
-                                "type": "string"
-                            }
-                        },
-                        "additionalProperties": false
-                    },
-                    "delivery": {
-                        "type": [
-                            "object",
-                            "null"
-                        ],
-                        "additionalProperties": false,
-                        "required": [
-                            "id",
-                            "status",
-                            "error_summary"
-                        ],
-                        "properties": {
-                            "id": {
-                                "$ref": "#/components/schemas/Uuid"
-                            },
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "pending",
-                                    "sending",
-                                    "sent",
-                                    "failed"
-                                ]
-                            },
-                            "error_summary": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
-                            }
-                        }
-                    }
-                }
-            },
-            "InvoiceSendResponse": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                    "data"
-                ],
-                "properties": {
-                    "data": {
-                        "$ref": "#/components/schemas/InvoiceSendMutation"
-                    }
-                }
             }
         }
     }
