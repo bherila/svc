@@ -35,8 +35,9 @@ $draftWrite = in_array($requestPath, $fixture['draft_writes'][$method] ?? [], tr
 $buydownWrite = $method === 'POST' && is_string($fixture['buydown_create'] ?? null) && $requestPath === $fixture['buydown_create'];
 $taskWrite = ($method === 'POST' && $requestPath === ($fixture['task_create'] ?? null))
     || ($method === 'PATCH' && $requestPath === ($fixture['task_update'] ?? null));
+$workspaceWrite = $method === 'POST' && $requestPath === ($fixture['workspace_create'] ?? null);
 $clientWrite = getenv('SVC_LAYOUT_CLIENTS') === '1' && $method === 'POST' && $requestPath === ($fixture['contact_restore'] ?? null);
-if ($method !== 'GET' && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
+if ($method !== 'GET' && ! $workspaceWrite && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }

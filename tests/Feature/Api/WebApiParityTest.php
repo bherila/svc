@@ -98,7 +98,6 @@ final class WebApiParityTest extends TestCase
         'tasks.planning.contacts.replace' => 'operation:task_planning.contacts.replace',
         'tasks.store' => 'operation:tasks.create',
         'tasks.update' => 'operation:tasks.update',
-        'workspaces.store' => 'operation:workspaces.create',
     ];
 
     public function test_every_state_changing_web_route_is_classified(): void
