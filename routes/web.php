@@ -17,7 +17,6 @@ use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SquareExploreController;
-use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
@@ -72,8 +71,6 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/finance-links/payments/{payment}', FinancePaymentLinkController::class)
         ->middleware('throttle:60,1')
         ->name('finance-links.payments.show');
-
-    Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
 
     // Opening a workspace, as its own step. Which client to open depends on
     // this viewer at this moment, so the selector links here instead of
