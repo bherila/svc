@@ -34,6 +34,7 @@ final class WorkspaceNavigation
         public readonly ?string $mcpSetupHref = null,
         public readonly ?string $squareHref = null,
         public readonly ?string $historyHref = null,
+        public readonly ?string $createClientUrl = null,
     ) {}
 
     /** The option the viewer is standing in, or null outside one. */
@@ -59,6 +60,7 @@ final class WorkspaceNavigation
      *     mcp_setup_href: string|null,
      *     square_href: string|null,
      *     history_href: string|null,
+     *     create_client_url: string|null,
      * }
      */
     public function toArray(): array
@@ -76,6 +78,7 @@ final class WorkspaceNavigation
             'mcp_setup_href' => $this->mcpSetupHref,
             'square_href' => $this->squareHref,
             'history_href' => $this->historyHref,
+            'create_client_url' => $this->createClientUrl,
         ];
     }
 }
