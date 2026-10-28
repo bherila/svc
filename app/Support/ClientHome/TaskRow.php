@@ -18,9 +18,9 @@ final class TaskRow
 
     public static function fromTask(ClientTask $task, ?string $project, ?string $filesHref = null): self
     {
-        $facts = AgentTaskPresenter::identity($task);
+        $facts = AgentTaskPresenter::summary($task);
 
-        return new self(id: $facts['id'], title: $facts['title'], project: $project, status: $task->status, filesHref: $filesHref);
+        return new self(id: $facts['id'], title: $facts['title'], project: $project, status: $facts['status'], filesHref: $filesHref);
     }
 
     /**

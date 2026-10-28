@@ -382,11 +382,10 @@ class ClientPortalController extends Controller
                 'files_href' => route('portal.files.parent.show', [$clientCompany, 'project', $project->public_id], absolute: false),
             ])->values()->all(),
             'tasks' => $tasks->map(fn (ClientTask $task): array => [
-                ...AgentTaskPresenter::identity($task),
-                'status' => $task->status,
+                ...array_intersect_key(AgentTaskPresenter::summary($task), array_flip(['id', 'title', 'status'])),
                 'project' => $projectNames[$task->client_project_id] ?? null,
                 'is_visible_to_client' => true,
-                'completed_at' => $task->completed_at?->toDateString(),
+                'completed_at' => AgentTaskPresenter::completedAt($task, dateOnly: true),
                 'files_href' => route('portal.files.parent.show', [$clientCompany, 'task', $task->public_id], absolute: false),
                 'comment_thread_url' => isset($commentProjects[$task->client_project_id])
                     ? route('portal.collaboration.comments.index', [$clientCompany, 'task', $task->public_id], absolute: false) : null,
