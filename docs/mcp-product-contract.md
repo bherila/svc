@@ -240,7 +240,6 @@ time and invoice work. Clients that implement MCP prompts can also expose the gu
 `log-time-across-projects` and `prepare-invoice-safely` workflows. Tool descriptions,
 schemas, and annotations remain the authority for each individual call.
 
-
 Received-payment bookkeeping uses separate `payments:read` and `payments:record`
 grants. Recording is owner/admin-only, default-disabled behind the payment and
 outer workflow flags, and requires an explicit invoice, amount, currency, payment
@@ -284,6 +283,7 @@ none of these actions. Portal acceptance obeys the same company and project scop
 as portal reads. Confirmed sends publish to the portal; they do not email.
 
 Proposal creation also requires `clients:read` to obtain the parent version; send and acceptance require `proposals:read` to obtain the current proposal version.
+
 ## Workspace creation, search and generic files (#386)
 
 `workspaces.create` requires `workspaces:create`, `AGENT_API_WRITES_ENABLED`
