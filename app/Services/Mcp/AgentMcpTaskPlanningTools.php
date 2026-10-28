@@ -4,7 +4,11 @@ namespace App\Services\Mcp;
 
 use Mcp\Capability\Attribute\Schema;
 
-/** Every planning tool enters the registered REST policy, receipt and response boundary. */
+/**
+ * Every planning tool enters the registered REST policy, receipt and response boundary.
+ * Body constraints come from the authoritative OpenAPI request schema. Only
+ * route/query identities and the out-of-body receipt key need SDK annotations.
+ */
 final class AgentMcpTaskPlanningTools
 {
     public function __construct(private readonly AgentMcpRestCall $rest) {}
@@ -59,28 +63,28 @@ final class AgentMcpTaskPlanningTools
 
     /**
      * @return array<string,mixed> */
-    public function labelsCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minLength: 1, maxLength: 80)] string $name, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function labelsCreate(#[Schema(format: 'uuid')] string $workspace_id, string $name, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('task_planning.labels.create', ['workspace' => $workspace_id], compact('name'), $idempotency_key);
     }
 
     /**
      * @return array<string,mixed> */
-    public function labelsUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $label_id, #[Schema(minLength: 1, maxLength: 80)] string $name, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function labelsUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $label_id, string $name, string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('task_planning.labels.update', ['workspace' => $workspace_id, 'label' => $label_id], compact('name', 'expected_version'), $idempotency_key);
     }
 
     /**
      * @return array<string,mixed> */
-    public function labelsArchive(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $label_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(definition: ['type' => 'boolean', 'const' => true])] bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function labelsArchive(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $label_id, string $expected_version, bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('task_planning.labels.archive', ['workspace' => $workspace_id, 'label' => $label_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
 
     /**
      * @return array<string,mixed> */
-    public function labelsRestore(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $label_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function labelsRestore(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $label_id, string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('task_planning.labels.restore', ['workspace' => $workspace_id, 'label' => $label_id], compact('expected_version'), $idempotency_key);
     }
@@ -88,7 +92,7 @@ final class AgentMcpTaskPlanningTools
     /**
      * @param list<string> $label_ids
      * @return array<string,mixed> */
-    public function labelsReplace(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(maxItems: 20, uniqueItems: true, items: ['type' => 'string', 'format' => 'uuid'])] array $label_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function labelsReplace(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id, string $expected_version, array $label_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('task_planning.labels.replace', ['workspace' => $workspace_id, 'task' => $task_id], compact('expected_version', 'label_ids'), $idempotency_key);
     }
@@ -96,7 +100,7 @@ final class AgentMcpTaskPlanningTools
     /**
      * @param list<string> $prerequisite_ids
      * @return array<string,mixed> */
-    public function dependenciesReplace(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 64, maxLength: 64)] string $expected_graph_version, #[Schema(maxItems: 25, uniqueItems: true, items: ['type' => 'string', 'format' => 'uuid'])] array $prerequisite_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function dependenciesReplace(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id, string $expected_version, string $expected_graph_version, array $prerequisite_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('task_planning.dependencies.replace', ['workspace' => $workspace_id, 'task' => $task_id], compact('expected_version', 'expected_graph_version', 'prerequisite_ids'), $idempotency_key);
     }
@@ -104,7 +108,7 @@ final class AgentMcpTaskPlanningTools
     /**
      * @param list<string> $contact_ids
      * @return array<string,mixed> */
-    public function contactsReplace(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(maxItems: 10, uniqueItems: true, items: ['type' => 'string', 'format' => 'uuid'])] array $contact_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    public function contactsReplace(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id, string $expected_version, array $contact_ids, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('task_planning.contacts.replace', ['workspace' => $workspace_id, 'task' => $task_id], compact('expected_version', 'contact_ids'), $idempotency_key);
     }
