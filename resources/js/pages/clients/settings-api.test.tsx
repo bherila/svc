@@ -87,6 +87,11 @@ describe('shared company form versions', () => {
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save client' }));
         await waitFor(() => expect(refreshPageProps).toHaveBeenCalled());
+        expect(refreshPageProps).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                only: expect.arrayContaining(['project_create']),
+            }),
+        );
         view.rerender(
             <Settings
                 {...props}
@@ -127,6 +132,11 @@ describe('shared company form versions', () => {
             screen.getByRole('button', { name: 'Save company profile' }),
         );
         await waitFor(() => expect(refreshPageProps).toHaveBeenCalled());
+        expect(refreshPageProps).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                only: expect.arrayContaining(['project_create']),
+            }),
+        );
         view.rerender(
             <Settings
                 {...props}

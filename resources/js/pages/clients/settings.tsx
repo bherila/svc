@@ -321,6 +321,7 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
                             only: [
                                 'company',
                                 'company_profile',
+                                'project_create',
                                 'workspaceNavigation',
                             ],
                         });

@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\AgentApi;
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -67,6 +69,32 @@ final class AgentProjectBrowserTest extends TestCase
         $this->assertSame('Synthetic browser project', $foreignProject->fresh()->name);
         Auth::shouldUse('web');
         $this->actingAs($owner)->get(route('clients.settings', [$workspace, $foreignCompany]))->assertNotFound();
+    }
+
+    public function test_partial_company_refresh_supplies_a_current_project_creation_version(): void
+    {
+        [$owner, $workspace, $company] = $this->tenant();
+        $oldVersion = AgentApiVersion::for($company);
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('p', 40));
+        $this->withHeader('Idempotency-Key', 'project-parent-edit')->patchJson(route('agent-api.v1.clients.update', [$workspace, $company]), [
+            'name' => 'Synthetic renamed company', 'expected_version' => $oldVersion,
+        ])->assertOk();
+        Auth::shouldUse('web');
+        $refreshed = $this->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/')) ?? '',
+            'X-Inertia-Partial-Component' => 'clients/settings',
+            'X-Inertia-Partial-Data' => 'company,company_profile,project_create',
+        ])->get(route('clients.settings', [$workspace, $company]))->assertOk()->json('props.project_create');
+        $this->assertNotSame($oldVersion, $refreshed['expected_version']);
+        $this->assertSame(AgentApiVersion::for($company->fresh()), $refreshed['expected_version']);
+        foreach (['X-Inertia', 'X-Inertia-Version', 'X-Inertia-Partial-Component', 'X-Inertia-Partial-Data'] as $header) {
+            $this->withoutHeader($header);
+        }
+        $this->withHeader('Idempotency-Key', 'project-after-parent-edit')->postJson($refreshed['url'], [
+            'company_id' => $refreshed['company_id'], 'expected_version' => $refreshed['expected_version'],
+            'name' => 'Synthetic project after client edit', 'confirm' => true,
+        ])->assertCreated();
     }
 
     /** @return array{User, Workspace, ClientCompany, ClientProject} */
