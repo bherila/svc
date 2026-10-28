@@ -25,7 +25,7 @@ final class PhpunitWorkflowTest extends TestCase
             $this->assertStringContainsString('--configuration=', $commands);
             $this->assertStringNotContainsString('composer setup', $commands);
         }
-        $this->assertSame('mariadb:10.6', $jobs['mariadb-tests']['services']['mariadb']['image']);
+        $this->assertSame('mariadb:11.4', $jobs['mariadb-tests']['services']['mariadb']['image']);
         $this->assertSame('mariadb', $jobs['mariadb-tests']['env']['DB_EXPECT_DRIVER']);
         $this->assertSame('sqlite', $jobs['sqlite']['env']['DB_EXPECT_DRIVER']);
         $this->assertArrayNotHasKey('services', $jobs['sqlite']);

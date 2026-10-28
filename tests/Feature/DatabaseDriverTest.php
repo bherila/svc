@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Database\CharacterUuidMariaDbConnection;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -123,9 +124,8 @@ final class DatabaseDriverTest extends TestCase
     /**
      * Laravel's MariaDB grammar switches uuid() from char(36) to native uuid
      * at 10.7. Production's existing UUID columns are char(36), so the server
-     * must not cross that boundary until every existing UUID and foreign-UUID
-     * column is migrated together. The deploy runs this same command before
-     * migrations.
+     * uses an explicit character-UUID grammar across server upgrades. The
+     * deploy runs this same command before migrations.
      */
     public function test_the_mariadb_driver_matches_the_existing_uuid_schema(): void
     {
@@ -140,5 +140,43 @@ final class DatabaseDriverTest extends TestCase
         $this->assertStringContainsString('"driver":"mariadb"', $output);
         $this->assertStringContainsString('"server_family":"mariadb"', $output);
         $this->assertStringContainsString('"uuid_grammar_compatible":true', $output);
+    }
+
+    public function test_character_uuid_foreign_keys_match_retained_tables_on_mariadb(): void
+    {
+        if (DB::connection()->getDriverName() !== 'mariadb') {
+            $this->markTestSkipped('The retained UUID storage contract belongs to the MariaDB driver.');
+        }
+
+        $this->assertInstanceOf(CharacterUuidMariaDbConnection::class, DB::connection());
+        // The parent represents retained schema from before the server upgrade.
+        Schema::create('driver_uuid_parent_probe', static function (Blueprint $table): void {
+            $table->char('id', 36)->primary();
+        });
+        try {
+            Schema::create('driver_uuid_child_probe', static function (Blueprint $table): void {
+                $table->uuid('id')->primary();
+                $table->foreignUuid('parent_id')->constrained('driver_uuid_parent_probe');
+            });
+            try {
+                $columns = DB::select("SELECT COLUMN_NAME AS name, DATA_TYPE AS type, CHARACTER_MAXIMUM_LENGTH AS length FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'driver_uuid_child_probe' ORDER BY COLUMN_NAME");
+                $this->assertCount(2, $columns);
+                foreach ($columns as $column) {
+                    $this->assertSame('char', $column->type);
+                    $this->assertSame(36, (int) $column->length);
+                }
+                $parent = '00000000-0000-4000-8000-000000000001';
+                $child = '00000000-0000-4000-8000-000000000002';
+                DB::table('driver_uuid_parent_probe')->insert(['id' => $parent]);
+                DB::table('driver_uuid_child_probe')->insert(['id' => $child, 'parent_id' => $parent]);
+                $this->assertSame($parent, DB::table('driver_uuid_child_probe')->where('id', $child)->value('parent_id'));
+                $this->expectException(QueryException::class);
+                DB::table('driver_uuid_child_probe')->insert(['id' => '00000000-0000-4000-8000-000000000003', 'parent_id' => '00000000-0000-4000-8000-000000000004']);
+            } finally {
+                Schema::dropIfExists('driver_uuid_child_probe');
+            }
+        } finally {
+            Schema::dropIfExists('driver_uuid_parent_probe');
+        }
     }
 }
