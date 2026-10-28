@@ -444,6 +444,10 @@ resolves authenticated context, validates its DTO, and maps the result.
 
 ## Compatibility and current coverage
 
+The shared [`/api/v1` compatibility policy](finance-api.md#compatibility) states
+which additions are compatible, how consumers handle unknown enum values, and
+when a breaking change requires a new version or a deprecation period.
+
 Existing clients depend on the public tool and prompt names, dotted naming,
 tool ordering, schema shapes, safe error messages, OAuth/PKCE discovery, and
 credential-bound sessions. Additive capabilities must not rename, remove, or
