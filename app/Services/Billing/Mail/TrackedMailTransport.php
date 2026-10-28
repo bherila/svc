@@ -26,6 +26,6 @@ final readonly class TrackedMailTransport implements TransportInterface
 
     public function __toString(): string
     {
-        return (string) $this->transport;
+        return $this->transport->__toString();
     }
 }

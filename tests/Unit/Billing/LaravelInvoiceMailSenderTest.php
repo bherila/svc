@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Billing;
 
+use App\Services\Billing\Mail\InvoiceMailSender;
 use App\Services\Billing\Mail\LaravelInvoiceMailSender;
 use App\Services\Billing\Mail\SymfonyMailHandoff;
 use App\Services\Billing\Mail\TrackedMailTransport;
@@ -18,7 +19,9 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\CoversClass;
 use RuntimeException;
+use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
 use Tests\Support\RecordingMailTransport;
 use Tests\TestCase;
@@ -32,7 +35,9 @@ final class LaravelInvoiceMailSenderTest extends TestCase
     public function test_real_mailer_acceptance_preserves_addresses_and_the_shared_default_transport(): void
     {
         [$mailer, $transport] = $this->realMailer();
-        $result = (new LaravelInvoiceMailSender)->send((new Mailable)->html('<p>Synthetic body</p>'), $this->draft());
+        $sender = $this->app->make(InvoiceMailSender::class);
+        $this->assertInstanceOf(LaravelInvoiceMailSender::class, $sender);
+        $result = $sender->send((new Mailable)->html('<p>Synthetic body</p>'), $this->draft());
         $this->assertTrue($result->handoffStarted);
         $this->assertNull($result->failure);
         $this->assertNotEmpty($result->providerMessageId);
@@ -175,6 +180,23 @@ final class LaravelInvoiceMailSenderTest extends TestCase
         $this->assertCount(3, $transport->messages);
         $this->assertSame($email, $transport->messages[2]);
         $this->assertSame('synthetic://mail', (string) $decorator);
+    }
+
+    public function test_explicit_transport_envelope_keeps_bounce_sender_and_routing_recipients(): void
+    {
+        $handoff = new SymfonyMailHandoff;
+        $transport = new RecordingMailTransport;
+        $decorator = new TrackedMailTransport($transport, $handoff);
+        $email = (new Email)->from('sender@example.test')->to('billing@example.test')->text('Synthetic body');
+        $handoff->bind($email);
+        $sent = $decorator->send($email, new Envelope(new Address('bounce@example.test'), [new Address('routed@example.test')]));
+
+        $this->assertNotNull($sent);
+        $this->assertTrue($handoff->hasStarted());
+        $this->assertSame('bounce@example.test', $sent->getEnvelope()->getSender()->getAddress());
+        $this->assertSame(['routed@example.test'], array_map(static fn (Address $address): string => $address->getAddress(), $sent->getEnvelope()->getRecipients()));
+        $this->assertSame('billing@example.test', $email->getTo()[0]->getAddress());
+        $this->assertSame([$email], $transport->messages);
     }
 
     public function test_recording_replacement_can_accept_without_a_provider_id(): void
