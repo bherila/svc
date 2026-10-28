@@ -17,7 +17,7 @@ final class ExpenseReceiptOperationContractTest extends TestCase
         $catalog = new AgentOperationCatalog;
         $operation = $catalog->registry()->find('expenses.receipts.delete');
         $this->assertNotNull($operation);
-        $this->assertSame(Effect::LocalWrite, $operation->effect);
+        $this->assertSame(Effect::Destructive, $operation->effect);
         $this->assertTrue($operation->isIdempotent());
         $this->assertTrue($catalog->isManagerOnly($operation->id));
         $this->assertSame(['expenses:read', 'expenses:write'], $operation->requirement->scopes);

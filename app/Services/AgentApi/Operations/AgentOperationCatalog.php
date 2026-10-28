@@ -690,7 +690,7 @@ final class AgentOperationCatalog
                 'Delete expense receipt',
                 self::restDescription('expenses.receipts.delete'),
                 [AgentMcpWriteTools::class, 'expenseReceiptsDelete'],
-                Effect::LocalWrite,
+                Effect::Destructive,
                 true,
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::EXPENSES],
