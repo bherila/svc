@@ -55,7 +55,7 @@ export default function ClientTaskDetail({
                                 Task files
                             </Link>
                         )}
-                        <TaskEditor key={task.version} task={task} />
+                        <TaskEditor key={task.id} task={task} />
                     </CardContent>
                 </Card>
                 {planning_details && (

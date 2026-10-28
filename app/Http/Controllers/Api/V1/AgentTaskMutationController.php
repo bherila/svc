@@ -10,6 +10,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskInputRules;
+use App\Support\AgentApi\FirstPartySession;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,7 +28,8 @@ final class AgentTaskMutationController extends Controller
     ): JsonResponse {
         $context = $contexts->from($request);
         $data = $request->validate(TaskInputRules::create());
-        $task = $tasks->create(
+        $operation = FirstPartySession::is($request) ? 'createInternal' : 'create';
+        $task = $tasks->{$operation}(
             $context->user,
             $workspace,
             $context->oauthClientId,
@@ -36,7 +38,7 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        $includePlanning = ! $access->isWorkspaceClient($context->user, $workspace);
+        $includePlanning = FirstPartySession::is($request) || ! $access->isWorkspaceClient($context->user, $workspace);
         if ($includePlanning) {
             app(TaskCompletionAdvisory::class)->load($workspace, [$task]);
         }
@@ -55,7 +57,8 @@ final class AgentTaskMutationController extends Controller
     ): JsonResponse {
         $context = $contexts->from($request);
         $data = $request->validate(['expected_version' => ['required', 'string', 'size:64']] + TaskInputRules::patch());
-        $record = $tasks->update(
+        $operation = FirstPartySession::is($request) ? 'updateInternal' : 'update';
+        $record = $tasks->{$operation}(
             $context->user,
             $workspace,
             $context->oauthClientId,
@@ -64,7 +67,7 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        $includePlanning = ! $access->isWorkspaceClient($context->user, $workspace);
+        $includePlanning = FirstPartySession::is($request) || ! $access->isWorkspaceClient($context->user, $workspace);
         if ($includePlanning) {
             app(TaskCompletionAdvisory::class)->load($workspace, [$record]);
         }

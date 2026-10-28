@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /** Test-only routes prove the additive adapters; production registry wiring is separate. */
@@ -26,8 +27,11 @@ final class TaskOrganizationHttpTest extends TestCase
         // cover the real /api/v1 bindings and their OpenAPI contracts.
         foreach ([['synthetic-api/organization', AgentTaskOrganizationController::class, ['api', 'auth:api']],
             ['synthetic-organization', ClientTaskOrganizationController::class, ['web', 'auth:web']]] as [$prefix, $controller, $middleware]) {
-            Route::prefix($prefix.'/{workspace}/{project}')->middleware($middleware)->group(function () use ($controller): void {
+            Route::prefix($prefix.'/{workspace}/{project}')->middleware($middleware)->group(function () use ($controller, $prefix): void {
                 Route::get('/', [$controller, 'show']);
+                if ($prefix === 'synthetic-organization') {
+                    return;
+                }
                 foreach ([['post', '/lists', 'lists.create'], ['patch', '/lists/{list}', 'lists.update'], ['delete', '/lists/{list}', 'lists.archive'],
                     ['post', '/lists/{list}/restore', 'lists.restore'], ['put', '/lists/order', 'lists.reorder'],
                     ['post', '/tasks', 'tasks.create'], ['patch', '/tasks/{task}/container', 'tasks.move'], ['put', '/tasks/order', 'tasks.reorder']] as [$verb, $uri, $operation]) {
@@ -89,14 +93,15 @@ final class TaskOrganizationHttpTest extends TestCase
         foreach (['client_task_graph_states', 'client_task_lists', 'agent_mutation_receipts', 'agent_mutation_audits'] as $table) {
             $this->assertDatabaseCount($table, 0);
         }
-        $this->actingAs($owner, 'web');
-        $native = '/synthetic-organization/'.$workspace->public_id.'/'.$project->public_id;
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
+        $native = '/api/v1/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/task-organization';
         $this->withHeader('Idempotency-Key', 'synthetic-native-forged')->postJson($native.'/lists', $input + ['origin' => 'Agent'])->assertUnprocessable();
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
         $this->flushHeaders();
-        $this->postJson($native.'/lists', $input + ['idempotency_key' => 'synthetic-native-body-key'])->assertCreated();
+        $this->postJson($native.'/lists', $input + ['idempotency_key' => 'synthetic-native-body-key'])->assertUnprocessable();
+        $this->withHeader('Idempotency-Key', 'synthetic-native-header-key')->postJson($native.'/lists', $input)->assertCreated();
         $this->assertDatabaseCount('client_task_lists', 1);
-        $this->assertDatabaseHas('agent_mutation_receipts', ['oauth_client_id' => 'svc-web-task-organization', 'operation' => 'task_organization.lists.create', 'idempotency_key' => 'synthetic-native-body-key']);
+        $this->assertDatabaseHas('agent_mutation_receipts', ['oauth_client_id' => 'svc-web', 'operation' => 'task_organization.lists.create', 'idempotency_key' => 'synthetic-native-header-key']);
     }
 
     /** @return array{Workspace,ClientProject,User} */

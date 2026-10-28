@@ -20,7 +20,7 @@ final class TaskEditorPresenter
     public function project(Workspace $workspace, ClientProject $project, ?array $assigneeOptions = null): array
     {
         return AgentProjectPresenter::identity($project) + [
-            'create_action' => route('tasks.store', [$workspace, $project]),
+            'create_action' => route('agent-api.v1.tasks.store', [$workspace, $project->public_id]),
             'assignees_action' => route('tasks.assignees', [$workspace, $project]),
         ] + ($assigneeOptions === null ? [] : ['assignee_options' => $assigneeOptions]);
     }
@@ -32,7 +32,7 @@ final class TaskEditorPresenter
     public function task(Workspace $workspace, ClientTask $task, ?array $assigneeOptions = null): array
     {
         return AgentTaskPresenter::details($task) + [
-            'update_action' => route('tasks.update', [$workspace, $task]),
+            'update_action' => route('agent-api.v1.tasks.update', [$workspace, $task->public_id]),
             'assignees_action' => route('tasks.assignees', [$workspace, $task->project]),
         ] + $this->planning->fields($task) + ($assigneeOptions === null ? [] : ['assignee_options' => $assigneeOptions]);
     }

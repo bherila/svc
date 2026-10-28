@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreClientTaskRequest;
-use App\Http\Requests\UpdateClientTaskRequest;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
@@ -13,14 +11,11 @@ use App\Services\Collaboration\CollaborationReadService;
 use App\Services\Tasks\Planning\TaskPlanningNativePresenter;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskCompletionAdvisory;
-use App\Services\Tasks\TaskCreateData;
 use App\Services\Tasks\TaskEditorPresenter;
-use App\Services\Tasks\TaskPatchData;
 use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Services\WorkspaceTaskMutationAction;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -55,39 +50,6 @@ class ClientTaskController extends Controller
         $this->authorizeProject($request, $workspace, $project);
 
         return response()->json($tasks->assigneeOptions($workspace, $project, $data['q'] ?? ''));
-    }
-
-    public function store(
-        StoreClientTaskRequest $request,
-        Workspace $workspace,
-        ClientProject $clientProject,
-        WorkspaceAuthorization $authorization,
-        WorkspaceTaskMutationAction $tasks,
-    ): RedirectResponse {
-        $authorization->assertOwnedBy($workspace, $clientProject);
-        $this->authorizeProject($request, $workspace, $clientProject);
-
-        $actor = $request->user();
-        abort_unless($actor instanceof User, 401);
-        $tasks->create($actor, $workspace, $clientProject->public_id, TaskCreateData::fromValidated($request->validated()));
-
-        return redirect()->back()->with('status', 'Task created.');
-    }
-
-    public function update(
-        UpdateClientTaskRequest $request,
-        Workspace $workspace,
-        ClientTask $clientTask,
-        WorkspaceAuthorization $authorization,
-        WorkspaceTaskMutationAction $tasks,
-    ): RedirectResponse {
-        $authorization->assertOwnedBy($workspace, $clientTask);
-
-        $actor = $request->user();
-        abort_unless($actor instanceof User, 401);
-        $tasks->update($actor, $workspace, $clientTask->public_id, TaskPatchData::fromValidated($request->validated()), $request->validated('expected_version'));
-
-        return redirect()->back()->with('status', 'Task updated.');
     }
 
     private function authorizeProject(Request $request, Workspace $workspace, ClientProject $project): void

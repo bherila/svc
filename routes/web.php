@@ -139,29 +139,20 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
 
     foreach (TaskPlanningOperations::DEFINITIONS as $suffix => [$verb]) {
+        if ($verb !== 'GET') {
+            continue;
+        }
         $path = TaskPlanningOperations::ROUTES['task_planning.'.$suffix][1];
         if ($suffix === 'labels.list') {
             $path .= '/data';
         }
-        $handler = $verb === 'GET' ? (str_ends_with($suffix, '.options') ? 'options' : 'show') : ($suffix === 'labels.archive' ? 'archiveLabel' : 'mutate');
+        $handler = str_ends_with($suffix, '.options') ? 'options' : 'show';
         Route::match([$verb], $path, [ClientTaskPlanningController::class, $handler])
             ->whereUuid(['task', 'project', 'label'])->defaults('task_planning_operation', $suffix)->name('tasks.planning.'.$suffix);
     }
     Route::prefix('/workspaces/{workspace}/projects/{project}/task-organization')->group(function (): void {
         Route::get('/', [ClientTaskOrganizationController::class, 'show'])->whereUuid('project')->name('tasks.organization.snapshot');
-        foreach ([['post', '/lists', 'lists.store', 'lists.create'], ['patch', '/lists/{list}', 'lists.update', 'lists.update'],
-            ['delete', '/lists/{list}', 'lists.archive', 'lists.archive'], ['post', '/lists/{list}/restore', 'lists.restore', 'lists.restore'],
-            ['put', '/lists/order', 'lists.reorder', 'lists.reorder'], ['post', '/tasks', 'tasks.store', 'tasks.create'],
-            ['patch', '/tasks/{task}/container', 'tasks.move', 'tasks.move'], ['put', '/tasks/order', 'tasks.reorder', 'tasks.reorder']] as [$verb, $suffix, $name, $operation]) {
-            Route::$verb($suffix, [ClientTaskOrganizationController::class, $operation === 'lists.archive' ? 'archiveList' : 'mutate'])
-                ->whereUuid(['project', 'list', 'task'])
-                ->defaults('task_organization_operation', $operation)->name('tasks.organization.'.$name);
-        }
     });
-    Route::post('/workspaces/{workspace}/projects/{clientProject}/tasks', [ClientTaskController::class, 'store'])
-        ->name('tasks.store');
-    Route::patch('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'update'])
-        ->name('tasks.update');
 });
 
 require __DIR__.'/engagement.php';

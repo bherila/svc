@@ -301,7 +301,7 @@ ambiguous intent. No aliases outside `svc:tasks:...` are primary commands.
 
 Reads are read-only. Mutations preview by default via inherited rollback and
 `executeInternal`, fixed client ID `svc-cli-task-planning`; only `--apply` persists.
-Use `svc-web-task-planning` for native receipt clients. Input is a JSON object up
+The website now sends writes to the session-authenticated `/api/v1` planning operations using the shared `svc-web` receipt client. The trusted session selects Internal task authority; OAuth and MCP retain Agent authority. Native read adapters still provide finished continuation URLs. The former parallel web writers are retired. Input is a JSON object up
 to 1 MiB, with the same request keys, required versions and explicit arrays as
 REST; no inferred current version or silent clear. Preview rolls back every
 association, endpoint/graph revision, catalog row and receipt. Label/contact
