@@ -151,6 +151,22 @@ $proposal->items()->create([
     'quantity' => 2, 'unit_amount' => 5000, 'cadence' => 'one_time', 'sort_order' => 0,
 ]);
 
+$engagementAgreementPath = null;
+if (getenv('SVC_LAYOUT_ENGAGEMENT') === '1') {
+    $proposal->forceFill(['status' => 'draft', 'sent_at' => null])->save();
+    $draftAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'title' => str_repeat('SyntheticDraftAgreementWithoutBreaks', 8), 'status' => 'draft',
+        'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly',
+    ]);
+    $activeAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'title' => str_repeat('SyntheticActiveAgreementWithoutBreaks', 8), 'status' => 'active',
+        'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly',
+    ]);
+    $engagementAgreementPath = route('clients.agreement', [$workspace, $company, $draftAgreement], absolute: false);
+}
+
 $project = ClientProject::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'name' => str_repeat('SyntheticProject', 10), 'status' => 'active',
@@ -411,7 +427,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'history_index' => route('history.index', $workspace, absolute: false),
     'history_discussion' => route('history.show', [$workspace, $historyDiscussion], absolute: false),
     'history_invoice' => route('history.show', [$workspace, $historyInvoice], absolute: false),
-    'agreement' => $backlogAgreementPath,
+    'agreement' => $engagementAgreementPath ?? $backlogAgreementPath,
     'buydown_create' => $backlogCreatePath,
     'reminder_invoice' => route('clients.invoice', [$workspace, $company, $reminderInvoice], absolute: false),
     'square_explore' => route('square.explore', $workspace, absolute: false),

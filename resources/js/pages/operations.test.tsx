@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgreementActivationButton, PaymentForm } from '@/pages/operations';
+import { PaymentForm } from '@/pages/operations';
 
 const inertia = vi.hoisted(() => ({ post: vi.fn() }));
 
@@ -61,30 +61,6 @@ function invoice(overrides: Record<string, unknown> = {}) {
         ...overrides,
     };
 }
-
-describe('agreement activation', () => {
-    it('shows an overlap refusal beside the activation control', () => {
-        inertia.post.mockImplementation(
-            (
-                _href: string,
-                _data: undefined,
-                options: { onError: (errors: Record<string, string>) => void },
-            ) => {
-                options.onError({
-                    engagement:
-                        'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
-                });
-            },
-        );
-
-        render(<AgreementActivationButton href="/agreements/one/activate" />);
-        fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
-
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
-        );
-    });
-});
 
 /**
  * This form has always held `received_on`, defaulted it and posted it. It never

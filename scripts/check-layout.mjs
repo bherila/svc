@@ -39,6 +39,7 @@ const correctionOnly = process.argv.includes('--invoice-correction');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
 const timeOnly = process.argv.includes('--time');
+const engagementOnly = process.argv.includes('--engagement');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
 const tasksOnly = process.argv.includes('--tasks');
@@ -145,6 +146,7 @@ try {
         SVC_FINANCE_TRANSACTION_URL:
             'https://finance.example.test/transactions/{transaction_uuid}',
         SVC_LAYOUT_PORTAL_PAGES: portalOnly ? '1' : '0',
+        SVC_LAYOUT_ENGAGEMENT: engagementOnly ? '1' : '0',
         SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
         SVC_LAYOUT_TASKS: tasksOnly ? '1' : '0',
     };
@@ -304,38 +306,40 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of tasksOnly
-            ? ['task_list', 'task_project', 'task_editor', 'task_portal']
-            : historyOnly
-              ? ['history_index', 'history_discussion', 'history_invoice']
-              : portalOnly
-                ? ['settings']
-                : correctionOnly
-                  ? ['invoice_review']
-                  : squareOnly
-                    ? ['square_explore', 'square_invoice', 'square_portal']
-                    : remindersOnly
-                      ? ['reminder_invoice', 'settings']
-                      : timeOnly
-                        ? ['time', 'draft_time']
-                        : backlogOnly
-                          ? ['agreement']
-                          : [
-                                'mcp_setup',
-                                'invoice',
-                                'invoice_review',
-                                'reminder_invoice',
-                                'settings',
-                                'draft_invoice',
-                                'draft_time',
-                                'proposal',
-                                'proposal_acceptance',
-                                'operations',
-                                'time',
-                                'expenses',
-                                'receipts',
-                                'expense_schedules',
-                            ]) {
+        for (const screen of engagementOnly
+            ? ['operations', 'agreement']
+            : tasksOnly
+              ? ['task_list', 'task_project', 'task_editor', 'task_portal']
+              : historyOnly
+                ? ['history_index', 'history_discussion', 'history_invoice']
+                : portalOnly
+                  ? ['settings']
+                  : correctionOnly
+                    ? ['invoice_review']
+                    : squareOnly
+                      ? ['square_explore', 'square_invoice', 'square_portal']
+                      : remindersOnly
+                        ? ['reminder_invoice', 'settings']
+                        : timeOnly
+                          ? ['time', 'draft_time']
+                          : backlogOnly
+                            ? ['agreement']
+                            : [
+                                  'mcp_setup',
+                                  'invoice',
+                                  'invoice_review',
+                                  'reminder_invoice',
+                                  'settings',
+                                  'draft_invoice',
+                                  'draft_time',
+                                  'proposal',
+                                  'proposal_acceptance',
+                                  'operations',
+                                  'time',
+                                  'expenses',
+                                  'receipts',
+                                  'expense_schedules',
+                              ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -641,12 +645,52 @@ try {
             }
 
             if (screen !== 'task_editor') {
-                await capture(
-                    screen,
-                    'initial',
-                    width,
-                    screen === 'operations',
-                );
+                await capture(screen, 'initial', width, false);
+            }
+
+            if (engagementOnly && screen === 'operations') {
+                await page
+                    .getByLabel('Proposal title', { exact: true })
+                    .first()
+                    .fill('SyntheticProposalTitle'.repeat(12));
+                await page
+                    .getByLabel('Proposal line description', { exact: true })
+                    .first()
+                    .fill('SyntheticProposalLine'.repeat(12));
+                await page
+                    .getByLabel('Proposal price', { exact: true })
+                    .first()
+                    .fill('1234.50');
+                await capture(screen, 'engagement-draft', width);
+                await page
+                    .getByRole('button', { name: 'Activate', exact: true })
+                    .first()
+                    .click();
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await capture(screen, 'activation-confirmation', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+            }
+
+            if (engagementOnly && screen === 'agreement') {
+                await page
+                    .getByRole('button', {
+                        name: 'Rename this agreement',
+                        exact: true,
+                    })
+                    .click();
+                await capture(screen, 'rename', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'Edit terms', exact: true })
+                    .click();
+                await capture(screen, 'terms', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
             }
 
             if (screen === 'agreement' && backlogOnly) {
@@ -1046,7 +1090,8 @@ try {
         !correctionOnly &&
         !squareOnly &&
         !remindersOnly &&
-        !backlogOnly
+        !backlogOnly &&
+        !engagementOnly
     ) {
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.project_log);
@@ -1082,7 +1127,8 @@ try {
         !squareOnly &&
         !remindersOnly &&
         !timeOnly &&
-        !backlogOnly
+        !backlogOnly &&
+        !engagementOnly
     ) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
@@ -1241,7 +1287,9 @@ try {
                       ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
                       : backlogOnly
                         ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                        : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+                        : engagementOnly
+                          ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                          : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

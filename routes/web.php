@@ -87,10 +87,8 @@ Route::middleware('auth')->group(function (): void {
     // inside the Inertia middleware. Attaching it here is also what keeps the
     // switcher's queries off the screens that show no switcher - the workspace
     // selector, webhooks, PDFs and downloads.
-    // Operations is on its way out - every workflow it holds is moving to the
-    // client module that owns it - so it deliberately stays outside the shell
-    // rather than gaining a switcher it is about to lose.
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {

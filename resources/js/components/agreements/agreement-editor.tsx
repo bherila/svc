@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest } from '@/lib/api';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import type { AgreementTerms } from '@/types/agreement';
 
 /**
@@ -139,29 +141,32 @@ export function AgreementTitle({
         );
     }
 
-    const save = () => {
+    const save = async () => {
         if (busy) {
             return;
         }
 
         setBusy(true);
-        router.patch(
-            updateHref,
-            { title },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setError(null);
-                    setEditing(false);
-                },
-                onError: (errors) =>
-                    setError(
-                        Object.values(errors)[0] ??
-                            'That name could not be saved.',
-                    ),
-                onFinish: () => setBusy(false),
-            },
-        );
+        const result = await apiRequest('PATCH', updateHref, {
+            title,
+            expected_version: agreement.version,
+        });
+
+        if (result.ok) {
+            setError(null);
+            setEditing(false);
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setError(result.message);
+
+        if (result.status === 409) {
+            await refreshPageProps();
+        }
+
+        setBusy(false);
     };
 
     return (
@@ -278,7 +283,7 @@ export function AgreementTermsForm({
         value: (typeof form)[K],
     ) => setForm((current) => ({ ...current, [key]: value }));
 
-    const submit = () => {
+    const submit = async () => {
         if (busy) {
             return;
         }
@@ -306,46 +311,47 @@ export function AgreementTermsForm({
         }
 
         setBusy(true);
-        router.patch(
-            updateHref,
-            {
-                ...(numbers as Record<string, number | null>),
-                starts_on: form.starts_on,
-                ends_on: form.ends_on === '' ? null : form.ends_on,
-                billing_cadence: form.billing_cadence,
-                currency: form.currency.toUpperCase(),
-                rollover_policy:
-                    form.rollover_policy.trim() === ''
-                        ? null
-                        : form.rollover_policy.trim(),
-                first_cycle_proration:
-                    form.first_cycle_proration === UNSET
-                        ? null
-                        : form.first_cycle_proration,
-                bill_overage_interim:
-                    form.bill_overage_interim === UNSET
-                        ? null
-                        : form.bill_overage_interim === 'yes',
-                agreement_text:
-                    form.agreement_text === '' ? null : form.agreement_text,
-                is_visible_to_client: form.is_visible_to_client,
-                show_deferred_backlog_to_client:
-                    form.show_deferred_backlog_to_client,
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setError(null);
-                    onDone();
-                },
-                onError: (errors) =>
-                    setError(
-                        Object.values(errors)[0] ??
-                            'Those terms could not be saved.',
-                    ),
-                onFinish: () => setBusy(false),
-            },
-        );
+        const result = await apiRequest('PATCH', updateHref, {
+            expected_version: agreement.version,
+            ...(numbers as Record<string, number | null>),
+            starts_on: form.starts_on,
+            ends_on: form.ends_on === '' ? null : form.ends_on,
+            billing_cadence: form.billing_cadence,
+            currency: form.currency.toUpperCase(),
+            rollover_policy:
+                form.rollover_policy.trim() === ''
+                    ? null
+                    : form.rollover_policy.trim(),
+            first_cycle_proration:
+                form.first_cycle_proration === UNSET
+                    ? null
+                    : form.first_cycle_proration,
+            bill_overage_interim:
+                form.bill_overage_interim === UNSET
+                    ? null
+                    : form.bill_overage_interim === 'yes',
+            agreement_text:
+                form.agreement_text === '' ? null : form.agreement_text,
+            is_visible_to_client: form.is_visible_to_client,
+            show_deferred_backlog_to_client:
+                form.show_deferred_backlog_to_client,
+        });
+
+        if (result.ok) {
+            setError(null);
+            onDone();
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setError(result.message);
+
+        if (result.status === 409) {
+            await refreshPageProps();
+        }
+
+        setBusy(false);
     };
 
     return (

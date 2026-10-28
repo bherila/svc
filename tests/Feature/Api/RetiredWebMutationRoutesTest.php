@@ -17,6 +17,21 @@ final class RetiredWebMutationRoutesTest extends TestCase
         $this->assertTrue(Route::has('svc.billing.invoices.store'));
     }
 
+    public function test_retired_engagement_mutations_are_absent_and_canonical_routes_remain(): void
+    {
+        foreach (['svc.engagement.proposals.store', 'svc.engagement.proposals.send',
+            'svc.engagement.agreements.store', 'svc.engagement.agreements.update', 'svc.engagement.agreements.activate',
+            'svc.billing.schedules.store', 'svc.billing.schedules.generate'] as $name) {
+            $this->assertFalse(Route::has($name), $name);
+        }
+        foreach (['proposals.store', 'proposals.send', 'agreements.store', 'agreements.update',
+            'agreements.activate', 'billing-schedules.store', 'billing-schedules.generate'] as $name) {
+            $this->assertTrue(Route::has('agent-api.v1.'.$name), $name);
+        }
+        $this->assertTrue(Route::has('svc.engagement.agreements.sign'));
+        $this->assertTrue(Route::has('svc.engagement.proposals.accept'));
+    }
+
     /**
      * A browser route answers the page that called it and has no JSON shape
      * of its own (#454): the bare-model JSON branches were a third shape

@@ -525,7 +525,7 @@ class ClientDirectoryController extends Controller
             'audience' => 'operator',
             'actions' => [
                 'update' => $manages
-                    ? route('svc.engagement.agreements.update', [$workspace, $clientAgreement], absolute: false)
+                    ? route('agent-api.v1.agreements.update', [$workspace, $clientAgreement->public_id], absolute: false)
                     : null,
                 'deferred_buydown' => $manages ? [
                     'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
@@ -539,6 +539,7 @@ class ClientDirectoryController extends Controller
             'files_next_href' => $filePage->nextHref,
             'files_previous_href' => $filePage->previousHref,
             'agreement' => $this->agreements->present($clientAgreement, $projectNames->get((int) $clientAgreement->client_project_id)) + [
+                'version' => AgentApiVersion::for($clientAgreement),
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero
                 // where the term is simply unstated - the difference decides
