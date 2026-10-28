@@ -1,5 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PaymentReminderCadenceCard } from '@/components/billing/payment-reminders';
 import type { CompanyRemindersState } from '@/components/billing/payment-reminders';
 import { ClientContacts } from '@/components/clients/client-contacts';
@@ -88,20 +88,58 @@ function useProjectWrite() {
         body: object;
         key: string;
         uncertain: boolean;
+        saved?: ApiSchema<'ProjectResponse'>['data'];
     } | null>(null);
+    const running = useRef(false);
     const [busy, setBusy] = useState(false);
     const [unresolved, setUnresolved] = useState(false);
+    const [confirmed, setConfirmed] = useState(false);
     const [failure, setFailure] = useState<string | null>(null);
+    useEffect(() => {
+        if (!busy && !unresolved) {
+            return;
+        }
+
+        const stopNavigation = router.on?.('before', (event) => {
+            const visit = event.detail.visit;
+            const url = new URL(visit.url, window.location.href);
+            const readingCurrentProps =
+                visit.only.length > 0 &&
+                visit.method === 'get' &&
+                url.origin === window.location.origin &&
+                url.pathname === window.location.pathname &&
+                url.search === window.location.search;
+
+            if (attempt.current !== null && !readingCurrentProps) {
+                event.preventDefault();
+                setFailure(
+                    'Check the original project result before leaving this page.',
+                );
+            }
+        });
+        const stopUnload = (event: BeforeUnloadEvent) => {
+            if (attempt.current !== null) {
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('beforeunload', stopUnload);
+
+        return () => {
+            stopNavigation?.();
+            window.removeEventListener('beforeunload', stopUnload);
+        };
+    }, [busy, unresolved]);
 
     async function write(
         method: 'POST' | 'PATCH' | 'PUT',
         url: string,
         body: object,
     ) {
-        if (busy) {
+        if (running.current) {
             return null;
         }
 
+        running.current = true;
         setBusy(true);
         setFailure(null);
         attempt.current ??= {
@@ -112,65 +150,78 @@ function useProjectWrite() {
             uncertain: false,
         };
         const original = attempt.current;
-        const result = await apiRequest<ApiSchema<'ProjectResponse'>['data']>(
-            original.method,
-            original.url,
-            original.body,
-            original.key,
-        );
 
-        if (!result.ok) {
-            original.uncertain =
-                result.status !== 422 &&
-                (original.uncertain ||
-                    result.status === 0 ||
-                    result.status === 408 ||
-                    result.status >= 500);
-            setUnresolved(original.uncertain);
-            setFailure(
-                Object.values(result.errors ?? {})
-                    .flat()
-                    .join(' ') || result.message,
-            );
+        try {
+            if (original.saved === undefined) {
+                const result = await apiRequest<
+                    ApiSchema<'ProjectResponse'>['data']
+                >(original.method, original.url, original.body, original.key);
 
-            if (!original.uncertain) {
-                attempt.current = null;
+                if (!result.ok) {
+                    original.uncertain ||=
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    setUnresolved(original.uncertain);
+                    setFailure(
+                        Object.values(result.errors ?? {})
+                            .flat()
+                            .join(' ') || result.message,
+                    );
+
+                    if (!original.uncertain) {
+                        attempt.current = null;
+                    }
+
+                    return null;
+                }
+
+                if (
+                    !result.data ||
+                    typeof result.data.version !== 'string' ||
+                    typeof result.data.name !== 'string'
+                ) {
+                    original.uncertain = true;
+                    setUnresolved(true);
+                    setFailure(
+                        'SVC’s response could not be read. Check the original change.',
+                    );
+
+                    return null;
+                }
+
+                original.saved = result.data;
+                setConfirmed(true);
             }
 
-            setBusy(false);
+            setUnresolved(true);
+            await refreshPageProps({
+                only: ['projects', 'project_create'],
+                requireSuccess: true,
+            });
+            const saved = original.saved;
+            attempt.current = null;
+            setUnresolved(false);
+            setConfirmed(false);
 
-            return null;
-        }
-
-        if (
-            !result.data ||
-            typeof result.data.version !== 'string' ||
-            typeof result.data.name !== 'string'
-        ) {
+            return saved;
+        } catch {
             original.uncertain = true;
             setUnresolved(true);
             setFailure(
-                'SVC’s response could not be read. Check the original change.',
+                original.saved
+                    ? 'The project change was saved, but its page could not refresh. Refresh the saved result before editing again.'
+                    : 'The original project result could not be checked. Check the original change before editing again.',
             );
-            setBusy(false);
 
             return null;
+        } finally {
+            running.current = false;
+            setBusy(false);
         }
-
-        attempt.current = null;
-        setUnresolved(false);
-        await new Promise<void>((resolve) =>
-            router.reload({
-                only: ['projects', 'project_create'],
-                onFinish: () => resolve(),
-            }),
-        );
-        setBusy(false);
-
-        return result.data;
     }
 
-    return { busy, unresolved, failure, write };
+    return { busy, unresolved, confirmed, failure, write };
 }
 
 function ProjectAccess({
@@ -629,9 +680,11 @@ function ProjectForm({
                     variant="outline"
                     disabled={mutation.busy}
                 >
-                    {mutation.unresolved
-                        ? 'Check project save'
-                        : 'Save project'}
+                    {mutation.confirmed
+                        ? 'Refresh saved project'
+                        : mutation.unresolved
+                          ? 'Check project save'
+                          : 'Save project'}
                 </Button>
             </div>
 
@@ -640,8 +693,9 @@ function ProjectForm({
                     role="status"
                     className="text-sm wrap-anywhere text-muted-foreground"
                 >
-                    The result is unknown. Check the original save before
-                    editing again.
+                    {mutation.confirmed
+                        ? 'The change is saved. Refresh its result before editing again.'
+                        : 'The result is unknown. Check the original save before editing again.'}
                 </p>
             )}
             <div className="grid grid-cols-1 gap-2 border-t pt-3">
@@ -707,8 +761,9 @@ function NewProjectForm({ capability }: { capability: ProjectCreate }) {
                     role="status"
                     className="text-sm wrap-anywhere text-muted-foreground"
                 >
-                    The result is unknown. Check the original creation before
-                    editing again.
+                    {mutation.confirmed
+                        ? 'The project is created. Refresh its result before creating another.'
+                        : 'The result is unknown. Check the original creation before editing again.'}
                 </p>
             )}
             <div>
