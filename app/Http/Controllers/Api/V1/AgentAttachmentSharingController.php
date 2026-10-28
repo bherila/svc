@@ -12,6 +12,7 @@ use App\Services\Files\AttachmentMutationOrigin;
 use App\Services\Files\AttachmentPageQuery;
 use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentReader;
+use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Files\AttachmentSharingTransport;
 use App\Support\AgentApi\FirstPartySession;
 use Illuminate\Http\JsonResponse;
@@ -44,6 +45,16 @@ final class AgentAttachmentSharingController extends Controller
     public function index(Request $request, Workspace $workspace, string $client, string $recordType, string $recordPublicId): JsonResponse
     {
         $actor = $this->actor($request);
+
+        if ($request->query->has('presentation')) {
+            abort_unless(FirstPartySession::is($request), 403);
+            $input = $request->validate(['presentation' => ['required', 'in:native,portal']]);
+            $user = User::query()->findOrFail($actor->id);
+            $audience = $input['presentation'] === 'portal' ? $this->reader->nativePortalAudience($user, $workspace) : AttachmentAudience::Internal;
+
+            return response()->json(['data' => app(AttachmentSharingNativeView::class)->collaboration($user, $workspace,
+                $this->reference($client, $recordType, $recordPublicId), $audience, AttachmentPageQuery::fromInput($request->query()))]);
+        }
 
         return response()->json($this->files->listing($actor, $workspace, $this->reference($client, $recordType, $recordPublicId),
             $this->audience($request, $actor, $workspace), AttachmentPageQuery::fromInput($request->query())));

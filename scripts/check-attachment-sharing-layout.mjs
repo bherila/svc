@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
 
+const paginationOnly = process.argv.includes('--pagination-only');
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 if (existsSync(path.join(root, 'public/hot'))) {
@@ -90,6 +91,7 @@ try {
         QUEUE_CONNECTION: 'sync',
         SVC_LAYOUT_RUNTIME: runtime,
         SVC_LAYOUT_ATTACHMENT_SHARING: 'true',
+        SVC_LAYOUT_ATTACHMENT_PAGINATION: paginationOnly ? 'true' : 'false',
         SVC_ATTACHMENT_SHARING_WRITES_ENABLED: 'true',
     };
     const seed = spawnSync('php', ['scripts/layout/collaboration-seed.php'], {
@@ -145,7 +147,7 @@ $app = require $root.'/scripts/layout/bootstrap.php';
 $fixture = json_decode(file_get_contents($runtime.'/fixture.json'), true);
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET' && !(($_SERVER['REQUEST_METHOD'] ?? '') === 'PATCH' && $path === $fixture['attachment_visibility'])) { http_response_code(403); exit; }
-Illuminate\\Support\\Facades\\Auth::onceUsingId(str_starts_with($path, '/portal/') ? $fixture['portal_user_id'] : $fixture['user_id']);
+Illuminate\\Support\\Facades\\Auth::onceUsingId(str_starts_with($path, '/portal/') || ($_GET['presentation'] ?? '') === 'portal' ? $fixture['portal_user_id'] : $fixture['user_id']);
 $app->handleRequest(Illuminate\\Http\\Request::capture());
 `,
     );
@@ -190,23 +192,30 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         });
         const page = await context.newPage();
 
-        for (const screen of process.argv.includes('--parent-only')
-            ? ['parentfiles']
-            : process.argv.includes('--portal-structural-only')
-              ? ['portalprojectfiles', 'portaltaskfiles']
-              : process.argv.includes('--portal-commercial-only')
-                ? ['portalproposalfiles', 'portalinvoicefiles']
-                : [
-                      'note',
-                      'portal',
-                      'agreementfiles',
-                      'operationsfiles',
-                      'parentfiles',
-                      'portalproposalfiles',
-                      'portalinvoicefiles',
-                      'portalprojectfiles',
-                      'portaltaskfiles',
-                  ]) {
+        for (const screen of paginationOnly
+            ? [
+                  'pagination_native_parent',
+                  'pagination_portal_parent',
+                  'pagination_native_collaboration',
+                  'pagination_portal_collaboration',
+              ]
+            : process.argv.includes('--parent-only')
+              ? ['parentfiles']
+              : process.argv.includes('--portal-structural-only')
+                ? ['portalprojectfiles', 'portaltaskfiles']
+                : process.argv.includes('--portal-commercial-only')
+                  ? ['portalproposalfiles', 'portalinvoicefiles']
+                  : [
+                        'note',
+                        'portal',
+                        'agreementfiles',
+                        'operationsfiles',
+                        'parentfiles',
+                        'portalproposalfiles',
+                        'portalinvoicefiles',
+                        'portalprojectfiles',
+                        'portaltaskfiles',
+                    ]) {
             const errors = [];
             const requests = [];
             const onError = (error) => errors.push(error.message);
@@ -223,31 +232,132 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             await page.goto(origin + fixture[screen]);
             await expect(page.locator('main')).toBeVisible();
 
-            if (screen !== 'operationsfiles') {
+            if (
+                screen !== 'operationsfiles' &&
+                screen !== 'pagination_native_parent'
+            ) {
                 await expect(
                     page.getByRole('button', { name: 'Current client' }),
                 ).toContainText(fixture.company_name);
             }
 
-            const panel =
-                screen === 'agreementfiles'
-                    ? page.getByRole('region', {
-                          name: 'Attached files',
-                          exact: true,
-                      })
-                    : page
-                          .getByRole('region', {
-                              name: [
-                                  'parentfiles',
-                                  'portalprojectfiles',
-                                  'portaltaskfiles',
-                              ].includes(screen)
-                                  ? 'Attached files'
-                                  : 'Files',
-                              exact: true,
-                          })
-                          .first();
+            const panel = paginationOnly
+                ? page.getByRole('region', {
+                      name: 'Attached files',
+                      exact: true,
+                  })
+                : screen === 'agreementfiles'
+                  ? page.getByRole('region', {
+                        name: 'Attached files',
+                        exact: true,
+                    })
+                  : page
+                        .getByRole('region', {
+                            name: [
+                                'parentfiles',
+                                'portalprojectfiles',
+                                'portaltaskfiles',
+                            ].includes(screen)
+                                ? 'Attached files'
+                                : 'Files',
+                            exact: true,
+                        })
+                        .first();
             await expect(panel).toBeVisible();
+
+            if (paginationOnly) {
+                await expect(panel.locator('li')).toHaveCount(1);
+                expect(requests, 'seed requires no append fetch').toEqual([]);
+
+                for (const state of ['initial', 'loaded']) {
+                    if (state === 'loaded') {
+                        let reads = 0;
+
+                        while (
+                            await panel
+                                .getByRole('button', {
+                                    name: 'Load more files',
+                                })
+                                .count()
+                        ) {
+                            const before = await panel.locator('li').count();
+                            await panel
+                                .getByRole('button', {
+                                    name: 'Load more files',
+                                })
+                                .click();
+                            await expect
+                                .poll(async () => panel.locator('li').count())
+                                .toBeGreaterThan(before);
+                            expect(++reads).toBeLessThan(6);
+                        }
+
+                        expect(requests.length).toBeGreaterThan(0);
+
+                        for (const href of requests) {
+                            const url = new URL(href);
+                            expect(url.pathname).toMatch(
+                                /^\/api\/v1\/workspaces\//,
+                            );
+                            expect(url.searchParams.get('presentation')).toBe(
+                                screen.includes('_portal_')
+                                    ? 'portal'
+                                    : 'native',
+                            );
+                            expect(url.searchParams.get('cursor')).toBeTruthy();
+                            expect(url.searchParams.get('limit')).toBe('1');
+                        }
+                    }
+
+                    if (screen.includes('_portal_')) {
+                        await expect(
+                            panel.getByLabel('Visible to client'),
+                        ).toHaveCount(0);
+                        await expect(
+                            panel.getByLabel('Upload a file'),
+                        ).toHaveCount(0);
+                        await expect(
+                            panel.getByText('SyntheticPrivateFile.txt', {
+                                exact: true,
+                            }),
+                        ).toHaveCount(0);
+                        await expect(
+                            panel.getByRole('button', { name: 'Remove file' }),
+                        ).toHaveCount(0);
+                    }
+
+                    await panel.scrollIntoViewIfNeeded();
+                    const measured = await page.evaluate(() => ({
+                        document: document.documentElement.scrollWidth,
+                        viewport: innerWidth,
+                        nav:
+                            document
+                                .querySelector('header')
+                                ?.getBoundingClientRect().height ?? 0,
+                    }));
+                    expect(measured.document).toBeLessThanOrEqual(width);
+                    expect(measured.nav).toBe(49);
+                    expect(errors).toEqual([]);
+                    await page.screenshot({
+                        animations: 'disabled',
+                        path: path.join(
+                            artifacts,
+                            `${screen}-${state}-${width}.png`,
+                        ),
+                    });
+                    results.push({
+                        screen,
+                        state,
+                        width,
+                        ...measured,
+                        appendFetches: requests.length,
+                    });
+                }
+
+                page.off('pageerror', onError);
+                page.off('request', onRequest);
+                continue;
+            }
 
             if (screen.startsWith('portal')) {
                 await expect(page.getByLabel('Visible to client')).toHaveCount(
