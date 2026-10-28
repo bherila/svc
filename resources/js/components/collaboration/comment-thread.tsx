@@ -28,6 +28,7 @@ function CommentEditor({
             body: comment.body ?? '',
         },
         comment.version,
+        false,
     );
     const mutation = useCollaborationMutation();
 

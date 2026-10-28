@@ -31,6 +31,7 @@ export function VisibilityControl({
     const form = useVersionedDraft(
         { is_visible_to_client: content.is_visible_to_client ?? false },
         content.version,
+        false,
     );
     const mutation = useCollaborationMutation();
 
@@ -85,19 +86,21 @@ export function VisibilityControl({
 }
 
 export function RemoveContent({ content }: { content: CollaborationContent }) {
-    const [confirming, setConfirming] = useState(false);
+    const [confirmedVersion, setConfirmedVersion] = useState<string | null>(
+        null,
+    );
     const mutation = useCollaborationMutation();
 
     if (!content.delete_href) {
         return null;
     }
 
-    if (!confirming) {
+    if (confirmedVersion === null) {
         return (
             <Button
                 type="button"
                 variant="outline"
-                onClick={() => setConfirming(true)}
+                onClick={() => setConfirmedVersion(content.version)}
             >
                 Remove
             </Button>
@@ -110,7 +113,7 @@ export function RemoveContent({ content }: { content: CollaborationContent }) {
             onSubmit={(event) => {
                 event.preventDefault();
                 void mutation.run('DELETE', content.delete_href!, {
-                    expected_version: content.version,
+                    expected_version: confirmedVersion,
                     confirm: true,
                 });
             }}
@@ -130,7 +133,7 @@ export function RemoveContent({ content }: { content: CollaborationContent }) {
                 <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setConfirming(false)}
+                    onClick={() => setConfirmedVersion(null)}
                 >
                     Cancel
                 </Button>

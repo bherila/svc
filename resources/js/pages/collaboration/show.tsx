@@ -34,6 +34,7 @@ function TopicEditor({
             body: topic.body ?? '',
         },
         topic.version,
+        false,
     );
     const mutation = useCollaborationMutation();
 

@@ -324,7 +324,7 @@ describe('native collaboration pages', () => {
         );
     });
 
-    it('preserves an unsaved text edit across a sharing save and rebases unchanged text facts', async () => {
+    it('preserves an unsaved text edit and its reviewed revision across a sharing save', async () => {
         mutations.request.mockResolvedValue({
             ok: true,
             status: 200,
@@ -361,6 +361,11 @@ describe('native collaboration pages', () => {
         expect(
             screen.getByRole('textbox', { name: 'Edit comment' }),
         ).toHaveValue('Unsaved synthetic text draft');
+        mutations.request.mockResolvedValueOnce({
+            ok: false,
+            status: 409,
+            message: 'Synthetic sharing changed the content revision',
+        });
         await act(async () => {
             fireEvent.click(
                 screen.getByRole('button', { name: 'Save comment' }),
@@ -371,10 +376,68 @@ describe('native collaboration pages', () => {
             comment.update_href,
             {
                 body: 'Unsaved synthetic text draft',
-                expected_version: 'next-version',
+                expected_version: comment.version,
             },
             expect.any(String),
         );
+        expect(
+            screen.getByRole('textbox', { name: 'Edit comment' }),
+        ).toHaveValue('Unsaved synthetic text draft');
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Synthetic sharing changed',
+        );
+    });
+
+    it('does not publish or remove content against a revision changed after the operator chose the action', async () => {
+        mutations.request.mockResolvedValue({
+            ok: false,
+            status: 409,
+            message: 'Synthetic content changed. Reload before changing it.',
+        });
+        const view = render(<CommentThread thread={thread} />);
+        fireEvent.click(
+            screen.getAllByRole('checkbox', { name: 'Visible to client' })[0],
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+        view.rerender(
+            <CommentThread
+                thread={{
+                    ...thread,
+                    comments: [
+                        {
+                            ...comment,
+                            body: 'Synthetic unreviewed changed content',
+                            version: 'changed-version',
+                        },
+                    ],
+                }}
+            />,
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Save sharing' }),
+            );
+        });
+        expect(mutations.request).toHaveBeenLastCalledWith(
+            'PATCH',
+            comment.visibility_update_href,
+            expect.objectContaining({ expected_version: comment.version }),
+            expect.any(String),
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Confirm removal' }),
+            );
+        });
+        expect(mutations.request).toHaveBeenLastCalledWith(
+            'DELETE',
+            comment.delete_href,
+            { expected_version: comment.version, confirm: true },
+            expect.any(String),
+        );
+        expect(
+            screen.getByRole('button', { name: 'Confirm removal' }),
+        ).toBeVisible();
     });
 
     it('retains a new reply original parent version when refreshed parent facts change', async () => {
