@@ -756,7 +756,6 @@ it('pairs an authoritative version with all refreshed fields after a replay race
         fireEvent.click(
             screen.getByRole('button', {
                 name: 'Check task save',
-                exact: true,
             }),
         ),
     );
