@@ -13,6 +13,7 @@ use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 /**
@@ -23,6 +24,7 @@ use Tests\TestCase;
  */
 final class PaymentRecordingStatusParityTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     public function test_the_console_the_api_and_the_screen_record_the_same_statuses(): void
@@ -55,7 +57,7 @@ final class PaymentRecordingStatusParityTest extends TestCase
             }
 
             $invoice = $this->issuedInvoice($workspace, $company);
-            $this->actingAs($owner)->from('/synthetic-back')->post('/workspaces/'.$workspace->public_id.'/invoices/'.$invoice->public_id.'/payments', [
+            $this->recordPaymentApi($owner, $workspace, $invoice, [
                 'amount' => 100, 'currency' => 'USD', 'method' => 'wire', 'status' => $status,
             ]);
             if (ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->where('client_invoice_id', $invoice->id)->exists()) {
