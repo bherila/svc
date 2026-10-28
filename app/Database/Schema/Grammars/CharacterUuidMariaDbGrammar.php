@@ -8,6 +8,7 @@ use Illuminate\Support\Fluent;
 /** Preserve the existing UUID/FK storage contract across MariaDB server upgrades. */
 final class CharacterUuidMariaDbGrammar extends MariaDbGrammar
 {
+    /** @param Fluent<string, mixed> $column */
     protected function typeUuid(Fluent $column): string
     {
         return 'char(36)';

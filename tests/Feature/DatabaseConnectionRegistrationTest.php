@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Database\CharacterUuidMariaDbConnection;
 use App\Database\Schema\Grammars\CharacterUuidMariaDbGrammar;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Connectors\ConnectionFactory;
 use Illuminate\Database\MariaDbConnection;
 use Illuminate\Database\MySqlConnection;
@@ -12,6 +13,14 @@ use Tests\TestCase;
 
 final class DatabaseConnectionRegistrationTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        // Resolvers are static across application lifetimes. Start from stock
+        // behavior so another test's boot cannot conceal missing registration.
+        Connection::resolverFor('mariadb', static fn ($pdo, $database, $prefix, $config): MariaDbConnection => new MariaDbConnection($pdo, $database, $prefix, $config));
+        parent::setUp();
+    }
+
     public function test_application_registers_character_uuid_storage_only_for_mariadb(): void
     {
         $factory = app(ConnectionFactory::class);

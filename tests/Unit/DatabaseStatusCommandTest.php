@@ -8,6 +8,11 @@ use PHPUnit\Framework\TestCase;
 
 final class DatabaseStatusCommandTest extends TestCase
 {
+    public function test_new_server_requires_explicit_character_grammar_proof_by_default(): void
+    {
+        $this->assertFalse(DatabaseStatusCommand::isUuidGrammarCompatible('mariadb', '11.4.13-MariaDB'));
+    }
+
     #[DataProvider('compatibilityCases')]
     public function test_uuid_grammar_boundary_is_explicit(string $driver, string $version, bool $compatible, bool $characterUuidGrammar = false): void
     {
