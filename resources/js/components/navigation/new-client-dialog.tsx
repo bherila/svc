@@ -83,12 +83,15 @@ export function NewClientDialog({
         <Dialog
             open={open}
             onOpenChange={(next) => {
-                if (!change.locked) {
+                if (!change.busy) {
                     onOpenChange(next);
                 }
             }}
         >
-            <DialogContent className="sm:max-w-md">
+            <DialogContent
+                className="sm:max-w-md"
+                showCloseButton={!change.busy}
+            >
                 <DialogHeader>
                     <DialogTitle>Add client</DialogTitle>
                     <DialogDescription>
@@ -142,7 +145,7 @@ export function NewClientDialog({
                                 <Button
                                     variant="outline"
                                     type="button"
-                                    disabled={change.locked}
+                                    disabled={change.busy}
                                 >
                                     Cancel
                                 </Button>

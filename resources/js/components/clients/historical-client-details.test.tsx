@@ -1,4 +1,5 @@
 import {
+    act,
     fireEvent,
     render,
     screen,
@@ -13,6 +14,8 @@ import { apiRequest } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 
+const beforeNavigation = vi.hoisted(() => vi.fn());
+
 vi.mock('@/lib/api', () => ({
     apiRequest: vi.fn(),
     newIdempotencyKey: () => crypto.randomUUID(),
@@ -24,6 +27,7 @@ vi.mock('@inertiajs/react', async () => {
     const { useState } = await import('react');
 
     return {
+        router: { on: beforeNavigation },
         useForm: function useForm(initial: Record<string, unknown>) {
             const [data, setData] = useState(initial);
 
@@ -204,6 +208,34 @@ describe('historical client details', () => {
         expect(screen.getByLabelText('Internal company notes')).toHaveValue(
             'Keep this edit',
         );
+        const guard = beforeNavigation.mock.calls.at(-1)?.[1];
+        const unrelatedNavigation = {
+            detail: {
+                visit: {
+                    url: '/synthetic/other-client',
+                    method: 'get',
+                    only: [],
+                },
+            },
+            preventDefault: vi.fn(),
+        };
+        act(() => guard(unrelatedNavigation));
+        expect(unrelatedNavigation.preventDefault).toHaveBeenCalledOnce();
+        const partialRefresh = {
+            detail: {
+                visit: {
+                    url: window.location.href,
+                    method: 'get',
+                    only: ['company_profile'],
+                },
+            },
+            preventDefault: vi.fn(),
+        };
+        guard(partialRefresh);
+        expect(partialRefresh.preventDefault).not.toHaveBeenCalled();
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(true);
         fireEvent.click(
             screen.getByRole('button', { name: 'Check original change' }),
         );

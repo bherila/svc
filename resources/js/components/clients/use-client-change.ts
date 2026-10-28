@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { router } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiResult } from '@/lib/api';
 
@@ -22,6 +23,51 @@ export function useClientChange() {
     const [errors, setErrors] = useState<Record<string, string[]>>({});
     const inFlight = useRef(false);
     const attempt = useRef<Attempt | null>(null);
+
+    useEffect(() => {
+        if (!busy && !unresolved) {
+            return;
+        }
+
+        const stopNavigation = router.on?.('before', (event) => {
+            const original = attempt.current;
+
+            if (!original) {
+                return;
+            }
+
+            const visit = event.detail.visit;
+            const destination = new URL(visit.url, window.location.href);
+            const readingCurrentProps =
+                visit.method === 'get' &&
+                visit.only.length > 0 &&
+                destination.origin === window.location.origin &&
+                destination.pathname === window.location.pathname &&
+                destination.search === window.location.search;
+            const followingCreatedClient =
+                original.requireLocation &&
+                original.accepted?.location &&
+                destination.href ===
+                    new URL(original.accepted.location, window.location.href)
+                        .href;
+
+            if (!readingCurrentProps && !followingCreatedClient) {
+                event.preventDefault();
+                setError('Check the original change before leaving this page.');
+            }
+        });
+        const stopUnload = (event: BeforeUnloadEvent) => {
+            if (attempt.current !== null) {
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('beforeunload', stopUnload);
+
+        return () => {
+            stopNavigation?.();
+            window.removeEventListener('beforeunload', stopUnload);
+        };
+    }, [busy, unresolved]);
 
     async function check() {
         const original = attempt.current;

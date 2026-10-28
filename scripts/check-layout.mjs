@@ -752,6 +752,30 @@ try {
                 }
 
                 const profileRequests = [];
+                let profileReads = 0;
+                const profilePage = (url) =>
+                    url.pathname ===
+                    new URL(origin + fixture.settings).pathname;
+                const profileReadRoute = async (route) => {
+                    if (
+                        profileRequests.length === 3 &&
+                        route
+                            .request()
+                            .headers()
+                            ['x-inertia-partial-data']?.includes(
+                                'company_profile',
+                            )
+                    ) {
+                        profileReads++;
+
+                        if (profileReads === 1) {
+                            return route.abort('failed');
+                        }
+                    }
+
+                    return route.fallback();
+                };
+                await page.route(profilePage, profileReadRoute);
                 const profileRoute = async (route) => {
                     const request = route.request();
 
@@ -822,6 +846,23 @@ try {
                     })
                     .click();
                 await expect(
+                    page.getByText(
+                        'The change was recorded, but this page could not load it. Check the original change.',
+                        { exact: true },
+                    ),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await capture(screen, 'profile-recorded-read-failed', width);
+                expect(profileRequests[2]).toEqual(profileRequests[0]);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
                     page.getByRole('button', {
                         name: 'Check original change',
                         exact: true,
@@ -830,8 +871,10 @@ try {
                 await expect(
                     page.getByLabel('Internal company notes'),
                 ).toBeEnabled();
-                expect(profileRequests[2]).toEqual(profileRequests[0]);
+                expect(profileRequests).toHaveLength(3);
+                expect(profileReads).toBe(2);
                 await page.unroute('**/api/v1/**', profileRoute);
+                await page.unroute(profilePage, profileReadRoute);
 
                 await capture(screen, 'client-contact-form', width);
                 await page
@@ -901,9 +944,28 @@ try {
                     page
                         .getByRole('dialog')
                         .getByRole('button', { name: 'Cancel', exact: true }),
-                ).toBeDisabled();
+                ).toBeEnabled();
                 await page.keyboard.press('Escape');
-                await expect(page.getByRole('dialog')).toBeVisible();
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                await page
+                    .getByRole('button', {
+                        name: 'Current client',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'Add client', exact: true })
+                    .click();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toHaveValue('SyntheticNewClient'.repeat(8));
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
                 await capture(screen, 'create-client-unknown-change', width);
                 await page
                     .getByRole('dialog')

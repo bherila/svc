@@ -114,7 +114,7 @@ describe('new client API creation', () => {
         });
         expect(vi.mocked(apiRequest).mock.calls[1][3]).not.toBe(refusedKey);
     });
-    it('blocks cancellation and edits until an unknown client creation is reconciled', async () => {
+    it('keeps an unknown client creation through closing, reopening and a later refusal', async () => {
         vi.mocked(apiRequest)
             .mockResolvedValueOnce({
                 ok: false,
@@ -147,9 +147,16 @@ describe('new client API creation', () => {
         await screen.findByText('Synthetic lost answer');
         const original = vi.mocked(apiRequest).mock.calls[0];
         expect(screen.getByLabelText('Name')).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
         await userEvent.keyboard('{Escape}');
-        expect(close).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledWith(false);
+        view.rerender(
+            <NewClientDialog
+                open={false}
+                action="/synthetic/changed-client-create"
+                onOpenChange={close}
+            />,
+        );
         view.rerender(
             <NewClientDialog
                 open
@@ -166,7 +173,7 @@ describe('new client API creation', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Check original change' }),
         );
-        await waitFor(() => expect(close).toHaveBeenCalledWith(false));
+        await waitFor(() => expect(visit).toHaveBeenCalled());
         expect(vi.mocked(apiRequest).mock.calls[2]).toEqual(original);
     });
 
