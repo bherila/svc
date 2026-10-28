@@ -926,7 +926,7 @@ try {
                 ).toBeDisabled();
                 await page.unroute('**/api/v1/**', clientRoute);
                 // Each viewport starts from its own synthetic dialog attempt.
-                await page.goto(origin + fixture.settings);
+                await page.goto(origin + fixture.portal_settings);
             }
 
             if (screen === 'history_index') {

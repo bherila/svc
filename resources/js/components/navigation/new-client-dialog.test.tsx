@@ -170,6 +170,44 @@ describe('new client API creation', () => {
         expect(vi.mocked(apiRequest).mock.calls[2]).toEqual(original);
     });
 
+    it('keeps the original creation when a successful response has no finished destination', async () => {
+        vi.mocked(apiRequest)
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 201,
+                data: { version: 'created-version' },
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 201,
+                data: { version: 'created-version' },
+                location: '/synthetic/recovered-client',
+            });
+        render(
+            <NewClientDialog
+                open
+                action="/synthetic/create-client"
+                onOpenChange={vi.fn()}
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('Name'), {
+            target: { value: 'Synthetic unread destination' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Add client' }));
+        await screen.findByText(
+            'SVC’s response could not be read. Check the original change.',
+        );
+        expect(visit).not.toHaveBeenCalled();
+        expect(screen.getByLabelText('Name')).toBeDisabled();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await waitFor(() => expect(visit).toHaveBeenCalled());
+        expect(vi.mocked(apiRequest).mock.calls[1]).toEqual(
+            vi.mocked(apiRequest).mock.calls[0],
+        );
+    });
+
     it('retries only the finished client destination after network or HTTP navigation failure', async () => {
         vi.mocked(apiRequest).mockResolvedValueOnce({
             ok: true,
