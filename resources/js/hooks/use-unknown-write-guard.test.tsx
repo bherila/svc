@@ -39,5 +39,51 @@ it('allows navigation after success is known even when the refreshed read is pen
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(false);
+    const inertiaHistory = vi.fn();
+    window.addEventListener('popstate', inertiaHistory);
+    window.history.replaceState(
+        { synthetic: 'accepted destination' },
+        '',
+        '/synthetic/accepted',
+    );
+    window.dispatchEvent(
+        new PopStateEvent('popstate', { state: window.history.state }),
+    );
+    expect(inertiaHistory).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe('/synthetic/accepted');
+    window.removeEventListener('popstate', inertiaHistory);
     unmount();
 });
+
+it.each(['back', 'forward'])(
+    'keeps an unknown write mounted before Inertia handles history %s',
+    (direction) => {
+        const original = {
+            page: { url: '/synthetic/original', props: { synthetic: true } },
+        };
+        window.history.replaceState(original, '', '/synthetic/original');
+        const blocked = vi.fn();
+        const { unmount } = renderHook(() =>
+            useUnknownWriteGuard(() => true, blocked),
+        );
+        const inertiaHistory = vi.fn();
+        window.addEventListener('popstate', inertiaHistory);
+        // Both directions have already changed the URL before popstate fires.
+        window.history.replaceState(
+            { page: { url: `/synthetic/${direction}` } },
+            '',
+            `/synthetic/${direction}`,
+        );
+        window.dispatchEvent(
+            new PopStateEvent('popstate', { state: window.history.state }),
+        );
+        expect(window.location.pathname).toBe('/synthetic/original');
+        expect(window.history.state).toEqual(original);
+        expect(inertiaHistory).not.toHaveBeenCalled();
+        expect(blocked).toHaveBeenCalledTimes(1);
+        unmount();
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        expect(inertiaHistory).toHaveBeenCalledTimes(1);
+        window.removeEventListener('popstate', inertiaHistory);
+    },
+);

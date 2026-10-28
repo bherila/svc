@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { registerUnknownWriteHistoryGuard } from '@/lib/unknown-write-history';
 
 /** Preserve a write with an unknown outcome across browser navigation. */
 export function useUnknownWriteGuard(
@@ -6,6 +7,11 @@ export function useUnknownWriteGuard(
     onBlocked: () => void,
 ) {
     useEffect(() => {
+        const stopHistory = registerUnknownWriteHistoryGuard({
+            unknown,
+            blocked: onBlocked,
+            entry: { state: window.history.state, href: window.location.href },
+        });
         const stopNavigation = (event: Event) => {
             if (!unknown()) {
                 return;
@@ -42,6 +48,7 @@ export function useUnknownWriteGuard(
         return () => {
             document.removeEventListener('inertia:before', stopNavigation);
             window.removeEventListener('beforeunload', stopUnload);
+            stopHistory();
         };
     }, [unknown, onBlocked]);
 }

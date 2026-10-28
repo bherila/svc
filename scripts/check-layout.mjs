@@ -1721,6 +1721,24 @@ try {
                     .click();
 
                 if (receiptsOnly) {
+                    await page.evaluate(() => {
+                        const current = window.location.href;
+                        const previous = new URL(current);
+                        previous.searchParams.set(
+                            'synthetic_history',
+                            'before',
+                        );
+                        window.history.replaceState(
+                            window.history.state,
+                            '',
+                            previous.href,
+                        );
+                        window.history.pushState(
+                            window.history.state,
+                            '',
+                            current,
+                        );
+                    });
                     const filename = `synthetic-browser-receipt-${width}.txt`;
                     const uploads = [];
                     await page.route(
@@ -1755,15 +1773,13 @@ try {
                             }
                         },
                     );
-                    await page
-                        .getByLabel('Upload a file')
-                        .setInputFiles({
-                            name: filename,
-                            mimeType: 'text/plain',
-                            buffer: Buffer.from(
-                                'Synthetic receipt browser acceptance bytes.',
-                            ),
-                        });
+                    await page.getByLabel('Upload a file').setInputFiles({
+                        name: filename,
+                        mimeType: 'text/plain',
+                        buffer: Buffer.from(
+                            'Synthetic receipt browser acceptance bytes.',
+                        ),
+                    });
                     await page
                         .getByRole('button', {
                             name: 'Upload file',
@@ -1780,6 +1796,21 @@ try {
                         page.getByLabel('Upload a file'),
                     ).toBeDisabled();
                     await capture(screen, 'upload-unknown', width);
+                    const originalPage = page.url();
+                    await page.evaluate(() => window.history.back());
+                    await expect(
+                        page.getByText(
+                            'Check the original file change before leaving this page.',
+                            { exact: true },
+                        ),
+                    ).toBeVisible();
+                    expect(page.url()).toBe(originalPage);
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeDisabled();
+                    expect(uploads).toHaveLength(1);
+                    await capture(screen, 'upload-back-held', width);
+
                     await page.route(
                         page.url(),
                         (route) => route.abort('failed'),
