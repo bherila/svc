@@ -17,11 +17,13 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\BuildsSyntheticExpenses;
+use Tests\Concerns\CallsNativeFileApi;
 use Tests\TestCase;
 
 final class AttachmentSharingNativeTest extends TestCase
 {
     use BuildsSyntheticExpenses, RefreshDatabase;
+    use CallsNativeFileApi;
 
     private string $policyDirectory;
 
@@ -48,17 +50,17 @@ final class AttachmentSharingNativeTest extends TestCase
         $company->portalUsers()->attach($owner->id, ['role' => 'viewer', 'access_scope' => 'company']);
         $parameters = ['workspace' => $workspace, 'clientCompany' => $company->public_id, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
         $version = AgentApiVersion::for($topic);
-        $this->actingAs($owner)->get(route('svc.files.collaboration.show', $parameters))->assertOk()->assertInertia(fn (Assert $page) => $page->where('workspaceNavigation.current_client_id', $company->public_id));
-        $created = $this->actingAs($owner)->withHeader('Idempotency-Key', 'synthetic-native-upload')
-            ->postJson(route('svc.files.collaboration.upload', $parameters), ['file' => UploadedFile::fake()->createWithContent('synthetic-native.txt', 'Synthetic native bytes'), 'expected_version' => $version])
+        $this->actingAs($owner, 'web')->get(route('svc.files.collaboration.show', $parameters))->assertOk()->assertInertia(fn (Assert $page) => $page->where('workspaceNavigation.current_client_id', $company->public_id));
+        $created = $this->actingAs($owner, 'web')->withHeader('Idempotency-Key', 'synthetic-native-upload')
+            ->uploadNativeCollaborationFile($workspace, $company->public_id, 'topic', $topic->public_id, ['file' => UploadedFile::fake()->createWithContent('synthetic-native.txt', 'Synthetic native bytes'), 'expected_version' => $version])
             ->assertOk()->assertJsonPath('data.is_visible_to_client', false)->json('data');
         $this->get(route('collaboration.show', [$workspace, $company, $topic]))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('collaboration/show')->has('topic.attachment_panel.files', 1)
             ->where('topic.attachment_panel.files.0.filename', 'synthetic-native.txt')
             ->where('topic.attachment_panel.files.0.sharing.is_visible_to_client', false)
-            ->where('topic.attachment_panel.upload.href', route('svc.files.collaboration.upload', $parameters, absolute: false)));
+            ->where('topic.attachment_panel.upload.href', route('agent-api.v1.collaboration.attachments.upload-url', [$workspace, $company->public_id, 'topic', $topic->public_id], absolute: false)));
         $payload = ['is_visible_to_client' => true, 'expected_version' => $created['version'], 'expected_parent_version' => $version];
-        $this->withHeader('Idempotency-Key', 'synthetic-native-share')->patchJson(route('svc.files.collaboration.visibility.update', [...$parameters, 'attachment' => $created['id']]), $payload)
+        $this->withHeader('Idempotency-Key', 'synthetic-native-share')->nativeFileJson('PATCH', route('agent-api.v1.collaboration.attachments.visibility.update', [$workspace, $company->public_id, 'topic', $topic->public_id, $created['id']]), $payload)
             ->assertOk()->assertJsonPath('data.is_visible_to_client', true)->assertJsonPath('data.effective_visible_to_client', false);
         $this->assertSame($version, AgentApiVersion::for($topic->fresh()));
         config(['svc.attachments.sharing_writes_enabled' => false]);
@@ -73,17 +75,17 @@ final class AttachmentSharingNativeTest extends TestCase
         $topic->update(['is_visible_to_client' => true]);
         $parameters = ['workspace' => $workspace, 'clientCompany' => $company->public_id, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
         $version = AgentApiVersion::for($topic);
-        $created = $this->actingAs($owner)->withHeader('Idempotency-Key', 'synthetic-portal-upload')
-            ->postJson(route('svc.files.collaboration.upload', $parameters), ['file' => UploadedFile::fake()->createWithContent('synthetic-private.txt', 'Synthetic private bytes'), 'expected_version' => $version])
+        $created = $this->actingAs($owner, 'web')->withHeader('Idempotency-Key', 'synthetic-portal-upload')
+            ->uploadNativeCollaborationFile($workspace, $company->public_id, 'topic', $topic->public_id, ['file' => UploadedFile::fake()->createWithContent('synthetic-private.txt', 'Synthetic private bytes'), 'expected_version' => $version])
             ->assertOk()->json('data');
         $portal = $this->syntheticUser('native-sharing-portal');
         $company->portalUsers()->attach($portal->id, ['role' => 'viewer', 'access_scope' => 'company']);
         $portalParameters = ['clientCompany' => $company, 'recordType' => 'topic', 'recordPublicId' => $topic->public_id];
-        $this->actingAs($portal)->getJson(route('portal.files.collaboration.index', $portalParameters))->assertOk()->assertJsonCount(0, 'files')->assertJsonPath('upload', null);
+        $this->actingAs($portal, 'web')->getJson(route('portal.files.collaboration.index', $portalParameters))->assertOk()->assertJsonCount(0, 'files')->assertJsonPath('upload', null);
         $this->get(route('portal.files.collaboration.download', [...$portalParameters, 'attachment' => $created['id']]))->assertNotFound();
-        $this->actingAs($owner)->withHeader('Idempotency-Key', 'synthetic-portal-share')
-            ->patchJson(route('svc.files.collaboration.visibility.update', [...$parameters, 'attachment' => $created['id']]), ['is_visible_to_client' => true, 'expected_version' => $created['version'], 'expected_parent_version' => $version])->assertOk();
-        $this->actingAs($portal)->getJson(route('portal.files.collaboration.index', $portalParameters))->assertOk()->assertJsonCount(1, 'files')->assertJsonPath('files.0.sharing', null)->assertJsonPath('files.0.delete_href', null)->assertJsonPath('upload', null);
+        $this->actingAs($owner, 'web')->withHeader('Idempotency-Key', 'synthetic-portal-share')
+            ->nativeFileJson('PATCH', route('agent-api.v1.collaboration.attachments.visibility.update', [$workspace, $company->public_id, 'topic', $topic->public_id, $created['id']]), ['is_visible_to_client' => true, 'expected_version' => $created['version'], 'expected_parent_version' => $version])->assertOk();
+        $this->actingAs($portal, 'web')->getJson(route('portal.files.collaboration.index', $portalParameters))->assertOk()->assertJsonCount(1, 'files')->assertJsonPath('files.0.sharing', null)->assertJsonPath('files.0.delete_href', null)->assertJsonPath('upload', null);
         $topic->update(['is_visible_to_client' => false]);
         $this->get(route('portal.files.collaboration.download', [...$portalParameters, 'attachment' => $created['id']]))->assertNotFound();
     }
@@ -93,19 +95,19 @@ final class AttachmentSharingNativeTest extends TestCase
         [$workspace, $company, $project, $owner] = $this->fixture();
         $parameters = [$workspace, 'company', $company->public_id];
         $href = route('svc.files.parent.show', $parameters, absolute: false);
-        $this->actingAs($owner)->get(route('clients.show', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('files_href', $href));
-        $this->get($href)->assertOk()->assertInertia(fn (Assert $page) => $page->component('files/parent')->has('attachment_panel.files', 0)->has('workspaceNavigation')->where('legacy_upload_href', route('svc.files.store', $parameters, absolute: false)));
+        $this->actingAs($owner, 'web')->get(route('clients.show', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('files_href', $href));
+        $this->get($href)->assertOk()->assertInertia(fn (Assert $page) => $page->component('files/parent')->has('attachment_panel.files', 0)->has('workspaceNavigation')->where('attachment_panel.upload.href', route('agent-api.v1.attachments.upload-url', $parameters, absolute: false))->missing('legacy_upload_href'));
         $other = $this->syntheticWorkspace('native-sharing-other');
         $this->get(route('svc.files.parent.show', [$other, 'company', $company->public_id]))->assertNotFound();
         $contributor = $this->syntheticMember($workspace, 'native-contributor', 'member');
         ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $contributor->id, 'role' => 'contributor']);
-        $this->actingAs($contributor)->get(route('svc.files.parent.show', [$workspace, 'project', $project->public_id]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('legacy_upload_href', null));
+        $this->actingAs($contributor, 'web')->get(route('svc.files.parent.show', [$workspace, 'project', $project->public_id]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('attachment_panel.upload', null)->missing('legacy_upload_href'));
     }
 
     public function test_financial_detail_and_operations_use_shared_seeded_controls_without_per_record_queries(): void
     {
         [$workspace, $company, , $owner] = $this->fixture();
-        $this->actingAs($owner);
+        $this->actingAs($owner, 'web');
         $counts = [];
         foreach (range(1, 4) as $index) {
             $proposal = ClientProposal::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
@@ -146,8 +148,8 @@ final class AttachmentSharingNativeTest extends TestCase
             foreach (range(1, 3) as $index) {
                 $file = app(AttachmentStorageService::class)->store($workspace, $parent, UploadedFile::fake()->createWithContent('Synthetic-'.$type.'-'.$index.'.txt', 'Synthetic commercial bytes'), $owner);
                 if ($index > 1) {
-                    $this->actingAs($owner)->withHeader('Idempotency-Key', 'commercial-share-'.$type.'-'.$index)
-                        ->patchJson(route('svc.files.visibility.update', [$workspace, $file->public_id]), ['is_visible_to_client' => true,
+                    $this->actingAs($owner, 'web')->withHeader('Idempotency-Key', 'commercial-share-'.$type.'-'.$index)
+                        ->nativeFileJson('PATCH', route('agent-api.v1.attachments.visibility.update', [$workspace, $file->public_id]), ['is_visible_to_client' => true,
                             'expected_version' => AgentApiVersion::for($file), 'expected_parent_version' => AgentApiVersion::for($parent)])
                         ->assertOk();
                 }
@@ -155,7 +157,7 @@ final class AttachmentSharingNativeTest extends TestCase
             }
             $parameters = ['clientCompany' => $company, 'recordType' => $type, 'recordPublicId' => $parent->public_id];
             $detail = route('portal.'.$type, [$company, $parent]);
-            $this->actingAs($portal)->get($detail)->assertOk()->assertInertia(fn (Assert $page) => $page
+            $this->actingAs($portal, 'web')->get($detail)->assertOk()->assertInertia(fn (Assert $page) => $page
                 ->has('attachment_panel.files', 2)->where('attachment_panel.upload', null)->where('attachment_panel.files.0.sharing', null)
                 ->where('attachment_panel.files.0.delete_href', null)->where('attachment_panel.files.0.id', $files[2]->public_id));
             $first = $this->getJson(route('portal.files.parent.index', $parameters + ['limit' => 1]))->assertOk()->assertJsonCount(1, 'files')->json();
@@ -201,7 +203,7 @@ final class AttachmentSharingNativeTest extends TestCase
         $company->portalUsers()->attach($portal->id, ['role' => 'viewer', 'access_scope' => 'company']);
         DB::enableQueryLog();
         DB::flushQueryLog();
-        $this->actingAs($portal)->get(route('portal.proposal', [$company, $proposal]))->assertOk()->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($portal, 'web')->get(route('portal.proposal', [$company, $proposal]))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('proposal.title', 'Synthetic existing commercial terms')->where('attachment_panel', null));
         $fileQueries = array_filter(DB::getQueryLog(), fn (array $query): bool => str_contains($query['query'], 'client_attachments'));
         DB::disableQueryLog();
@@ -226,11 +228,11 @@ final class AttachmentSharingNativeTest extends TestCase
         foreach (['project' => $project, 'task' => $child] as $type => $parent) {
             $file = app(AttachmentStorageService::class)->store($workspace, $parent, UploadedFile::fake()->createWithContent('Synthetic-'.$type.'-shared.txt', 'Synthetic project/task bytes'), $owner);
             $private = app(AttachmentStorageService::class)->store($workspace, $parent, UploadedFile::fake()->createWithContent('Synthetic-'.$type.'-private.txt', 'Synthetic private bytes'), $owner);
-            $this->actingAs($owner)->withHeader('Idempotency-Key', 'project-task-share-'.$type)->patchJson(route('svc.files.visibility.update', [$workspace, $file->public_id]),
+            $this->actingAs($owner, 'web')->withHeader('Idempotency-Key', 'project-task-share-'.$type)->nativeFileJson('PATCH', route('agent-api.v1.attachments.visibility.update', [$workspace, $file->public_id]),
                 ['is_visible_to_client' => true, 'expected_version' => AgentApiVersion::for($file), 'expected_parent_version' => AgentApiVersion::for($parent)])->assertOk();
             config(['svc.attachments.sharing_writes_enabled' => false]);
             $parameters = [$company, $type, $parent->public_id];
-            $this->actingAs($portal)->get(route('portal.files.parent.show', $parameters))->assertOk()->assertInertia(fn (Assert $page) => $page
+            $this->actingAs($portal, 'web')->get(route('portal.files.parent.show', $parameters))->assertOk()->assertInertia(fn (Assert $page) => $page
                 ->component('files/parent')->has('attachment_panel.files', 1)->where('attachment_panel.files.0.id', $file->public_id)
                 ->where('attachment_panel.files.0.sharing', null)->where('attachment_panel.files.0.delete_href', null)->where('attachment_panel.upload', null));
             $url = route('portal.files.parent.download', [...$parameters, $file->public_id]);
