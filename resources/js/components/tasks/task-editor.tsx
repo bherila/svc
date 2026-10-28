@@ -315,7 +315,14 @@ export function TaskEditor({
 
             await refreshPageProps({
                 requireSuccess: true,
-                only: ['task', 'tasks', 'task_management', 'planning_details'],
+                only: [
+                    'task',
+                    'tasks',
+                    'task_management',
+                    'tasks_next_href',
+                    'pagination',
+                    'planning_details',
+                ],
             });
 
             // Keep the original body/key until the refresh also succeeds, so

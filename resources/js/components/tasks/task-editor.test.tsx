@@ -570,6 +570,37 @@ describe('task editor', () => {
         expect(screen.getByLabelText('Title')).toHaveValue('');
     });
 
+    it('refreshes continuation capabilities with the task rows after creation', async () => {
+        render(
+            <TaskEditor
+                project={{
+                    id: 'synthetic-project',
+                    name: 'Synthetic project',
+                    create_action: '/synthetic/create',
+                    assignees_action: '/synthetic/lookup',
+                    assignee_options: { data: [], has_more: false },
+                }}
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('Title'), {
+            target: { value: 'Synthetic task crossing a page limit' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Create task' }),
+            );
+        });
+        expect(refreshPageProps).toHaveBeenCalledWith(
+            expect.objectContaining({
+                only: expect.arrayContaining([
+                    'tasks',
+                    'tasks_next_href',
+                    'pagination',
+                ]),
+            }),
+        );
+    });
+
     it('gives oversized identities and descriptions room to wrap', async () => {
         const long = 'SyntheticIdentity'.repeat(30);
         const { container } = render(
