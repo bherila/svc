@@ -4084,6 +4084,29 @@ export interface components {
         InvoiceRemindersResponse: {
             data: components['schemas']['InvoiceReminders'];
         };
+        InvoiceSendMutation: {
+            id: components['schemas']['Uuid'];
+            status: components['schemas']['InvoiceStatus'];
+            linked_time_state: components['schemas']['LinkedTimeState'];
+            invoice_number: string;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+            correction?: {
+                /** Format: uuid */
+                id: string;
+                from_revision: number;
+                to_revision: number;
+                reason: string;
+                href: string;
+            } | null;
+            delivery: {
+                id: components['schemas']['Uuid'];
+                /** @enum {string} */
+                status: 'pending' | 'sending' | 'sent' | 'failed';
+                error_summary: string | null;
+            } | null;
+        };
         InvoiceSendRequest: {
             expected_version: components['schemas']['Version'];
             /** @constant */
@@ -4098,6 +4121,9 @@ export interface components {
              * @default false
              */
             bcc_self: boolean;
+        };
+        InvoiceSendResponse: {
+            data: components['schemas']['InvoiceSendMutation'];
         };
         InvoiceSquare: {
             invoice_id: components['schemas']['Uuid'];
@@ -6113,32 +6139,6 @@ export interface components {
             currency?: string | null;
             notes?: string | null;
         } & unknown;
-        InvoiceSendMutation: {
-            id: components['schemas']['Uuid'];
-            status: components['schemas']['InvoiceStatus'];
-            linked_time_state: components['schemas']['LinkedTimeState'];
-            invoice_number: string;
-            version: components['schemas']['Version'];
-            /** Format: uri */
-            web_url: string;
-            correction?: {
-                /** Format: uuid */
-                id: string;
-                from_revision: number;
-                to_revision: number;
-                reason: string;
-                href: string;
-            } | null;
-            delivery: {
-                id: components['schemas']['Uuid'];
-                /** @enum {string} */
-                status: 'pending' | 'sending' | 'sent' | 'failed';
-                error_summary: string | null;
-            } | null;
-        };
-        InvoiceSendResponse: {
-            data: components['schemas']['InvoiceSendMutation'];
-        };
     };
     responses: {
         /** @description OAuth, authorization, tenant, conflict, validation, or rate-limit error */

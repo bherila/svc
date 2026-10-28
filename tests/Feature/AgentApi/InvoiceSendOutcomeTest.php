@@ -30,6 +30,10 @@ final class InvoiceSendOutcomeTest extends TestCase
 
     protected function beforeTruncatingDatabase(): void
     {
+        // RefreshDatabase may have cached a different in-memory PDO earlier
+        // in this worker. This real-commit fixture owns a fresh connection,
+        // so it cannot inherit that connection's migrated flag.
+        RefreshDatabaseState::$migrated = false;
         $this->beforeApplicationDestroyed(function (): void {
             $this->truncateTablesForAllConnections();
             RefreshDatabaseState::$migrated = false;
