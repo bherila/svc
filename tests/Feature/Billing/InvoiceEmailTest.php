@@ -530,15 +530,13 @@ class InvoiceEmailTest extends TestCase
 
         $delivery = ClientInvoiceEmailDelivery::query()->sole();
 
-        // The log line is the only place the reason survives - the screen gets
-        // the class of failure and nothing more - so it has to name which
-        // delivery it is about.
+        // Operators can identify the failed delivery and transport class,
+        // without retaining provider messages, recipient data or credentials.
         $log->shouldHaveReceived('error')
-            ->withArgs(function (string $message, array $context) use ($delivery): bool {
-                return $message === 'An invoice email could not be sent.'
-                    && ($context['delivery'] ?? null) === $delivery->public_id
-                    && ($context['exception'] ?? null) instanceof TransportException;
-            });
+            ->with('An invoice email could not be sent.', [
+                'delivery' => $delivery->public_id,
+                'exception_class' => TransportException::class,
+            ]);
     }
 
     public function test_the_default_subject_names_the_invoice(): void
