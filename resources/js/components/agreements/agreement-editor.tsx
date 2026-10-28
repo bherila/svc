@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { PencilIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
