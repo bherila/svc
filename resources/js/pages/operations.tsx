@@ -532,8 +532,8 @@ export function InvoiceIssueButton({ invoice }: { invoice: Invoice }) {
     const [key] = useState(newIdempotencyKey);
     const issue = async () => {
         if (busy || invoice.issue_href === null) {
-return;
-}
+            return;
+        }
 
         setBusy(true);
         const result = await apiRequest(

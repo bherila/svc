@@ -1149,6 +1149,10 @@ try {
         );
         await page.getByRole('button', { name: 'Record', exact: true }).click();
         await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
+        await expect(
+            page.getByRole('button', { name: 'Record payment', exact: true }),
+        ).toHaveCount(0);
+        await expect(page.getByText('Paid', { exact: true }).first()).toBeVisible();
         await capture('draft_invoice', 'paid-after-correction', 1440);
         run('php', ['scripts/layout/verify-draft-time.php'], env);
 
