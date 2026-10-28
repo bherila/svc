@@ -12,28 +12,31 @@ use App\Support\Billing\InvoiceKind;
 
 final class AgentInvoicePresenter
 {
+    /** Safe scalar fields common to list rows and the canonical resource; no relation reads.
+     * @return array<string, mixed> */
+    public static function summary(ClientInvoice $invoice): array
+    {
+        return ['id' => $invoice->public_id, 'invoice_number' => $invoice->invoice_number,
+            'status' => $invoice->status, 'total_amount' => (int) $invoice->total_amount,
+            'paid_amount' => (int) $invoice->paid_amount, 'balance_amount' => (int) $invoice->balance_amount,
+            'currency' => $invoice->currency, 'issue_date' => $invoice->issue_date?->toDateString(),
+            'due_date' => $invoice->due_date?->toDateString()];
+    }
+
     /** @return array<string, mixed> */
     public function present(Workspace $workspace, ClientInvoice $invoice, bool $includeNotes = false): array
     {
         $payload = [
-            'id' => $invoice->public_id,
+            ...self::summary($invoice),
             'company_id' => $invoice->clientCompany->public_id,
             'company_name' => $invoice->clientCompany->name,
             'service_period_start' => $invoice->service_period_start?->toDateString(),
             'service_period_end' => $invoice->service_period_end?->toDateString(),
-            'invoice_number' => $invoice->invoice_number,
-            'status' => $invoice->status,
             'invoice_kind' => $invoice->invoiceKindValue(),
             // What `invoices.update_draft` accepts (#349): a generated draft
             // is regenerated, never edited by hand.
             'editable' => $invoice->status === 'draft' && $invoice->invoiceKindValue() === InvoiceKind::AdHoc->value,
             'linked_time_state' => $this->linkedTimeState($invoice),
-            'currency' => $invoice->currency,
-            'total_amount' => $invoice->total_amount,
-            'paid_amount' => $invoice->paid_amount,
-            'balance_amount' => $invoice->balance_amount,
-            'issue_date' => $invoice->issue_date?->toDateString(),
-            'due_date' => $invoice->due_date?->toDateString(),
             'scheduled_issue_date' => $invoice->scheduled_issue_date?->toDateString(),
             'automatic_delivery_status' => $includeNotes ? $invoice->automatic_delivery_status : null,
             'automatic_delivery_due_at' => $includeNotes ? $invoice->automatic_delivery_due_at?->toISOString() : null,
