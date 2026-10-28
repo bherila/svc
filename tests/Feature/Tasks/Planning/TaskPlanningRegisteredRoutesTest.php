@@ -293,6 +293,23 @@ final class TaskPlanningRegisteredRoutesTest extends TestCase
             ->assertJsonPath('props.catalog.create_href', route('tasks.planning.labels.create', [$workspace]));
     }
 
+    public function test_native_empty_search_and_catalog_continuations_survive_http_empty_string_normalization(): void
+    {
+        [$workspace, , $project, $owner] = $this->fixture();
+        for ($index = 0; $index < 27; $index++) {
+            ClientTaskLabel::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic empty search '.$index, 'name_key' => hash('sha256', 'synthetic empty search '.$index)]);
+        }
+        $this->connect('native', $owner);
+        $headers = ['X-Inertia' => 'true', 'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/')) ?? ''];
+        $first = $this->withHeaders($headers)->get(route('tasks.planning.labels.page', [$workspace, 'status' => 'active', 'q' => '']))->assertOk()
+            ->assertJsonCount(25, 'props.catalog.labels')->assertJsonPath('props.catalog.filters.q', '');
+        $next = $first->json('props.catalog.next_href');
+        $this->assertIsString($next);
+        $this->get($next)->assertOk()->assertJsonCount(2, 'props.catalog.labels')->assertJsonPath('props.catalog.next_href', null);
+        $this->connect('rest', $owner);
+        $this->getJson($this->url('rest', $workspace, 'labels.options', $project->public_id).'?q=')->assertOk()->assertJsonCount(25, 'data');
+    }
+
     private function connect(string $surface, User $actor): void
     {
         $this->flushHeaders();

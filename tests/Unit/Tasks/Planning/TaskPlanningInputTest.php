@@ -25,6 +25,22 @@ final class TaskPlanningInputTest extends TestCase
         }
     }
 
+    public function test_http_empty_search_is_unfiltered_but_other_shapes_remain_closed(): void
+    {
+        foreach (['labels.list', 'labels.options', 'dependencies.options', 'contacts.options'] as $operation) {
+            $this->assertSame(['q' => ''], TaskPlanningInput::query($operation, ['q' => null]));
+            $this->assertSame(['q' => 'Synthetic'], TaskPlanningInput::query($operation, ['q' => 'Synthetic']));
+        }
+        foreach ([['labels.list', ['q' => ['Synthetic']]], ['get', ['q' => null]], ['dependencies.get', ['q' => null]]] as [$operation, $query]) {
+            try {
+                TaskPlanningInput::query($operation, $query);
+                $this->fail('A non-search operation or array query was accepted.');
+            } catch (ValidationException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function test_targets_are_selected_by_trusted_route_defaults_and_never_request_body(): void
     {
         $id = '00000000-0000-4000-8000-000000000001';

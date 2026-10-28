@@ -62,6 +62,13 @@ final class TaskPlanningInput
         if (array_diff(array_keys($query), array_keys($rules)) !== []) {
             throw ValidationException::withMessages(['planning' => 'Unsupported task planning query.']);
         }
+        // Laravel's HTTP middleware converts an empty query string to null.
+        // An absent/empty search is the same unfiltered page, including when a
+        // finished catalog continuation retains q=. Arrays and unknown fields
+        // still pass through the closed validation below.
+        if (array_key_exists('q', $query) && $query['q'] === null) {
+            $query['q'] = '';
+        }
         if (array_key_exists('limit', $query) && ! is_int($query['limit']) && ! is_string($query['limit'])) {
             throw ValidationException::withMessages(['limit' => 'Choose a whole-number page size.']);
         }
