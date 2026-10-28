@@ -9,6 +9,7 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Str;
 use Laravel\Passport\AccessToken;
 use Laravel\Passport\Token;
+use Tests\Support\OpenApiHttpContract;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -39,6 +40,15 @@ abstract class TestCase extends BaseTestCase
             self::$oauthSigningKeys = ['private' => $privateKey, 'public' => $details['key']];
         }
         config(['passport.private_key' => self::$oauthSigningKeys['private'], 'passport.public_key' => self::$oauthSigningKeys['public']]);
+    }
+
+    /** Every feature HTTP request is checked against the published API contract. */
+    protected function createTestResponse($response, $request)
+    {
+        $result = parent::createTestResponse($response, $request);
+        OpenApiHttpContract::assertExchange($result);
+
+        return $result;
     }
 
     /**

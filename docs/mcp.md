@@ -469,6 +469,16 @@ The operation is removed only by its removal issue, after the deprecation window
 | ------------------------------------------------- | ----- | ------- | ----------- |
 | `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | None: the #134 repair it sized is done |
 
+Every feature-test HTTP exchange under `/api/v1` now checks the published
+OpenAPI contract through `Tests\TestCase`: accepted requests validate their
+parameters and bodies, and all responses, including refusals, validate their
+status, media type and JSON shape. Deliberately invalid negative-test inputs may
+be refused; they cannot be accepted outside the schema. The MCP transport
+endpoint retains its separate JSON-RPC envelope and tool-schema contract tests.
+Tests disable debug responses so refusal shapes match the deployed API rather
+than Laravel's development exception traces. Protected-resource discovery links
+the public contract with `service_documentation`.
+
 Current coverage includes initialization, scope-filtered discovery, prompts,
 tool schema closure, input and output validation, REST parity, credential
 session isolation, route authentication, origin handling, optimistic versions,

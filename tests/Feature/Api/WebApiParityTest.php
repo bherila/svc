@@ -35,10 +35,9 @@ final class WebApiParityTest extends TestCase
         'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
-        // Historical profiles and contacts share scoped repositories with the
-        // import foundation. REST/MCP mutation contracts are not exposed yet;
-        // keep that gap explicit rather than misclassifying them as web-only.
-        'clients.profile.update' => 'missing',
+        // Profile and business-contact contracts now share these repositories
+        // across web, REST and MCP (#528). Their web routes still await #385.
+        'clients.profile.update' => 'operation:clients.update',
         'clients.store' => 'operation:clients.create',
         'clients.update' => 'operation:clients.update',
         'collaboration.store' => 'operation:collaboration.topics.create',
@@ -47,8 +46,8 @@ final class WebApiParityTest extends TestCase
         'collaboration.comments.store' => 'operation:collaboration.comments.create',
         'collaboration.comments.update' => 'operation:collaboration.comments.update',
         'collaboration.comments.destroy' => 'operation:collaboration.comments.delete',
-        'contacts.store' => 'missing',
-        'contacts.update' => 'missing',
+        'contacts.store' => 'operation:clients.contacts.create',
+        'contacts.update' => 'operation:clients.contacts.update',
         'logout' => 'web-only:sign-out',
         'projects.access.update' => 'operation:projects.members.update',
         'projects.store' => 'operation:projects.create',

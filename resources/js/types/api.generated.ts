@@ -3205,12 +3205,17 @@ export interface components {
         DeletionResponse: {
             data: components['schemas']['DeletionReceipt'];
         };
-        Error: {
-            message: string;
-            errors?: {
-                [key: string]: string[];
-            };
-        };
+        Error:
+            | {
+                  message: string;
+                  errors?: {
+                      [key: string]: string[];
+                  };
+              }
+            | {
+                  /** @enum {string} */
+                  error: 'invalid_token' | 'insufficient_scope';
+              };
         ExpectedVersionRequest: {
             expected_version: components['schemas']['Version'];
         };

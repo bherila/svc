@@ -41,12 +41,14 @@ class AgentApiOAuthFoundationTest extends TestCase
         $rest = $this->getJson('/.well-known/oauth-protected-resource/api/v1')
             ->assertOk()
             ->assertJsonPath('resource', url('/api/v1'))
-            ->assertJsonPath('authorization_servers', [url('/')]);
+            ->assertJsonPath('authorization_servers', [url('/')])
+            ->assertJsonPath('service_documentation', route('openapi.document'));
         $this->assertSame(AgentApiScopes::rest(), $rest->json('scopes_supported'));
         $this->assertNotContains(AgentApiScopes::MCP_USE, $rest->json('scopes_supported'));
         $mcp = $this->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
             ->assertOk()
-            ->assertJsonPath('resource', url('/api/v1/mcp'));
+            ->assertJsonPath('resource', url('/api/v1/mcp'))
+            ->assertJsonPath('service_documentation', route('openapi.document'));
         $this->assertSame(AgentApiScopes::mcp(), $mcp->json('scopes_supported'));
         // No document answers for a resource that is not configured, the bare
         // well-known path included: its `resource` would name no endpoint.
