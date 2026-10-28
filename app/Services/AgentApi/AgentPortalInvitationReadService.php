@@ -11,6 +11,8 @@ use App\Models\Workspace;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\CursorPage;
+use App\Support\AgentApi\Presenters\AgentPortalInvitationPresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -109,7 +111,8 @@ final class AgentPortalInvitationReadService
      */
     private function present(Workspace $workspace, ClientCompany $company, ClientPortalInvitation $invitation, Collection $loaded): array
     {
-        $status = $invitation->currentStatus();
+        $summary = AgentPortalInvitationPresenter::summary($invitation, zuluTimestamps: true);
+        $status = PortalInvitationStatus::from($summary['status']);
         $projects = $invitation->scope() === PortalAccessScope::Company ? new Collection : $loaded
             ->filter(static fn (ClientProject $project, int $id): bool => in_array($id, $invitation->projectIds(), true))
             ->sortKeys()
@@ -118,17 +121,17 @@ final class AgentPortalInvitationReadService
         $parameters = ['workspace' => $workspace->public_id, 'client' => $company->public_id, 'invitation' => $invitation->public_id];
 
         return [
-            'id' => $invitation->public_id,
-            'email' => $invitation->email,
-            'scope' => $invitation->scope()->value,
+            'id' => $summary['id'],
+            'email' => $summary['email'],
+            'scope' => $summary['scope'],
             'projects' => array_values($projects->map(fn (ClientProject $project): array => [
-                'id' => $project->public_id, 'name' => $project->name,
+                ...AgentProjectPresenter::identity($project),
                 'href' => $base.route('agent-api.v1.projects.show', ['workspace' => $workspace->public_id, 'project' => $project->public_id], false),
             ])->all()),
-            'status' => $status->value,
+            'status' => $summary['status'],
             'not_applied_reason' => $invitation->notAppliedReason()?->value,
-            'expires_at' => $invitation->expires_at?->utc()->toIso8601ZuluString(),
-            'email_sent' => $invitation->email_sent,
+            'expires_at' => $summary['expires_at'],
+            'email_sent' => $summary['email_sent'],
             'created_at' => $invitation->created_at->utc()->toIso8601ZuluString(),
             'resend_href' => $status->isOpen() ? $base.route('agent-api.v1.clients.portal-invitations.resend', $parameters, false) : null,
             'revoke_href' => $status === PortalInvitationStatus::Accepted || ($status === PortalInvitationStatus::Revoked && ! $invitation->provider_revocation_pending) ? null : $base.route('agent-api.v1.clients.portal-invitations.destroy', $parameters, false),

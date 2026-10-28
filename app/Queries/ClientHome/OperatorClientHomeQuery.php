@@ -13,6 +13,9 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
+use App\Support\AgentApi\Presenters\AgentProposalPresenter;
+use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\ClientHome\ClientHomeViewModel;
 use App\Support\ClientHome\EngagementSummary;
 use App\Support\ClientHome\InvoiceSummary;
@@ -63,9 +66,11 @@ final class OperatorClientHomeQuery
         /** @var list<int> $projectIds */
         $projectIds = $projects->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
 
+        $identity = AgentClientPresenter::identity($company);
+
         return new ClientHomeViewModel(
-            companyId: (string) $company->public_id,
-            companyName: (string) $company->name,
+            companyId: $identity['id'],
+            companyName: $identity['name'],
             latestInvoice: $this->latestInvoice($workspace, $company, $user),
             recentTime: $this->recentTime($workspace, $company, $projectIds, $projectNames),
             openTasks: $this->openTasks($workspace, $projectIds, $projectNames),
@@ -100,18 +105,7 @@ final class OperatorClientHomeQuery
             return null;
         }
 
-        return new InvoiceSummary(
-            id: (string) $invoice->public_id,
-            invoiceNumber: (string) $invoice->invoice_number,
-            status: (string) $invoice->status,
-            currency: (string) $invoice->currency,
-            issueDate: $invoice->issue_date?->toDateString(),
-            dueDate: $invoice->due_date?->toDateString(),
-            totalAmount: (int) $invoice->total_amount,
-            paidAmount: (int) $invoice->paid_amount,
-            balanceAmount: (int) $invoice->balance_amount,
-            href: route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
-        );
+        return InvoiceSummary::fromInvoice($invoice, route('clients.invoice', [$workspace, $company, $invoice], absolute: false));
     }
 
     /**
@@ -137,12 +131,8 @@ final class OperatorClientHomeQuery
             ->orderByDesc('id')
             ->limit(ClientHomeViewModel::RECENT_TIME)
             ->get()
-            ->map(fn (ClientTimeEntry $entry): TimeEntryRow => new TimeEntryRow(
-                id: (string) $entry->public_id,
-                workedOn: $entry->worked_on->toDateString(),
-                project: $projectNames[(int) $entry->client_project_id] ?? null,
-                description: $entry->description,
-                minutes: (int) $entry->minutes,
+            ->map(fn (ClientTimeEntry $entry): TimeEntryRow => TimeEntryRow::fromEntry(
+                $entry, $projectNames[(int) $entry->client_project_id] ?? null, useClientDescription: false,
             ))
             ->all());
     }
@@ -166,11 +156,8 @@ final class OperatorClientHomeQuery
             ->orderByDesc('id')
             ->limit(ClientHomeViewModel::OPEN_TASKS)
             ->get()
-            ->map(fn (ClientTask $task): TaskRow => new TaskRow(
-                id: (string) $task->public_id,
-                title: (string) $task->title,
-                project: $projectNames[(int) $task->client_project_id] ?? null,
-                status: (string) $task->status,
+            ->map(fn (ClientTask $task): TaskRow => TaskRow::fromTask(
+                $task, $projectNames[(int) $task->client_project_id] ?? null,
             ))
             ->all());
     }
@@ -197,15 +184,18 @@ final class OperatorClientHomeQuery
             ->orderByDesc('id')
             ->first();
 
+        $agreementFacts = $agreement === null ? null : AgreementReadPresenter::summary($agreement);
+        $proposalFacts = $proposal === null ? null : AgentProposalPresenter::identity($proposal);
+
         return new EngagementSummary(
-            agreementTitle: $agreement?->title,
-            agreementStatus: $agreement?->status,
-            agreementCadence: $agreement?->billing_cadence,
+            agreementTitle: $agreementFacts['title'] ?? null,
+            agreementStatus: $agreementFacts['status'] ?? null,
+            agreementCadence: $agreementFacts['billing_cadence'] ?? null,
             agreementHref: $agreement === null
                 ? null
                 : route('clients.agreement', [$workspace, $company, $agreement], absolute: false),
-            proposalTitle: $proposal?->title,
-            proposalStatus: $proposal?->status,
+            proposalTitle: $proposalFacts['title'] ?? null,
+            proposalStatus: $proposalFacts['status'] ?? null,
             proposalHref: $proposal === null
                 ? null
                 : route('clients.proposal', [$workspace, $company, $proposal], absolute: false),

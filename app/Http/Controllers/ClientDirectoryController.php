@@ -15,7 +15,6 @@ use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
-use App\Models\ClientProposalItem;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -47,9 +46,15 @@ use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
+use App\Support\AgentApi\Presenters\AgentPortalInvitationPresenter;
+use App\Support\AgentApi\Presenters\AgentProjectMemberPresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentProposalPresenter;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
+use App\Support\AgentApi\Presenters\AgentUserPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -130,10 +135,7 @@ class ClientDirectoryController extends Controller
                 'name' => $workspace->name,
             ],
             'companies' => $companies->map(fn (ClientCompany $company): array => [
-                'id' => $company->public_id,
-                'name' => $company->name,
-                'billing_email' => $company->billing_email,
-                'is_active' => $company->is_active,
+                ...AgentClientPresenter::summary($company),
                 'project_count' => (int) $company->getAttribute('project_count'),
                 'draft_invoice_count' => (int) $company->getAttribute('draft_invoice_count'),
                 'open_invoice_count' => (int) $company->getAttribute('open_invoice_count'),
@@ -584,17 +586,7 @@ class ClientDirectoryController extends Controller
                 'square_series_key' => $clientAgreement->square_series_key,
                 'square_location_id' => $clientAgreement->square_location_id,
             ],
-            'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
-                'id' => $item->public_id,
-                'description' => $item->description,
-                'cadence' => $item->cadence,
-                'quantity' => $item->quantity === null ? null : (float) $item->quantity,
-                'amount' => $item->amount === null ? null : (int) $item->amount,
-                'currency' => $item->currency,
-                'effective_on' => $item->effective_on?->toDateString(),
-                'expires_on' => $item->expires_on?->toDateString(),
-                'is_active' => (bool) $item->is_active,
-            ])->values()->all(),
+            'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => AgreementReadPresenter::recurringItem($item))->values()->all(),
             // What termination would collect and charge today (#366), priced
             // at the agreement's rate, so a manager's alone.
             'deferred_backlog' => $manages ? $deferredBacklogs->trailing($workspace, $clientAgreement) : null,
@@ -729,23 +721,10 @@ class ClientDirectoryController extends Controller
             'task_management' => $canManageTasks
                 ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject, $taskRecords->assigneeOptions($workspace, $clientProject))]]
                 : null,
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
-            'project' => [
-                'id' => $clientProject->public_id,
-                'name' => $clientProject->name,
-                'description' => $clientProject->description,
-                'status' => $clientProject->status,
-                'is_visible_to_client' => (bool) $clientProject->is_visible_to_client,
-            ],
-            'tasks' => $tasks->map(fn (ClientTask $task): array => [
-                'id' => $task->public_id,
-                'title' => $task->title,
-                'status' => $task->status,
-                'is_visible_to_client' => (bool) $task->is_visible_to_client,
-                'completed_at' => $task->completed_at?->toDateString(),
+            'company' => AgentClientPresenter::identity($clientCompany),
+            'project' => AgentProjectPresenter::summary($clientProject),
+            'tasks' => $tasks->map(fn (ClientTask $task): array => AgentTaskPresenter::summary($task) + [
+                'completed_at' => AgentTaskPresenter::completedAt($task, dateOnly: true),
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
@@ -875,20 +854,16 @@ class ClientDirectoryController extends Controller
                 // list and would never render it.
                 'members' => $memberships->get($project->id, collect())
                     ->filter(fn (ClientProjectMembership $membership): bool => isset($userIds[$membership->user_id]))
-                    ->map(fn (ClientProjectMembership $membership): array => [
-                        'user' => (string) ($userIds[$membership->user_id] ?? ''),
-                        // The column is cast to the enum, so this is its value
-                        // rather than a cast of the object.
-                        'role' => $membership->role->value,
-                    ])->values()->all(),
+                    ->map(function (ClientProjectMembership $membership) use ($userIds): array {
+                        $grant = AgentProjectMemberPresenter::grant((string) $userIds[$membership->user_id], $membership);
+
+                        return ['user' => $grant['user_id'], 'role' => $grant['role']];
+                    })->values()->all(),
             ])->values()->all(),
             // Workspace members who can be given project access. Owners and
             // admins are excluded: they already reach every project, so
             // offering to grant them one would imply the grant does something.
-            'assignable' => $assignable->map(fn (User $member): array => [
-                'id' => $member->public_id,
-                'name' => $member->name,
-            ])->values()->all(),
+            'assignable' => $assignable->map(AgentUserPresenter::identity(...))->values()->all(),
             'portal' => $this->portalAccess($workspace, $clientCompany),
             // The automatic payment reminder cadence (#438), switched through
             // the API the website shares with agents.
@@ -956,24 +931,26 @@ class ClientDirectoryController extends Controller
             ->withPath('/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/settings');
         $projects = ClientProject::query()
             ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
             ->whereIn('id', $invitations->flatMap(static fn (ClientPortalInvitation $invitation): array => $invitation->projectIds())->unique()->values()->all())
             ->pluck('public_id', 'id');
 
         $rows = array_values($invitations->getCollection()->map(static function (ClientPortalInvitation $invitation) use ($workspace, $clientCompany, $projects): array {
-            $status = $invitation->currentStatus();
+            $summary = AgentPortalInvitationPresenter::summary($invitation);
+            $status = PortalInvitationStatus::from($summary['status']);
             $route = [$workspace, $clientCompany->public_id, $invitation->public_id];
 
             return [
-                'id' => $invitation->public_id,
-                'email' => $invitation->email,
-                'scope' => $invitation->scope()->value,
+                'id' => $summary['id'],
+                'email' => $summary['email'],
+                'scope' => $summary['scope'],
                 'projects' => array_values(array_filter(array_map(static fn (int $id): ?string => $projects->get($id), $invitation->projectIds()))),
-                'status' => $status->value,
+                'status' => $summary['status'],
                 'reason' => $invitation->provider_revocation_pending
                     ? 'Portal access is withdrawn. The identity provider withdrawal has not finished; try again.'
                     : $invitation->notAppliedReason()?->message(),
-                'expires_at' => $invitation->expires_at?->toIso8601String(),
-                'email_sent' => $invitation->email_sent,
+                'expires_at' => $summary['expires_at'],
+                'email_sent' => $summary['email_sent'],
                 'link' => $status === PortalInvitationStatus::Pending ? $invitation->link : null,
                 'resend_url' => $status->isOpen() ? route('agent-api.v1.clients.portal-invitations.resend', $route, absolute: false) : null,
                 'revoke_url' => route('agent-api.v1.clients.portal-invitations.destroy', $route, absolute: false),
@@ -1054,10 +1031,7 @@ class ClientDirectoryController extends Controller
         $initialAssignees = $initialTaskProject === null ? null : $taskRecords->assigneeOptions($workspace, $initialTaskProject);
 
         return Inertia::render('clients/tasks', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             // Whether the "client sees" column appears. It is a statement about
             // disclosure, which is meaningless on the copy of this screen the
             // client is reading.
@@ -1068,17 +1042,10 @@ class ClientDirectoryController extends Controller
             'filters' => [
                 'project_id' => $selected?->public_id,
             ],
-            'projects' => $projects->map(fn (ClientProject $project): array => [
-                'id' => $project->public_id,
-                'name' => $project->name,
-            ])->values()->all(),
-            'tasks' => $tasks->map(fn (ClientTask $task): array => [
-                'id' => $task->public_id,
-                'title' => $task->title,
-                'status' => $task->status,
+            'projects' => $projects->map(fn (ClientProject $project): array => AgentProjectPresenter::identity($project))->values()->all(),
+            'tasks' => $tasks->map(fn (ClientTask $task): array => AgentTaskPresenter::summary($task) + [
                 'project' => $projectNames[$task->client_project_id] ?? null,
-                'is_visible_to_client' => (bool) $task->is_visible_to_client,
-                'completed_at' => $task->completed_at?->toDateString(),
+                'completed_at' => AgentTaskPresenter::completedAt($task, dateOnly: true),
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
@@ -1246,28 +1213,8 @@ class ClientDirectoryController extends Controller
         $proposal->setRelation('items', $items);
 
         return [
-            'proposal' => [
-                'id' => $proposal->public_id,
-                'title' => $proposal->title,
-                'summary' => $proposal->summary,
-                'terms' => $proposal->terms,
-                'status' => $proposal->status,
-                'currency' => $proposal->currency,
-                'valid_until' => $proposal->valid_until?->toDateString(),
-                'sent_at' => $proposal->sent_at?->toISOString(),
-                'accepted_at' => $proposal->accepted_at?->toISOString(),
-                'total_amount' => $proposal->totalAmount(),
-            ],
-            'items' => array_values($items->map(fn (ClientProposalItem $item): array => [
-                'id' => $item->public_id,
-                'description' => $item->description,
-                // A string rather than a float: quantities are decimals in the
-                // column, and rendering 1.5 through a float is how 0.1 + 0.2
-                // reaches an invoice.
-                'quantity' => (string) $item->quantity,
-                'unit_amount' => (int) $item->unit_amount,
-                'cadence' => $item->cadence,
-            ])->all()),
+            'proposal' => AgentProposalPresenter::details($proposal),
+            'items' => array_values($items->map(AgentProposalPresenter::item(...))->all()),
         ];
     }
 
@@ -1283,20 +1230,12 @@ class ClientDirectoryController extends Controller
     private function invoicePayload(ClientInvoice $invoice): array
     {
         return [
-            'id' => $invoice->public_id,
-            'invoice_number' => $invoice->invoice_number,
-            'status' => $invoice->status,
+            ...AgentInvoicePresenter::summary($invoice),
             'document_revision' => (int) $invoice->document_revision,
             'automatic_delivery_status' => $invoice->automatic_delivery_status,
             'automatic_delivery_due_at' => $invoice->automatic_delivery_due_at?->toISOString(),
             'automatic_delivery_note' => $invoice->automatic_delivery_note,
-            'currency' => $invoice->currency,
-            'issue_date' => $invoice->issue_date?->toDateString(),
-            'due_date' => $invoice->due_date?->toDateString(),
             'scheduled_issue_date' => $invoice->scheduled_issue_date?->toDateString(),
-            'total_amount' => (int) $invoice->total_amount,
-            'paid_amount' => (int) $invoice->paid_amount,
-            'balance_amount' => (int) $invoice->balance_amount,
         ];
     }
 

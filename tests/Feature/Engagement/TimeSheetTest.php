@@ -82,6 +82,27 @@ class TimeSheetTest extends TestCase
             ->where('months.0.entries.0.delete_url', route('agent-api.v1.time-entries.destroy', [$this->workspace, $entry->public_id], absolute: false)));
     }
 
+    public function test_time_sheet_options_and_row_identities_keep_their_narrow_public_shapes(): void
+    {
+        $this->project->forceFill(['repository' => 'private.example.test/hidden/repository', 'description' => 'Synthetic private project details'])->save();
+        $task = ClientTask::query()->create(['workspace_id' => $this->workspace->id, 'client_project_id' => $this->project->id,
+            'title' => 'Synthetic task option', 'description' => 'Synthetic private task details', 'status' => 'open', 'is_visible_to_client' => false]);
+        $this->entry(['client_task_id' => $task->id]);
+
+        $this->actingAs($this->manager, 'web')->get(route('clients.time', [$this->workspace, $this->company]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('companies.0.projects.0', function ($option) use ($task): bool {
+                $option = collect($option)->all();
+                $this->assertSame(['id', 'name', 'can_log_time', 'rate_override', 'log_time_url', 'tasks'], array_keys($option));
+                $this->assertSame($this->project->public_id, $option['id']);
+                $this->assertSame([['id' => $task->public_id, 'title' => 'Synthetic task option']], collect($option['tasks'])->map(fn ($row): array => collect($row)->all())->all());
+
+                return true;
+            })
+            ->where('months.0.entries.0.project', ['id' => $this->project->public_id, 'name' => $this->project->name])
+            ->where('months.0.entries.0.task', ['id' => $task->public_id, 'title' => 'Synthetic task option']));
+    }
+
     public function test_project_logging_links_open_the_selected_project_and_refuse_foreign_context(): void
     {
         $project = $this->otherProject();
