@@ -5,7 +5,8 @@ namespace App\Services\Tasks;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\Workspace;
-use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 
 /** URLs/capabilities for callers already authorized by the browser manager gate. */
 final class TaskEditorPresenter
@@ -18,7 +19,7 @@ final class TaskEditorPresenter
      */
     public function project(Workspace $workspace, ClientProject $project, ?array $assigneeOptions = null): array
     {
-        return ['id' => $project->public_id, 'name' => $project->name,
+        return AgentProjectPresenter::identity($project) + [
             'create_action' => route('agent-api.v1.tasks.store', [$workspace, $project->public_id]),
             'assignees_action' => route('tasks.assignees', [$workspace, $project]),
         ] + ($assigneeOptions === null ? [] : ['assignee_options' => $assigneeOptions]);
@@ -30,9 +31,7 @@ final class TaskEditorPresenter
      */
     public function task(Workspace $workspace, ClientTask $task, ?array $assigneeOptions = null): array
     {
-        return ['id' => $task->public_id, 'title' => $task->title, 'description' => $task->description,
-            'status' => $task->status, 'is_visible_to_client' => $task->is_visible_to_client,
-            'completed_at' => $task->completed_at?->toAtomString(), 'version' => AgentApiVersion::for($task),
+        return AgentTaskPresenter::details($task) + [
             'update_action' => route('agent-api.v1.tasks.update', [$workspace, $task->public_id]),
             'assignees_action' => route('tasks.assignees', [$workspace, $task->project]),
         ] + $this->planning->fields($task) + ($assigneeOptions === null ? [] : ['assignee_options' => $assigneeOptions]);

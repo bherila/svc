@@ -2,6 +2,9 @@
 
 namespace App\Support\ClientHome;
 
+use App\Models\ClientTask;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
+
 /** One open task, as a row rather than a card. */
 final class TaskRow
 {
@@ -12,6 +15,13 @@ final class TaskRow
         public readonly string $status,
         public readonly ?string $filesHref = null,
     ) {}
+
+    public static function fromTask(ClientTask $task, ?string $project, ?string $filesHref = null): self
+    {
+        $facts = AgentTaskPresenter::summary($task);
+
+        return new self(id: $facts['id'], title: $facts['title'], project: $project, status: $facts['status'], filesHref: $filesHref);
+    }
 
     /**
      * @return array{id: string, title: string, project: string|null, status: string, files_href?:string}
