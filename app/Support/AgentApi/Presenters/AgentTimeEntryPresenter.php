@@ -26,13 +26,7 @@ final class AgentTimeEntryPresenter
         bool $useClientDescription = false,
         bool $compact = false,
     ): array {
-        if (! $entry->relationLoaded('invoiceLines')) {
-            $entry->load(['invoiceLines' => fn ($lines) => $lines
-                ->where('client_invoice_lines.workspace_id', $workspace->id)
-                ->wherePivot('workspace_id', $workspace->id)
-                ->with(['invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)]),
-            ]);
-        }
+        $entry->loadMissing(TimeEntryAllocation::relations($workspace->id));
         $entry->loadMissing(self::authorRelations($workspace));
         $author = $entry->user;
         $authorId = $author !== null && $author->workspaces->contains('id', $workspace->id) ? $author->public_id : null;
