@@ -245,7 +245,6 @@ export function TaskEditor({
         key: string;
         accepted: boolean;
         uncertain: boolean;
-        version?: string;
     } | null>(null);
     useUnknownWriteGuard(
         () => attempt.current !== null && !attempt.current.accepted,
@@ -348,11 +347,42 @@ export function TaskEditor({
                 }
 
                 original.accepted = true;
-                original.version = result.data.version;
             }
 
+            let synchronized = task === null;
             await refreshPageProps({
                 requireSuccess: true,
+                onSuccess: (page) => {
+                    if (task === null) {
+                        return;
+                    }
+
+                    const authoritative = page.props.task as EditableTask;
+
+                    if (!authoritative || authoritative.id !== task.id) {
+                        return;
+                    }
+
+                    form.setData('title', authoritative.title);
+                    form.setData(
+                        'description',
+                        authoritative.description ?? '',
+                    );
+                    form.setData('status', authoritative.status);
+                    form.setData(
+                        'is_visible_to_client',
+                        authoritative.is_visible_to_client,
+                    );
+                    form.setData('starts_on', authoritative.starts_on ?? '');
+                    form.setData('due_on', authoritative.due_on ?? '');
+                    form.setData(
+                        'assignee_ids',
+                        authoritative.assignees.map((person) => person.id),
+                    );
+                    setSelected(authoritative.assignees);
+                    form.setData('expected_version', authoritative.version);
+                    synchronized = true;
+                },
                 only: [
                     'task',
                     'tasks',
@@ -363,14 +393,14 @@ export function TaskEditor({
                 ],
             });
 
+            if (!synchronized) {
+                throw new Error('The refreshed task is unavailable.');
+            }
+
             // Keep the original body/key until the refresh also succeeds, so
             // retrying a saved creation cannot create a second task.
             attempt.current = null;
             setUnresolved(false);
-
-            if (task !== null && original.version !== undefined) {
-                form.setData('expected_version', original.version);
-            }
 
             if (task === null) {
                 form.reset();

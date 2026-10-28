@@ -39,6 +39,19 @@ it('allows navigation after success is known even when the refreshed read is pen
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(false);
+    const inertiaHistory = vi.fn();
+    window.addEventListener('popstate', inertiaHistory);
+    window.history.replaceState(
+        { synthetic: 'accepted destination' },
+        '',
+        '/synthetic/accepted',
+    );
+    window.dispatchEvent(
+        new PopStateEvent('popstate', { state: window.history.state }),
+    );
+    expect(inertiaHistory).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe('/synthetic/accepted');
+    window.removeEventListener('popstate', inertiaHistory);
     unmount();
 });
 

@@ -1,3 +1,4 @@
+import type { Page } from '@inertiajs/core';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
@@ -61,7 +62,9 @@ beforeEach(() => {
     vi.useFakeTimers();
     submit.mockReset();
     vi.mocked(refreshPageProps).mockReset();
-    vi.mocked(refreshPageProps).mockResolvedValue();
+    vi.mocked(refreshPageProps).mockImplementation(async (options) => {
+        options?.onSuccess?.({ props: { task } } as unknown as Page);
+    });
     submit.mockResolvedValue({
         ok: true,
         status: 200,
@@ -716,5 +719,71 @@ describe('task editor', () => {
         expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]);
         expect(submit.mock.calls[1][1]).toBe('/synthetic/create-1');
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+});
+
+it('pairs an authoritative version with all refreshed fields after a replay races another manager', async () => {
+    const fresh = {
+        ...task,
+        title: 'Synthetic concurrent manager title',
+        description: 'Synthetic concurrent description',
+        status: 'in_progress',
+        is_visible_to_client: true,
+        starts_on: '2026-11-03',
+        due_on: '2026-11-05',
+        assignees: [
+            { id: 'synthetic-new-person', name: 'Synthetic new contributor' },
+        ],
+        version: 'synthetic-concurrent-version',
+    };
+    submit.mockResolvedValueOnce({
+        ok: false,
+        status: 0,
+        message: 'Synthetic lost response',
+    });
+    render(<TaskEditor task={task} />);
+    fireEvent.change(screen.getByLabelText('Title'), {
+        target: { value: 'Original submitted title' },
+    });
+    await act(async () =>
+        fireEvent.click(screen.getByRole('button', { name: 'Save task' })),
+    );
+    const original = submit.mock.calls[0];
+    vi.mocked(refreshPageProps).mockImplementationOnce(async (options) => {
+        options?.onSuccess?.({ props: { task: fresh } } as unknown as Page);
+    });
+    await act(async () =>
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Check task save',
+                exact: true,
+            }),
+        ),
+    );
+    expect(submit.mock.calls[1]).toEqual(original);
+    expect(screen.getByLabelText('Title')).toHaveValue(fresh.title);
+    expect(screen.getByLabelText('Description')).toHaveValue(fresh.description);
+    expect(screen.getByLabelText('Start date')).toHaveValue(fresh.starts_on);
+    expect(screen.getByLabelText('Due date')).toHaveValue(fresh.due_on);
+    expect(
+        screen.getByRole('switch', { name: 'Visible to client' }),
+    ).toBeChecked();
+    expect(
+        screen.getByRole('button', {
+            name: `Remove ${fresh.assignees[0].name}`,
+        }),
+    ).toBeVisible();
+    await act(async () =>
+        fireEvent.click(screen.getByRole('button', { name: 'Save task' })),
+    );
+    expect(submit.mock.calls[2][2]).toMatchObject({
+        title: fresh.title,
+        description: fresh.description,
+        status: fresh.status,
+        starts_on: fresh.starts_on,
+        due_on: fresh.due_on,
+        is_visible_to_client: true,
+        assignee_ids: fresh.assignees.map((person) => person.id),
+        expected_version: fresh.version,
     });
 });
