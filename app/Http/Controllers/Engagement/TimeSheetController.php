@@ -229,7 +229,7 @@ class TimeSheetController extends Controller
                     'rate_override' => ($permissions[$project->id]['approve'] ?? false) ? ['currency' => $workspace->default_currency] : null,
                     'log_time_url' => ($permissions[$project->id]['log'] ?? false)
                         ? route('agent-api.v1.time-entries.store', $workspace, absolute: false) : null,
-                    'tasks' => $project->tasks->map(fn (ClientTask $task): array => AgentTaskPresenter::identity($task))->values()->all(),
+                    'tasks' => $project->tasks->map(fn (ClientTask $task) => AgentTaskPresenter::identity($task))->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
             'months' => $this->months($workspace, $entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
