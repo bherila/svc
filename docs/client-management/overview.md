@@ -401,8 +401,8 @@ GET    /workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreeme
 GET    /workspaces/{workspace}/clients/{clientCompany}/proposals/{clientProposal}
 GET    /workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}
 GET    /workspaces/{workspace}/clients/{clientCompany}/invoices/{clientInvoice}
-POST   /workspaces/{workspace}/clients
-PATCH  /workspaces/{workspace}/clients/{clientCompany}
+POST   /api/v1/workspaces/{workspace}/clients
+PATCH  /api/v1/workspaces/{workspace}/clients/{client}
 POST   /workspaces/{workspace}/clients/{clientCompany}/projects
 PATCH  /workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}
 PUT    /workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access
