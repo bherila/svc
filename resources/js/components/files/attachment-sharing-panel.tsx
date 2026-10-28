@@ -209,7 +209,8 @@ export function UploadAttachment({
     const [file, setFile] = useState<File | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [stale, setStale] = useState(false);
+    const [staleVersion, setStaleVersion] = useState<string | null>(null);
+    const stale = staleVersion === upload.parent_version;
     const [unresolved, setUnresolved] = useState(false);
     const attempt = useRef<{
         file: File;
@@ -290,7 +291,9 @@ export function UploadAttachment({
             }
         } else {
             setError(result.message);
-            setStale(result.status === 409);
+            setStaleVersion(
+                result.status === 409 ? original.parentVersion : null,
+            );
             const uncertain =
                 result.status === 0 ||
                 result.status === 408 ||
@@ -337,7 +340,9 @@ export function UploadAttachment({
                     {unresolved ? 'Check upload' : 'Upload file'}
                 </Button>
             </div>
-            {error && <MutationError message={error} stale={stale} />}
+            {error && (staleVersion === null || stale) && (
+                <MutationError message={error} stale={stale} />
+            )}
         </form>
     );
 }

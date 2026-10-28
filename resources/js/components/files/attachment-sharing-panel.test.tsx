@@ -460,6 +460,93 @@ describe('attachment sharing panel', () => {
         ).not.toBe(originalKey);
     });
 
+    it('recovers a stale upload after refreshed expense props without discarding uncertain attempts', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { upload_url: '/synthetic/signed-receipt' },
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({ message: 'Synthetic stale expense' }),
+                        { status: 409 },
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: {
+                                upload_url: '/synthetic/current-signed-receipt',
+                            },
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({ data: { id: 'synthetic-receipt' } }),
+                    ),
+                ),
+        );
+        const upload = {
+            href: '/synthetic/receipt-preparation',
+            method: 'GET' as const,
+            parent_version: 'p'.repeat(64),
+        };
+        const { rerender } = render(
+            <AttachmentSharingPanel panel={{ ...panel, upload }} />,
+        );
+        const file = new File(
+            ['Synthetic stale receipt'],
+            'synthetic-stale-receipt.txt',
+        );
+        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await screen.findByRole('alert');
+        expect(screen.getByLabelText('Upload a file')).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Upload file' }),
+        ).toBeDisabled();
+        const original = vi.mocked(fetch).mock.calls[1][1]!;
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Reload current files' }),
+        );
+        rerender(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: { ...upload, parent_version: 'q'.repeat(64) },
+                }}
+            />,
+        );
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Upload a file')).toBeEnabled();
+        expect(
+            screen.getByRole('button', { name: 'Upload file' }),
+        ).toBeEnabled();
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+        const current = vi.mocked(fetch).mock.calls[3][1]!;
+        expect((current.body as FormData).get('file')).toBe(file);
+        expect((current.body as FormData).get('expected_version')).toBe(
+            'q'.repeat(64),
+        );
+        expect(
+            (current.headers as Record<string, string>)['Idempotency-Key'],
+        ).not.toBe(
+            (original.headers as Record<string, string>)['Idempotency-Key'],
+        );
+    });
+
     it('deletes through the canonical API when sharing controls are unavailable', async () => {
         respond({ data: { status: 'deleting' } });
         render(
