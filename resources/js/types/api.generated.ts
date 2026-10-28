@@ -2131,6 +2131,181 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/tasks/{task}/contact-responsibilities': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.contacts.get'];
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        put: operations['task_planning.contacts.replace'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/tasks/{task}/contact-responsibility-options': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.contacts.options'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/tasks/{task}/dependencies': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.dependencies.get'];
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        put: operations['task_planning.dependencies.replace'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/tasks/{task}/dependency-options': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.dependencies.options'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/tasks/{task}/planning': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/task-labels/{label}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.labels.get'];
+        put?: never;
+        post?: never;
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        delete: operations['task_planning.labels.archive'];
+        options?: never;
+        head?: never;
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        patch: operations['task_planning.labels.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/task-labels': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.labels.list'];
+        put?: never;
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        post: operations['task_planning.labels.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-label-options': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        get: operations['task_planning.labels.options'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/tasks/{task}/labels': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        put: operations['task_planning.labels.replace'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/task-labels/{label}/restore': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs. */
+        post: operations['task_planning.labels.restore'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/tasks': {
         parameters: {
             query?: never;
@@ -5139,6 +5314,26 @@ export interface components {
             }[];
             /** @description Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks. */
             completion_advisory?: string | null;
+            planning_details?: components['schemas']['TaskPlanningFields'];
+        };
+        TaskContactOptionListResponse: {
+            data: components['schemas']['TaskResponsibilityContact'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        TaskContactResponsibilities: {
+            /** Format: uuid */
+            task_id: string;
+            version: components['schemas']['Version'];
+            contacts: components['schemas']['TaskResponsibilityContact'][];
+        };
+        TaskContactResponsibilitiesResponse: {
+            data: components['schemas']['TaskContactResponsibilities'];
+        };
+        TaskContactResponsibilityReplacementRequest: {
+            expected_version: components['schemas']['Version'];
+            contact_ids: string[];
         };
         TaskCreateRequest: {
             title: string;
@@ -5151,6 +5346,82 @@ export interface components {
             due_on?: string | null;
             /** @description Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them. */
             assignee_ids?: string[];
+        };
+        TaskDependencies: {
+            /** Format: uuid */
+            task_id: string;
+            version: components['schemas']['Version'];
+            graph_version: components['schemas']['Version'];
+            prerequisites: components['schemas']['TaskDependencyReference'][];
+            dependents: components['schemas']['TaskDependencyReference'][];
+        };
+        TaskDependenciesResponse: {
+            data: components['schemas']['TaskDependencies'];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        TaskDependencyOptionListResponse: {
+            data: components['schemas']['TaskDependencyReference'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        TaskDependencyReference: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** @enum {string} */
+            status: 'open' | 'in_progress' | 'blocked' | 'completed';
+            version: components['schemas']['Version'];
+            web_url: string;
+        };
+        TaskDependencyReplacementRequest: {
+            expected_version: components['schemas']['Version'];
+            prerequisite_ids: string[];
+            expected_graph_version: components['schemas']['Version'];
+        };
+        TaskDependencySummary: {
+            blocked: boolean;
+            incomplete_prerequisite_count: number;
+            dependent_count: number;
+        };
+        TaskLabel: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            is_archived: boolean;
+            version: components['schemas']['Version'];
+        };
+        TaskLabelArchiveRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        TaskLabelCreateRequest: {
+            /** @description Unicode whitespace is normalized; embedded line separators are refused. */
+            name: string;
+        };
+        TaskLabelListResponse: {
+            data: components['schemas']['TaskLabel'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        TaskLabelReplacementRequest: {
+            expected_version: components['schemas']['Version'];
+            label_ids: string[];
+        };
+        TaskLabelResponse: {
+            data: components['schemas']['TaskLabel'];
+        };
+        TaskLabelRestoreRequest: {
+            expected_version: components['schemas']['Version'];
+        };
+        TaskLabelUpdateRequest: {
+            /** @description Unicode whitespace is normalized; embedded line separators are refused. */
+            name: string;
+            expected_version: components['schemas']['Version'];
         };
         TaskListResponse: {
             data: components['schemas']['Task'][];
@@ -5239,8 +5510,35 @@ export interface components {
             list_id: components['schemas']['Uuid'] | null;
             ordered_ids: components['schemas']['Uuid'][];
         };
+        TaskPlanningDetails: {
+            /** Format: uuid */
+            task_id: string;
+            version: components['schemas']['Version'];
+            labels: components['schemas']['TaskLabel'][];
+            dependency_summary: components['schemas']['TaskDependencySummary'];
+        };
+        TaskPlanningDetailsResponse: {
+            data: components['schemas']['TaskPlanningDetails'];
+        };
+        TaskPlanningFields: {
+            labels: components['schemas']['TaskLabel'][];
+            dependency_summary: components['schemas']['TaskDependencySummary'];
+        };
+        TaskPlanningMutationResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+            };
+        };
         TaskResponse: {
             data: components['schemas']['Task'];
+        };
+        TaskResponsibilityContact: {
+            /** Format: uuid */
+            id: string;
+            display_name: string;
+            is_archived: boolean;
+            version: components['schemas']['Version'];
         };
         TaskUpdateRequest: {
             expected_version: components['schemas']['Version'];
@@ -12441,6 +12739,1236 @@ export interface operations {
                 };
             };
             /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.contacts.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskContactResponsibilitiesResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.contacts.replace': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskContactResponsibilityReplacementRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.contacts.options': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                q?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskContactOptionListResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.dependencies.get': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskDependenciesResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.dependencies.replace': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskDependencyReplacementRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.dependencies.options': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                q?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskDependencyOptionListResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningDetailsResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskLabelResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.archive': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskLabelArchiveRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskLabelUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                q?: string;
+                status?: 'active' | 'archived' | 'all';
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskLabelListResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskLabelCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.options': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                q?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskLabelListResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.replace': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskLabelReplacementRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_planning.labels.restore': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskLabelRestoreRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskPlanningMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Scope or current internal authority is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The scoped record is unavailable or task planning is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the receipt key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Input, confirmation, cycle or supported organization size is invalid. */
             422: {
                 headers: {
                     [name: string]: unknown;

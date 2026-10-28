@@ -33,4 +33,29 @@ final class TaskCompletionAdvisoryRepository
 
         return array_values($ids);
     }
+
+    /** Only direct, same-workspace/project prerequisites can affect a warning.
+     * @param list<int> $taskIds
+     * @return list<int> */
+    public function unfinishedPrerequisiteTaskIds(Workspace $workspace, array $taskIds): array
+    {
+        if (count($taskIds) > self::BATCH_SIZE) {
+            throw new LogicException('Completion advisory reads require bounded task batches.');
+        }
+        if ($taskIds === []) {
+            return [];
+        }
+
+        return DB::table('client_task_dependencies as edges')
+            ->join('client_tasks as source', function (JoinClause $join): void {
+                $join->on('source.id', '=', 'edges.client_task_id')->on('source.workspace_id', '=', 'edges.workspace_id')
+                    ->on('source.client_project_id', '=', 'edges.client_project_id');
+            })
+            ->join('client_tasks as prerequisite', function (JoinClause $join): void {
+                $join->on('prerequisite.id', '=', 'edges.prerequisite_task_id')->on('prerequisite.workspace_id', '=', 'edges.workspace_id')
+                    ->on('prerequisite.client_project_id', '=', 'edges.client_project_id');
+            })->where('edges.workspace_id', $workspace->id)->whereIn('source.id', $taskIds)
+            ->where('prerequisite.status', '!=', 'completed')->distinct()->pluck('source.id')
+            ->map(static fn (mixed $id): int => (int) $id)->values()->all();
+    }
 }

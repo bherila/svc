@@ -4,6 +4,7 @@ namespace App\Support\AgentApi\Presenters;
 
 use App\Models\ClientTask;
 use App\Models\Workspace;
+use App\Services\Tasks\Planning\TaskPlanningDetailsPresenter;
 use App\Services\Tasks\TaskPlanningPresenter;
 use App\Support\AgentApi\AgentApiVersion;
 
@@ -24,6 +25,6 @@ final class AgentTaskPresenter
             'web_url' => $includePlanning
                 ? ($canManage ? route('tasks.show', [$workspace, $task]) : route('clients.tasks', [$workspace, $task->project->clientCompany, 'project' => $task->project->public_id]))
                 : route('portal.tasks', [$task->project->clientCompany, 'project' => $task->project->public_id]),
-        ] + ($includePlanning ? app(TaskPlanningPresenter::class)->fields($task) : []);
+        ] + ($includePlanning ? app(TaskPlanningPresenter::class)->fields($task) + app(TaskPlanningDetailsPresenter::class)->taskFields($task) : []);
     }
 }

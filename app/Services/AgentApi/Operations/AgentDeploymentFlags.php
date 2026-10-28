@@ -54,6 +54,8 @@ final class AgentDeploymentFlags implements DeploymentFlags
     /** Product availability; first-party sessions never bypass it. */
     public const string TASK_ORGANIZATION = 'tasks.organization';
 
+    public const string TASK_PLANNING = 'tasks.planning';
+
     /**
      * Portal invitations (#430), a product switch rather than an agent
      * cutover: `svc.portal_invitations.enabled` also governs the settings
@@ -142,6 +144,11 @@ final class AgentDeploymentFlags implements DeploymentFlags
     {
         $switches = [];
         foreach ($flags as $flag) {
+            if ($flag === self::TASK_PLANNING) {
+                $switches[] = 'TASK_PLANNING_DETAILS_ENABLED';
+
+                continue;
+            }
             if ($flag === self::TASK_ORGANIZATION) {
                 $switches[] = 'TASK_ORGANIZATION_WRITES_ENABLED';
 
@@ -179,11 +186,15 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public static function isAvailabilityPrecondition(string $flag): bool
     {
-        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION], true);
+        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION, self::TASK_PLANNING], true);
     }
 
     public function enabled(string $flag): bool
     {
+        if ($flag === self::TASK_PLANNING) {
+            return config('task_planning_details.enabled') === true;
+        }
+
         if ($flag === self::TASK_ORGANIZATION) {
             return config('task_organization.enabled') === true;
         }

@@ -18,6 +18,8 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
+use App\Services\Tasks\Planning\TaskPlanningDetailsPresenter;
+use App\Services\Tasks\Planning\TaskPlanningDetailsLoader;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskMutationOrigin;
@@ -246,10 +248,11 @@ final class AgentReadService
         }
 
         return CursorPage::run($workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor,
-            function (int $take, ?int $after) use ($query, $workspace, $includePlanning) {
+            function (int $take, ?int $after) use ($query, $workspace, $user, $origin, $includePlanning) {
                 $tasks = (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_tasks.id', '>', $after))->limit($take)->get();
                 if ($includePlanning) {
                     app(TaskCompletionAdvisory::class)->load($workspace, $tasks);
+                    app(TaskPlanningDetailsLoader::class)->load($user, $workspace, $origin, $tasks);
                 }
 
                 return $tasks;
@@ -269,6 +272,7 @@ final class AgentReadService
         $record = $this->taskQuery($user, $workspace, $origin)->where('public_id', $taskId)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->firstOrFail();
         if ($includePlanning) {
             app(TaskCompletionAdvisory::class)->load($workspace, [$record]);
+            app(TaskPlanningDetailsLoader::class)->load($user, $workspace, $origin, [$record]);
         }
 
         return $this->taskPresenter->present($workspace, $record, includePlanning: $includePlanning, canManage: $manageable === null || in_array((int) $record->client_project_id, $manageable, true));

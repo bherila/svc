@@ -23,6 +23,7 @@ use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
 use App\Services\Mcp\AgentMcpTaskOrganizationTools;
+use App\Services\Mcp\AgentMcpTaskPlanningTools;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -65,6 +66,7 @@ final class AgentOperationCatalog
      */
     private const array ROUTES = [
         ...TaskOrganizationOperations::ROUTES,
+        ...TaskPlanningOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -260,7 +262,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1968,6 +1970,29 @@ final class AgentOperationCatalog
                 $read ? Effect::Read : ($suffix === 'lists.archive' ? Effect::Destructive : Effect::LocalWrite), true,
                 $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::WRITES],
                 availability: [AgentDeploymentFlags::TASK_ORGANIZATION]);
+        }
+
+        return $operations;
+    }
+
+    /** @return list<Operation> */
+    private function taskPlanningTools(): array
+    {
+        $handlers = ['get' => 'get', 'labels.list' => 'labelsList', 'labels.get' => 'labelsGet',
+            'labels.create' => 'labelsCreate', 'labels.update' => 'labelsUpdate', 'labels.archive' => 'labelsArchive',
+            'labels.restore' => 'labelsRestore', 'labels.options' => 'labelsOptions', 'labels.replace' => 'labelsReplace',
+            'dependencies.get' => 'dependenciesGet', 'dependencies.options' => 'dependenciesOptions', 'dependencies.replace' => 'dependenciesReplace',
+            'contacts.get' => 'contactsGet', 'contacts.options' => 'contactsOptions', 'contacts.replace' => 'contactsReplace'];
+        $definitions = TaskPlanningOperations::documentation();
+        $operations = [];
+        foreach ($handlers as $suffix => $handler) {
+            $id = 'task_planning.'.$suffix;
+            $read = $definitions[$id]['method'] === 'GET';
+            $manager = str_starts_with($suffix, 'contacts.') || in_array($suffix, ['labels.list', 'labels.get', 'labels.create', 'labels.update', 'labels.archive', 'labels.restore'], true);
+            $operations[] = $this->tool($id, $definitions[$id]['summary'], $definitions[$id]['description'],
+                [AgentMcpTaskPlanningTools::class, $handler], $read ? Effect::Read : ($suffix === 'labels.archive' ? Effect::Destructive : Effect::LocalWrite),
+                true, $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::WRITES],
+                manager: $manager, availability: [AgentDeploymentFlags::TASK_PLANNING]);
         }
 
         return $operations;

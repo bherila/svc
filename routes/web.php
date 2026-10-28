@@ -8,6 +8,7 @@ use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\ClientTaskOrganizationController;
+use App\Http\Controllers\ClientTaskPlanningController;
 use App\Http\Controllers\CompanyProfileController;
 use App\Http\Controllers\Finance\FinancePaymentLinkController;
 use App\Http\Controllers\HistoricalLibraryController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
+use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
 use Illuminate\Support\Facades\Route;
 
@@ -92,6 +94,7 @@ Route::middleware('auth')->group(function (): void {
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
+        Route::get('/workspaces/{workspace}/task-labels', [ClientTaskPlanningController::class, 'page'])->name('tasks.planning.labels.page');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{project}/task-organization', [ClientTaskOrganizationController::class, 'page'])->whereUuid('project')->name('tasks.organization.show');
         Route::get('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'show'])->name('tasks.show');
         Route::get('/workspaces/{workspace}/projects/{clientProject}/task-assignees', [ClientTaskController::class, 'assignees'])->name('tasks.assignees');
@@ -156,6 +159,15 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');
+    foreach (TaskPlanningOperations::DEFINITIONS as $suffix => [$verb]) {
+        $path = TaskPlanningOperations::ROUTES['task_planning.'.$suffix][1];
+        if ($suffix === 'labels.list') {
+            $path .= '/data';
+        }
+        $handler = $verb === 'GET' ? (str_ends_with($suffix, '.options') ? 'options' : 'show') : ($suffix === 'labels.archive' ? 'archiveLabel' : 'mutate');
+        Route::match([$verb], $path, [ClientTaskPlanningController::class, $handler])
+            ->whereUuid(['task', 'project', 'label'])->defaults('task_planning_operation', $suffix)->name('tasks.planning.'.$suffix);
+    }
     Route::prefix('/workspaces/{workspace}/projects/{project}/task-organization')->group(function (): void {
         Route::get('/', [ClientTaskOrganizationController::class, 'show'])->whereUuid('project')->name('tasks.organization.snapshot');
         foreach ([['post', '/lists', 'lists.store', 'lists.create'], ['patch', '/lists/{list}', 'lists.update', 'lists.update'],

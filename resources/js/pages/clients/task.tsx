@@ -1,5 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { TaskEditor } from '@/components/tasks/task-editor';
+import { TaskPlanningPanel } from '@/components/tasks/task-planning-panel';
+import type { TaskPlanningNativeDetails } from '@/types/task-planning';
 import type { EditableTask } from '@/components/tasks/task-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
@@ -11,11 +13,13 @@ export default function ClientTaskDetail({
     project,
     task,
     comment_thread_url = null,
+    planning_details = null,
 }: {
     company: { name: string };
     project: { name: string };
     task: EditableTask;
     comment_thread_url?: string | null;
+    planning_details?: TaskPlanningNativeDetails | null;
 }) {
     return (
         <WorkspaceShell activeModule="tasks">
@@ -44,6 +48,9 @@ export default function ClientTaskDetail({
                         <TaskEditor key={task.version} task={task} />
                     </CardContent>
                 </Card>
+                {planning_details && (
+                    <TaskPlanningPanel details={planning_details} />
+                )}
             </main>
         </WorkspaceShell>
     );

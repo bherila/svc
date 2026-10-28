@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Collaboration\CollaborationReadService;
+use App\Services\Tasks\Planning\TaskPlanningNativePresenter;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskCreateData;
@@ -40,6 +41,7 @@ class ClientTaskController extends Controller
             'company' => ['name' => $company->name],
             'project' => ['name' => $task->project->name],
             'task' => $presenter->task($workspace, $task, $taskRecords->assigneeOptions($workspace, $task->project)),
+            'planning_details' => app(TaskPlanningNativePresenter::class)->present($actor, $workspace, $task->public_id),
             'comment_thread_url' => app(CollaborationReadService::class)->taskThreadHref($actor, $workspace, $company, $task, CollaborationAudience::Internal),
         ]);
     }
