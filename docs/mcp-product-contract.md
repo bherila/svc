@@ -149,6 +149,13 @@ resource search remains the scoped `workspace.search` API operation and shared
 helper is separate from the twelve mutation exceptions above; resource option
 lookups and JSON list appends use the canonical API.
 
+`BrowserJsonReadParityTest` checks the actual task editor/organization options
+and native/portal attachment continuation URLs. It also keeps the nine retired
+task-assignee/planning lookup and attachment JSON index routes absent while
+preserving Inertia pages and authorized byte-download destinations. The guard
+tracks these consumer contracts; unused native read handlers are not a promise
+of an additional resource API.
+
 Apps that use the REST API without MCP connect one of two ways (#384). A person
 registers an OAuth app on the setup page - exact HTTPS or loopback redirect URIs,
 public (PKCE only) or confidential (a client secret shown once, used with
