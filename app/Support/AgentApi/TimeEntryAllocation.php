@@ -11,6 +11,16 @@ final readonly class TimeEntryAllocation
 {
     public function __construct(public ?string $invoiceId, public string $state) {}
 
+    /** @return array<string, \Closure> */
+    public static function relations(int $workspaceId): array
+    {
+        return ['invoiceLines' => fn ($lines) => $lines
+            ->where('client_invoice_lines.workspace_id', $workspaceId)
+            ->wherePivot('workspace_id', $workspaceId)
+            ->with(['invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspaceId)]),
+        ];
+    }
+
     public static function fromEntry(ClientTimeEntry $entry): self
     {
         if (! $entry->relationLoaded('invoiceLines')) {
