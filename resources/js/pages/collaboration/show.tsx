@@ -6,6 +6,7 @@ import {
     RemoveContent,
     VisibilityControl,
 } from '@/components/collaboration/content-controls';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -152,6 +153,12 @@ export default function CollaborationShow({
                             />
                         </div>
                     </>
+                )}
+                {topic.attachment_panel && (
+                    <AttachmentSharingPanel
+                        key={topic.attachment_panel.parent_version}
+                        panel={topic.attachment_panel}
+                    />
                 )}
                 {thread && <CommentThread thread={thread} />}
             </main>

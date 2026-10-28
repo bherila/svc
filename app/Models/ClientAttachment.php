@@ -7,6 +7,7 @@ use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
 use App\Services\Files\AttachmentRecordResolver;
+use App\Services\Files\AttachmentSharingGate;
 use App\Services\Files\AttachmentUploadPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -77,7 +78,10 @@ class ClientAttachment extends Model implements WorkspaceOwned
                 throw new LogicException('The private upload default has not been enabled.');
             }
             if (! in_array($attachment->record_type, AttachmentRecordResolver::uploadableTypes(), true)) {
-                throw new LogicException('This attachment parent is read-only in the reader release.');
+                if (! in_array($attachment->record_type, AttachmentRecordResolver::collaborationUploadTypes(), true)) {
+                    throw new LogicException('This attachment parent does not support uploads.');
+                }
+                AttachmentSharingGate::assertEnabled();
             }
         });
         static::updating(function (self $attachment): void {

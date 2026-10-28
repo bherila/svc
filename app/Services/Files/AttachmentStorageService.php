@@ -42,6 +42,8 @@ final class AttachmentStorageService
     public function store(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader, ?string $publicId = null): ClientAttachment
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
+        abort_if(in_array($record::class, ['App\\Models\\ClientCollaborationTopic', 'App\\Models\\ClientComment'], true), 422,
+            'Collaboration attachments require versioned prepared publication.');
         $visibleToClient = AttachmentUploadPolicy::defaultVisibility();
         $metadata = $this->stage($workspace, $record, $file, $publicId);
 
@@ -83,6 +85,9 @@ final class AttachmentStorageService
     public function prepareForPublication(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader): ClientAttachment
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
+        if (in_array($record::class, ['App\\Models\\ClientCollaborationTopic', 'App\\Models\\ClientComment'], true)) {
+            AttachmentSharingGate::assertEnabled();
+        }
         $visibleToClient = AttachmentUploadPolicy::defaultVisibility();
         $metadata = $this->stage($workspace, $record, $file);
         $attachment = $this->recordStaged($workspace, $metadata, $uploader, $visibleToClient);
@@ -513,6 +518,8 @@ final class AttachmentStorageService
             'App\\Models\\ClientProposal' => 'proposal',
             'App\\Models\\ClientAgreement' => 'agreement',
             'App\\Models\\ClientInvoice' => 'invoice',
+            'App\\Models\\ClientCollaborationTopic' => 'topic',
+            'App\\Models\\ClientComment' => 'comment',
             default => throw new RuntimeException('The attachment record type is not supported.'),
         };
     }

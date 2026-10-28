@@ -8,6 +8,8 @@ return [
     // The latch overrides an old config cache during rollback. Controls are separate.
     'attachments' => [
         'private_uploads_enabled' => (bool) env('SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED', false),
+        // Independent R2 controls; the retained runtime latch is also required.
+        'sharing_writes_enabled' => (bool) env('SVC_ATTACHMENT_SHARING_WRITES_ENABLED', false),
     ],
 
     // Inviting portal contacts who have never signed in (#430). Off by default:

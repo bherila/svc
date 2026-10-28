@@ -29,10 +29,11 @@ export type ApiResult<T> =
 export async function apiRequest<T = unknown>(
     method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     url: string,
-    body: object,
+    body: object | FormData,
     idempotencyKey: string = newIdempotencyKey(),
 ): Promise<ApiResult<T>> {
     let response: Response;
+    const multipart = body instanceof FormData;
 
     try {
         let destination = url;
@@ -61,13 +62,18 @@ export async function apiRequest<T = unknown>(
             credentials: 'same-origin',
             headers: {
                 Accept: 'application/json',
-                'Content-Type': 'application/json',
+                ...(multipart ? {} : { 'Content-Type': 'application/json' }),
                 ...(method === 'GET'
                     ? {}
                     : { 'Idempotency-Key': idempotencyKey }),
                 ...xsrfHeader(),
             },
-            body: method === 'GET' ? undefined : JSON.stringify(body),
+            body:
+                method === 'GET'
+                    ? undefined
+                    : multipart
+                      ? body
+                      : JSON.stringify(body),
         });
     } catch {
         return {

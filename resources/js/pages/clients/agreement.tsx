@@ -1,25 +1,14 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import {
-    AgreementFileUpload,
     AgreementTermsForm,
     AgreementTitle,
-    formatBytes,
 } from '@/components/agreements/agreement-editor';
 import { DeferredBacklogCard } from '@/components/agreements/deferred-backlog';
 import type { DeferredBacklog } from '@/components/agreements/deferred-backlog';
 import { DeferredBuyDownForm } from '@/components/agreements/deferred-buydown';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -114,11 +103,7 @@ export default function ClientAgreementDetail({
     deferred_backlog: DeferredBacklog | null;
 }) {
     const [editingTerms, setEditingTerms] = useState(false);
-    // Removing a file is asked about rather than done, because it is not
-    // undoable from this screen: the object is scheduled for deletion and the
-    // row leaves the list, and a mis-click on a countersigned agreement is not
-    // a mistake anyone here can put back.
-    const [removing, setRemoving] = useState<AgreementFile | null>(null);
+
     // The commercial terms - term, cadence, rate, retainer, rollover - are the
     // client's own agreement, and the portal already showed them. The rest
     // describe how the billing engine behaves when a term is unstated, which is
@@ -392,56 +377,23 @@ export default function ClientAgreementDetail({
                         <CardTitle id="files">Files</CardTitle>
                     </CardHeader>
                     <CardContent className="grid grid-cols-1 gap-4">
-                        {files.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">
-                                {previousFilesHref
-                                    ? 'No files on this page.'
-                                    : 'Nothing is attached to this agreement.'}
-                            </p>
-                        ) : (
-                            <ul className="grid grid-cols-1 gap-2 text-sm">
-                                {files.map((file) => (
-                                    <li
-                                        key={file.id}
-                                        className="flex flex-wrap items-center gap-x-3 gap-y-1"
-                                    >
-                                        <a
-                                            href={file.download_href}
-                                            className="font-medium wrap-anywhere underline underline-offset-4"
-                                        >
-                                            {file.filename}
-                                        </a>
-                                        <span className="text-muted-foreground">
-                                            {formatBytes(file.bytes)}
-                                            {file.uploaded_at !== null &&
-                                                ` · added ${formatTimestamp(file.uploaded_at)}`}
-                                        </span>
-                                        {file.delete_href !== null && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setRemoving(file)
-                                                }
-                                            >
-                                                Remove
-                                            </Button>
-                                        )}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
+                        <AttachmentSharingPanel
+                            panel={{
+                                files: files.map((file) => ({
+                                    ...file,
+                                    sharing: file.sharing ?? null,
+                                })),
+                                upload: null,
+                                next_href: null,
+                            }}
+                            legacyForms={{ upload_href: actions.upload_file }}
+                            title="Attached files"
+                        />
 
                         <AttachmentPageLinks
                             nextHref={nextFilesHref}
                             previousHref={previousFilesHref}
                         />
-
-                        {actions.upload_file !== null && (
-                            <AgreementFileUpload
-                                uploadHref={actions.upload_file}
-                            />
-                        )}
                     </CardContent>
                 </Card>
 
@@ -508,53 +460,6 @@ export default function ClientAgreementDetail({
                     </CardContent>
                 </Card>
             </main>
-
-            <AlertDialog
-                open={removing !== null}
-                onOpenChange={(open: boolean) => {
-                    if (!open) {
-                        setRemoving(null);
-                    }
-                }}
-            >
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Remove this file?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            {removing?.filename} is scheduled for deletion and
-                            stops being downloadable. This screen cannot put it
-                            back.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel
-                            render={<Button variant="outline">Cancel</Button>}
-                        />
-                        <AlertDialogAction
-                            render={
-                                <Button
-                                    variant="destructive"
-                                    onClick={() => {
-                                        const href = removing?.delete_href;
-                                        setRemoving(null);
-
-                                        if (
-                                            href !== null &&
-                                            href !== undefined
-                                        ) {
-                                            router.delete(href, {
-                                                preserveScroll: true,
-                                            });
-                                        }
-                                    }}
-                                >
-                                    Remove
-                                </Button>
-                            }
-                        />
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </WorkspaceShell>
     );
 }

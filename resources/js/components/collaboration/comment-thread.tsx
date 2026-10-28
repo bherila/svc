@@ -5,6 +5,7 @@ import {
     RemoveContent,
     VisibilityControl,
 } from '@/components/collaboration/content-controls';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { formatTimestamp } from '@/lib/datetime';
@@ -90,6 +91,22 @@ function Comment({ comment }: { comment: CollaborationContent }) {
                     {comment.body}
                 </p>
             )}
+            {!comment.deleted &&
+                comment.attachment_panel &&
+                (comment.attachment_panel.files.length > 0 ||
+                    comment.attachment_panel.upload !== null) && (
+                    <details className="min-w-0">
+                        <summary className="cursor-pointer text-sm">
+                            Files
+                        </summary>
+                        <div className="min-w-0 pt-3">
+                            <AttachmentSharingPanel
+                                key={comment.attachment_panel.parent_version}
+                                panel={comment.attachment_panel}
+                            />
+                        </div>
+                    </details>
+                )}
             {!comment.deleted && (
                 <>
                     <VisibilityControl

@@ -268,4 +268,27 @@ describe('client home', () => {
             screen.queryByRole('link', { name: 'Client settings' }),
         ).not.toBeInTheDocument();
     });
+    it('uses the finished task-file link without introducing a company file entry for Portal viewers', () => {
+        render(
+            <ClientHome
+                {...props({
+                    open_tasks: [
+                        {
+                            id: 'synthetic-task',
+                            title: 'Synthetic client task',
+                            project: 'Synthetic project',
+                            status: 'pending',
+                            files_href: '/synthetic/authorized-task-files',
+                        },
+                    ],
+                })}
+            />,
+        );
+        expect(
+            screen.getByRole('link', { name: 'Task files' }),
+        ).toHaveAttribute('href', '/synthetic/authorized-task-files');
+        expect(
+            screen.queryByRole('link', { name: 'Client files' }),
+        ).not.toBeInTheDocument();
+    });
 });

@@ -7,6 +7,7 @@ import type { InvoiceRemindersState } from '@/components/billing/payment-reminde
 import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
 import { SquareInvoiceCard } from '@/components/billing/square-link';
 import type { InvoiceSquareState } from '@/components/billing/square-link';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -56,6 +57,7 @@ import { refreshPageProps } from '@/lib/refresh-page-props';
 import { todayIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
+import type { AttachmentPanel } from '@/types/files';
 import type {
     InvoiceDelivery,
     InvoiceEmailContext,
@@ -215,6 +217,7 @@ function ReconciledInFinance({ hrefs }: { hrefs: string[] }) {
  * without the other.
  */
 export default function ClientInvoiceDetail({
+    attachment_panel = null,
     company,
     invoices_href: invoicesHref,
     pdf_href: pdfHref,
@@ -232,6 +235,8 @@ export default function ClientInvoiceDetail({
     square = null,
     payment_reminders: paymentReminders = null,
 }: {
+    attachment_panel?:
+        (AttachmentPanel & { legacy_upload_href?: string | null }) | null;
     company: { id: string; name: string };
     invoices_href: string;
     pdf_href: string;
@@ -1494,6 +1499,16 @@ export default function ClientInvoiceDetail({
                             )}
                         </CardContent>
                     </Card>
+                )}
+                {attachment_panel && (
+                    <AttachmentSharingPanel
+                        key={attachment_panel.parent_version}
+                        panel={attachment_panel}
+                        legacyForms={{
+                            upload_href:
+                                attachment_panel.legacy_upload_href ?? null,
+                        }}
+                    />
                 )}
             </main>
 

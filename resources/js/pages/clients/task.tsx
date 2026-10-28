@@ -14,12 +14,14 @@ export default function ClientTaskDetail({
     task,
     comment_thread_url = null,
     planning_details = null,
+    files_href = null,
 }: {
     company: { name: string };
     project: { name: string };
     task: EditableTask;
     comment_thread_url?: string | null;
     planning_details?: TaskPlanningNativeDetails | null;
+    files_href?: string | null;
 }) {
     return (
         <WorkspaceShell activeModule="tasks">
@@ -43,6 +45,14 @@ export default function ClientTaskDetail({
                                 className="block text-sm underline underline-offset-4"
                             >
                                 Comments
+                            </Link>
+                        )}
+                        {files_href && (
+                            <Link
+                                href={files_href}
+                                className="block text-sm underline underline-offset-4"
+                            >
+                                Task files
                             </Link>
                         )}
                         <TaskEditor key={task.version} task={task} />

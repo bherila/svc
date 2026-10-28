@@ -4,10 +4,12 @@ namespace Tests\Feature\Mcp;
 
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Files\AttachmentPrivacyLatch;
 use App\Services\Mcp\AgentWithheldTools;
 use App\Support\AgentApi\AgentApiScopes;
 use Bherila\McpLaravelBridge\Capabilities\Operation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
 use Tests\Concerns\InspectsAgentOperations;
@@ -34,6 +36,8 @@ final class AgentMcpInventoryTest extends TestCase
         'attachments.get',
         'attachments.list',
         'attachments.upload_url',
+        'attachments.visibility.get',
+        'attachments.visibility.update',
         'billing.audit_missing_billed_overage',
         'billing.audit_opening_rollover',
         'billing.audit_undated_collectible_invoices',
@@ -66,6 +70,11 @@ final class AgentMcpInventoryTest extends TestCase
         'clients.portal_invitations.revoke',
         'clients.restore',
         'clients.update',
+        'collaboration.attachments.delete',
+        'collaboration.attachments.download_url',
+        'collaboration.attachments.list',
+        'collaboration.attachments.upload_url',
+        'collaboration.attachments.visibility.update',
         'collaboration.comments.create',
         'collaboration.comments.delete',
         'collaboration.comments.list',
@@ -210,11 +219,11 @@ final class AgentMcpInventoryTest extends TestCase
             'payment_writes_enabled' => ['payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
             'client_writes_enabled' => ['clients.contacts.create', 'clients.contacts.update', 'clients.contacts.archive', 'clients.contacts.restore', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
                 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set'],
-            'collaboration_writes_enabled' => ['collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete'],
+            'collaboration_writes_enabled' => ['collaboration.attachments.upload_url', 'collaboration.attachments.visibility.update', 'collaboration.attachments.delete', 'collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
             'workspace_writes_enabled' => ['workspaces.create'],
-            'file_writes_enabled' => ['attachments.upload_url', 'attachments.delete'],
+            'file_writes_enabled' => ['attachments.upload_url', 'attachments.delete', 'attachments.visibility.update', 'collaboration.attachments.upload_url', 'collaboration.attachments.visibility.update', 'collaboration.attachments.delete'],
         ];
     }
 
@@ -230,7 +239,7 @@ final class AgentMcpInventoryTest extends TestCase
                 $outer = [...$outer, ...$names];
             }
         }
-        yield 'outer workflow' => ['writes_enabled', $outer];
+        yield 'outer workflow' => ['writes_enabled', array_values(array_unique($outer))];
     }
 
     /** @param list<string> $disabled */
@@ -249,7 +258,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_177_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_184_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['task_planning.labels.create', 'task_planning.labels.update', 'task_planning.labels.archive', 'task_planning.labels.restore', 'task_planning.labels.replace', 'task_planning.dependencies.replace', 'task_planning.contacts.replace', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -260,14 +269,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(177, self::TOOLS);
+        $this->assertCount(184, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_177_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_184_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -416,10 +425,25 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
+    private ?string $policyDirectory = null;
+
+    protected function tearDown(): void
+    {
+        if ($this->policyDirectory !== null) {
+            File::deleteDirectory($this->policyDirectory);
+        }
+        parent::tearDown();
+    }
+
     private function enableAll(): void
     {
+        $this->policyDirectory ??= sys_get_temp_dir().'/svc-inventory-policy-'.bin2hex(random_bytes(8));
+        File::ensureDirectoryExists($this->policyDirectory);
+        touch($this->policyDirectory.'/'.AttachmentPrivacyLatch::MARKER);
+        $this->app->instance(AttachmentPrivacyLatch::class, new AttachmentPrivacyLatch($this->policyDirectory));
+
         $configuration = ['agent_api.writes_enabled' => true, 'agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'task_planning_details.enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'task_planning_details.enabled' => true, 'svc.attachments.sharing_writes_enabled' => true];
         foreach (array_keys(self::gatedTools()) as $name) {
             $configuration['agent_api.'.$name] = true;
         }

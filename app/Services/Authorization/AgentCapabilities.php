@@ -7,6 +7,7 @@ use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Files\AttachmentSharingGate;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ProjectRole;
@@ -117,6 +118,18 @@ final class AgentCapabilities
         if ($this->writesEnabled() && $allowsScope(AgentApiScopes::TASKS_WRITE)
             && ($role?->canManageTasks() ?? false)) {
             $capabilities[] = 'tasks:write';
+        }
+        // Scoped collaboration files use exact parent access, not the legacy
+        // generic manager-only file surface. Both scope families are required.
+        if ($allowsScope(AgentApiScopes::FILES_READ) && $allowsScope(AgentApiScopes::COLLABORATION_READ)
+            && ($client || $role !== null)) {
+            $capabilities[] = 'files:read';
+        }
+        if (! $client && ($role?->canManageTasks() ?? false)
+            && $allowsScope(AgentApiScopes::FILES_WRITE) && $allowsScope(AgentApiScopes::COLLABORATION_WRITE)
+            && AgentWriteCutover::files() && AgentWriteCutover::collaboration()
+            && AttachmentSharingGate::available()) {
+            $capabilities[] = 'files:write';
         }
         if ($allowsScope(AgentApiScopes::TIME_READ)
             && ($client || in_array($role, [ProjectRole::Owner, ProjectRole::Manager, ProjectRole::Contributor], true))) {

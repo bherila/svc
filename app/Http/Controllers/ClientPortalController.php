@@ -19,6 +19,7 @@ use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Collaboration\CollaborationAccess;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Files\AttachmentReader;
+use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Tasks\TaskVisibility;
 use App\Support\Billing\InvoiceLineDetail;
@@ -100,6 +101,7 @@ class ClientPortalController extends Controller
             ->get();
 
         return Inertia::render('portal/invoice', [
+            'attachment_panel' => app(AttachmentSharingNativeView::class)->portalLegacyIfReadable($this->fileViewer($request), $clientCompany, 'invoice', $invoice->public_id),
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -287,6 +289,7 @@ class ClientPortalController extends Controller
         $clientProposal->setRelation('items', $items);
 
         return Inertia::render('clients/proposal', [
+            'attachment_panel' => app(AttachmentSharingNativeView::class)->portalLegacyIfReadable($this->fileViewer($request), $clientCompany, 'proposal', $clientProposal->public_id),
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -455,6 +458,7 @@ class ClientPortalController extends Controller
             'projects' => $projects->map(fn (ClientProject $project): array => [
                 'id' => $project->public_id,
                 'name' => $project->name,
+                'files_href' => route('portal.files.parent.show', [$clientCompany, 'project', $project->public_id], absolute: false),
             ])->values()->all(),
             'tasks' => $tasks->map(fn (ClientTask $task): array => [
                 'id' => $task->public_id,
@@ -463,6 +467,7 @@ class ClientPortalController extends Controller
                 'project' => $projectNames[$task->client_project_id] ?? null,
                 'is_visible_to_client' => true,
                 'completed_at' => $task->completed_at?->toDateString(),
+                'files_href' => route('portal.files.parent.show', [$clientCompany, 'task', $task->public_id], absolute: false),
                 'comment_thread_url' => isset($commentProjects[$task->client_project_id])
                     ? route('portal.collaboration.comments.index', [$clientCompany, 'task', $task->public_id], absolute: false) : null,
             ])->values()->all(),
@@ -491,6 +496,14 @@ class ClientPortalController extends Controller
                 ->whereIn('id', $visibleProjectIds ?? []))
             ->orderBy('name')
             ->get();
+    }
+
+    private function fileViewer(Request $request): User
+    {
+        $viewer = $this->viewer($request);
+        abort_unless($viewer instanceof User, 401);
+
+        return $viewer;
     }
 
     /** The portal is a web surface; an agent principal never reaches it. */

@@ -55,6 +55,7 @@ type TimeRow = {
 };
 
 type TaskRow = {
+    files_href?: string | null;
     id: string;
     title: string;
     project: string | null;
@@ -72,6 +73,7 @@ type Engagement = {
 };
 
 export type ClientHomeProps = {
+    files_href?: string | null;
     company: { id: string; name: string };
     latest_invoice: InvoiceSummary | null;
     recent_time: TimeRow[];
@@ -133,6 +135,7 @@ function Section({
 }
 
 export default function ClientHome({
+    files_href = null,
     company,
     latest_invoice: latestInvoice,
     recent_time: recentTime,
@@ -298,6 +301,14 @@ export default function ClientHome({
                                             {task.project}
                                         </span>
                                     )}
+                                    {task.files_href && (
+                                        <Link
+                                            className="mt-1 block text-sm underline"
+                                            href={task.files_href}
+                                        >
+                                            Task files
+                                        </Link>
+                                    )}
                                 </span>
                                 <Badge variant="outline" className="shrink-0">
                                     {statusLabel(task.status)}
@@ -336,6 +347,11 @@ export default function ClientHome({
                             )}
                         </p>
                     </section>
+                )}
+                {files_href && (
+                    <Link className="text-sm underline" href={files_href}>
+                        Client files
+                    </Link>
                 )}
             </main>
         </WorkspaceShell>

@@ -194,6 +194,8 @@ final class AgentMcpContractTest extends TestCase
             'attachments.list' => ['files:read'],
             'attachments.upload' => ['files:write'],
             'attachments.upload_url' => ['files:write'],
+            'attachments.visibility.get' => ['files:read'],
+            'attachments.visibility.update' => ['files:write', 'files:read'],
             'billing.audit_missing_billed_overage' => ['billing:read'],
             'billing.audit_opening_rollover' => ['billing:read'],
             'billing.audit_undated_collectible_invoices' => ['billing:read'],
@@ -226,6 +228,13 @@ final class AgentMcpContractTest extends TestCase
             'clients.portal_invitations.revoke' => ['clients:write'],
             'clients.restore' => ['clients:write', 'clients:read'],
             'clients.update' => ['clients:write', 'clients:read'],
+            'collaboration.attachments.delete' => ['files:write', 'collaboration:write'],
+            'collaboration.attachments.download' => ['files:read', 'collaboration:read'],
+            'collaboration.attachments.download_url' => ['files:read', 'collaboration:read'],
+            'collaboration.attachments.list' => ['files:read', 'collaboration:read'],
+            'collaboration.attachments.upload' => ['files:write', 'collaboration:write'],
+            'collaboration.attachments.upload_url' => ['files:write', 'collaboration:write'],
+            'collaboration.attachments.visibility.update' => ['files:write', 'files:read', 'collaboration:write'],
             'collaboration.comments.create' => ['collaboration:write', 'collaboration:read'],
             'collaboration.comments.delete' => ['collaboration:write', 'collaboration:read'],
             'collaboration.comments.list' => ['collaboration:read'],
@@ -410,7 +419,7 @@ final class AgentMcpContractTest extends TestCase
             if ($definition->effect->readOnly()) {
                 continue;
             }
-            if (in_array($definition->id, ['attachments.upload_url', 'expenses.receipts.upload_url'], true)) {
+            if (in_array($definition->id, ['attachments.upload_url', 'expenses.receipts.upload_url', 'collaboration.attachments.upload_url'], true)) {
                 $this->assertNull($definition->rest?->requestSchema);
                 $this->assertNull($definition->input);
 
@@ -454,7 +463,7 @@ final class AgentMcpContractTest extends TestCase
                 ->firstWhere('operationId', $definition->id);
             $parameterRefs = collect($operation['parameters'] ?? [])->pluck('$ref');
             $input = $this->toolInputSchema($definition->id);
-            if (in_array($definition->id, ['attachments.upload_url', 'expenses.receipts.upload_url'], true)) {
+            if (in_array($definition->id, ['attachments.upload_url', 'expenses.receipts.upload_url', 'collaboration.attachments.upload_url'], true)) {
                 $this->assertSame(IdempotencyKey::None, $definition->safety->idempotencyKey);
                 $this->assertNotNull($definition->safety->note);
                 $this->assertStringContainsString('upload itself requires an idempotency key and parent version', $definition->safety->note);

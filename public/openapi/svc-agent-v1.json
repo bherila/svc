@@ -1061,6 +1061,266 @@
                 "x-mcp-tool": "attachments.upload_url"
             }
         },
+        "/workspaces/{workspace}/attachments/{attachment}/visibility": {
+            "get": {
+                "operationId": "attachments.visibility.get",
+                "description": "Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. This read remains available when sharing writers are disabled and performs no durable mutation.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AttachmentVisibilityResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "attachments.visibility.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "attachments.visibility.get"
+            },
+            "patch": {
+                "operationId": "attachments.visibility.update",
+                "description": "Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:write",
+                            "files:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AttachmentVisibilityRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AttachmentVisibilityResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "attachments.visibility.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED",
+                    "SVC_ATTACHMENT_SHARING_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "attachments.visibility.update"
+            }
+        },
         "/workspaces/{workspace}/billing-audits/missing-billed-overage": {
             "get": {
                 "operationId": "billing.audit_missing_billed_overage",
@@ -3761,6 +4021,1159 @@
                     "AGENT_API_CLIENT_WRITES_ENABLED"
                 ],
                 "x-mcp-tool": "clients.restore"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}": {
+            "delete": {
+                "operationId": "collaboration.attachments.delete",
+                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:write",
+                            "collaboration:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationAttachmentDeleteRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "recordType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "topic",
+                                "comment"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "recordPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationAttachmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "collaboration.attachments.delete",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED",
+                    "SVC_ATTACHMENT_SHARING_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.attachments.delete"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}/content": {
+            "get": {
+                "operationId": "collaboration.attachments.download",
+                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:read",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "recordType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "topic",
+                                "comment"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "recordPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "expires",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "signature",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized attachment content.",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "download",
+                "x-agent-idempotent": true,
+                "x-svc-flags": []
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}/download-url": {
+            "post": {
+                "operationId": "collaboration.attachments.download_url",
+                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:read",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "recordType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "topic",
+                                "comment"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "recordPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AttachmentDownloadUrlResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "collaboration.attachments.download_url",
+                "x-svc-flags": [],
+                "x-mcp-tool": "collaboration.attachments.download_url"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}": {
+            "get": {
+                "operationId": "collaboration.attachments.list",
+                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:read",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "recordType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "topic",
+                                "comment"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "recordPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 100
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 4096
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationAttachmentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "collaboration.attachments.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "collaboration.attachments.list"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/upload": {
+            "post": {
+                "operationId": "collaboration.attachments.upload",
+                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:write",
+                            "collaboration:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationAttachmentUploadRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "recordType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "topic",
+                                "comment"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "recordPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    },
+                    {
+                        "name": "expires",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "signature",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationAttachmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "upload",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header",
+                    "expected_version": true
+                },
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED",
+                    "SVC_ATTACHMENT_SHARING_WRITES_ENABLED"
+                ]
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/upload-url": {
+            "post": {
+                "operationId": "collaboration.attachments.upload_url",
+                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:write",
+                            "collaboration:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "recordType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "topic",
+                                "comment"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "recordPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationAttachmentUploadUrlResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "note": "Authorizes a later upload; the upload itself requires an idempotency key and parent version."
+                },
+                "x-agent-mcp-tool": "collaboration.attachments.upload_url",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED",
+                    "SVC_ATTACHMENT_SHARING_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.attachments.upload_url"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}/visibility": {
+            "patch": {
+                "operationId": "collaboration.attachments.visibility.update",
+                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "files:write",
+                            "files:read",
+                            "collaboration:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AttachmentVisibilityRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "recordType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "topic",
+                                "comment"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "recordPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AttachmentVisibilityResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scope or role is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, company, parent or file is unavailable, or the writer is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the idempotency key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field, confirmation, cursor or file is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The retained local privacy latch is unavailable; no write was performed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "collaboration.attachments.visibility.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED",
+                    "SVC_ATTACHMENT_SHARING_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.attachments.visibility.update"
             }
         },
         "/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}": {
@@ -15873,8 +17286,8 @@
                             "proposals:write": "Create and send proposals as a workspace manager",
                             "proposals:accept": "Accept authorized proposals and sign their resulting agreement",
                             "workspaces:create": "Create new workspaces you own",
-                            "files:read": "Read private attachments as a workspace manager",
-                            "files:write": "Upload and delete private attachments as a workspace manager",
+                            "files:read": "Read authorized attachments; legacy generic routes require a workspace manager and collaboration routes require exact parent access",
+                            "files:write": "Upload, share and delete authorized files; sharing requires current publisher authority and new uploads start private",
                             "mcp:use": "Connect to SVC through MCP"
                         }
                     }
@@ -16529,6 +17942,42 @@
                     }
                 }
             },
+            "AttachmentSharingState": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "is_visible_to_client",
+                    "effective_visible_to_client",
+                    "sharing_note",
+                    "version",
+                    "parent_version"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    },
+                    "effective_visible_to_client": {
+                        "type": "boolean"
+                    },
+                    "sharing_note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "parent_version": {
+                        "$ref": "#/components/schemas/Version"
+                    }
+                }
+            },
             "AttachmentUploadRequest": {
                 "type": "object",
                 "additionalProperties": false,
@@ -16606,6 +18055,38 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/AttachmentUploadUrl"
+                    }
+                }
+            },
+            "AttachmentVisibilityRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "is_visible_to_client",
+                    "expected_version",
+                    "expected_parent_version"
+                ],
+                "properties": {
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    },
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "expected_parent_version": {
+                        "$ref": "#/components/schemas/Version"
+                    }
+                }
+            },
+            "AttachmentVisibilityResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AttachmentSharingState"
                     }
                 }
             },
@@ -17307,6 +18788,213 @@
                     }
                 }
             },
+            "CollaborationAttachment": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "record_type",
+                    "record_id",
+                    "filename",
+                    "media_type",
+                    "bytes",
+                    "sha256",
+                    "status",
+                    "version",
+                    "is_visible_to_client",
+                    "effective_visible_to_client",
+                    "sharing_note"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "record_type": {
+                        "type": "string",
+                        "enum": [
+                            "topic",
+                            "comment"
+                        ]
+                    },
+                    "record_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "filename": {
+                        "type": "string"
+                    },
+                    "media_type": {
+                        "type": "string"
+                    },
+                    "bytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 52428800
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "staged",
+                            "available",
+                            "deleting",
+                            "deleted",
+                            "corrupt"
+                        ]
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    },
+                    "effective_visible_to_client": {
+                        "type": "boolean"
+                    },
+                    "sharing_note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "CollaborationAttachmentDeleteRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "expected_parent_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "expected_parent_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "CollaborationAttachmentListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "parent_version",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/CollaborationAttachment"
+                        }
+                    },
+                    "parent_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "CollaborationAttachmentPreview": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "parent_version",
+                    "next_href"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "$ref": "#/components/schemas/CollaborationAttachment"
+                        }
+                    },
+                    "parent_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "CollaborationAttachmentResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CollaborationAttachment"
+                    }
+                }
+            },
+            "CollaborationAttachmentUploadRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "file",
+                    "expected_version"
+                ],
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "format": "binary"
+                    },
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                }
+            },
+            "CollaborationAttachmentUploadUrlResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AttachmentUploadUrl"
+                    }
+                }
+            },
             "CollaborationComment": {
                 "type": "object",
                 "properties": {
@@ -17357,6 +19045,9 @@
                             "boolean",
                             "null"
                         ]
+                    },
+                    "attachments": {
+                        "$ref": "#/components/schemas/CollaborationAttachmentPreview"
                     }
                 },
                 "required": [
@@ -17579,6 +19270,9 @@
                     },
                     "scope_label": {
                         "type": "string"
+                    },
+                    "attachments": {
+                        "$ref": "#/components/schemas/CollaborationAttachmentPreview"
                     }
                 },
                 "required": [

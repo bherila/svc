@@ -42,6 +42,7 @@ class ClientTaskController extends Controller
             'project' => ['name' => $task->project->name],
             'task' => $presenter->task($workspace, $task, $taskRecords->assigneeOptions($workspace, $task->project)),
             'planning_details' => app(TaskPlanningNativePresenter::class)->present($actor, $workspace, $task->public_id),
+            'files_href' => route('svc.files.parent.show', [$workspace, 'task', $task->public_id], absolute: false),
             'comment_thread_url' => app(CollaborationReadService::class)->taskThreadHref($actor, $workspace, $company, $task, CollaborationAudience::Internal),
         ]);
     }

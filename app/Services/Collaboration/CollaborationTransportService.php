@@ -34,7 +34,7 @@ final class CollaborationTransportService
     /** @param array<string, mixed> $query
      * @return array<string, mixed>
      */
-    public function read(User|AgentPrincipal $actor, Workspace $workspace, string $companyId, string $operation, ?string $id, ?string $parentType, array $query, CollaborationAudience $audience): array
+    public function read(User|AgentPrincipal $actor, Workspace $workspace, string $companyId, string $operation, ?string $id, ?string $parentType, array $query, CollaborationAudience $audience, bool $includeFiles = false): array
     {
         $company = $this->records->company($workspace, $companyId);
         /** @var array{kind?:string|null,project_id?:string|null,page?:int,cursor?:string|null,limit?:int} $data */
@@ -53,12 +53,12 @@ final class CollaborationTransportService
         }
         abort_unless(is_string($id), 422);
         if ($operation === 'topics.get') {
-            $result = $this->read->detail($actor, $workspace, $company, $id, $audience, includeThread: false);
+            $result = $this->read->detail($actor, $workspace, $company, $id, $audience, includeThread: false, includeFiles: $includeFiles, agentFiles: true);
 
             return ['data' => $this->content($result['topic'])];
         }
         abort_unless($operation === 'comments.list' && in_array($parentType, ['task', 'topic'], true), 422);
-        $result = $this->read->commentPage($actor, $workspace, $company, $parentType, $id, $audience, (int) ($data['limit'] ?? 1), $data['cursor'] ?? null);
+        $result = $this->read->commentPage($actor, $workspace, $company, $parentType, $id, $audience, (int) ($data['limit'] ?? 1), $data['cursor'] ?? null, includeFiles: $includeFiles, agentFiles: true);
         $cursor = $result['meta']['next_cursor'];
 
         return ['data' => array_map($this->content(...), $result['data']), 'parent_version' => $result['parent_version'], 'meta' => $result['meta'],

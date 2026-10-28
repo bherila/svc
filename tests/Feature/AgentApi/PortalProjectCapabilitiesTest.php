@@ -85,10 +85,26 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $this->assertSame([[
             'project_id' => $assigned->public_id,
             'role' => 'client',
-            'capabilities' => ['projects:read', 'tasks:read', 'time:read'],
+            'capabilities' => ['projects:read', 'tasks:read', 'time:read', 'files:read'],
         ]], $context['project_capabilities']);
-        foreach (['tasks:write', 'time:write', 'time:approve', 'files:read', 'finance:read'] as $internalCapability) {
+        foreach (['tasks:write', 'time:write', 'time:approve', 'files:write', 'finance:read'] as $internalCapability) {
             $this->assertNotContains($internalCapability, $context['capabilities']);
+        }
+    }
+
+    public function test_scoped_portal_file_capability_requires_both_scope_families(): void
+    {
+        $workspace = Workspace::query()->create(['name' => 'Synthetic paired workspace', 'slug' => 'synthetic-paired-workspace']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic paired client', 'slug' => 'synthetic-paired-client']);
+        ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic paired project', 'is_visible_to_client' => true]);
+        $user = User::factory()->create();
+        ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_COMPANY]);
+        foreach ([[AgentApiScopes::FILES_READ], [AgentApiScopes::COLLABORATION_READ], [AgentApiScopes::FILES_READ, AgentApiScopes::COLLABORATION_READ]] as $scopes) {
+            $data = app(AgentCapabilities::class)->forWorkspace($user, $workspace,
+                fn (string $scope): bool => $scope === AgentApiScopes::PROJECTS_READ || in_array($scope, $scopes, true));
+            $this->assertSame(count($scopes) === 2, in_array('files:read', $data['capabilities'], true));
+            $this->assertSame(count($scopes) === 2, in_array('files:read', $data['project_capabilities'][0]['capabilities'], true));
+            $this->assertNotContains('files:write', $data['capabilities']);
         }
     }
 

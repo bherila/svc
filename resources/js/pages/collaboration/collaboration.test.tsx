@@ -280,4 +280,43 @@ describe('native collaboration pages', () => {
         expect(screen.queryByRole('button', { name: 'Create' })).toBeNull();
         expect(horizontalOverflowRisks(view.container)).toEqual([]);
     });
+
+    it('embeds authorized comment files without requesting them on mount', () => {
+        const filename = 'SyntheticCommentFile'.repeat(35) + '.txt';
+        const view = render(
+            <CommentThread
+                thread={{
+                    ...thread,
+                    comments: [
+                        {
+                            ...comment,
+                            attachment_panel: {
+                                files: [
+                                    {
+                                        id: 'synthetic-comment-file',
+                                        filename,
+                                        media_type: 'text/plain',
+                                        bytes: 3,
+                                        uploaded_at: null,
+                                        download_href: '/synthetic/portal-file',
+                                        delete_href: null,
+                                        sharing: null,
+                                    },
+                                ],
+                                upload: null,
+                                next_href: null,
+                            },
+                        },
+                    ],
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByText('Files', { selector: 'summary' }));
+        expect(screen.getByRole('link', { name: filename })).toHaveAttribute(
+            'href',
+            '/synthetic/portal-file',
+        );
+        expect(screen.queryByText('Upload a file')).not.toBeInTheDocument();
+        expect(horizontalOverflowRisks(view.container)).toEqual([]);
+    });
 });

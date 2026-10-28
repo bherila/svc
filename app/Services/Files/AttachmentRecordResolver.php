@@ -58,6 +58,14 @@ final class AttachmentRecordResolver
         return array_values($types);
     }
 
+    /** New dedicated adapters only; legacy upload enums remain unchanged.
+     * @return list<string>
+     */
+    public static function collaborationUploadTypes(): array
+    {
+        return ['topic', 'comment'];
+    }
+
     public function resolve(Workspace $workspace, string $recordType, string $recordPublicId): Model&WorkspaceOwned
     {
         $recordClass = self::RECORD_CLASSES[$recordType] ?? null;

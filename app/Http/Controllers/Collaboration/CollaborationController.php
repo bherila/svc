@@ -36,7 +36,7 @@ class CollaborationController extends Controller
         $actor = $request->user();
         abort_unless($actor instanceof User, 401);
 
-        return Inertia::render('collaboration/show', $read->detail($actor, $workspace, $clientCompany, $topic->public_id, CollaborationAudience::Internal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment')));
+        return Inertia::render('collaboration/show', $read->detail($actor, $workspace, $clientCompany, $topic->public_id, CollaborationAudience::Internal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment'), includeFiles: true));
     }
 
     public function store(Request $request, Workspace $workspace, ClientCompany $clientCompany, CollaborationAction $action): RedirectResponse
