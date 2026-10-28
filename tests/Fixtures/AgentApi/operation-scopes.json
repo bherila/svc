@@ -1946,6 +1946,184 @@
             "mcp.switch:task_organization.tasks.reorder"
         ]
     },
+    "task_planning.contacts.get": {
+        "scopes": [
+            "tasks:read",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.contacts.get"
+        ]
+    },
+    "task_planning.contacts.options": {
+        "scopes": [
+            "tasks:read",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.contacts.options"
+        ]
+    },
+    "task_planning.contacts.replace": {
+        "scopes": [
+            "tasks:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes",
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_planning.contacts.replace"
+        ]
+    },
+    "task_planning.dependencies.get": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.dependencies.get"
+        ]
+    },
+    "task_planning.dependencies.options": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.dependencies.options"
+        ]
+    },
+    "task_planning.dependencies.replace": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_planning.dependencies.replace"
+        ]
+    },
+    "task_planning.get": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.get"
+        ]
+    },
+    "task_planning.labels.archive": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_planning.labels.archive"
+        ]
+    },
+    "task_planning.labels.create": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_planning.labels.create"
+        ]
+    },
+    "task_planning.labels.get": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.labels.get"
+        ]
+    },
+    "task_planning.labels.list": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.labels.list"
+        ]
+    },
+    "task_planning.labels.options": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:task_planning.labels.options"
+        ]
+    },
+    "task_planning.labels.replace": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_planning.labels.replace"
+        ]
+    },
+    "task_planning.labels.restore": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_planning.labels.restore"
+        ]
+    },
+    "task_planning.labels.update": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "tasks.planning",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:task_planning.labels.update"
+        ]
+    },
     "tasks.create": {
         "scopes": [
             "tasks:write"

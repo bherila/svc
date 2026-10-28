@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\V1\AgentSquareLinkController;
 use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTaskOrganizationController;
+use App\Http\Controllers\Api\V1\AgentTaskPlanningController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
 use App\Http\Controllers\Api\V1\DeferredBuyDownController;
@@ -38,6 +39,7 @@ use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Http\Middleware\ThrottleOuterAgentRequests;
 use App\Models\Workspace;
+use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Finance\ReconciliationTarget;
 use App\Support\Square\SquareIdentifiers;
@@ -154,6 +156,11 @@ Route::prefix('v1')
         $workspaceOperation('projects.list', [AgentReadController::class, 'projects']);
         $workspaceOperation('projects.get', [AgentReadController::class, 'project'])
             ->whereUuid('project');
+        foreach (TaskPlanningOperations::DEFINITIONS as $suffix => [$verb]) {
+            $handler = $verb === 'GET' ? (str_ends_with($suffix, '.options') ? 'options' : 'show') : ($suffix === 'labels.archive' ? 'archiveLabel' : 'mutate');
+            $workspaceOperation('task_planning.'.$suffix, [AgentTaskPlanningController::class, $handler])
+                ->whereUuid(['task', 'project', 'label'])->defaults('task_planning_operation', $suffix);
+        }
         $workspaceOperation('task_organization.get', [AgentTaskOrganizationController::class, 'show'])->whereUuid('project');
         foreach (['lists.create', 'lists.update', 'lists.archive', 'lists.restore', 'lists.reorder', 'tasks.create', 'tasks.move', 'tasks.reorder'] as $organizationOperation) {
             $workspaceOperation('task_organization.'.$organizationOperation, [AgentTaskOrganizationController::class, $organizationOperation === 'lists.archive' ? 'archiveList' : 'mutate'])

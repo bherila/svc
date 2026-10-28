@@ -44,4 +44,27 @@ describe('authoritative page refresh', () => {
         expect(() => reload.mock.calls[0][0].onFinish()).toThrow(failure);
         await expect(refresh).resolves.toBeUndefined();
     });
+    it('allows an explicit consumer to require confirmed success rather than mere completion', async () => {
+        const refresh = refreshPageProps({
+            only: ['planning_details'],
+            requireSuccess: true,
+        });
+        const options = reload.mock.calls[0][0];
+        expect(options).not.toHaveProperty('requireSuccess');
+        options.onSuccess();
+        options.onFinish();
+        await expect(refresh).resolves.toBeUndefined();
+    });
+
+    it('rejects a required-success refresh that finishes without new authorized props', async () => {
+        const refresh = refreshPageProps({
+            only: ['planning_details'],
+            requireSuccess: true,
+        });
+        const refusal = expect(refresh).rejects.toThrow(
+            'Current page props could not be refreshed.',
+        );
+        reload.mock.calls[0][0].onFinish();
+        await refusal;
+    });
 });

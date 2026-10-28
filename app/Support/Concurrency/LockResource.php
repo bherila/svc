@@ -78,6 +78,11 @@ enum LockResource: string
     case ClientTaskList = 'client_task_lists';
     // Responsibility reads are current after the task lock, before access facts.
     case ClientTaskAssignment = 'client_task_assignments';
+    // Planning catalog and associations follow task locks; contacts/access follow them.
+    case ClientTaskLabel = 'client_task_labels';
+    case ClientTaskLabelAssignment = 'client_task_label_assignments';
+    case ClientTaskDependency = 'client_task_dependencies';
+    case ClientTaskContactResponsibility = 'client_task_contact_responsibilities';
 
     // Collaboration locks its tenant access boundary, then the topic or task
     // parent, then a comment. Private file publication follows its parent.

@@ -18,11 +18,12 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
+use App\Services\Tasks\Planning\TaskPlanningDetailsLoader;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskMutationOrigin;
 use App\Services\Tasks\TaskPlanningPresenter;
-use App\Services\Tasks\TaskVisibility;
+use App\Services\Tasks\TaskReadScope;
 use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -81,6 +82,7 @@ final class AgentReadService
         private readonly AgentTimeEntryPresenter $timeEntryPresenter,
         private readonly AgentInvoicePresenter $invoicePresenter,
         private readonly DeferredBacklogReadService $deferredBacklogs,
+        private readonly TaskReadScope $taskReads,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -245,10 +247,11 @@ final class AgentReadService
         }
 
         return CursorPage::run($workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor,
-            function (int $take, ?int $after) use ($query, $workspace, $includePlanning) {
+            function (int $take, ?int $after) use ($query, $workspace, $user, $origin, $includePlanning) {
                 $tasks = (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_tasks.id', '>', $after))->limit($take)->get();
                 if ($includePlanning) {
                     app(TaskCompletionAdvisory::class)->load($workspace, $tasks);
+                    app(TaskPlanningDetailsLoader::class)->load($user, $workspace, $origin, $tasks);
                 }
 
                 return $tasks;
@@ -268,6 +271,7 @@ final class AgentReadService
         $record = $this->taskQuery($user, $workspace, $origin)->where('public_id', $taskId)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->firstOrFail();
         if ($includePlanning) {
             app(TaskCompletionAdvisory::class)->load($workspace, [$record]);
+            app(TaskPlanningDetailsLoader::class)->load($user, $workspace, $origin, [$record]);
         }
 
         return $this->taskPresenter->present($workspace, $record, includePlanning: $includePlanning, canManage: $manageable === null || in_array((int) $record->client_project_id, $manageable, true));
@@ -485,22 +489,7 @@ final class AgentReadService
     /** @return Builder<ClientTask> */
     private function taskQuery(User|AgentPrincipal $user, Workspace $workspace, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): Builder
     {
-        $query = ClientTask::query()->where('workspace_id', $workspace->id)
-            ->whereHas('project', fn (Builder $projects): Builder => $projects->where('workspace_id', $workspace->id)
-                ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id)));
-        if ($origin === TaskMutationOrigin::Internal && $this->projects->workspaceRole($user, $workspace) === null) {
-            return $query->whereRaw('1 = 0');
-        }
-        if ($origin === TaskMutationOrigin::Agent && $this->access->isWorkspaceClient($user, $workspace)) {
-            return app(TaskVisibility::class)->constrainPortal($query, $workspace, $user);
-        }
-        if ($this->access->isWorkspaceManager($user, $workspace)) {
-            return $query;
-        }
-
-        return $query->whereHas('project', fn (Builder $projects) => $projects
-            ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
-                ->where('client_project_memberships.workspace_id', $workspace->id)));
+        return $this->taskReads->query($user, $workspace, $origin);
     }
 
     /** Time visibility stands alone. Only its optional task reference is narrowed.

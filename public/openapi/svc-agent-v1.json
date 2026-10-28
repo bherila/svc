@@ -14322,6 +14322,1922 @@
                 "x-mcp-tool": "task_organization.tasks.reorder"
             }
         },
+        "/workspaces/{workspace}/tasks/{task}/contact-responsibilities": {
+            "get": {
+                "operationId": "task_planning.contacts.get",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskContactResponsibilitiesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.contacts.get",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.contacts.get"
+            },
+            "put": {
+                "operationId": "task_planning.contacts.replace",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskContactResponsibilityReplacementRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_planning.contacts.replace",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.contacts.replace"
+            }
+        },
+        "/workspaces/{workspace}/tasks/{task}/contact-responsibility-options": {
+            "get": {
+                "operationId": "task_planning.contacts.options",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 25,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskContactOptionListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.contacts.options",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.contacts.options"
+            }
+        },
+        "/workspaces/{workspace}/tasks/{task}/dependencies": {
+            "get": {
+                "operationId": "task_planning.dependencies.get",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 25,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskDependenciesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.dependencies.get",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.dependencies.get"
+            },
+            "put": {
+                "operationId": "task_planning.dependencies.replace",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskDependencyReplacementRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_planning.dependencies.replace",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.dependencies.replace"
+            }
+        },
+        "/workspaces/{workspace}/tasks/{task}/dependency-options": {
+            "get": {
+                "operationId": "task_planning.dependencies.options",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 25,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskDependencyOptionListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.dependencies.options",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.dependencies.options"
+            }
+        },
+        "/workspaces/{workspace}/tasks/{task}/planning": {
+            "get": {
+                "operationId": "task_planning.get",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningDetailsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.get",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.get"
+            }
+        },
+        "/workspaces/{workspace}/task-labels/{label}": {
+            "delete": {
+                "operationId": "task_planning.labels.archive",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskLabelArchiveRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "label",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "task_planning.labels.archive",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.archive"
+            },
+            "get": {
+                "operationId": "task_planning.labels.get",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "label",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskLabelResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.labels.get",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.get"
+            },
+            "patch": {
+                "operationId": "task_planning.labels.update",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskLabelUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "label",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_planning.labels.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.update"
+            }
+        },
+        "/workspaces/{workspace}/task-labels": {
+            "post": {
+                "operationId": "task_planning.labels.create",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskLabelCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument"
+                },
+                "x-agent-mcp-tool": "task_planning.labels.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.create"
+            },
+            "get": {
+                "operationId": "task_planning.labels.list",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 25,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "active",
+                                "archived",
+                                "all"
+                            ],
+                            "default": "active"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskLabelListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.labels.list",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.list"
+            }
+        },
+        "/workspaces/{workspace}/projects/{project}/task-label-options": {
+            "get": {
+                "operationId": "task_planning.labels.options",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 25,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskLabelListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "task_planning.labels.options",
+                "x-svc-flags": [
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.options"
+            }
+        },
+        "/workspaces/{workspace}/tasks/{task}/labels": {
+            "put": {
+                "operationId": "task_planning.labels.replace",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskLabelReplacementRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_planning.labels.replace",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.replace"
+            }
+        },
+        "/workspaces/{workspace}/task-labels/{label}/restore": {
+            "post": {
+                "operationId": "task_planning.labels.restore",
+                "description": "Internal task planning only; Portal and dual Agent identities are refused. Current exact workspace/project/task lineage is required. Catalog and client-contact responsibility require workspace owner/admin; project managers may change labels and prerequisites. Responsibility grants no account access. Reads are bounded and create no graph state. Dependencies support 1,000 tasks, 100 retained lists and 5,000 edges; oversized projects retain label/contact editing. Writes require captured versions and a receipt key, reject cycles, and reauthorize exact replay. Completion remains allowed with unfinished prerequisites or children; no propagation, billing or access change occurs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TaskLabelRestoreRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "label",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskPlanningMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current internal authority is insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The scoped record is unavailable or task planning is disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A captured version is stale or the receipt key was reused for different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Input, confirmation, cycle or supported organization size is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "task_planning.labels.restore",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "TASK_PLANNING_DETAILS_ENABLED"
+                ],
+                "x-mcp-tool": "task_planning.labels.restore"
+            }
+        },
         "/workspaces/{workspace}/projects/{project}/tasks": {
             "post": {
                 "operationId": "tasks.create",
@@ -27367,6 +29283,101 @@
                             "null"
                         ],
                         "description": "Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks."
+                    },
+                    "planning_details": {
+                        "$ref": "#/components/schemas/TaskPlanningFields"
+                    }
+                }
+            },
+            "TaskContactOptionListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskResponsibilityContact"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
+            },
+            "TaskContactResponsibilities": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "task_id",
+                    "version",
+                    "contacts"
+                ],
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "contacts": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskResponsibilityContact"
+                        }
+                    }
+                }
+            },
+            "TaskContactResponsibilitiesResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/TaskContactResponsibilities"
+                    }
+                }
+            },
+            "TaskContactResponsibilityReplacementRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "contact_ids"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "contact_ids": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
                     }
                 }
             },
@@ -27416,6 +29427,346 @@
                             "format": "uuid"
                         },
                         "description": "Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them."
+                    }
+                }
+            },
+            "TaskDependencies": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "task_id",
+                    "version",
+                    "graph_version",
+                    "prerequisites",
+                    "dependents"
+                ],
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "prerequisites": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskDependencyReference"
+                        }
+                    },
+                    "dependents": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskDependencyReference"
+                        }
+                    }
+                }
+            },
+            "TaskDependenciesResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/TaskDependencies"
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
+            },
+            "TaskDependencyOptionListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskDependencyReference"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
+            },
+            "TaskDependencyReference": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "title",
+                    "status",
+                    "version",
+                    "web_url"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "open",
+                            "in_progress",
+                            "completed"
+                        ]
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "web_url": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TaskDependencyReplacementRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "prerequisite_ids",
+                    "expected_graph_version"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "prerequisite_ids": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "expected_graph_version": {
+                        "$ref": "#/components/schemas/Version"
+                    }
+                }
+            },
+            "TaskDependencySummary": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "blocked",
+                    "incomplete_prerequisite_count",
+                    "dependent_count"
+                ],
+                "properties": {
+                    "blocked": {
+                        "type": "boolean"
+                    },
+                    "incomplete_prerequisite_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 25
+                    },
+                    "dependent_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000
+                    }
+                }
+            },
+            "TaskLabel": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "name",
+                    "is_archived",
+                    "version"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                    },
+                    "is_archived": {
+                        "type": "boolean"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    }
+                }
+            },
+            "TaskLabelArchiveRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "TaskLabelCreateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "Unicode whitespace is normalized; embedded line separators are refused."
+                    }
+                }
+            },
+            "TaskLabelListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskLabel"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
+            },
+            "TaskLabelReplacementRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "label_ids"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "label_ids": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                }
+            },
+            "TaskLabelResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/TaskLabel"
+                    }
+                }
+            },
+            "TaskLabelRestoreRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    }
+                }
+            },
+            "TaskLabelUpdateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "expected_version"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "Unicode whitespace is normalized; embedded line separators are refused."
+                    },
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
                     }
                 }
             },
@@ -27878,6 +30229,89 @@
                     }
                 }
             },
+            "TaskPlanningDetails": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "task_id",
+                    "version",
+                    "labels",
+                    "dependency_summary"
+                ],
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "labels": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskLabel"
+                        }
+                    },
+                    "dependency_summary": {
+                        "$ref": "#/components/schemas/TaskDependencySummary"
+                    }
+                }
+            },
+            "TaskPlanningDetailsResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/TaskPlanningDetails"
+                    }
+                }
+            },
+            "TaskPlanningFields": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "labels",
+                    "dependency_summary"
+                ],
+                "properties": {
+                    "labels": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                            "$ref": "#/components/schemas/TaskLabel"
+                        }
+                    },
+                    "dependency_summary": {
+                        "$ref": "#/components/schemas/TaskDependencySummary"
+                    }
+                }
+            },
+            "TaskPlanningMutationResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    }
+                }
+            },
             "TaskResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -27887,6 +30321,31 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/Task"
+                    }
+                }
+            },
+            "TaskResponsibilityContact": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "display_name",
+                    "is_archived",
+                    "version"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "is_archived": {
+                        "type": "boolean"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
                     }
                 }
             },

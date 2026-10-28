@@ -108,7 +108,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         // it is unconfigured and its read-only tools are withheld. Portal
         // invitations (#430) are a product switch, likewise off on install.
         $on = ['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'svc.attachments.sharing_writes_enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'task_planning_details.enabled' => true, 'svc.attachments.sharing_writes_enabled' => true];
         foreach (self::WRITE_FLAGS as $flag) {
             $on['agent_api.'.$flag] = true;
         }
@@ -121,12 +121,14 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
             $installDefaults['agent_api.'.$flag] = $flag === 'time_entry_writes_enabled';
         }
         $installDefaults['task_organization.enabled'] = false;
+        $installDefaults['task_planning_details.enabled'] = false;
         $installDefaults['svc.attachments.sharing_writes_enabled'] = false;
         $installDefaults['services.square.access_token'] = null;
         $installDefaults['svc.portal_invitations.enabled'] = false;
 
         return [
             'all_enabled' => $on,
+            'task_planning_off' => ['task_planning_details.enabled' => false] + $on,
             'attachment_sharing_off' => ['svc.attachments.sharing_writes_enabled' => false] + $on,
             'install_defaults' => $installDefaults,
             'writes_off' => $writesOff,

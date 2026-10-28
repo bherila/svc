@@ -37,8 +37,11 @@ use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
+use App\Services\Tasks\Planning\TaskPlanningDetailsLoader;
+use App\Services\Tasks\Planning\TaskPlanningDetailsPresenter;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskEditorPresenter;
+use App\Services\Tasks\TaskMutationOrigin;
 use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
@@ -1044,6 +1047,9 @@ class ClientDirectoryController extends Controller
             ->orderBy('id')
             ->simplePaginate(50)->appends($selected === null ? [] : ['project' => $selected->public_id]);
 
+        app(TaskPlanningDetailsLoader::class)->load($user, $workspace,
+            TaskMutationOrigin::Internal, $tasks->items());
+
         $projectNames = $projects->pluck('name', 'id');
 
         $manageable = app(TaskAccess::class)->manageableProjectIds($user, $workspace);
@@ -1084,7 +1090,7 @@ class ClientDirectoryController extends Controller
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
                 'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
-            ])->values()->all(),
+            ] + app(TaskPlanningDetailsPresenter::class)->taskFields($task))->values()->all(),
             'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
     }

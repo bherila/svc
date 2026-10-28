@@ -55,6 +55,8 @@ final class AgentDeploymentFlags implements DeploymentFlags
     /** Product availability; first-party sessions never bypass it. */
     public const string TASK_ORGANIZATION = 'tasks.organization';
 
+    public const string TASK_PLANNING = 'tasks.planning';
+
     public const string ATTACHMENT_SHARING = 'files.sharing';
 
     /**
@@ -145,6 +147,11 @@ final class AgentDeploymentFlags implements DeploymentFlags
     {
         $switches = [];
         foreach ($flags as $flag) {
+            if ($flag === self::TASK_PLANNING) {
+                $switches[] = 'TASK_PLANNING_DETAILS_ENABLED';
+
+                continue;
+            }
             if ($flag === self::ATTACHMENT_SHARING) {
                 $switches[] = 'SVC_ATTACHMENT_SHARING_WRITES_ENABLED';
 
@@ -187,11 +194,15 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public static function isAvailabilityPrecondition(string $flag): bool
     {
-        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION, self::ATTACHMENT_SHARING], true);
+        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION, self::TASK_PLANNING, self::ATTACHMENT_SHARING], true);
     }
 
     public function enabled(string $flag): bool
     {
+        if ($flag === self::TASK_PLANNING) {
+            return config('task_planning_details.enabled') === true;
+        }
+
         if ($flag === self::ATTACHMENT_SHARING) {
             // Discovery hides writers when durable policy cannot be verified.
             // REST still reaches the action's policy guard, which reports 503
