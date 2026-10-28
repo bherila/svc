@@ -2,10 +2,14 @@ import { renderHook } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 
-function visit(url = '/synthetic/elsewhere', only: string[] = []) {
+function visit(
+    url = '/synthetic/elsewhere',
+    only: string[] = [],
+    preserveState = true,
+) {
     const event = new CustomEvent('inertia:before', {
         cancelable: true,
-        detail: { visit: { url, method: 'get', only } },
+        detail: { visit: { url, method: 'get', only, preserveState } },
     });
     document.dispatchEvent(event);
 
@@ -20,6 +24,7 @@ it('blocks unknown-write navigation and unload while permitting current partial 
     expect(visit()).toBe(true);
     expect(blocked).toHaveBeenCalledTimes(1);
     expect(visit(window.location.href, ['tasks'])).toBe(false);
+    expect(visit(window.location.href, ['tasks'], false)).toBe(true);
     expect(visit('/synthetic/elsewhere', ['tasks'])).toBe(true);
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);

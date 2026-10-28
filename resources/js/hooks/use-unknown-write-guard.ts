@@ -23,12 +23,14 @@ export function useUnknownWriteGuard(
                         url: URL | string;
                         method: string;
                         only: string[];
+                        preserveState: unknown;
                     };
                 }>
             ).detail.visit;
             const destination = new URL(visit.url, window.location.href);
             const readingCurrentProps =
                 visit.method === 'get' &&
+                visit.preserveState === true &&
                 visit.only.length > 0 &&
                 destination.href === window.location.href;
 
