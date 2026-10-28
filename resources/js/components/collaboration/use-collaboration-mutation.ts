@@ -1,7 +1,7 @@
-import { router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
+import { visitPage } from '@/lib/visit-page';
 
 type SavedContent = { version: string; web_url: string };
 type Attempt = {
@@ -103,22 +103,7 @@ export function useCollaborationMutation() {
             const content = original.content;
 
             if (original.navigate) {
-                await new Promise<void>((resolve, reject) => {
-                    let loaded = false;
-                    router.visit(content.web_url, {
-                        onNetworkError: () => false,
-                        onHttpException: () => false,
-                        onSuccess: () => {
-                            loaded = true;
-                            resolve();
-                        },
-                        onFinish: () => {
-                            if (!loaded) {
-                                reject(new Error('Content navigation failed.'));
-                            }
-                        },
-                    });
-                });
+                await visitPage(content.web_url);
             } else {
                 await refreshPageProps({
                     only: ['topic', 'thread', 'topics'],

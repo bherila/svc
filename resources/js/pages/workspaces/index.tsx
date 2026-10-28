@@ -17,6 +17,7 @@ import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
+import { visitPage } from '@/lib/visit-page';
 
 /**
  * Choose a workspace. That is the whole screen.
@@ -165,43 +166,11 @@ function NewWorkspaceDialog({
                 setUnresolved(true);
             }
 
-            const destination = original.savedUrl;
-            const navigated = await new Promise<boolean>((resolve) => {
-                let settled = false;
-                const finish = (success: boolean) => {
-                    if (!settled) {
-                        settled = true;
-                        resolve(success);
-                    }
-                };
-                router.visit(destination, {
-                    onSuccess: () => finish(true),
-                    onError: () => finish(false),
-                    onCancel: () => finish(false),
-                    onNetworkError: () => {
-                        finish(false);
-
-                        return false;
-                    },
-                    onHttpException: () => {
-                        finish(false);
-
-                        return false;
-                    },
-                    onFinish: () => finish(false),
-                });
-            });
-
-            if (navigated) {
-                attempt.current = null;
-                setUnresolved(false);
-                setCreated(false);
-                onOpenChange(false);
-            } else {
-                setError(
-                    'The workspace was created, but its page could not open. Open the created workspace to continue.',
-                );
-            }
+            await visitPage(original.savedUrl);
+            attempt.current = null;
+            setUnresolved(false);
+            setCreated(false);
+            onOpenChange(false);
         } catch {
             original.uncertain = true;
             setUnresolved(true);

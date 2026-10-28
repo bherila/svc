@@ -5,9 +5,7 @@ import { NewClientDialog } from '@/components/navigation/new-client-dialog';
 import { apiRequest } from '@/lib/api';
 
 const visit = vi.hoisted(() => vi.fn());
-const beforeNavigation = vi.hoisted(() =>
-    vi.fn((_name: string, _listener: (event: Event) => void) => vi.fn()),
-);
+const beforeNavigation = vi.hoisted(() => vi.fn());
 vi.mock('@inertiajs/react', () => ({
     router: { visit, on: beforeNavigation },
 }));
@@ -17,6 +15,7 @@ vi.mock('@/lib/api', () => ({
 }));
 beforeEach(() => {
     vi.clearAllMocks();
+    beforeNavigation.mockReturnValue(vi.fn());
     vi.mocked(apiRequest).mockReset();
     visit.mockReset();
     visit.mockImplementation((_url, options) => {

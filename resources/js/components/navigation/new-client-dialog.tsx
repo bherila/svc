@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import { useClientChange } from '@/components/clients/use-client-change';
 import { Button } from '@/components/ui/button';
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { visitPage } from '@/lib/visit-page';
 
 /**
  * Adding a client, from the control that switches between them.
@@ -53,62 +53,7 @@ export function NewClientDialog({
                     );
                 }
 
-                await new Promise<void>((resolve, reject) => {
-                    let loaded = false;
-                    const fail = () => {
-                        stopBefore?.();
-                        reject(new Error('The client page could not load.'));
-                    };
-                    // Inertia emits no finish/cancel callback when a global
-                    // before listener refuses a visit. Observe that refusal
-                    // after all listeners have had a chance to prevent it.
-                    const stopBefore = router.on?.('before', (event) => {
-                        if (
-                            new URL(
-                                event.detail.visit.url,
-                                window.location.href,
-                            ).href ===
-                            new URL(destination, window.location.href).href
-                        ) {
-                            queueMicrotask(() => {
-                                if (event.defaultPrevented) {
-                                    fail();
-                                }
-                            });
-                        }
-                    });
-
-                    try {
-                        router.visit(destination, {
-                            onError: fail,
-                            onCancel: fail,
-                            onNetworkError: () => {
-                                fail();
-
-                                return false;
-                            },
-                            onHttpException: () => {
-                                fail();
-
-                                return false;
-                            },
-                            onSuccess: () => {
-                                loaded = true;
-                            },
-                            onFinish: () => {
-                                stopBefore?.();
-
-                                if (loaded) {
-                                    resolve();
-                                } else {
-                                    fail();
-                                }
-                            },
-                        });
-                    } catch {
-                        fail();
-                    }
-                });
+                await visitPage(destination);
                 setName('');
                 setBillingEmail('');
                 onOpenChange(false);
