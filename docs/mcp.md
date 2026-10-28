@@ -1122,6 +1122,15 @@ legacy entry still has status `approved`. Only allocations whose pivot, line,
 and invoice belong to the entry's workspace and client company affect these
 fields. Allocation reads are eager loaded for a page.
 
+The opaque time-entry `version` binds both the entry revision and these visible
+allocation fields. Reserving time, releasing it, changing its invoice, or moving
+from reserved to consumed changes the token even if the entry itself was not
+edited. Use the latest token for a following time mutation. Tokens identify the
+current representation; they are not ordered revisions or a change feed, and
+returning to an identical representation may restore a previous token. Listing
+still uses ordinary ID pagination, so detecting allocation changes requires
+rereading the relevant entries rather than treating a cursor as a watermark.
+
 `time_entries.list` and its REST route accept `allocation_state` and
 `is_billable` filters. `allocation_state: unallocated` includes draft and deferred
 rows that have no allocation. To find the exact work behind
