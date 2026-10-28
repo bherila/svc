@@ -1626,15 +1626,15 @@ export default function ClientInvoiceDetail({
                 )}
             </main>
 
-            {actions.send !== null && email !== null && (
-                <SendInvoiceDialog
-                    open={sending}
-                    onOpenChange={setSending}
-                    sendHref={actions.send}
-                    expectedVersion={version}
-                    email={email}
-                />
-            )}
+            <SendInvoiceDialog
+                key={invoice.id}
+                open={sending}
+                onOpenChange={setSending}
+                invoiceId={invoice.id}
+                sendHref={actions.send}
+                expectedVersion={version}
+                email={email}
+            />
 
             <AlertDialog
                 open={voiding}

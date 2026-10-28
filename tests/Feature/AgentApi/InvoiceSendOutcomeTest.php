@@ -77,6 +77,28 @@ final class InvoiceSendOutcomeTest extends TestCase
         $this->assertDatabaseCount('jobs', 0);
     }
 
+    public function test_initial_version_refusal_registers_no_delivery_or_receipt_and_a_new_confirmation_can_send(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $staleBody = $this->body($invoice);
+        $invoice->forceFill(['notes' => 'Synthetic concurrent invoice edit'])->save();
+        $invoice->advanceAgentRevision();
+        $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
+
+        $this->postJson($this->url($workspace, $invoice), $staleBody, ['Idempotency-Key' => 'synthetic-refused-version'])
+            ->assertStatus(409);
+        $this->assertSame(0, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->count());
+        $this->assertSame(0, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('idempotency_key', 'synthetic-refused-version')->count());
+        Mail::assertNotSent(InvoiceMail::class);
+
+        $fresh = $invoice->fresh();
+        $this->assertNotSame($staleBody['expected_version'], AgentApiVersion::for($fresh));
+        $accepted = $this->send('rest', $workspace, $fresh, $this->body($fresh), 'synthetic-confirmed-current-version');
+        $this->assertSame('sent', $accepted['delivery']['status']);
+        $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->count());
+        Mail::assertSent(InvoiceMail::class, 1);
+    }
+
     #[DataProvider('transports')]
     public function test_preparation_failure_is_explicit_and_requires_a_new_confirmed_attempt(string $transport): void
     {

@@ -1378,4 +1378,114 @@ describe('retaining invoice writes until their outcome and refresh are known', (
         expect(request(1)).toEqual(request(0));
         expect(dialog).toBeInTheDocument();
     });
+    it('keeps unknown compose mounted after a same-invoice capability refresh', async () => {
+        requestFetch.mockResolvedValueOnce(response(408));
+        const email = {
+            from: 'SVC <invoices@example.test>',
+            self: 'operator@example.test',
+            default_subject: 'Original invoice',
+            suggested_recipients: [
+                { email: 'billing@example.test', label: 'Billing' },
+            ],
+        };
+        const initial = props({
+            actions: { ...props().actions, send: '/original-send' },
+            email,
+        });
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Send to client' }));
+        fireEvent.change(screen.getByLabelText('Subject'), {
+            target: { value: 'Original compose body' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
+        await screen.findByRole('button', { name: 'Check delivery' });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                actions={{ ...initial.actions, send: null }}
+                email={null}
+                version={'8'.repeat(64)}
+            />,
+        );
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(screen.getByLabelText('Subject')).toHaveValue(
+            'Original compose body',
+        );
+        expect(screen.getByLabelText('Subject')).toBeDisabled();
+        requestFetch.mockResolvedValueOnce(response(409));
+        fireEvent.click(screen.getByRole('button', { name: 'Check delivery' }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+    });
+
+    it('initializes a different invoice composer with its own defaults after a known result', async () => {
+        requestFetch.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    data: {
+                        id: 'invoice-1',
+                        version: '2'.repeat(64),
+                        delivery: { status: 'sent', error_summary: null },
+                    },
+                }),
+                { status: 200 },
+            ),
+        );
+        inertia.reload.mockImplementation(
+            (options: { onFinish?: () => void }) => options.onFinish?.(),
+        );
+        const email = {
+            from: 'SVC <invoices@example.test>',
+            self: 'operator@example.test',
+            default_subject: 'First invoice',
+            suggested_recipients: [
+                { email: 'first@example.test', label: 'First' },
+            ],
+        };
+        const initial = props({
+            actions: { ...props().actions, send: '/first-send' },
+            email,
+        });
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Send to client' }));
+        fireEvent.change(screen.getByLabelText('Subject'), {
+            target: { value: 'First private compose draft' },
+        });
+        fireEvent.change(screen.getByLabelText('Covering note (optional)'), {
+            target: { value: 'First private note' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
+        await screen.findByRole('button', { name: 'Refresh invoice' });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                invoice={{ ...initial.invoice, id: 'invoice-2' }}
+                actions={{ ...initial.actions, send: '/second-send' }}
+                email={{
+                    ...email,
+                    default_subject: 'Second invoice',
+                    suggested_recipients: [
+                        { email: 'second@example.test', label: 'Second' },
+                    ],
+                }}
+                version={'9'.repeat(64)}
+            />,
+        );
+        expect(screen.getByLabelText('Subject')).toHaveValue('Second invoice');
+        expect(screen.getByLabelText('Covering note (optional)')).toHaveValue(
+            '',
+        );
+        expect(screen.getByText('second@example.test')).toBeVisible();
+        expect(screen.queryByText('first@example.test')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1).url).toBe('/second-send');
+        expect(JSON.parse(String(request(1).body))).toMatchObject({
+            expected_version: '9'.repeat(64),
+            recipients: ['second@example.test'],
+            subject: 'Second invoice',
+            message: null,
+        });
+        expect(request(1).key).not.toBe(request(0).key);
+    });
 });

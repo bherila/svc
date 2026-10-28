@@ -38,6 +38,7 @@ const clientsOnly = process.argv.includes('--clients');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
 const invoiceActionsOnly = process.argv.includes('--invoice-actions');
+const invoiceSendOnly = process.argv.includes('--invoice-send');
 const invoiceHistoryOnly = process.argv.includes('--invoice-history');
 const invoiceRecoveryOnly =
     process.argv.includes('--invoice-recovery') || invoiceHistoryOnly;
@@ -495,81 +496,83 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of invoiceHistoryOnly
-            ? ['draft_time']
-            : invoiceRecoveryOnly
-              ? [
-                    'invoice',
-                    'operations',
-                    'draft_time',
-                    'time',
-                    'draft_invoice',
-                    'invoice_review',
-                ]
-              : projectsOnly
-                ? ['settings']
-                : schedulesOnly
-                  ? ['expense_schedules']
-                  : expensesOnly
-                    ? ['expenses']
-                    : workspacesOnly
-                      ? ['selector']
-                      : invoiceActionsOnly
-                        ? [
-                              'invoice',
-                              'invoice_review',
-                              'draft_invoice',
-                              'draft_time',
-                          ]
-                        : engagementOnly
-                          ? ['operations', 'agreement']
-                          : disputesOnly
-                            ? ['invoice', 'square_portal']
-                            : tasksOnly
-                              ? [
-                                    'task_list',
-                                    'task_project',
-                                    'task_editor',
-                                    'task_portal',
-                                ]
-                              : historyOnly
+        for (const screen of invoiceSendOnly
+            ? ['invoice']
+            : invoiceHistoryOnly
+              ? ['draft_time']
+              : invoiceRecoveryOnly
+                ? [
+                      'invoice',
+                      'operations',
+                      'draft_time',
+                      'time',
+                      'draft_invoice',
+                      'invoice_review',
+                  ]
+                : projectsOnly
+                  ? ['settings']
+                  : schedulesOnly
+                    ? ['expense_schedules']
+                    : expensesOnly
+                      ? ['expenses']
+                      : workspacesOnly
+                        ? ['selector']
+                        : invoiceActionsOnly
+                          ? [
+                                'invoice',
+                                'invoice_review',
+                                'draft_invoice',
+                                'draft_time',
+                            ]
+                          : engagementOnly
+                            ? ['operations', 'agreement']
+                            : disputesOnly
+                              ? ['invoice', 'square_portal']
+                              : tasksOnly
                                 ? [
-                                      'history_index',
-                                      'history_discussion',
-                                      'history_invoice',
+                                      'task_list',
+                                      'task_project',
+                                      'task_editor',
+                                      'task_portal',
                                   ]
-                                : portalOnly
-                                  ? ['settings']
-                                  : correctionOnly
-                                    ? ['invoice_review']
-                                    : squareOnly
-                                      ? [
-                                            'square_explore',
-                                            'square_invoice',
-                                            'square_portal',
-                                        ]
-                                      : remindersOnly
-                                        ? ['reminder_invoice', 'settings']
-                                        : timeOnly
-                                          ? ['time', 'draft_time']
-                                          : backlogOnly
-                                            ? ['agreement']
-                                            : [
-                                                  'mcp_setup',
-                                                  'invoice',
-                                                  'invoice_review',
-                                                  'reminder_invoice',
-                                                  'settings',
-                                                  'draft_invoice',
-                                                  'draft_time',
-                                                  'proposal',
-                                                  'proposal_acceptance',
-                                                  'operations',
-                                                  'time',
-                                                  'expenses',
-                                                  'receipts',
-                                                  'expense_schedules',
-                                              ]) {
+                                : historyOnly
+                                  ? [
+                                        'history_index',
+                                        'history_discussion',
+                                        'history_invoice',
+                                    ]
+                                  : portalOnly
+                                    ? ['settings']
+                                    : correctionOnly
+                                      ? ['invoice_review']
+                                      : squareOnly
+                                        ? [
+                                              'square_explore',
+                                              'square_invoice',
+                                              'square_portal',
+                                          ]
+                                        : remindersOnly
+                                          ? ['reminder_invoice', 'settings']
+                                          : timeOnly
+                                            ? ['time', 'draft_time']
+                                            : backlogOnly
+                                              ? ['agreement']
+                                              : [
+                                                    'mcp_setup',
+                                                    'invoice',
+                                                    'invoice_review',
+                                                    'reminder_invoice',
+                                                    'settings',
+                                                    'draft_invoice',
+                                                    'draft_time',
+                                                    'proposal',
+                                                    'proposal_acceptance',
+                                                    'operations',
+                                                    'time',
+                                                    'expenses',
+                                                    'receipts',
+                                                    'expense_schedules',
+                                                ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -1321,6 +1324,188 @@ try {
 
             if (screen !== 'task_editor') {
                 await capture(screen, 'initial', width, false);
+            }
+
+            if (invoiceSendOnly) {
+                await page
+                    .getByRole('button', {
+                        name: 'Send to client',
+                        exact: true,
+                    })
+                    .click();
+                const compose = page.getByRole('dialog');
+                await compose
+                    .getByLabel('Subject', { exact: true })
+                    .fill('SyntheticComposeSubject'.repeat(8));
+                const requests = [];
+                await page.route(
+                    '**/api/v1/workspaces/*/invoices/*/send',
+                    async (route) => {
+                        const request = route.request();
+                            requests.push({
+                            url: request.url(),
+                            body: request.postData(),
+                            key: request.headers()['idempotency-key'],
+                        });
+                        const count = requests.length;
+                        const status =
+                            count === 1 || count === 3
+                                ? 409
+                                : count === 2
+                                  ? 408
+                                  : 200;
+                        await route.fulfill({
+                            status,
+                            json:
+                                status !== 200
+                                    ? {
+                                          message:
+                                              'Synthetic refused or uncertain send. Review the current invoice before confirming again.',
+                                      }
+                                    : {
+                                          data: {
+                                              id: new URL(
+                                                  request.url(),
+                                              ).pathname
+                                                  .split('/')
+                                                  .at(-2),
+                                              version: 'f'.repeat(64),
+                                              delivery: {
+                                                  id: 'synthetic-send-outcome',
+                                                  status:
+                                                      count === 4
+                                                          ? 'failed'
+                                                          : 'sent',
+                                                  error_summary:
+                                                      count === 4
+                                                          ? 'Synthetic known preparation failure.'
+                                                          : null,
+                                              },
+                                          },
+                                      },
+                        });
+                    },
+                    { times: 5 },
+                );
+                // Prove the next confirmation adopts the authoritative read,
+                // rather than either the stale attempt or receipt version.
+                await page.route(
+                    page.url(),
+                    async (route) => {
+                        const response = await route.fetch();
+                        const data = await response.json();
+                        data.props.version = 'b'.repeat(64);
+                        await route.fulfill({ response, json: data });
+                    },
+                    { times: 1 },
+                );
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(compose.getByRole('alert')).toContainText(
+                    'Review its current details',
+                );
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeEnabled();
+                expect(requests).toHaveLength(1);
+                await capture(screen, 'send-initial-conflict', width);
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[1].key).not.toBe(requests[0].key);
+                expect(JSON.parse(requests[1].body).expected_version).toBe(
+                    'b'.repeat(64),
+                );
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect.poll(() => requests.length).toBe(3);
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[2]).toEqual(requests[1]);
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Cancel',
+                        exact: true,
+                    }),
+                ).toBeDisabled();
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'send-uncertain-later-conflict', width);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[3]).toEqual(requests[1]);
+                await expect(compose.getByRole('alert')).toContainText(
+                    'The message was not handed off, but the invoice could not refresh',
+                );
+                await capture(screen, 'send-failed-refresh-failure', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    compose.getByRole('button', { name: 'Send', exact: true }),
+                ).toBeEnabled();
+                expect(requests).toHaveLength(4);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[4].key).not.toBe(requests[3].key);
+                expect(JSON.parse(requests[4].body).expected_version).toBe(
+                    JSON.parse(requests[0].body).expected_version,
+                );
+                await expect(compose.getByRole('alert')).toContainText(
+                    'The message was sent, but the invoice could not refresh',
+                );
+                await capture(screen, 'send-accepted-refresh-failure', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(compose).toHaveCount(0);
+                expect(requests).toHaveLength(5);
+                continue;
             }
 
             if (invoiceRecoveryOnly) {
@@ -2125,6 +2310,7 @@ try {
                 // Synthetic adapter outcome only: no email leaves this layout
                 // fixture. The real after-commit path is proved by
                 // InvoiceSendOutcomeTest with its replaceable mail adapter.
+                let composeChecks = 0;
                 await page.route(
                     '**/api/v1/workspaces/*/invoices/*/send',
                     async (route) => {
@@ -2146,10 +2332,16 @@ try {
                             contentType: 'application/json',
                             body: JSON.stringify({
                                 data: {
+                                    id: new URL(request.url()).pathname
+                                        .split('/')
+                                        .at(-2),
                                     version: body.expected_version,
                                     delivery: {
                                         id: 'synthetic-layout-delivery',
-                                        status: 'sending',
+                                        status:
+                                            composeChecks++ === 0
+                                                ? 'sending'
+                                                : 'sent',
                                         error_summary: null,
                                     },
                                 },
@@ -2171,8 +2363,12 @@ try {
                 ).toBeDisabled();
                 await capture(screen, 'send-unresolved', width);
                 await compose
-                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
                     .click();
+                await expect(compose).toHaveCount(0);
                 await expect(
                     page.getByText('Reconciled in finance', { exact: true }),
                 ).toBeVisible();
@@ -2261,6 +2457,7 @@ try {
 
     if (
         !invoiceActionsOnly &&
+        !invoiceSendOnly &&
         !invoiceRecoveryOnly &&
         !schedulesOnly &&
         !expensesOnly &&
@@ -2301,6 +2498,7 @@ try {
     }
 
     if (
+        !invoiceSendOnly &&
         !invoiceRecoveryOnly &&
         !schedulesOnly &&
         !expensesOnly &&
