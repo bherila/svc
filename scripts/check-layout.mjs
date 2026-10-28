@@ -834,6 +834,17 @@ try {
                     ).toBeVisible();
                 }
 
+                // Establish a real Inertia history entry before the unknown write.
+                const previousSettingsUrl = page.url();
+                await page
+                    .getByRole('link', {
+                        name: 'Newer invitations',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page).not.toHaveURL(previousSettingsUrl);
+                const activeSettingsUrl = page.url();
+
                 const profileRequests = [];
                 let profileReads = 0;
                 const profilePage = (url) =>
@@ -906,6 +917,36 @@ try {
                     page.getByLabel('Internal company notes'),
                 ).toBeDisabled();
                 await capture(screen, 'profile-unknown-change', width);
+                await page.evaluate(() => {
+                    window.__svcHistoryRestored = false;
+                    const originalPush = window.history.pushState;
+                    window.history.pushState = function (...args) {
+                        window.history.pushState = originalPush;
+                        const result = originalPush.apply(this, args);
+                        window.__svcHistoryRestored = true;
+
+                        return result;
+                    };
+                    window.history.back();
+                });
+                await page.waitForFunction(
+                    () => window.__svcHistoryRestored === true,
+                );
+                await expect(page).toHaveURL(activeSettingsUrl);
+                await expect(
+                    page.getByLabel('Phone', { exact: true }).first(),
+                ).toHaveValue('555-0100');
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                expect(profileRequests).toHaveLength(1);
+                await capture(screen, 'profile-unknown-history-back', width);
                 await page
                     .getByRole('button', {
                         name: 'Check original change',
@@ -958,6 +999,18 @@ try {
                 expect(profileReads).toBe(2);
                 await page.unroute('**/api/v1/**', profileRoute);
                 await page.unroute(profilePage, profileReadRoute);
+
+                const contactSummary = page
+                    .locator('summary')
+                    .filter({ hasText: 'SyntheticContact'.repeat(6) });
+
+                if (
+                    !(await contactSummary.evaluate(
+                        (element) => element.parentElement.open,
+                    ))
+                ) {
+                    await contactSummary.click();
+                }
 
                 await capture(screen, 'client-contact-form', width);
                 await page

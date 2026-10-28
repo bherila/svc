@@ -4,8 +4,6 @@ import { apiRequest } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { useExpenseMutation } from './use-expense-mutation';
 
-const navigation = vi.hoisted(() => ({ on: vi.fn() }));
-vi.mock('@inertiajs/react', () => ({ router: navigation }));
 vi.mock('@/lib/api', () => ({
     apiRequest: vi.fn(),
     newIdempotencyKey: () => crypto.randomUUID(),
@@ -19,14 +17,15 @@ beforeEach(() => {
 });
 
 function tryNavigation() {
-    const guard = navigation.on.mock.calls.at(-1)?.[1];
-    const event = {
+    const event = new CustomEvent('inertia:before', {
+        cancelable: true,
         detail: {
             visit: { url: '/synthetic/other-client', method: 'get', only: [] },
         },
-        preventDefault: vi.fn(),
-    };
-    act(() => guard(event));
+    });
+    act(() => {
+        document.dispatchEvent(event);
+    });
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
 
@@ -47,7 +46,7 @@ describe('expense receipt navigation policy', () => {
             }),
         );
         const { event, unload } = tryNavigation();
-        expect(event.preventDefault).toHaveBeenCalledOnce();
+        expect(event.defaultPrevented).toBe(true);
         expect(unload.defaultPrevented).toBe(true);
     });
 
@@ -69,7 +68,7 @@ describe('expense receipt navigation policy', () => {
         expect(result.current.saved).toBe(true);
         expect(result.current.locked).toBe(true);
         const { event, unload } = tryNavigation();
-        expect(event.preventDefault).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
         expect(unload.defaultPrevented).toBe(false);
         vi.mocked(refreshPageProps).mockResolvedValueOnce();
         await act(() =>

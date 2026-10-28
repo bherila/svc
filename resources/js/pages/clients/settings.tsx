@@ -1,5 +1,5 @@
-import { Head, router, useForm } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { Head, useForm } from '@inertiajs/react';
+import { useRef, useState } from 'react';
 import { PaymentReminderCadenceCard } from '@/components/billing/payment-reminders';
 import type { CompanyRemindersState } from '@/components/billing/payment-reminders';
 import { ClientContacts } from '@/components/clients/client-contacts';
@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
@@ -95,47 +96,13 @@ function useProjectWrite() {
     const [unresolved, setUnresolved] = useState(false);
     const [confirmed, setConfirmed] = useState(false);
     const [failure, setFailure] = useState<string | null>(null);
-    useEffect(() => {
-        if (!busy && !unresolved) {
-            return;
-        }
-
-        const stopNavigation = router.on?.('before', (event) => {
-            const visit = event.detail.visit;
-            const url = new URL(visit.url, window.location.href);
-            const readingCurrentProps =
-                visit.only.length > 0 &&
-                visit.method === 'get' &&
-                url.origin === window.location.origin &&
-                url.pathname === window.location.pathname &&
-                url.search === window.location.search;
-
-            if (
-                attempt.current !== null &&
-                attempt.current.saved === undefined &&
-                !readingCurrentProps
-            ) {
-                event.preventDefault();
-                setFailure(
-                    'Check the original project result before leaving this page.',
-                );
-            }
-        });
-        const stopUnload = (event: BeforeUnloadEvent) => {
-            if (
-                attempt.current !== null &&
-                attempt.current.saved === undefined
-            ) {
-                event.preventDefault();
-            }
-        };
-        window.addEventListener('beforeunload', stopUnload);
-
-        return () => {
-            stopNavigation?.();
-            window.removeEventListener('beforeunload', stopUnload);
-        };
-    }, [busy, unresolved]);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && attempt.current.saved === undefined,
+        () =>
+            setFailure(
+                'Check the original project result before leaving this page.',
+            ),
+    );
 
     async function write(
         method: 'POST' | 'PATCH' | 'PUT',

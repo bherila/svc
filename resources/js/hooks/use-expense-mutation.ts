@@ -1,5 +1,5 @@
-import { router } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 
@@ -23,38 +23,10 @@ export function useExpenseMutation(
     const [locked, setLocked] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    useEffect(() => {
-        const stopNavigation = router.on?.('before', (event) => {
-            const visit = event.detail.visit;
-            const destination = new URL(visit.url, window.location.href);
-            const refreshing =
-                visit.only.length === only.length &&
-                only.every((key) => visit.only.includes(key)) &&
-                destination.origin === window.location.origin &&
-                destination.pathname === window.location.pathname &&
-                destination.search === window.location.search;
-
-            if (
-                attempt.current !== null &&
-                !attempt.current.saved &&
-                !refreshing
-            ) {
-                event.preventDefault();
-                setError('Check the original result before leaving this page.');
-            }
-        });
-        const stopUnload = (event: BeforeUnloadEvent) => {
-            if (attempt.current !== null && !attempt.current.saved) {
-                event.preventDefault();
-            }
-        };
-        window.addEventListener('beforeunload', stopUnload);
-
-        return () => {
-            stopNavigation?.();
-            window.removeEventListener('beforeunload', stopUnload);
-        };
-    }, [only]);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.saved,
+        () => setError('Check the original result before leaving this page.'),
+    );
 
     const release = () => {
         attempt.current = null;
