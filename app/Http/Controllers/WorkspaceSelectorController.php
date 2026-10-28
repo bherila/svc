@@ -33,6 +33,7 @@ class WorkspaceSelectorController extends Controller
         abort_if(! $user instanceof User, 401);
 
         return Inertia::render('workspaces/index', [
+            'create_url' => route('agent-api.v1.workspaces.store', absolute: false),
             'workspaces' => $accessible->for($user)
                 ->map(fn (Workspace $workspace): array => [
                     'id' => (string) $workspace->public_id,
