@@ -31,7 +31,7 @@ final class PortalProjectCapabilitiesTest extends TestCase
     #[DataProvider('transports')]
     public function test_context_discloses_only_currently_granted_project_capabilities(string $transport): void
     {
-        config(['agent_api.mcp_enabled' => true]);
+        config(['agent_api.mcp_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
         $workspace = Workspace::query()->create(['name' => 'Synthetic capability workspace', 'slug' => 'synthetic-capability-workspace']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic capability client', 'slug' => 'synthetic-capability-client']);
         $project = fn (string $name, bool $visible): ClientProject => ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => $name, 'is_visible_to_client' => $visible]);
@@ -41,13 +41,19 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $user = User::factory()->create();
         $membership = ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_PROJECTS]);
         DB::table('client_portal_project_access')->insert(['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $assigned->id]);
-        $principal = $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ]);
+        $principal = $this->actingAsMcp($user, array_keys(AgentApiScopes::descriptions()));
         $session = $transport === 'mcp' ? $this->initialize() : null;
 
         $context = fn (): array => $transport === 'mcp'
             ? $this->callTool((string) $session, 'context.get', [])['result']['structuredContent']['data']['workspaces'][0]['project_capabilities']
             : $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0.project_capabilities');
         $this->assertSame([$assigned->public_id], array_column($context(), 'project_id'));
+        foreach ($context() as $entry) {
+            $this->assertSame('client', $entry['role']);
+            foreach (['tasks:write', 'time:write', 'time:approve', 'files:write', 'expenses:read'] as $internalCapability) {
+                $this->assertNotContains($internalCapability, $entry['capabilities']);
+            }
+        }
         foreach ([$user, $principal] as $actor) {
             $this->assertTrue(app(AgentAccess::class)->canViewProject($actor, $assigned));
             $this->assertFalse(app(AgentAccess::class)->canViewProject($actor, $other));
@@ -134,15 +140,15 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $this->assertDatabaseCount('client_tasks', 0);
 
         $entries = array_map(fn (ClientProject $project): array => ['project_id' => $project->public_id,
-            'worked_on' => '2026-10-27', 'minutes' => 15, 'description' => 'Synthetic dual-role work'], [$assigned, $ungranted, $private, $other]);
+            'worked_on' => '2026-10-27', 'minutes' => 15, 'description' => 'Synthetic dual-role work', 'billing_rate_amount' => 10000, 'currency' => 'USD'], [$assigned, $ungranted, $private, $other]);
         if ($transport === 'mcp') {
-            $result = $this->callTool((string) $session, 'time_entries.log', ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'synthetic-dual-role-time', 'entries' => $entries])['result'];
+            $result = $this->callTool((string) $session, 'time_entries.log', ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'synthetic-dual-role-time', 'approve' => true, 'entries' => $entries])['result'];
             $this->assertFalse($result['isError']);
             $this->assertCount(4, $result['structuredContent']['data']);
         } else {
-            $this->withHeader('Idempotency-Key', 'synthetic-dual-role-time')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => $entries])->assertCreated()->assertJsonCount(4, 'data');
+            $this->withHeader('Idempotency-Key', 'synthetic-dual-role-time')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['approve' => true, 'entries' => $entries])->assertCreated()->assertJsonCount(4, 'data');
         }
-        $this->assertSame(4, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->count());
+        $this->assertSame(4, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->where('status', 'approved')->count());
 
         config(['agent_api.time_entry_writes_enabled' => false, 'agent_api.writes_enabled' => false]);
         $disabled = app(AgentCapabilities::class)->forWorkspace($user, $workspace, fn (): bool => true);
