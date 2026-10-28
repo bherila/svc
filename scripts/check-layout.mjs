@@ -2,7 +2,7 @@
 /* global process */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
     existsSync,
     mkdirSync,
@@ -110,6 +110,14 @@ try {
     writeFileSync(path.join(runtime, 'database.sqlite'), '', { mode: 0o600 });
     writeFileSync(path.join(runtime, '.env'), '');
 
+    // /up fails unless Passport can load its signing keys, and OAuth issuance is
+    // on by default. An ephemeral pair passed in env leaves key files untouched.
+    const oauthKeys = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+
     // Do not inherit application credentials, DB URLs, or runtime overrides.
     // HOME/PATH are only for locating installed PHP, pnpm and build tooling.
     const env = {
@@ -128,6 +136,8 @@ try {
         CACHE_STORE: 'array',
         MAIL_MAILER: 'array',
         QUEUE_CONNECTION: 'sync',
+        PASSPORT_PRIVATE_KEY: oauthKeys.privateKey,
+        PASSPORT_PUBLIC_KEY: oauthKeys.publicKey,
         SVC_LAYOUT_RUNTIME: runtime,
         // Shows the seeded portal invitations on client settings; nothing here asks a provider.
         SVC_PORTAL_INVITATIONS_ENABLED: 'true',

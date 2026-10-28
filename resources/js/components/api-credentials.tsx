@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { apiRequest } from '@/lib/api';
 import { formatTimestamp } from '@/lib/datetime';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 
 export type ApiScope = { id: string; description: string };
 
@@ -206,7 +206,7 @@ async function create(
     }
 
     onIssued(result.data);
-    router.reload({ only: ['rest'] });
+    void refreshPageProps({ only: ['rest'] });
 
     return null;
 }
@@ -219,7 +219,7 @@ async function remove(href: string): Promise<string | null> {
         return result.message;
     }
 
-    router.reload({ only: ['rest'] });
+    void refreshPageProps({ only: ['rest'] });
 
     return null;
 }

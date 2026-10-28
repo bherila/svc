@@ -1,4 +1,4 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import {
     CheckIcon,
     PencilIcon,
@@ -34,6 +34,7 @@ import WorkspaceShell from '@/layouts/workspace-shell';
 import { apiRequest } from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { formatDecimalHours, formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type {
@@ -454,7 +455,7 @@ export default function TimeSheet({
         const sent = new Set(entries.map((entry) => entry.id));
         setSelected((current) => current.filter((id) => !sent.has(id)));
         setNotice(null);
-        router.reload({ onFinish: () => setApproving(false) });
+        void refreshPageProps({ onFinish: () => setApproving(false) });
     };
 
     const unapprove = async (entry: TimeEntry) => {
@@ -475,7 +476,7 @@ export default function TimeSheet({
         }
 
         setNotice(null);
-        router.reload({ onFinish: () => setApproving(false) });
+        void refreshPageProps({ onFinish: () => setApproving(false) });
     };
 
     const remove = async (entry: TimeEntry) => {
@@ -497,7 +498,7 @@ export default function TimeSheet({
         }
 
         setNotice(null);
-        router.reload({
+        void refreshPageProps({
             onFinish: () => {
                 setDeleting(false);
                 setPendingDelete(null);
