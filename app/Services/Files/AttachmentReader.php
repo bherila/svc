@@ -125,6 +125,28 @@ final class AttachmentReader
             && $this->portalParents($actor, $workspace, $type, $audience === AttachmentAudience::PortalPreview)->where('public_id', $id)->exists(), 404);
     }
 
+    /** Structural disclosure fact only, after the caller's current parent read authority. */
+    public function parentVisibleToClient(User|AgentPrincipal $actor, Workspace $workspace, string $type, string $id, AttachmentAudience $audience): bool
+    {
+        $this->assertParentAccess($actor, $workspace, $type, $id, $audience);
+        abort_if(in_array($type, ['topic', 'comment'], true), 422);
+
+        return $this->portalParents($actor, $workspace, $type, true)->where('public_id', $id)->exists();
+    }
+
+    /** Structural disclosure for an already-authorized bounded native file page.
+     * @param list<string> $ids
+     * @return list<string> */
+    public function visibleParentIds(User $actor, Workspace $workspace, string $type, array $ids): array
+    {
+        abort_unless(count($ids) <= 300 && in_array($type, ['proposal', 'agreement', 'invoice'], true), 422);
+
+        /** @var list<string> $visible Character UUID column projected by the scoped parent query. */
+        $visible = $ids === [] ? [] : array_values($this->portalParents($actor, $workspace, $type, true)->whereIn('public_id', $ids)->pluck('public_id')->all());
+
+        return $visible;
+    }
+
     /** @return Builder<covariant Model> */
     private function base(Workspace $workspace, string $type): Builder
     {

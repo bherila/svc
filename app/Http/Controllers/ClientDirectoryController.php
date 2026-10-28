@@ -32,6 +32,8 @@ use App\Services\Billing\InvoiceEmailService;
 use App\Services\Clients\CompanyProfile;
 use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentFilePage;
+use App\Services\Files\AttachmentParentReference;
+use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
@@ -163,7 +165,9 @@ class ClientDirectoryController extends Controller
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
-        return Inertia::render('clients/home', $home->for($workspace, $clientCompany, $user)->toArray());
+        return Inertia::render('clients/home', $home->for($workspace, $clientCompany, $user)->toArray() + [
+            'files_href' => Gate::forUser($user)->allows('manage', $workspace) ? route('svc.files.parent.show', [$workspace, 'company', $clientCompany->public_id], absolute: false) : null,
+        ]);
     }
 
     /**
@@ -317,6 +321,7 @@ class ClientDirectoryController extends Controller
             : [];
 
         return Inertia::render('clients/invoice', [
+            'attachment_panel' => app(AttachmentSharingNativeView::class)->legacyIfReadable($user, $workspace, new AttachmentParentReference('invoice', $clientInvoice->public_id)),
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -640,6 +645,7 @@ class ClientDirectoryController extends Controller
         );
 
         return Inertia::render('clients/proposal', $this->proposalPayload($clientProposal) + [
+            'attachment_panel' => app(AttachmentSharingNativeView::class)->legacyIfReadable($user, $workspace, new AttachmentParentReference('proposal', $clientProposal->public_id)),
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -709,6 +715,7 @@ class ClientDirectoryController extends Controller
         $canManageTasks = app(TaskAccess::class)->canManage($user, $workspace, $clientProject);
 
         return Inertia::render('clients/project', [
+            'files_href' => route('svc.files.parent.show', [$workspace, 'project', $clientProject->public_id], absolute: false),
             'workspace' => ['id' => $workspace->public_id],
             'organization_href' => $canManageTasks && config('task_organization.enabled') === true
                 ? route('tasks.organization.show', [$workspace, $clientCompany, $clientProject->public_id]) : null,

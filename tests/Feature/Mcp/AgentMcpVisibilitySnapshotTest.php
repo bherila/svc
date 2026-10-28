@@ -8,8 +8,10 @@ use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Files\AttachmentPrivacyLatch;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Tests\Concerns\CallsMcp;
@@ -43,12 +45,24 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
     /** @var array<string, User> */
     private array $principals = [];
 
+    private string $attachmentPolicyDirectory;
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->attachmentPolicyDirectory = sys_get_temp_dir().'/svc-mcp-visibility-policy-'.bin2hex(random_bytes(8));
+        File::makeDirectory($this->attachmentPolicyDirectory, 0700);
+        File::put($this->attachmentPolicyDirectory.'/'.AttachmentPrivacyLatch::MARKER, "enabled\n");
+        app()->instance(AttachmentPrivacyLatch::class, new AttachmentPrivacyLatch($this->attachmentPolicyDirectory));
         config(['app.url' => 'https://svc.example.test']);
         URL::forceRootUrl('https://svc.example.test');
         URL::forceScheme('https');
+    }
+
+    protected function tearDown(): void
+    {
+        File::deleteDirectory($this->attachmentPolicyDirectory);
+        parent::tearDown();
     }
 
     public function test_every_fixture_principal_sees_the_recorded_mcp_surface(): void
@@ -94,7 +108,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         // it is unconfigured and its read-only tools are withheld. Portal
         // invitations (#430) are a product switch, likewise off on install.
         $on = ['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'svc.attachments.sharing_writes_enabled' => true];
         foreach (self::WRITE_FLAGS as $flag) {
             $on['agent_api.'.$flag] = true;
         }
@@ -107,11 +121,13 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
             $installDefaults['agent_api.'.$flag] = $flag === 'time_entry_writes_enabled';
         }
         $installDefaults['task_organization.enabled'] = false;
+        $installDefaults['svc.attachments.sharing_writes_enabled'] = false;
         $installDefaults['services.square.access_token'] = null;
         $installDefaults['svc.portal_invitations.enabled'] = false;
 
         return [
             'all_enabled' => $on,
+            'attachment_sharing_off' => ['svc.attachments.sharing_writes_enabled' => false] + $on,
             'install_defaults' => $installDefaults,
             'writes_off' => $writesOff,
             'outer_writes_off' => ['agent_api.writes_enabled' => false] + $on,

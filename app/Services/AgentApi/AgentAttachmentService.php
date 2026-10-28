@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Files\AttachmentAction;
+use App\Services\Files\AttachmentMetadata;
 use App\Services\Files\AttachmentPageQuery;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentRecordResolver;
@@ -198,10 +199,7 @@ final class AgentAttachmentService
     /** @return array<string,mixed> */
     private function present(ClientAttachment $attachment): array
     {
-        return ['id' => $attachment->public_id, 'record_type' => $attachment->record_type,
-            'record_id' => $attachment->record_public_id, 'filename' => $attachment->original_filename,
-            'media_type' => $attachment->media_type, 'bytes' => $attachment->bytes, 'sha256' => $attachment->sha256,
-            'status' => $attachment->lifecycle_state, 'version' => AgentApiVersion::for($attachment)];
+        return AttachmentMetadata::for($attachment);
     }
 
     /** Relative signatures survive the in-process MCP transport's host; expose the configured public host.

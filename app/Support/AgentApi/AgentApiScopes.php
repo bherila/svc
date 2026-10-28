@@ -122,8 +122,8 @@ final class AgentApiScopes
             self::PROPOSALS_WRITE => 'Create and send proposals as a workspace manager',
             self::PROPOSALS_ACCEPT => 'Accept authorized proposals and sign their resulting agreement',
             self::WORKSPACES_CREATE => 'Create new workspaces you own',
-            self::FILES_READ => 'Read private attachments as a workspace manager',
-            self::FILES_WRITE => 'Upload and delete private attachments as a workspace manager',
+            self::FILES_READ => 'Read authorized attachments; legacy generic routes require a workspace manager and collaboration routes require exact parent access',
+            self::FILES_WRITE => 'Upload, share and delete authorized files; sharing requires current publisher authority and new uploads start private',
             self::MCP_USE => 'Connect to SVC through MCP',
         ];
     }

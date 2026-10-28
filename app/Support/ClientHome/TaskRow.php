@@ -10,10 +10,11 @@ final class TaskRow
         public readonly string $title,
         public readonly ?string $project,
         public readonly string $status,
+        public readonly ?string $filesHref = null,
     ) {}
 
     /**
-     * @return array{id: string, title: string, project: string|null, status: string}
+     * @return array{id: string, title: string, project: string|null, status: string, files_href?:string}
      */
     public function toArray(): array
     {
@@ -22,6 +23,6 @@ final class TaskRow
             'title' => $this->title,
             'project' => $this->project,
             'status' => $this->status,
-        ];
+        ] + ($this->filesHref === null ? [] : ['files_href' => $this->filesHref]);
     }
 }

@@ -33,7 +33,7 @@ class PortalCollaborationController extends Controller
         abort_unless($actor instanceof User, 401);
         $workspace = Workspace::query()->whereKey($clientCompany->workspace_id)->firstOrFail();
 
-        return Inertia::render('collaboration/show', $read->detail($actor, $workspace, $clientCompany, $topic->public_id, CollaborationAudience::Portal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment')));
+        return Inertia::render('collaboration/show', $read->detail($actor, $workspace, $clientCompany, $topic->public_id, CollaborationAudience::Portal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment'), includeFiles: true));
     }
 
     public function comments(CollaborationReadRequest $request, ClientCompany $clientCompany, string $parentType, string $parentPublicId, CollaborationReadService $read): Response
@@ -42,6 +42,6 @@ class PortalCollaborationController extends Controller
         abort_unless($actor instanceof User, 401);
         $workspace = Workspace::query()->whereKey($clientCompany->workspace_id)->firstOrFail();
 
-        return Inertia::render('collaboration/thread', ['thread' => $read->thread($actor, $workspace, $clientCompany, $parentType, $parentPublicId, CollaborationAudience::Portal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment'))]);
+        return Inertia::render('collaboration/thread', ['thread' => $read->thread($actor, $workspace, $clientCompany, $parentType, $parentPublicId, CollaborationAudience::Portal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment'), includeFiles: true)]);
     }
 }

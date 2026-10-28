@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentAttachmentSharingController;
 use App\Http\Controllers\Api\V1\AgentBillingAuditController;
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
 use App\Http\Controllers\Api\V1\AgentCapacityLedgerController;
@@ -92,6 +93,14 @@ Route::prefix('v1')
         $operation('connections.disconnect', [AgentConnectionController::class, 'disconnect']);
         $operation('workspaces.create', [AgentWorkspaceMiscController::class, 'create']);
         $workspaceOperation('search', [AgentWorkspaceMiscController::class, 'search']);
+        foreach (['attachments.visibility.get' => 'legacyVisibilityGet', 'attachments.visibility.update' => 'legacyVisibilityUpdate'] as $id => $handler) {
+            $workspaceOperation($id, [AgentAttachmentSharingController::class, $handler])->whereUuid('attachment');
+        }
+        foreach (['list' => 'index', 'download_url' => 'downloadUrl', 'download' => 'download', 'upload_url' => 'uploadUrl',
+            'upload' => 'upload', 'visibility.update' => 'visibilityUpdate', 'delete' => 'delete'] as $suffix => $handler) {
+            $workspaceOperation('collaboration.attachments.'.$suffix, [AgentAttachmentSharingController::class, $handler])
+                ->whereUuid('client')->whereUuid('recordPublicId')->whereUuid('attachment')->whereIn('recordType', ['topic', 'comment']);
+        }
         $workspaceOperation('attachments.list', [AgentWorkspaceMiscController::class, 'index'])
             ->whereUuid('recordPublicId');
         $workspaceOperation('attachments.get', [AgentWorkspaceMiscController::class, 'show'])

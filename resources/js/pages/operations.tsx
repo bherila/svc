@@ -6,6 +6,7 @@ import type { CompanyActivity } from '@/components/activity-timeline';
 import { AppearanceSelector } from '@/components/appearance-selector';
 import { CommandPaletteTrigger } from '@/components/command-palette';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import {
     predatesInvoiceIssue,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/payments';
 import { todayIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
+import type { AttachmentPanel as SharedFilePanel } from '@/types/files';
 
 type TimeEntry = {
     id: string;
@@ -46,6 +48,7 @@ type Proposal = {
     total_amount: number;
     currency: string;
     attachments: Attachment[];
+    attachment_panel?: SharedFilePanel & { legacy_upload_href: string | null };
 };
 
 type Agreement = {
@@ -54,6 +57,7 @@ type Agreement = {
     status: string;
     billing_cadence: string;
     attachments: Attachment[];
+    attachment_panel?: SharedFilePanel & { legacy_upload_href: string | null };
 };
 
 type BillingSchedule = {
@@ -75,6 +79,7 @@ type Invoice = {
     issue_date: string | null;
     due_date: string | null;
     attachments: Attachment[];
+    attachment_panel?: SharedFilePanel & { legacy_upload_href: string | null };
 };
 
 type Client = {
@@ -151,56 +156,38 @@ function money(amount: number, currency: string): string {
     }).format(amount / 100);
 }
 
-function AttachmentPanel({
-    workspaceId,
-    recordType,
-    recordId,
+function OperationFiles({
+    panel,
     attachments,
 }: {
-    workspaceId: string;
-    recordType: 'proposal' | 'agreement' | 'invoice';
-    recordId: string;
+    panel?: SharedFilePanel & { legacy_upload_href: string | null };
     attachments: Attachment[];
 }) {
-    const form = useForm<{ file: File | null }>({ file: null });
-
-    const submit = (event: FormEvent) => {
-        event.preventDefault();
-        form.post(
-            `/workspaces/${workspaceId}/attachments/${recordType}/${recordId}`,
-            { forceFormData: true, onSuccess: () => form.reset() },
-        );
-    };
-
     return (
-        <div className="mt-3 border-t border-slate-200 pt-3">
-            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-                {attachments.map((attachment) => (
-                    <a
-                        key={attachment.id}
-                        href={attachment.download_url}
-                        className="min-w-0 font-medium wrap-anywhere text-cyan-700"
-                    >
-                        {attachment.name}
-                    </a>
-                ))}
-            </div>
-            <form onSubmit={submit} className="mt-2 flex flex-wrap gap-2">
-                <input
-                    type="file"
-                    required
-                    className="max-w-64 text-xs"
-                    onChange={(event) =>
-                        form.setData('file', event.target.files?.[0] ?? null)
+        <div className="mt-3 min-w-0 border-t border-slate-200 pt-3">
+            <AttachmentSharingPanel
+                panel={
+                    panel ?? {
+                        files: attachments.map((file) => ({
+                            id: file.id,
+                            filename: file.name,
+                            media_type: file.media_type,
+                            bytes: file.bytes,
+                            uploaded_at: null,
+                            download_href: file.download_url,
+                            delete_href: null,
+                            sharing: null,
+                        })),
+                        upload: null,
+                        next_href: null,
                     }
-                />
-                <button
-                    className={secondaryButtonClass}
-                    disabled={form.processing || form.data.file === null}
-                >
-                    Attach document
-                </button>
-            </form>
+                }
+                legacyForms={
+                    panel
+                        ? { upload_href: panel.legacy_upload_href }
+                        : undefined
+                }
+            />
         </div>
     );
 }
@@ -744,10 +731,10 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                         Send
                                                     </button>
                                                 )}
-                                                <AttachmentPanel
-                                                    workspaceId={workspace.id}
-                                                    recordType="proposal"
-                                                    recordId={proposal.id}
+                                                <OperationFiles
+                                                    panel={
+                                                        proposal.attachment_panel
+                                                    }
                                                     attachments={
                                                         proposal.attachments
                                                     }
@@ -778,10 +765,10 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                         href={`/workspaces/${workspace.id}/agreements/${agreement.id}/activate`}
                                                     />
                                                 )}
-                                                <AttachmentPanel
-                                                    workspaceId={workspace.id}
-                                                    recordType="agreement"
-                                                    recordId={agreement.id}
+                                                <OperationFiles
+                                                    panel={
+                                                        agreement.attachment_panel
+                                                    }
                                                     attachments={
                                                         agreement.attachments
                                                     }
@@ -896,10 +883,10 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                             }
                                                         />
                                                     )}
-                                                <AttachmentPanel
-                                                    workspaceId={workspace.id}
-                                                    recordType="invoice"
-                                                    recordId={invoice.id}
+                                                <OperationFiles
+                                                    panel={
+                                                        invoice.attachment_panel
+                                                    }
                                                     attachments={
                                                         invoice.attachments
                                                     }

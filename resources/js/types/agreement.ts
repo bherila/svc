@@ -1,4 +1,5 @@
 import type { CompanyAgreement } from '@/types/clients';
+import type { AttachmentSharing } from '@/types/files';
 
 /**
  * One agreement, as both audiences receive it.
@@ -61,6 +62,7 @@ export type AgreementActions = {
 
 /** One file stored against the agreement. */
 export type AgreementFile = {
+    sharing?: AttachmentSharing | null;
     id: string;
     filename: string;
     media_type: string;

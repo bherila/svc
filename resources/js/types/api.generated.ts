@@ -209,6 +209,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/attachments/{attachment}/visibility': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. This read remains available when sharing writers are disabled and performs no durable mutation. */
+        get: operations['attachments.visibility.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing. */
+        patch: operations['attachments.visibility.update'];
+        trace?: never;
+    };
     '/workspaces/{workspace}/billing-audits/missing-billed-overage': {
         parameters: {
             query?: never;
@@ -626,6 +644,125 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing. */
+        delete: operations['collaboration.attachments.delete'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}/content': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation. */
+        get: operations['collaboration.attachments.download'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}/download-url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation. */
+        post: operations['collaboration.attachments.download_url'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation. */
+        get: operations['collaboration.attachments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/upload': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing. */
+        post: operations['collaboration.attachments.upload'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/upload-url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing. */
+        post: operations['collaboration.attachments.upload_url'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}/{attachment}/visibility': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing. */
+        patch: operations['collaboration.attachments.visibility.update'];
         trace?: never;
     };
     '/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}': {
@@ -2399,6 +2536,15 @@ export interface components {
         AttachmentResponse: {
             data: components['schemas']['Attachment'];
         };
+        AttachmentSharingState: {
+            /** Format: uuid */
+            id: string;
+            is_visible_to_client: boolean;
+            effective_visible_to_client: boolean;
+            sharing_note: string | null;
+            version: components['schemas']['Version'];
+            parent_version: components['schemas']['Version'];
+        };
         AttachmentUploadRequest: {
             /** Format: binary */
             file: string;
@@ -2423,6 +2569,14 @@ export interface components {
         };
         AttachmentUploadUrlResponse: {
             data: components['schemas']['AttachmentUploadUrl'];
+        };
+        AttachmentVisibilityRequest: {
+            is_visible_to_client: boolean;
+            expected_version: components['schemas']['Version'];
+            expected_parent_version: components['schemas']['Version'];
+        };
+        AttachmentVisibilityResponse: {
+            data: components['schemas']['AttachmentSharingState'];
         };
         BillingSchedule: {
             /** Format: uuid */
@@ -2582,6 +2736,53 @@ export interface components {
         ClientCompanyResponse: {
             data: components['schemas']['ClientCompany'];
         };
+        CollaborationAttachment: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            record_type: 'topic' | 'comment';
+            /** Format: uuid */
+            record_id: string;
+            filename: string;
+            media_type: string;
+            bytes: number;
+            sha256: string;
+            /** @enum {string} */
+            status: 'staged' | 'available' | 'deleting' | 'deleted' | 'corrupt';
+            version: string;
+            is_visible_to_client: boolean;
+            effective_visible_to_client: boolean;
+            sharing_note: string | null;
+        };
+        CollaborationAttachmentDeleteRequest: {
+            expected_version: components['schemas']['Version'];
+            expected_parent_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        CollaborationAttachmentListResponse: {
+            data: components['schemas']['CollaborationAttachment'][];
+            parent_version: string;
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        CollaborationAttachmentPreview: {
+            data: components['schemas']['CollaborationAttachment'][];
+            parent_version: components['schemas']['Version'];
+            next_href: string | null;
+        };
+        CollaborationAttachmentResponse: {
+            data: components['schemas']['CollaborationAttachment'];
+        };
+        CollaborationAttachmentUploadRequest: {
+            /** Format: binary */
+            file: string;
+            expected_version: string;
+        };
+        CollaborationAttachmentUploadUrlResponse: {
+            data: components['schemas']['AttachmentUploadUrl'];
+        };
         CollaborationComment: {
             /** Format: uuid */
             id: string;
@@ -2594,6 +2795,7 @@ export interface components {
             web_url: string;
             is_visible_to_client: boolean | null;
             effective_visible_to_client: boolean | null;
+            attachments?: components['schemas']['CollaborationAttachmentPreview'];
         };
         CollaborationCommentCreateRequest: {
             expected_version: string;
@@ -2642,6 +2844,7 @@ export interface components {
             /** Format: uuid */
             project_id: string | null;
             scope_label: string;
+            attachments?: components['schemas']['CollaborationAttachmentPreview'];
         };
         CollaborationTopicCreateRequest: {
             /** @enum {string} */
@@ -6109,6 +6312,186 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'attachments.visibility.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentVisibilityResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.visibility.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['AttachmentVisibilityRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentVisibilityResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'billing.audit_missing_billed_overage': {
         parameters: {
             query?: never;
@@ -7646,6 +8029,660 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.attachments.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                recordType: 'topic' | 'comment';
+                recordPublicId: string;
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CollaborationAttachmentDeleteRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationAttachmentResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.attachments.download': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                recordType: 'topic' | 'comment';
+                recordPublicId: string;
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized attachment content. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/octet-stream': string;
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.attachments.download_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                recordType: 'topic' | 'comment';
+                recordPublicId: string;
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentDownloadUrlResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.attachments.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                recordType: 'topic' | 'comment';
+                recordPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationAttachmentListResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.attachments.upload': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                recordType: 'topic' | 'comment';
+                recordPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'multipart/form-data': components['schemas']['CollaborationAttachmentUploadRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationAttachmentResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.attachments.upload_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                recordType: 'topic' | 'comment';
+                recordPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CollaborationAttachmentUploadUrlResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'collaboration.attachments.visibility.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                recordType: 'topic' | 'comment';
+                recordPublicId: string;
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['AttachmentVisibilityRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentVisibilityResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scope or role is insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, company, parent or file is unavailable, or the writer is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A captured version is stale or the idempotency key was reused for different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, confirmation, cursor or file is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The retained local privacy latch is unavailable; no write was performed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

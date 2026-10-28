@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
 import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -17,6 +18,7 @@ import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { cn } from '@/lib/utils';
+import type { AttachmentPanel } from '@/types/files';
 
 type PortalLine = {
     id: string;
@@ -58,11 +60,13 @@ type PortalInvoice = {
  * apart for the person being billed.
  */
 export default function PortalInvoice({
+    attachment_panel = null,
     invoice,
     lines,
     line_detail: lineDetail,
     square_page_url: squarePageUrl = null,
 }: {
+    attachment_panel?: AttachmentPanel | null;
     company: { id: string; name: string };
     home_href: string;
     invoice: PortalInvoice;
@@ -253,6 +257,9 @@ export default function PortalInvoice({
                         </dl>
                     </CardContent>
                 </Card>
+                {attachment_panel && (
+                    <AttachmentSharingPanel panel={attachment_panel} />
+                )}
             </main>
         </WorkspaceShell>
     );

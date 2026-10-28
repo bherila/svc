@@ -164,6 +164,30 @@
             "mcp.switch:attachments.upload_url"
         ]
     },
+    "attachments.visibility.get": {
+        "scopes": [
+            "files:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:attachments.visibility.get"
+        ]
+    },
+    "attachments.visibility.update": {
+        "scopes": [
+            "files:write",
+            "files:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.files",
+            "files.sharing",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:attachments.visibility.update"
+        ]
+    },
     "billing.audit_missing_billed_overage": {
         "scopes": [
             "billing:read"
@@ -519,6 +543,95 @@
             "mcp",
             "mcp.switch:mcp.write.clients",
             "mcp.switch:clients.update"
+        ]
+    },
+    "collaboration.attachments.delete": {
+        "scopes": [
+            "files:write",
+            "collaboration:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.files",
+            "agent.writes.collaboration",
+            "files.sharing",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.attachments.delete"
+        ]
+    },
+    "collaboration.attachments.download": {
+        "scopes": [
+            "files:read",
+            "collaboration:read"
+        ],
+        "scope_rule": "all"
+    },
+    "collaboration.attachments.download_url": {
+        "scopes": [
+            "files:read",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.attachments.download_url"
+        ]
+    },
+    "collaboration.attachments.list": {
+        "scopes": [
+            "files:read",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.attachments.list"
+        ]
+    },
+    "collaboration.attachments.upload": {
+        "scopes": [
+            "files:write",
+            "collaboration:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.files",
+            "agent.writes.collaboration",
+            "files.sharing"
+        ]
+    },
+    "collaboration.attachments.upload_url": {
+        "scopes": [
+            "files:write",
+            "collaboration:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.files",
+            "agent.writes.collaboration",
+            "files.sharing",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.attachments.upload_url"
+        ]
+    },
+    "collaboration.attachments.visibility.update": {
+        "scopes": [
+            "files:write",
+            "files:read",
+            "collaboration:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.files",
+            "agent.writes.collaboration",
+            "files.sharing",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.attachments.visibility.update"
         ]
     },
     "collaboration.comments.create": {

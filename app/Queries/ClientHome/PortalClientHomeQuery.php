@@ -166,6 +166,7 @@ final class PortalClientHomeQuery
                 title: (string) $task->title,
                 project: $projectNames[(int) $task->client_project_id] ?? null,
                 status: (string) $task->status,
+                filesHref: route('portal.files.parent.show', [$company, 'task', $task->public_id], absolute: false),
             ))
             ->all());
     }
