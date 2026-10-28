@@ -20,6 +20,7 @@ vi.mock('@inertiajs/react', async () => {
 
     return {
         Head: () => null,
+        router: { on: vi.fn() },
         Link: ({ children }: { children: ReactNode }) => <>{children}</>,
         useForm: function useForm(initial: Record<string, unknown>) {
             const [data, setData] = useState(initial);

@@ -475,6 +475,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
         'PATCH' => [route('agent-api.v1.projects.update', [$workspace, $project->public_id], absolute: false)],
         'PUT' => [route('agent-api.v1.projects.members.update', [$workspace, $project->public_id], absolute: false)],
     ],
+    'client_profile_update' => route('agent-api.v1.clients.update', [$workspace, $company], absolute: false),
     'contact_restore' => route('agent-api.v1.clients.contacts.restore', [$workspace, $company, $historicalContact], absolute: false),
     'settings' => route('clients.settings', [$workspace, $company], absolute: false),
     'portal_settings' => route('clients.settings', [$workspace, $company], absolute: false).'?invitation_page=2',

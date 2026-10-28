@@ -1,6 +1,6 @@
-import { useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import { useClientChange } from '@/components/clients/use-client-change';
+import { useClientDraft } from '@/components/clients/use-client-draft';
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -44,23 +44,30 @@ const FIELDS = [
 function ContactForm({
     contact,
     action,
+    onCreated,
 }: {
     contact?: ClientContact;
     action: string;
+    onCreated?: () => void;
 }) {
-    const form = useForm({
-        first_name: contact?.first_name ?? '',
-        last_name: contact?.last_name ?? '',
-        title: contact?.title ?? '',
-        email: contact?.email ?? '',
-        phone: contact?.phone ?? '',
-        notes: contact?.notes ?? '',
-        is_archived: contact?.is_archived ?? false,
-    });
+    const form = useClientDraft(
+        {
+            first_name: contact?.first_name ?? '',
+            last_name: contact?.last_name ?? '',
+            title: contact?.title ?? '',
+            email: contact?.email ?? '',
+            phone: contact?.phone ?? '',
+            notes: contact?.notes ?? '',
+        },
+        contact?.version ?? 'new-contact',
+    );
+    const [newArchived, setNewArchived] = useState(false);
     const change = useClientChange();
-    const [confirming, setConfirming] = useState(false);
+    const [confirming, setConfirming] = useState<{ version: string } | null>(
+        null,
+    );
     const refresh = async () => {
-        await refreshPageProps({ only: ['contacts'] });
+        await refreshPageProps({ only: ['contacts'], requireSuccess: true });
     };
     const prefix = `contact-${contact?.id ?? 'new'}`;
 
@@ -70,7 +77,8 @@ function ContactForm({
             onSubmit={(event) => {
                 event.preventDefault();
 
-                const { is_archived, ...fields } = form.data;
+                const submitted = { ...form.data };
+                const fields = submitted;
                 const details = Object.fromEntries(
                     Object.entries(fields).map(([field, value]) => [
                         field,
@@ -81,14 +89,18 @@ function ContactForm({
                     contact ? 'PATCH' : 'POST',
                     action,
                     contact
-                        ? { ...details, expected_version: contact.version }
-                        : { ...details, is_archived },
-                    async () => {
-                        if (!contact) {
-                            form.reset();
+                        ? { ...details, expected_version: form.version }
+                        : { ...details, is_archived: newArchived },
+                    async (result) => {
+                        if (contact) {
+                            form.saved(submitted, result.data.version);
                         }
 
                         await refresh();
+
+                        if (!contact) {
+                            onCreated?.();
+                        }
                     },
                 );
             }}
@@ -98,6 +110,7 @@ function ContactForm({
                     <div key={field} className="grid min-w-0 grid-cols-1 gap-2">
                         <Label htmlFor={`${prefix}-${field}`}>{label}</Label>
                         <Input
+                            disabled={change.locked}
                             id={`${prefix}-${field}`}
                             type={field === 'email' ? 'email' : 'text'}
                             value={form.data[field]}
@@ -118,6 +131,7 @@ function ContactForm({
                     Internal contact notes
                 </Label>
                 <Textarea
+                    disabled={change.locked}
                     className="wrap-anywhere"
                     id={`${prefix}-notes`}
                     value={form.data.notes}
@@ -140,10 +154,11 @@ function ContactForm({
                 {!contact && (
                     <>
                         <Switch
+                            disabled={change.locked}
                             id={`${prefix}-archived`}
-                            checked={form.data.is_archived}
+                            checked={newArchived}
                             onCheckedChange={(checked) =>
-                                form.setData('is_archived', checked === true)
+                                setNewArchived(checked === true)
                             }
                         />
                         <Label htmlFor={`${prefix}-archived`}>
@@ -151,14 +166,24 @@ function ContactForm({
                         </Label>
                     </>
                 )}
-                <Button type="submit" disabled={change.busy}>
+                <Button type="submit" disabled={change.locked}>
                     {contact ? 'Save contact' : 'Add contact'}
                 </Button>
-                {contact && (
+                {change.unresolved && !confirming && (
                     <Button
                         type="button"
                         variant="outline"
                         disabled={change.busy}
+                        onClick={() => void change.check()}
+                    >
+                        Check original change
+                    </Button>
+                )}
+                {contact && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={change.locked}
                         onClick={() => {
                             if (contact.is_archived) {
                                 void change.run(
@@ -168,7 +193,7 @@ function ContactForm({
                                     refresh,
                                 );
                             } else {
-                                setConfirming(true);
+                                setConfirming({ version: contact.version });
                             }
                         }}
                     >
@@ -178,7 +203,14 @@ function ContactForm({
                     </Button>
                 )}
                 {contact && (
-                    <AlertDialog open={confirming} onOpenChange={setConfirming}>
+                    <AlertDialog
+                        open={confirming !== null}
+                        onOpenChange={(open) => {
+                            if (!open && !change.locked) {
+                                setConfirming(null);
+                            }
+                        }}
+                    >
                         <AlertDialogContent>
                             <AlertDialogHeader>
                                 <AlertDialogTitle>
@@ -199,30 +231,44 @@ function ContactForm({
                                 </p>
                             )}
                             <AlertDialogFooter>
-                                <AlertDialogCancel disabled={change.busy}>
+                                <AlertDialogCancel disabled={change.locked}>
                                     Cancel
                                 </AlertDialogCancel>
                                 <Button
                                     type="button"
-                                    disabled={change.busy}
+                                    disabled={change.locked}
                                     onClick={() => {
+                                        if (!confirming) {
+                                            return;
+                                        }
+
                                         void change.run(
                                             'POST',
                                             contact.archive_action,
                                             {
                                                 expected_version:
-                                                    contact.version,
+                                                    confirming.version,
                                                 confirm: true,
                                             },
                                             async () => {
-                                                setConfirming(false);
                                                 await refresh();
+                                                setConfirming(null);
                                             },
                                         );
                                     }}
                                 >
                                     Archive contact
                                 </Button>
+                                {change.unresolved && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={change.busy}
+                                        onClick={() => void change.check()}
+                                    >
+                                        Check original change
+                                    </Button>
+                                )}
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
@@ -239,6 +285,8 @@ export function ClientContacts({
     contacts: ClientContact[];
     createAction: string;
 }) {
+    const [newContact, setNewContact] = useState(0);
+
     return (
         <div className="grid min-w-0 grid-cols-1 gap-5">
             <p className="text-sm text-muted-foreground">
@@ -247,7 +295,7 @@ export function ClientContacts({
             </p>
             {contacts.map((contact) => (
                 <details
-                    key={`${contact.id}:${contact.version}`}
+                    key={contact.id}
                     className="min-w-0 rounded-md border p-4"
                 >
                     <summary className="cursor-pointer wrap-anywhere">
@@ -268,7 +316,11 @@ export function ClientContacts({
             ))}
             <div className="grid min-w-0 grid-cols-1 gap-4 border-t pt-4">
                 <h3 className="font-medium">New contact</h3>
-                <ContactForm action={createAction} />
+                <ContactForm
+                    key={newContact}
+                    action={createAction}
+                    onCreated={() => setNewContact((current) => current + 1)}
+                />
             </div>
         </div>
     );
