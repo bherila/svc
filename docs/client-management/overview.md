@@ -909,6 +909,7 @@ company, optionally attributed to one of that company's projects.
 - `id`, `public_id`, `workspace_id`, `client_company_id`, `client_project_id`
   (nullable), `created_by_user_id`
 - `spent_on` (date), `amount` (integer minor units), `currency`, `description`
+- `external_finance_transaction_uuid` (nullable UUID; creation-only finance provenance)
 - `status` — `draft`, `approved`, or `invoiced`
 - `approved_by_user_id`, `approved_at`
 - timestamps and `deleted_at`
@@ -968,9 +969,19 @@ units plus a `currency` rather than `decimal(12,2)`; the date is `spent_on` and
 the project link `client_project_id`, matching every sibling table; and manager
 approval replaces `is_reimbursable` / `is_reimbursed` / `reimbursed_date`,
 because an expense reaching an invoice is the decision those flags stood in for.
-There is no `category`, no `notes`, and no `external_finance_transaction_uuid`
-column. `client_invoice_line_id` records the nullable allocation link. Expense
-allocation uses the stored amount and currency without markup or conversion.
+There is no `category` or `notes` column. `client_invoice_line_id` records the
+nullable allocation link. Expense allocation uses the stored amount and currency
+without markup or conversion.
+
+The nullable `external_finance_transaction_uuid` stores optional creation-only
+provenance from a finance consumer, not an idempotency key or reconciliation
+allocation. Retrying the same key and body replays the result; changing the body
+under that key conflicts, while a different key can create another expense with
+the same UUID. Ordinary edits retain the reference, API updates cannot replace or
+clear it, and recurring occurrences do not copy it. Workspace owners and
+administrators receive the reference; other API readers receive null, and generic
+model serialization hides it. See [billable expense provenance](../finance-api.md#billable-expense-provenance)
+for the shared contract.
 
 ## External finance reconciliation
 
