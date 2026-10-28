@@ -37,8 +37,8 @@ final class ExpenseReceiptApiTest extends TestCase
         config(['agent_api.writes_enabled' => false, 'agent_api.expense_writes_enabled' => false]);
         $this->sessionActor($actor);
         $url = $this->base($workspace, $expense->public_id);
-        $uploaded = $this->withHeader('Idempotency-Key', 'synthetic-native-upload')->postJson($url, ['expected_version' => AgentApiVersion::for($expense),
-            'file' => UploadedFile::fake()->createWithContent('synthetic-native.txt', 'Synthetic native receipt bytes')])->assertCreated();
+        $uploaded = $this->withHeader('Idempotency-Key', 'synthetic-native-upload')->post($url, ['expected_version' => AgentApiVersion::for($expense),
+            'file' => UploadedFile::fake()->createWithContent('synthetic-native.txt', 'Synthetic native receipt bytes')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertCreated();
         $file = ClientAttachment::query()->sole();
         $this->getJson($url)->assertOk()->assertJsonPath('data.0.id', $file->public_id)->assertJsonPath('data.0.version', AgentApiVersion::for($file));
         $download = $this->getJson($url.'/'.$file->public_id)->assertOk()->json('data.download_url');
@@ -103,8 +103,8 @@ final class ExpenseReceiptApiTest extends TestCase
         $this->withHeader('svc_first_party_session', 'true')->getJson($url)->assertForbidden();
         $this->getJson($url.'/'.$receipt->public_id)->assertForbidden();
         $this->getJson($url.'/upload-url')->assertForbidden();
-        $this->withHeader('Idempotency-Key', 'synthetic-agent-upload')->postJson($url, ['expected_version' => AgentApiVersion::for($expense->fresh()),
-            'file' => UploadedFile::fake()->createWithContent('synthetic-forbidden.txt', 'Synthetic forbidden bytes')])->assertForbidden();
+        $this->withHeader('Idempotency-Key', 'synthetic-agent-upload')->post($url, ['expected_version' => AgentApiVersion::for($expense->fresh()),
+            'file' => UploadedFile::fake()->createWithContent('synthetic-forbidden.txt', 'Synthetic forbidden bytes')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertForbidden();
         $this->withHeader('Idempotency-Key', 'synthetic-agent-delete')->deleteJson($url.'/'.$receipt->public_id, $this->deleteBody($expense, $receipt))->assertForbidden();
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $receipt->fresh()->lifecycle_state);
         $this->assertDatabaseCount('client_attachments', 1);

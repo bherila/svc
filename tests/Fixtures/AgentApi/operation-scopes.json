@@ -926,6 +926,19 @@
             "expenses:read"
         ]
     },
+    "expenses.receipts.delete": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.receipts.delete"
+        ]
+    },
     "expenses.receipts.download": {
         "scopes": [
             "expenses:read"
