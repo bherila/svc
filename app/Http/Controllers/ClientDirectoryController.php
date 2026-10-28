@@ -347,7 +347,8 @@ class ClientDirectoryController extends Controller
             'actions' => [
                 'add_time' => $manages && $status === 'draft' && $clientInvoice->invoiceKindValue() === InvoiceKind::AdHoc->value
                     ? route('clients.time', [$workspace, $clientCompany, 'draft_invoice' => $clientInvoice->public_id], absolute: false) : null,
-                'issue' => $manages && $status === InvoiceStatus::Draft->value ? $base.'/issue' : null,
+                'issue' => $manages && $status === InvoiceStatus::Draft->value
+                    ? route('agent-api.v1.invoices.issue', [$workspace, $clientInvoice->public_id], absolute: false) : null,
                 // Through the API the website now shares with OAuth clients and
                 // MCP (#385): a draft's due date and notes, any draft kind.
                 'update_details' => $manages && $status === InvoiceStatus::Draft->value
@@ -358,29 +359,29 @@ class ClientDirectoryController extends Controller
                     && in_array($status, InvoiceStatus::collectible(), true)
                     && $clientInvoice->automatic_delivery_status !== 'automatically_sent'
                     && ! (bool) $clientInvoice->getAttribute('send_has_blocking_delivery')
-                    ? $base.'/send'
+                    ? route('agent-api.v1.invoices.send', [$workspace, $clientInvoice->public_id], absolute: false)
                     : null,
                 'payment' => $manages && in_array($status, InvoiceStatus::recordable(), true) && $clientInvoice->balance_amount > 0
-                    ? $base.'/payments'
+                    ? route('agent-api.v1.payments.store', $workspace, absolute: false)
                     : null,
-                'correct' => $canCorrect ? $base.'/correct' : null,
+                'correct' => $canCorrect ? route('agent-api.v1.invoices.correct', [$workspace, $clientInvoice->public_id], absolute: false) : null,
                 'hold_automatic' => $manages
                     && $clientInvoice->automatic_delivery_due_at !== null
                     && in_array($clientInvoice->automatic_delivery_status, ['scheduled', 'failed'], true)
-                    ? $base.'/automatic-delivery/hold'
+                    ? route('agent-api.v1.invoices.hold_delivery', [$workspace, $clientInvoice->public_id], absolute: false)
                     : null,
                 'release_automatic' => $manages
                     && ! $squareCollects
                     && $clientInvoice->automatic_delivery_status === 'held'
                     && $clientInvoice->automatic_delivery_due_at !== null
-                    ? $base.'/automatic-delivery/release'
+                    ? route('agent-api.v1.invoices.release_delivery', [$workspace, $clientInvoice->public_id], absolute: false)
                     : null,
                 // Voiding a paid invoice is a correction the service refuses,
                 // so it is not offered either.
                 'void' => $manages && in_array($status, [
                     InvoiceStatus::Draft->value,
                     ...InvoiceStatus::collectible(),
-                ], true) ? $base.'/void' : null,
+                ], true) ? route('agent-api.v1.invoices.void', [$workspace, $clientInvoice->public_id], absolute: false) : null,
             ],
             // What the compose dialog needs to show before anything is sent:
             // who it would go to, what address it comes from, and what has
@@ -436,7 +437,7 @@ class ClientDirectoryController extends Controller
                 // payment is worth is still corrected through its status or its
                 // refunded amount.
                 'correct_date_href' => $manages
-                    ? $base.'/payments/'.$payment->public_id.'/received-on'
+                    ? route('agent-api.v1.payments.update', [$workspace, $payment->public_id], absolute: false)
                     : null,
                 // Null unless the finance system holds an active allocation of
                 // this payment; then the finished links to its transactions,

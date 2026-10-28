@@ -29,6 +29,7 @@ use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
+use App\Support\Billing\InvoiceStatus;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -219,6 +220,7 @@ class WorkspaceOperationsController extends Controller
 
             $clients[] = [
                 ...AgentClientPresenter::identity($company),
+                'invoice_create_href' => $canManage ? route('agent-api.v1.invoices.store', $workspace, absolute: false) : null,
                 'version' => AgentApiVersion::for($company),
                 'create_proposal_href' => $canManage ? route('agent-api.v1.proposals.store', [$workspace], absolute: false) : null,
                 'projects' => $projects,
@@ -248,6 +250,12 @@ class WorkspaceOperationsController extends Controller
                 'invoices' => ($invoicesByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientInvoice $invoice): array => [
                         ...AgentInvoicePresenter::summary($invoice),
+                        'version' => AgentApiVersion::for($invoice),
+                        'pdf_href' => route('svc.billing.invoices.pdf', [$workspace, $invoice], absolute: false),
+                        'issue_href' => $canManage && $invoice->status === InvoiceStatus::Draft->value
+                            ? route('agent-api.v1.invoices.issue', [$workspace, $invoice->public_id], absolute: false) : null,
+                        'payment_href' => $canManage && in_array($invoice->status, InvoiceStatus::recordable(), true) && $invoice->balance_amount > 0
+                            ? route('agent-api.v1.payments.store', $workspace, absolute: false) : null,
                         'attachments' => $attachmentPayload('invoice', $invoice->public_id),
                         'attachment_panel' => $filePanel('invoice', $invoice->public_id),
                     ])

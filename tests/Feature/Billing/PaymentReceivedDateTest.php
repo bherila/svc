@@ -11,7 +11,7 @@ use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
-use Illuminate\Support\Facades\Route;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 /**
@@ -25,15 +25,8 @@ use Tests\TestCase;
  */
 final class PaymentReceivedDateTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        if (! Route::has('svc.billing.invoices.payments.store')) {
-            require base_path('routes/billing.php');
-        }
-    }
 
     /**
      * The write door and the read door agree about what a date looks like.
@@ -51,15 +44,14 @@ final class PaymentReceivedDateTest extends TestCase
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
 
         foreach (['01/02/2026', '2026-8-15', '15 August 2026', '2026-08-15T00:00:00Z'] as $spelling) {
-            $this->actingAs($owner)
-                ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
-                    'amount' => 1000,
-                    'currency' => 'USD',
-                    'method' => 'wire',
-                    'received_on' => $spelling,
-                ])
+            $this->recordPaymentApi($owner, $workspace, $invoice, [
+                'amount' => 1000,
+                'currency' => 'USD',
+                'method' => 'wire',
+                'received_on' => $spelling,
+            ])
                 ->assertStatus(422)
-                ->assertJsonValidationErrors('received_on');
+                ->assertJsonValidationErrors('payment.received_on');
         }
 
         $this->assertDatabaseCount('client_invoice_payments', 0);
@@ -386,18 +378,16 @@ final class PaymentReceivedDateTest extends TestCase
         [, $otherWorkspace, $otherInvoice] = $this->issuedInvoice('Beta Workspace');
 
         // Their own workspace in the URL, another workspace's invoice in it.
-        $this->actingAs($owner)
-            ->postJson("/workspaces/{$workspace->public_id}/invoices/{$otherInvoice->public_id}/payments", [
-                'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => '2026-08-15',
-            ])
+        $this->recordPaymentApi($owner, $workspace, $otherInvoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => '2026-08-15',
+        ])
             ->assertNotFound();
 
         // The other workspace in the URL, where they are not a member at all.
-        $this->actingAs($owner)
-            ->postJson("/workspaces/{$otherWorkspace->public_id}/invoices/{$otherInvoice->public_id}/payments", [
-                'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => '2026-08-15',
-            ])
-            ->assertForbidden();
+        $this->recordPaymentApi($owner, $otherWorkspace, $otherInvoice, [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => '2026-08-15',
+        ])
+            ->assertNotFound();
 
         $this->assertDatabaseCount('client_invoice_payments', 0);
     }

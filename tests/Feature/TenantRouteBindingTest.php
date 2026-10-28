@@ -120,7 +120,7 @@ final class TenantRouteBindingTest extends TestCase
     {
         $id = '00000000-0000-4000-8000-000000000001';
         yield 'company' => ['GET', "/clients/{$id}", 'client_companies'];
-        yield 'invoice' => ['POST', "/invoices/{$id}/issue", 'client_invoices'];
+        yield 'invoice' => ['GET', "/invoices/{$id}", 'client_invoices'];
         yield 'agreement' => ['POST', "/agreements/{$id}/sign", 'client_agreements'];
         yield 'proposal' => ['GET', "/clients/{company}/proposals/{$id}", 'client_proposals'];
         yield 'task' => ['GET', "/tasks/{$id}", 'client_tasks'];

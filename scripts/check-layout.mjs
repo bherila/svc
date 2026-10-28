@@ -38,6 +38,11 @@ const widths = [390, 820, 1440, 1920];
 const clientsOnly = process.argv.includes('--clients');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
+const invoiceActionsOnly = process.argv.includes('--invoice-actions');
+const invoiceSendOnly = process.argv.includes('--invoice-send');
+const invoiceHistoryOnly = process.argv.includes('--invoice-history');
+const invoiceRecoveryOnly =
+    process.argv.includes('--invoice-recovery') || invoiceHistoryOnly;
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
 const disputesOnly = process.argv.includes('--disputes');
@@ -262,6 +267,104 @@ try {
         failures.push(`Browser error: ${error.message}`),
     );
 
+    async function checkInvoiceRecovery(
+        screen,
+        width,
+        state,
+        pattern,
+        submit,
+        field,
+    ) {
+        // Synthetic API outcomes never write fixture money or send mail. The
+        // normal invoice journey below separately checks real canonical writes.
+        const requests = [];
+        await page.route(
+            pattern,
+            async (route) => {
+                const request = route.request();
+                requests.push({
+                    method: request.method(),
+                    url: request.url(),
+                    body: request.postData(),
+                    key: request.headers()['idempotency-key'],
+                });
+                expect(requests.at(-1).key).toBeTruthy();
+
+                if (requests.length > 1) {
+                    expect(requests.at(-1)).toEqual(requests[0]);
+                }
+
+                await route.fulfill({
+                    status:
+                        requests.length === 1
+                            ? 408
+                            : requests.length === 2
+                              ? 422
+                              : 200,
+                    json:
+                        requests.length < 3
+                            ? {
+                                  message:
+                                      'Synthetic uncertain result. Check the original request before starting another change.',
+                              }
+                            : { data: {} },
+                });
+            },
+            { times: 3 },
+        );
+        await submit.click();
+        const check = page.getByRole('button', {
+            name: 'Check original request',
+            exact: true,
+        });
+        await expect(check).toBeEnabled();
+
+        if (invoiceHistoryOnly) {
+            const keptUrl = page.url();
+            await page.evaluate(() => window.history.back());
+            await expect(page.getByRole('alert')).toContainText(
+                'Check the original result before leaving this page.',
+            );
+            await expect(page).toHaveURL(keptUrl);
+            await expect(page.getByRole('dialog')).toBeVisible();
+        }
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await capture(screen, `${state}-uncertain`, width);
+        await check.click();
+        await expect.poll(() => requests.length).toBe(2);
+        await expect(check).toBeEnabled();
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await page.route(page.url(), (route) => route.abort('failed'), {
+            times: 1,
+        });
+        await check.click();
+        const refresh = page.getByRole('button', {
+            name: 'Refresh saved result',
+            exact: true,
+        });
+        await expect(refresh).toBeEnabled();
+        await expect(page.getByRole('alert')).toContainText(
+            'The change was saved, but the page could not refresh',
+        );
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await capture(screen, `${state}-saved-refresh-failure`, width);
+        await refresh.click();
+        await expect(refresh).toHaveCount(0);
+        expect(requests).toHaveLength(3);
+    }
+
     async function checkExpenseRecovery(screen, width, pattern, submitLabel) {
         // Exercise browser recovery without adding rows to the width fixtures.
         // Real canonical writes are checked separately after these captures.
@@ -396,65 +499,85 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of receiptsOnly
-            ? ['receipts']
-            : projectsOnly
-              ? ['settings']
-              : schedulesOnly
-                ? ['expense_schedules']
-                : expensesOnly
-                  ? ['expenses']
-                  : workspacesOnly
-                    ? ['selector']
-                    : engagementOnly
-                      ? ['operations', 'agreement']
-                      : disputesOnly
-                        ? ['invoice', 'square_portal']
-                        : tasksOnly
-                          ? [
-                                'task_list',
-                                'task_project',
-                                'task_editor',
-                                'task_portal',
-                            ]
-                          : historyOnly
+        for (const screen of invoiceSendOnly
+            ? ['invoice']
+            : invoiceHistoryOnly
+              ? ['draft_time']
+              : invoiceRecoveryOnly
+                ? [
+                      'invoice',
+                      'operations',
+                      'draft_time',
+                      'time',
+                      'draft_invoice',
+                      'invoice_review',
+                  ]
+                : receiptsOnly
+                  ? ['receipts']
+                  : projectsOnly
+                    ? ['settings']
+                    : schedulesOnly
+                      ? ['expense_schedules']
+                      : expensesOnly
+                        ? ['expenses']
+                        : workspacesOnly
+                          ? ['selector']
+                          : invoiceActionsOnly
                             ? [
-                                  'history_index',
-                                  'history_discussion',
-                                  'history_invoice',
+                                  'invoice',
+                                  'invoice_review',
+                                  'draft_invoice',
+                                  'draft_time',
                               ]
-                            : portalOnly
-                              ? ['settings']
-                              : correctionOnly
-                                ? ['invoice_review']
-                                : squareOnly
+                            : engagementOnly
+                              ? ['operations', 'agreement']
+                              : disputesOnly
+                                ? ['invoice', 'square_portal']
+                                : tasksOnly
                                   ? [
-                                        'square_explore',
-                                        'square_invoice',
-                                        'square_portal',
+                                        'task_list',
+                                        'task_project',
+                                        'task_editor',
+                                        'task_portal',
                                     ]
-                                  : remindersOnly
-                                    ? ['reminder_invoice', 'settings']
-                                    : timeOnly
-                                      ? ['time', 'draft_time']
-                                      : backlogOnly
-                                        ? ['agreement']
-                                        : [
-                                              'mcp_setup',
-                                              'invoice',
-                                              'invoice_review',
-                                              'reminder_invoice',
-                                              'settings',
-                                              'draft_invoice',
-                                              'draft_time',
-                                              'proposal',
-                                              'proposal_acceptance',
-                                              'operations',
-                                              'time',
-                                              'expenses',
-                                              'receipts',
-                                              'expense_schedules',
-                                          ]) {
+                                  : historyOnly
+                                    ? [
+                                          'history_index',
+                                          'history_discussion',
+                                          'history_invoice',
+                                      ]
+                                    : portalOnly
+                                      ? ['settings']
+                                      : correctionOnly
+                                        ? ['invoice_review']
+                                        : squareOnly
+                                          ? [
+                                                'square_explore',
+                                                'square_invoice',
+                                                'square_portal',
+                                            ]
+                                          : remindersOnly
+                                            ? ['reminder_invoice', 'settings']
+                                            : timeOnly
+                                              ? ['time', 'draft_time']
+                                              : backlogOnly
+                                                ? ['agreement']
+                                                : [
+                                                      'mcp_setup',
+                                                      'invoice',
+                                                      'invoice_review',
+                                                      'reminder_invoice',
+                                                      'settings',
+                                                      'draft_invoice',
+                                                      'draft_time',
+                                                      'proposal',
+                                                      'proposal_acceptance',
+                                                      'operations',
+                                                      'time',
+                                                      'expenses',
+                                                      'receipts',
+                                                      'expense_schedules',
+                                                  ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -1206,6 +1329,378 @@ try {
 
             if (screen !== 'task_editor') {
                 await capture(screen, 'initial', width, false);
+            }
+
+            if (invoiceSendOnly) {
+                await page
+                    .getByRole('button', {
+                        name: 'Send to client',
+                        exact: true,
+                    })
+                    .click();
+                const compose = page.getByRole('dialog');
+                await compose
+                    .getByLabel('Subject', { exact: true })
+                    .fill('SyntheticComposeSubject'.repeat(8));
+                const requests = [];
+                await page.route(
+                    '**/api/v1/workspaces/*/invoices/*/send',
+                    async (route) => {
+                        const request = route.request();
+                        requests.push({
+                            url: request.url(),
+                            body: request.postData(),
+                            key: request.headers()['idempotency-key'],
+                        });
+                        const count = requests.length;
+                        const status =
+                            count === 1 || count === 3
+                                ? 409
+                                : count === 2
+                                  ? 408
+                                  : 200;
+                        await route.fulfill({
+                            status,
+                            json:
+                                status !== 200
+                                    ? {
+                                          message:
+                                              'Synthetic refused or uncertain send. Review the current invoice before confirming again.',
+                                      }
+                                    : {
+                                          data: {
+                                              id: new URL(
+                                                  request.url(),
+                                              ).pathname
+                                                  .split('/')
+                                                  .at(-2),
+                                              version: 'f'.repeat(64),
+                                              delivery: {
+                                                  id: 'synthetic-send-outcome',
+                                                  status:
+                                                      count === 4
+                                                          ? 'failed'
+                                                          : 'sent',
+                                                  error_summary:
+                                                      count === 4
+                                                          ? 'Synthetic known preparation failure.'
+                                                          : null,
+                                              },
+                                          },
+                                      },
+                        });
+                    },
+                    { times: 5 },
+                );
+                // Prove the next confirmation adopts the authoritative read,
+                // rather than either the stale attempt or receipt version.
+                await page.route(
+                    page.url(),
+                    async (route) => {
+                        const response = await route.fetch();
+                        const data = await response.json();
+                        data.props.version = 'b'.repeat(64);
+                        await route.fulfill({ response, json: data });
+                    },
+                    { times: 1 },
+                );
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(compose.getByRole('alert')).toContainText(
+                    'Review its current details',
+                );
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeEnabled();
+                expect(requests).toHaveLength(1);
+                await capture(screen, 'send-initial-conflict', width);
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[1].key).not.toBe(requests[0].key);
+                expect(JSON.parse(requests[1].body).expected_version).toBe(
+                    'b'.repeat(64),
+                );
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect.poll(() => requests.length).toBe(3);
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[2]).toEqual(requests[1]);
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Cancel',
+                        exact: true,
+                    }),
+                ).toBeDisabled();
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'send-uncertain-later-conflict', width);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[3]).toEqual(requests[1]);
+                await expect(compose.getByRole('alert')).toContainText(
+                    'The message was not handed off, but the invoice could not refresh',
+                );
+                await capture(screen, 'send-failed-refresh-failure', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    compose.getByRole('button', { name: 'Send', exact: true }),
+                ).toBeEnabled();
+                expect(requests).toHaveLength(4);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[4].key).not.toBe(requests[3].key);
+                expect(JSON.parse(requests[4].body).expected_version).toBe(
+                    JSON.parse(requests[0].body).expected_version,
+                );
+                await expect(compose.getByRole('alert')).toContainText(
+                    'The message was sent, but the invoice could not refresh',
+                );
+                await capture(screen, 'send-accepted-refresh-failure', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(compose).toHaveCount(0);
+                expect(requests).toHaveLength(5);
+                continue;
+            }
+
+            if (invoiceRecoveryOnly) {
+                if (screen === 'invoice') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Record payment',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Reference', { exact: true })
+                        .fill('SyntheticOriginalReference'.repeat(8));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'payment',
+                        '**/api/v1/workspaces/*/payments',
+                        page.getByRole('button', {
+                            name: 'Record',
+                            exact: true,
+                        }),
+                        page.getByLabel('Reference', { exact: true }),
+                    );
+                } else if (screen === 'operations') {
+                    const draft = page
+                        .getByRole('form', { name: 'Draft invoice' })
+                        .first();
+                    await draft
+                        .getByPlaceholder('Invoice number', { exact: true })
+                        .fill('SYNTHETIC-RECOVERY');
+                    await draft
+                        .getByPlaceholder('Line description', { exact: true })
+                        .fill('SyntheticUnbrokenInvoiceDescription'.repeat(10));
+                    await draft
+                        .getByPlaceholder('Unit price', { exact: true })
+                        .fill('123.45');
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'draft',
+                        '**/api/v1/workspaces/*/invoices',
+                        draft.getByRole('button', {
+                            name: 'Draft invoice',
+                            exact: true,
+                        }),
+                        draft.getByPlaceholder('Invoice number', {
+                            exact: true,
+                        }),
+                    );
+                    const payment = page
+                        .locator('form')
+                        .filter({
+                            has: page.getByLabel('Payment amount', {
+                                exact: true,
+                            }),
+                        })
+                        .first();
+                    await payment
+                        .getByPlaceholder('Payment reference', { exact: true })
+                        .fill('SyntheticUnbrokenReference'.repeat(10));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'payment',
+                        '**/api/v1/workspaces/*/payments',
+                        payment.getByRole('button', {
+                            name: 'Record payment',
+                            exact: true,
+                        }),
+                        payment.getByLabel('Payment amount', { exact: true }),
+                    );
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'issue',
+                        '**/api/v1/workspaces/*/invoices/*/issue',
+                        page
+                            .getByRole('button', { name: 'Issue', exact: true })
+                            .first(),
+                        null,
+                    );
+                } else if (screen === 'draft_time' || screen === 'time') {
+                    if (invoiceHistoryOnly) {
+                        // Enter by Inertia so Back exercises same-document history,
+                        // rather than the browser's separate beforeunload prompt.
+                        await page.goto(origin + fixture.draft_invoice);
+                        await page
+                            .getByRole('link', {
+                                name: 'Add time',
+                                exact: true,
+                            })
+                            .click();
+                        await expect(page).toHaveURL(
+                            origin + fixture.draft_time,
+                        );
+                    }
+
+                    if (screen === 'time') {
+                        await page
+                            .getByRole('button', {
+                                name: 'Select time to invoice',
+                                exact: true,
+                            })
+                            .click();
+                    }
+
+                    await page
+                        .getByRole('checkbox', { name: / for invoice$/ })
+                        .first()
+                        .check();
+                    await page
+                        .getByRole('button', {
+                            name: 'Review draft invoice',
+                            exact: true,
+                        })
+                        .click();
+
+                    if (screen === 'time') {
+                        await page
+                            .getByLabel('Invoice number', { exact: true })
+                            .fill('SYNTHETIC-SELECTED-RECOVERY');
+                    }
+
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'selection',
+                        screen === 'time'
+                            ? '**/api/v1/workspaces/*/invoices'
+                            : '**/api/v1/workspaces/*/invoices/*/time',
+                        page.getByRole('button', {
+                            name:
+                                screen === 'time'
+                                    ? 'Create draft invoice'
+                                    : 'Add time to draft',
+                            exact: true,
+                        }),
+                        page.getByRole('button', {
+                            name: 'Cancel',
+                            exact: true,
+                        }),
+                    );
+                } else if (screen === 'draft_invoice') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Change dates',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Due date', { exact: true })
+                        .fill('2026-12-31');
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'dates',
+                        '**/api/v1/workspaces/*/invoices/*/details',
+                        page.getByRole('button', {
+                            name: 'Save dates',
+                            exact: true,
+                        }),
+                        page.getByLabel('Due date', { exact: true }),
+                    );
+                } else if (screen === 'invoice_review') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Correct invoice',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Reason for correction', { exact: true })
+                        .fill('SyntheticCorrectionReason'.repeat(10));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'correction',
+                        '**/api/v1/workspaces/*/invoices/*/correct',
+                        page.getByRole('button', {
+                            name: 'Save audited correction',
+                            exact: true,
+                        }),
+                        page.getByLabel('Reason for correction', {
+                            exact: true,
+                        }),
+                    );
+                }
+
+                continue;
             }
 
             if (engagementOnly && screen === 'operations') {
@@ -2027,6 +2522,90 @@ try {
             }
 
             if (screen === 'invoice') {
+                await page
+                    .getByRole('button', {
+                        name: 'Send to client',
+                        exact: true,
+                    })
+                    .click();
+                const compose = page.getByRole('dialog');
+                await compose
+                    .getByLabel('Subject', { exact: true })
+                    .fill('Synthetic invoice subject '.repeat(8));
+                await compose
+                    .getByLabel('Covering note (optional)', { exact: true })
+                    .fill('SyntheticUnbrokenCoveringNote'.repeat(100));
+                await compose
+                    .getByLabel('To', { exact: true })
+                    .fill(
+                        `${'synthetic'.repeat(7)}@${'reserved'.repeat(7)}.example.test`,
+                    );
+                await compose
+                    .getByRole('button', { name: 'Add', exact: true })
+                    .click();
+                await capture(screen, 'send-compose', width);
+                // Synthetic adapter outcome only: no email leaves this layout
+                // fixture. The real after-commit path is proved by
+                // InvoiceSendOutcomeTest with its replaceable mail adapter.
+                let composeChecks = 0;
+                await page.route(
+                    '**/api/v1/workspaces/*/invoices/*/send',
+                    async (route) => {
+                        const request = route.request();
+                        const body = request.postDataJSON();
+
+                        if (
+                            request.headers()['idempotency-key'] == null ||
+                            body.confirm !== true ||
+                            typeof body.expected_version !== 'string'
+                        ) {
+                            throw new Error(
+                                'Invoice compose omitted its confirmed version or retry key.',
+                            );
+                        }
+
+                        await route.fulfill({
+                            status: 200,
+                            contentType: 'application/json',
+                            body: JSON.stringify({
+                                data: {
+                                    id: new URL(request.url()).pathname
+                                        .split('/')
+                                        .at(-2),
+                                    version: body.expected_version,
+                                    delivery: {
+                                        id: 'synthetic-layout-delivery',
+                                        status:
+                                            composeChecks++ === 0
+                                                ? 'sending'
+                                                : 'sent',
+                                        error_summary: null,
+                                    },
+                                },
+                            }),
+                        });
+                    },
+                );
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'send-unresolved', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect(compose).toHaveCount(0);
                 await expect(
                     page.getByText('Reconciled in finance', { exact: true }),
                 ).toBeVisible();
@@ -2114,6 +2693,9 @@ try {
     }
 
     if (
+        !invoiceActionsOnly &&
+        !invoiceSendOnly &&
+        !invoiceRecoveryOnly &&
         !schedulesOnly &&
         !expensesOnly &&
         !disputesOnly &&
@@ -2153,6 +2735,8 @@ try {
     }
 
     if (
+        !invoiceSendOnly &&
+        !invoiceRecoveryOnly &&
         !schedulesOnly &&
         !expensesOnly &&
         !disputesOnly &&
@@ -2226,6 +2810,12 @@ try {
         );
         await page.getByRole('button', { name: 'Record', exact: true }).click();
         await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
+        await expect(
+            page.getByRole('button', { name: 'Record payment', exact: true }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByText('Paid', { exact: true }).first(),
+        ).toBeVisible();
         await capture('draft_invoice', 'paid-after-correction', 1440);
         run('php', ['scripts/layout/verify-draft-time.php'], env);
 
@@ -2345,29 +2935,33 @@ try {
         [
             '# Browser layout evidence',
             '',
-            receiptsOnly
-                ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
-                : projectsOnly
-                  ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
-                  : workspacesOnly
-                    ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
-                    : disputesOnly
-                      ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
-                      : clientsOnly
-                        ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
-                        : tasksOnly
-                          ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                          : portalOnly
-                            ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                            : squareOnly
-                              ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                              : remindersOnly
-                                ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                                : backlogOnly
-                                  ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                                  : engagementOnly
-                                    ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                    : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+            invoiceSendOnly
+                ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
+                : receiptsOnly
+                  ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
+                  : projectsOnly
+                    ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
+                    : workspacesOnly
+                      ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
+                      : invoiceActionsOnly
+                        ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
+                        : disputesOnly
+                          ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                          : clientsOnly
+                            ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                            : tasksOnly
+                              ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                              : portalOnly
+                                ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                                : squareOnly
+                                  ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                                  : remindersOnly
+                                    ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                                    : backlogOnly
+                                      ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                                      : engagementOnly
+                                        ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                                        : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
 
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',

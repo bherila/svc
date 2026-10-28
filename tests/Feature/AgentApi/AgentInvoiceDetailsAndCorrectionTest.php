@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -39,6 +40,7 @@ use Tests\TestCase;
  */
 final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
@@ -222,11 +224,10 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
     /** The operator's invoice form accepts the same field as invoices.create_draft. */
     public function test_the_operator_invoice_form_stores_a_scheduled_issue_date(): void
     {
-        $this->actingAs($this->owner)
-            ->postJson(route('svc.billing.invoices.store', [$this->workspace, $this->company]), [
-                'invoice_number' => 'INV-SYN-SCHEDULED', 'currency' => 'USD', 'scheduled_issue_date' => '2026-11-01',
-                'lines' => [['type' => 'fee', 'description' => 'Synthetic fee', 'quantity' => '1', 'unit_amount' => 5000]],
-            ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
+            'invoice_number' => 'INV-SYN-SCHEDULED', 'currency' => 'USD', 'scheduled_issue_date' => '2026-11-01',
+            'manual_lines' => [['type' => 'fee', 'description' => 'Synthetic fee', 'quantity' => '1', 'unit_amount' => 5000]],
+        ])->assertCreated();
 
         $this->assertSame('2026-11-01', ClientInvoice::query()->where('invoice_number', 'INV-SYN-SCHEDULED')->sole()->scheduled_issue_date?->toDateString());
     }

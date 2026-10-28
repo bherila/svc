@@ -14,7 +14,31 @@ final class RetiredWebMutationRoutesTest extends TestCase
             $this->assertFalse(Route::has('svc.engagement.time-entries.'.$action));
         }
         $this->assertFalse(Route::has('svc.billing.invoices.time'));
-        $this->assertTrue(Route::has('svc.billing.invoices.store'));
+    }
+
+    public function test_invoice_bookkeeping_mutations_use_only_canonical_api_routes(): void
+    {
+        foreach (['store', 'issue', 'payments.store', 'payments.received-on', 'send', 'correct',
+            'automatic-delivery.hold', 'automatic-delivery.release', 'void'] as $action) {
+            $this->assertFalse(Route::has('svc.billing.invoices.'.$action), $action);
+        }
+        foreach (['invoices.store', 'invoices.issue', 'payments.store', 'payments.update', 'invoices.send',
+            'invoices.correct', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.void'] as $action) {
+            $this->assertTrue(Route::has('agent-api.v1.'.$action), $action);
+        }
+        foreach (['index', 'show', 'pdf', 'corrections.show', 'stripe-payment-intent'] as $action) {
+            $this->assertTrue(Route::has('svc.billing.invoices.'.$action), $action);
+        }
+        foreach (Route::getRoutes() as $route) {
+            if ($route->uri() === 'workspaces/{workspace}/clients/{clientCompany}/invoices') {
+                $this->assertNotContains('POST', $route->methods());
+            }
+            if (str_starts_with($route->uri(), 'workspaces/{workspace}/invoices/{clientInvoice}')) {
+                $this->assertSame($route->uri() === 'workspaces/{workspace}/invoices/{clientInvoice}/stripe-payment-intent',
+                    in_array('POST', $route->methods(), true), $route->uri());
+                $this->assertSame([], array_intersect(['PUT', 'PATCH', 'DELETE'], $route->methods()), $route->uri());
+            }
+        }
     }
 
     public function test_retired_engagement_mutations_are_absent_and_canonical_routes_remain(): void
@@ -99,11 +123,11 @@ final class RetiredWebMutationRoutesTest extends TestCase
             $source = $file->getContents();
             // API URLs include /api/v1 immediately before /workspaces. Match
             // the retired web paths even when their identifiers are templates.
-            preg_match_all('~(?<!/api/v1)/workspaces/[^\s"\'`]+/(?:time-entries|invoices/[^/\s"\'`]+/time|portal-access|portal-invitations)(?=[/\s"\'`]|$)~', $source, $matches);
+            preg_match_all('~(?<!/api/v1)/workspaces/[^\s"\'`]+/(?:time-entries|invoices/[^/\s"\'`]+/(?:time|issue|send|correct|void|payments|automatic-delivery)|portal-access|portal-invitations)(?=[/\s"\'`]|$)~', $source, $matches);
             foreach ($matches[0] as $match) {
                 $violations[] = $file->getRelativePathname().': '.$match;
             }
-            if (preg_match('/svc\.(?:engagement\.time-entries\.(?:store|update|destroy|approve|unapprove)|billing\.invoices\.time)\b|(?<![\w.-])clients\.portal-(?:access|invitations)\.(?:store|update|destroy|resend)\b|(?<![\w.-])projects\.(?:store|update|access\.update)\b/', $source)) {
+            if (preg_match('/svc\.(?:engagement\.time-entries\.(?:store|update|destroy|approve|unapprove)|billing\.invoices\.(?:time|store|issue|send|correct|void|payments\.(?:store|received-on)|automatic-delivery\.(?:hold|release)))\b|(?<![\w.-])clients\.portal-(?:access|invitations)\.(?:store|update|destroy|resend)\b|(?<![\w.-])projects\.(?:store|update|access\.update)\b/', $source)) {
                 $violations[] = $file->getRelativePathname().': retired named route';
             }
             if (preg_match('/svc\.files\.(?:store|destroy|visibility\.update|collaboration\.(?:upload|destroy|visibility\.update))\b/', $source)) {

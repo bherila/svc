@@ -147,7 +147,11 @@ export type TimeSheetProps = {
     approval_limit: number;
     log_project_id?: string | null;
     actions: { approve: string };
-    invoice_draft: { url: string; target?: DraftTimeTarget | null } | null;
+    invoice_draft: {
+        url: string;
+        company_id: string;
+        target?: DraftTimeTarget | null;
+    } | null;
     /**
      * Which company the sheet actually read.
      *
