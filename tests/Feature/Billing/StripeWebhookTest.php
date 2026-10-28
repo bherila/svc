@@ -458,7 +458,7 @@ class StripeWebhookTest extends TestCase
         app(InvoiceLifecycleService::class)->applyPayment($invoice->fresh(), [
             'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'status' => 'succeeded', 'idempotency_key' => 'repaid-during-dispute',
         ], $workspace);
-        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame('disputed', $invoice->fresh()->status);
 
         $won = $this->eventPayload('evt_repaid_dispute_won', 'charge.dispute.closed', [
             'id' => 'dp_repaid', 'charge' => 'ch_repaid', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'won',

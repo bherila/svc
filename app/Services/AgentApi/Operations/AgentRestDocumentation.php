@@ -266,6 +266,7 @@ final class AgentRestDocumentation
         return [
             ...TaskOrganizationOperations::documentation(),
             ...TaskPlanningOperations::documentation(),
+            ...SquareCoveredPaymentOperations::documentation(),
             ...AttachmentSharingOperations::documentation(),
             ...self::collaborationOperations(),
             'agreements.activate' => [
@@ -373,7 +374,7 @@ final class AgentRestDocumentation
                     ],
                 ],
                 'binary' => [
-                    'application/octet-stream',
+                    '*/*',
                     'Stream the private file using the signed URL, same bearer credential and current manager permission.',
                 ],
             ],
@@ -966,7 +967,7 @@ final class AgentRestDocumentation
                         'schema' => ['type' => 'string'],
                     ],
                 ],
-                'binary' => ['application/octet-stream', 'Receipt bytes'],
+                'binary' => ['*/*', 'Receipt bytes'],
             ],
             'expenses.receipts.download' => [
                 'method' => 'GET',
@@ -1215,7 +1216,7 @@ final class AgentRestDocumentation
             'invoices.square_cover' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice\'s. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice\'s current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square.',
+                'description' => 'Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice\'s. A coverage is not a link: SVC never automatically collects or allocates payments through it; covered payments require a separate explicit review and recording. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice\'s current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceSquareCoverRequest',
                 'response' => 'InvoiceSquareResponse',
