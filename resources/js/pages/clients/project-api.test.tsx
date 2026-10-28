@@ -8,11 +8,13 @@ const inertia = vi.hoisted(() => ({
 }));
 vi.mock('@inertiajs/react', async () => {
     const React = await import('react');
+
     return {
         Head: () => null,
         router: inertia,
         useForm: (initial: Record<string, unknown>) => {
             const [data, setData] = React.useState(initial);
+
             return {
                 data,
                 setData: (key: string, value: unknown) =>
@@ -73,6 +75,7 @@ function respond(status: number, body: unknown) {
 }
 function request(index = 0) {
     const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
+
     return {
         url,
         method: init.method,

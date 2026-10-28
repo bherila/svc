@@ -86,11 +86,15 @@ function useProjectWrite() {
         url: string,
         body: object,
     ) {
-        if (busy) return false;
+        if (busy) {
+            return false;
+        }
+
         setBusy(true);
         setFailure(null);
         key.current ??= newIdempotencyKey();
         const result = await apiRequest(method, url, body, key.current);
+
         if (!result.ok) {
             setFailure(
                 Object.values(result.errors ?? {})
@@ -98,8 +102,10 @@ function useProjectWrite() {
                     .join(' ') || result.message,
             );
             setBusy(false);
+
             return false;
         }
+
         key.current = null;
         await new Promise<void>((resolve) =>
             router.reload({
@@ -108,6 +114,7 @@ function useProjectWrite() {
             }),
         );
         setBusy(false);
+
         return true;
     }
 
@@ -129,6 +136,7 @@ function ProjectAccess({
             </p>
         );
     }
+
     return (
         <div className="grid grid-cols-1 gap-2">
             {assignable.map((member) => (
@@ -156,6 +164,7 @@ function AccessRow({
     role: string;
 }) {
     const mutation = useProjectWrite();
+
     return (
         <div className="grid grid-cols-1 gap-1">
             <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
@@ -522,7 +531,9 @@ function NewProjectForm({ capability }: { capability: ProjectCreate }) {
                         confirm: true,
                     })
                     .then((saved) => {
-                        if (saved) form.reset();
+                        if (saved) {
+                            form.reset();
+                        }
                     });
             }}
         >
