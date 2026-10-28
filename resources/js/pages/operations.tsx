@@ -816,7 +816,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                 key={invoice.id}
                                                 className="rounded-2xl border border-slate-200 p-4"
                                             >
-                                                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                                                <div className="grid min-w-0 grid-cols-1 gap-3">
                                                     <div className="min-w-0 flex-1 wrap-anywhere">
                                                         <h4 className="font-semibold">
                                                             {
