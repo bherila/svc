@@ -33,6 +33,16 @@ final class RetiredWebMutationRoutesTest extends TestCase
         $this->assertSame([], $violations, 'Browser controllers branching on JSON: '.implode(', ', $violations));
     }
 
+    public function test_retired_project_mutation_routes_are_absent(): void
+    {
+        foreach (['projects.store', 'projects.update', 'projects.access.update'] as $name) {
+            $this->assertFalse(Route::has($name), $name);
+        }
+        foreach (['projects.store', 'projects.update', 'projects.members.update'] as $name) {
+            $this->assertTrue(Route::has('agent-api.v1.'.$name), $name);
+        }
+    }
+
     public function test_workspace_creation_uses_the_api_route(): void
     {
         $this->assertFalse(Route::has('workspaces.store'));
@@ -78,7 +88,7 @@ final class RetiredWebMutationRoutesTest extends TestCase
             foreach ($matches[0] as $match) {
                 $violations[] = $file->getRelativePathname().': '.$match;
             }
-            if (preg_match('/svc\.(?:engagement\.time-entries\.(?:store|update|destroy|approve|unapprove)|billing\.invoices\.time)\b|(?<![\w.-])clients\.portal-(?:access|invitations)\.(?:store|update|destroy|resend)\b/', $source)) {
+            if (preg_match('/svc\.(?:engagement\.time-entries\.(?:store|update|destroy|approve|unapprove)|billing\.invoices\.time)\b|(?<![\w.-])clients\.portal-(?:access|invitations)\.(?:store|update|destroy|resend)\b|(?<![\w.-])projects\.(?:store|update|access\.update)\b/', $source)) {
                 $violations[] = $file->getRelativePathname().': retired named route';
             }
             if (preg_match('/svc\.files\.(?:store|destroy|visibility\.update|collaboration\.(?:upload|destroy|visibility\.update))\b/', $source)) {
