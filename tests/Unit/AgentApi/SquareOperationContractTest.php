@@ -146,6 +146,30 @@ final class SquareOperationContractTest extends TestCase
         });
     }
 
+    /** Public path parameters, refusal statuses and safety prose are a client contract. */
+    public function test_covered_payment_bindings_match_the_published_contract_field_for_field(): void
+    {
+        $document = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($document): void {
+            foreach (['invoices.square_covered_payments', 'invoices.square_covered_payment_record'] as $id) {
+                $operation = $catalog->registry()->find($id);
+                $rest = $operation?->rest;
+                $this->assertNotNull($rest, $id);
+                $published = $document['paths'][$rest->path][strtolower($rest->method)];
+                $this->assertSame($id, $published['operationId']);
+                $this->assertSame($published['description'], $rest->description, $id);
+                $this->assertSame($published['parameters'], array_map(
+                    static fn (string|array $parameter): array => is_string($parameter) ? ['$ref' => '#/components/parameters/'.$parameter] : $parameter,
+                    $rest->parameters,
+                ), $id);
+                $this->assertSame([401, 403, 404, 409, 422, 429, 502, 503], array_keys($rest->responses), $id);
+                foreach ($rest->responses as $status => $response) {
+                    $this->assertSame($published['responses'][$status], $response, "{$id} {$status}");
+                }
+            }
+        });
+    }
+
     public function test_customer_import_inherits_the_outer_write_cutoff_but_connection_availability_is_independent(): void
     {
         $this->withCatalog(function (): void {
