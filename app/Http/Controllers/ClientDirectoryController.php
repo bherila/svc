@@ -357,7 +357,7 @@ class ClientDirectoryController extends Controller
                     && ! (bool) $clientInvoice->getAttribute('send_has_blocking_delivery')
                     ? $base.'/send'
                     : null,
-                'payment' => $manages && in_array($status, InvoiceStatus::collectible(), true)
+                'payment' => $manages && in_array($status, InvoiceStatus::recordable(), true) && $clientInvoice->balance_amount > 0
                     ? $base.'/payments'
                     : null,
                 'correct' => $canCorrect ? $base.'/correct' : null,

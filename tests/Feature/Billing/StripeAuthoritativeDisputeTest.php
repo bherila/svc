@@ -66,6 +66,7 @@ final class StripeAuthoritativeDisputeTest extends TestCase
         $this->assertSame('disputed', $payment->fresh()->status);
         $this->assertSame(100, $payment->fresh()->disputed_amount);
         $this->assertSame(100, $invoice->fresh()->balance_amount);
+        $this->assertSame('disputed', $invoice->fresh()->status);
         $this->assertCount(1, $this->stripeCalls);
         $this->assertDatabaseHas('client_stripe_events', ['stripe_event_id' => 'evt_synthetic_distinct_win', 'status' => 'processed', 'workspace_id' => $workspace->id]);
         $this->deliver('evt_synthetic_distinct_win', 'charge.dispute.closed', $won)->assertOk()->assertJsonPath('duplicate', true);
@@ -85,6 +86,7 @@ final class StripeAuthoritativeDisputeTest extends TestCase
         $this->assertSame('succeeded', $fresh->status);
         $this->assertNull($fresh->disputed_amount);
         $this->assertSame(0, $invoice->fresh()->balance_amount);
+        $this->assertSame('paid', $invoice->fresh()->status);
         $this->assertSame(300, $fresh->provider_event_created_at);
         $this->assertSame('evt_synthetic_latest', $fresh->provider_event_id);
     }

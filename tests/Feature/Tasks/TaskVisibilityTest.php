@@ -13,6 +13,7 @@ use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Tasks\TaskAncestryFacts;
 use App\Services\Tasks\TaskAncestryRepository;
 use App\Services\Tasks\TaskVisibility;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -261,13 +262,24 @@ final class TaskVisibilityTest extends TestCase
         $base = '/api/v1/workspaces/'.$workspace->public_id.'/tasks';
         $unadvertised = ['parent_id' => $parent->public_id, 'list_id' => $list->public_id,
             'parent_task_id' => $parent->id, 'client_task_list_id' => $list->id];
-        $created = $this->withHeader('Idempotency-Key', 'synthetic-graph-reader-create')->postJson(
-            '/api/v1/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/tasks',
-            ['title' => 'Synthetic flat-only HTTP task', ...$unadvertised],
+        $ignored = ['parent_id' => ['type' => 'string', 'format' => 'uuid'], 'list_id' => ['type' => 'string', 'format' => 'uuid'],
+            'parent_task_id' => ['type' => 'integer', 'minimum' => 1], 'client_task_list_id' => ['type' => 'integer', 'minimum' => 1]];
+        $create = AgentApiResponseSchemaCatalog::requestForOperation('tasks.create');
+        $create['properties'] += $ignored;
+        $reason = 'Flat task writes historically ignore organization keys; this regression proves those exact keys cannot persist organization or bypass the reader rollout.';
+        $created = $this->withHistoricalApiRequestContract('tasks.create', $create, $reason,
+            fn () => $this->withHeader('Idempotency-Key', 'synthetic-graph-reader-create')->postJson(
+                '/api/v1/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/tasks',
+                ['title' => 'Synthetic flat-only HTTP task', ...$unadvertised],
+            ),
         )->assertCreated();
         $id = $created->json('data.id');
-        $this->withHeader('Idempotency-Key', 'synthetic-graph-reader-update')->patchJson($base.'/'.$id,
-            ['expected_version' => $created->json('data.version'), 'title' => 'Synthetic flat-only updated task', ...$unadvertised])->assertOk();
+        $update = AgentApiResponseSchemaCatalog::requestForOperation('tasks.update');
+        $update['properties'] += $ignored;
+        $this->withHistoricalApiRequestContract('tasks.update', $update, $reason,
+            fn () => $this->withHeader('Idempotency-Key', 'synthetic-graph-reader-update')->patchJson($base.'/'.$id,
+                ['expected_version' => $created->json('data.version'), 'title' => 'Synthetic flat-only updated task', ...$unadvertised]),
+        )->assertOk();
         $this->assertDatabaseHas('client_tasks', ['workspace_id' => $workspace->id, 'public_id' => $id,
             'title' => 'Synthetic flat-only updated task', 'parent_task_id' => null, 'client_task_list_id' => null]);
         foreach (['parent_id', 'list_id', 'parent_task_id', 'client_task_list_id'] as $field) {

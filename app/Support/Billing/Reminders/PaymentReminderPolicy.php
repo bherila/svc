@@ -179,7 +179,7 @@ final class PaymentReminderPolicy
     {
         $open = match (InvoiceStatus::tryFrom($facts->invoiceStatus)) {
             InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid => true,
-            InvoiceStatus::Draft, InvoiceStatus::Paid, InvoiceStatus::Void, null => false,
+            InvoiceStatus::Draft, InvoiceStatus::Paid, InvoiceStatus::Disputed, InvoiceStatus::Void, null => false,
         };
 
         return match (true) {
