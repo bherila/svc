@@ -36,6 +36,7 @@ const artifacts = path.join(
 const widths = [390, 820, 1440, 1920];
 const portalOnly = process.argv.includes('--portal-access');
 const correctionOnly = process.argv.includes('--invoice-correction');
+const invoiceActionsOnly = process.argv.includes('--invoice-actions');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
 const timeOnly = process.argv.includes('--time');
@@ -304,38 +305,40 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of tasksOnly
-            ? ['task_list', 'task_project', 'task_editor', 'task_portal']
-            : historyOnly
-              ? ['history_index', 'history_discussion', 'history_invoice']
-              : portalOnly
-                ? ['settings']
-                : correctionOnly
-                  ? ['invoice_review']
-                  : squareOnly
-                    ? ['square_explore', 'square_invoice', 'square_portal']
-                    : remindersOnly
-                      ? ['reminder_invoice', 'settings']
-                      : timeOnly
-                        ? ['time', 'draft_time']
-                        : backlogOnly
-                          ? ['agreement']
-                          : [
-                                'mcp_setup',
-                                'invoice',
-                                'invoice_review',
-                                'reminder_invoice',
-                                'settings',
-                                'draft_invoice',
-                                'draft_time',
-                                'proposal',
-                                'proposal_acceptance',
-                                'operations',
-                                'time',
-                                'expenses',
-                                'receipts',
-                                'expense_schedules',
-                            ]) {
+        for (const screen of invoiceActionsOnly
+            ? ['invoice', 'invoice_review', 'draft_invoice', 'draft_time']
+            : tasksOnly
+              ? ['task_list', 'task_project', 'task_editor', 'task_portal']
+              : historyOnly
+                ? ['history_index', 'history_discussion', 'history_invoice']
+                : portalOnly
+                  ? ['settings']
+                  : correctionOnly
+                    ? ['invoice_review']
+                    : squareOnly
+                      ? ['square_explore', 'square_invoice', 'square_portal']
+                      : remindersOnly
+                        ? ['reminder_invoice', 'settings']
+                        : timeOnly
+                          ? ['time', 'draft_time']
+                          : backlogOnly
+                            ? ['agreement']
+                            : [
+                                  'mcp_setup',
+                                  'invoice',
+                                  'invoice_review',
+                                  'reminder_invoice',
+                                  'settings',
+                                  'draft_invoice',
+                                  'draft_time',
+                                  'proposal',
+                                  'proposal_acceptance',
+                                  'operations',
+                                  'time',
+                                  'expenses',
+                                  'receipts',
+                                  'expense_schedules',
+                              ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -1041,6 +1044,7 @@ try {
     }
 
     if (
+        !invoiceActionsOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&

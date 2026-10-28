@@ -56,7 +56,7 @@ final class PaymentReminderScreensTest extends TestCase
             'currency' => 'USD', 'total_amount' => 12_345,
         ]);
         $page = fn () => $this->actingAs($owner)->get(route('clients.invoice', [$workspace, $company, $invoice]))->assertOk();
-        $page()->assertInertia(fn (Assert $inertia) => $inertia->where('actions.correct', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct"));
+        $page()->assertInertia(fn (Assert $inertia) => $inertia->where('actions.correct', "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct"));
 
         InvoiceReminderLog::query()->create([
             'workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'origin' => 'manual', 'channel' => 'email', 'pay_link' => 'none',

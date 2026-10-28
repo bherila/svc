@@ -1,8 +1,26 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgreementActivationButton, PaymentForm } from '@/pages/operations';
+import {
+    AgreementActivationButton,
+    InvoiceIssueButton,
+    PaymentForm,
+} from '@/pages/operations';
 
-const inertia = vi.hoisted(() => ({ post: vi.fn() }));
+const inertia = vi.hoisted(() => ({
+    post: vi.fn(),
+    reload: vi.fn((options: { onFinish?: () => void }) => options.onFinish?.()),
+}));
+const requestFetch = vi.fn();
+
+beforeEach(() => {
+    requestFetch.mockReset();
+    requestFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ data: {} }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', requestFetch);
+});
+
+afterEach(() => vi.unstubAllGlobals());
 
 /**
  * A stub that keeps the part of `useForm` this file is about: its lifetime.
@@ -49,6 +67,10 @@ vi.mock('@inertiajs/react', () => ({
 function invoice(overrides: Record<string, unknown> = {}) {
     return {
         id: 'invoice-1',
+        version: '1'.repeat(64),
+        issue_href: null,
+        payment_href: '/api/v1/workspaces/workspace-1/payments',
+        pdf_href: '/workspaces/workspace-1/invoices/invoice-1/pdf',
         invoice_number: 'INV-SYNTH-1',
         status: 'issued',
         total_amount: 10000,
@@ -86,6 +108,46 @@ describe('agreement activation', () => {
     });
 });
 
+describe('issuing an invoice from operations', () => {
+    it('uses the server capability and retains the same attempt key after an uncertain response', async () => {
+        requestFetch.mockRejectedValueOnce(
+            new TypeError('Synthetic lost response'),
+        );
+        render(
+            <InvoiceIssueButton
+                invoice={invoice({
+                    status: 'draft',
+                    issue_href:
+                        '/api/v1/workspaces/workspace-1/invoices/invoice-1/issue',
+                })}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Issue' }));
+        await vi.waitFor(() =>
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                'SVC could not be reached',
+            ),
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Issue' }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        const [url, first] = requestFetch.mock.calls[0] as [
+            string,
+            RequestInit,
+        ];
+        const [, second] = requestFetch.mock.calls[1] as [string, RequestInit];
+        expect(url).toBe(
+            '/api/v1/workspaces/workspace-1/invoices/invoice-1/issue',
+        );
+        expect(JSON.parse(String(first.body))).toEqual({
+            expected_version: '1'.repeat(64),
+            confirm: true,
+        });
+        expect(
+            (first.headers as Record<string, string>)['Idempotency-Key'],
+        ).toBe((second.headers as Record<string, string>)['Idempotency-Key']);
+    });
+});
+
 /**
  * This form has always held `received_on`, defaulted it and posted it. It never
  * rendered it, so the value an operator could not see was the day they happened
@@ -109,11 +171,7 @@ describe('recording a payment from the operations screen', () => {
 
     it('renders the date it was already sending, on the workspace calendar', () => {
         render(
-            <PaymentForm
-                workspaceId="workspace-1"
-                invoice={invoice()}
-                timezone="America/Los_Angeles"
-            />,
+            <PaymentForm invoice={invoice()} timezone="America/Los_Angeles" />,
         );
 
         const received = screen.getByLabelText('Payment received on');
@@ -125,22 +183,14 @@ describe('recording a payment from the operations screen', () => {
 
     it('warns about a date before the invoice was issued without blocking it', () => {
         const { rerender } = render(
-            <PaymentForm
-                workspaceId="workspace-1"
-                invoice={invoice()}
-                timezone="America/Los_Angeles"
-            />,
+            <PaymentForm invoice={invoice()} timezone="America/Los_Angeles" />,
         );
 
         fireEvent.change(screen.getByLabelText('Payment received on'), {
             target: { value: '2026-07-01' },
         });
         rerender(
-            <PaymentForm
-                workspaceId="workspace-1"
-                invoice={invoice()}
-                timezone="America/Los_Angeles"
-            />,
+            <PaymentForm invoice={invoice()} timezone="America/Los_Angeles" />,
         );
 
         expect(screen.getByRole('status')).toHaveTextContent(
@@ -165,9 +215,8 @@ describe('recording a payment from the operations screen', () => {
      * the fix from `form.reset('received_on')` - reset restores the value
      * captured when the page loaded, and this screen can sit open overnight.
      */
-    it('returns the date to today after a payment is recorded', () => {
+    it('returns the date to today after a payment is recorded', async () => {
         const screenProps = {
-            workspaceId: 'workspace-1',
             invoice: invoice(),
             timezone: 'America/Los_Angeles',
         };
@@ -184,7 +233,24 @@ describe('recording a payment from the operations screen', () => {
         vi.setSystemTime(new Date('2026-09-02T12:00:00Z'));
         fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
+        await vi.waitFor(() =>
+            expect(form.data.received_on).toBe('2026-09-02'),
+        );
         expect(form.data.received_on).toBe('2026-09-02');
+        const [url, request] = requestFetch.mock.calls[0] as [
+            string,
+            RequestInit,
+        ];
+        expect(url).toBe('/api/v1/workspaces/workspace-1/payments');
+        expect(JSON.parse(String(request.body))).toEqual(
+            expect.objectContaining({
+                invoice_id: 'invoice-1',
+                expected_version: '1'.repeat(64),
+                confirm: true,
+                received_on: '2026-08-10',
+                amount: 10000,
+            }),
+        );
         rerender(<PaymentForm {...screenProps} />);
         expect(screen.getByLabelText('Payment received on')).toHaveValue(
             '2026-09-02',
@@ -209,11 +275,7 @@ describe('recording a payment from the operations screen', () => {
                 'A payment cannot be dated before 2024-08-29. Nothing has been changed.',
         };
         render(
-            <PaymentForm
-                workspaceId="workspace-1"
-                invoice={invoice()}
-                timezone="America/Los_Angeles"
-            />,
+            <PaymentForm invoice={invoice()} timezone="America/Los_Angeles" />,
         );
 
         expect(screen.getByRole('alert')).toHaveTextContent(

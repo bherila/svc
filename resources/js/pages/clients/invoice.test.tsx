@@ -11,6 +11,32 @@ const inertia = vi.hoisted(() => ({
     reload: vi.fn(),
 }));
 
+const requestFetch = vi.fn();
+
+beforeEach(() => {
+    requestFetch.mockReset();
+    requestFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ data: {} }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', requestFetch);
+    inertia.reload.mockReset();
+    inertia.reload.mockImplementation((options: { onFinish?: () => void }) =>
+        options.onFinish?.(),
+    );
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+function apiRequests() {
+    return requestFetch.mock.calls.map(
+        ([url, init]: [string, RequestInit]) => ({
+            url,
+            method: init.method,
+            body: JSON.parse(String(init.body)),
+        }),
+    );
+}
+
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
     Link: ({ href, children }: { href: string; children: ReactNode }) => (
@@ -33,7 +59,7 @@ function props(overrides: Partial<Props> = {}): Props {
         actions: {
             issue: null,
             send: null,
-            payment: '/workspaces/w-1/invoices/invoice-1/payments',
+            payment: '/api/v1/workspaces/w-1/payments',
             void: null,
         },
         email: null,
@@ -77,7 +103,7 @@ describe('recording a payment against an invoice', () => {
      * payment recorded here was dated the day it was typed in - a cheque that
      * cleared last Tuesday could only be entered as having arrived today.
      */
-    it('offers a date defaulted to today on the workspace calendar and sends it', () => {
+    it('offers a date defaulted to today on the workspace calendar and sends it', async () => {
         render(<ClientInvoiceDetail {...props()} />);
         fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
 
@@ -87,11 +113,17 @@ describe('recording a payment against an invoice', () => {
         fireEvent.change(received, { target: { value: '2026-08-24' } });
         fireEvent.click(screen.getByRole('button', { name: 'Record' }));
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/payments',
-            expect.objectContaining({ received_on: '2026-08-24' }),
-            expect.anything(),
-        );
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/payments',
+            method: 'POST',
+            body: expect.objectContaining({
+                expected_version: '0'.repeat(64),
+                invoice_id: 'invoice-1',
+                confirm: true,
+                received_on: '2026-08-24',
+            }),
+        });
     });
 
     /**
@@ -130,15 +162,7 @@ describe('recording a payment against an invoice', () => {
      * including across a change of day, because reasoning is what a second
      * `setPaying(true)` added later would quietly invalidate.
      */
-    it('re-seeds the form every time it is opened, not once at mount', () => {
-        inertia.post.mockImplementation(
-            (
-                _href: string,
-                _data: Record<string, unknown>,
-                options: { onSuccess: () => void },
-            ) => options.onSuccess(),
-        );
-
+    it('re-seeds the form every time it is opened, not once at mount', async () => {
         render(<ClientInvoiceDetail {...props()} />);
         fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
         fireEvent.change(screen.getByLabelText('Received'), {
@@ -150,6 +174,7 @@ describe('recording a payment against an invoice', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Record' }));
 
         // The dialog closed on success, and the day has since turned over.
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
         expect(screen.queryByLabelText('Received')).toBeNull();
         vi.setSystemTime(new Date('2026-09-02T12:00:00Z'));
 
@@ -173,7 +198,7 @@ describe('recording a payment against an invoice', () => {
                             reference: null,
                             received_on: '2026-07-01',
                             correct_date_href:
-                                '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
+                                '/api/v1/workspaces/w-1/payments/payment-1',
                             amount: 4000,
                             refunded_amount: 0,
                             currency: 'USD',
@@ -185,7 +210,7 @@ describe('recording a payment against an invoice', () => {
                             reference: null,
                             received_on: '2026-08-20',
                             correct_date_href:
-                                '/workspaces/w-1/invoices/invoice-1/payments/payment-2/received-on',
+                                '/api/v1/workspaces/w-1/payments/payment-2',
                             amount: 1000,
                             refunded_amount: 0,
                             currency: 'USD',
@@ -221,12 +246,12 @@ describe('correcting a recorded payment date', () => {
     function payment(overrides: Record<string, unknown> = {}) {
         return {
             id: 'payment-1',
+            version: '1'.repeat(64),
             status: 'succeeded',
             method: 'check',
             reference: null,
             received_on: '2026-08-20',
-            correct_date_href:
-                '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
+            correct_date_href: '/api/v1/workspaces/w-1/payments/payment-1',
             amount: 4000,
             refunded_amount: 0,
             currency: 'USD',
@@ -234,7 +259,7 @@ describe('correcting a recorded payment date', () => {
         };
     }
 
-    it('sends the corrected date to the URL the server supplied', () => {
+    it('sends the corrected date to the URL the server supplied', async () => {
         render(<ClientInvoiceDetail {...props({ payments: [payment()] })} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Correct date' }));
@@ -262,14 +287,17 @@ describe('correcting a recorded payment date', () => {
         expect(save).toBeEnabled();
         fireEvent.click(save);
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
-            {
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/payments/payment-1',
+            method: 'PATCH',
+            body: {
+                expected_version: '1'.repeat(64),
+                confirm: true,
                 received_on: '2026-08-18',
                 reason: 'Bank statement shows the 18th',
             },
-            expect.anything(),
-        );
+        });
     });
 
     /**
@@ -280,15 +308,7 @@ describe('correcting a recorded payment date', () => {
      * typed against one row appear under another. It does not, because opening
      * any row seeds the date from that row before it becomes the open one.
      */
-    it('seeds each row from its own recorded date, after a save and after a cancel', () => {
-        inertia.post.mockImplementation(
-            (
-                _href: string,
-                _data: Record<string, unknown>,
-                options: { onSuccess: () => void },
-            ) => options.onSuccess(),
-        );
-
+    it('seeds each row from its own recorded date, after a save and after a cancel', async () => {
         render(
             <ClientInvoiceDetail
                 {...props({
@@ -299,7 +319,7 @@ describe('correcting a recorded payment date', () => {
                             amount: 2500,
                             received_on: '2026-08-05',
                             correct_date_href:
-                                '/workspaces/w-1/invoices/invoice-1/payments/payment-2/received-on',
+                                '/api/v1/workspaces/w-1/payments/payment-2',
                         }),
                     ],
                 })}
@@ -321,6 +341,8 @@ describe('correcting a recorded payment date', () => {
             target: { value: 'Synthetic statement' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
 
         open(1);
         expect(
@@ -484,13 +506,13 @@ describe('a payment reconciled in finance', () => {
 });
 
 describe('voiding an invoice', () => {
-    it('requires a reason and sends it with the void', () => {
+    it('requires a reason and sends it with the void', async () => {
         render(
             <ClientInvoiceDetail
                 {...props({
                     actions: {
                         ...props().actions,
-                        void: '/workspaces/w-1/invoices/invoice-1/void',
+                        void: '/api/v1/workspaces/w-1/invoices/invoice-1/void',
                     },
                 })}
             />,
@@ -509,16 +531,21 @@ describe('voiding an invoice', () => {
         expect(confirm).toBeEnabled();
         fireEvent.click(confirm);
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/void',
-            { reason: 'Issued to the wrong client' },
-            expect.anything(),
-        );
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/invoices/invoice-1/void',
+            method: 'POST',
+            body: {
+                expected_version: '0'.repeat(64),
+                confirm: true,
+                reason: 'Issued to the wrong client',
+            },
+        });
     });
 });
 
 describe('reviewing and correcting an issued invoice', () => {
-    it('uses server-supplied correction capabilities and posts a revisioned audit request', () => {
+    it('uses server-supplied correction capabilities and posts a revisioned audit request', async () => {
         render(
             <ClientInvoiceDetail
                 {...props({
@@ -527,7 +554,8 @@ describe('reviewing and correcting an issued invoice', () => {
                         send: null,
                         payment: null,
                         void: null,
-                        correct: '/workspaces/w-1/invoices/invoice-1/correct',
+                        correct:
+                            '/api/v1/workspaces/w-1/invoices/invoice-1/correct',
                     },
                     invoice: {
                         ...props().invoice,
@@ -566,10 +594,13 @@ describe('reviewing and correcting an issued invoice', () => {
             screen.getByRole('button', { name: 'Save audited correction' }),
         );
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/correct',
-            expect.objectContaining({
-                expected_revision: 3,
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/invoices/invoice-1/correct',
+            method: 'POST',
+            body: expect.objectContaining({
+                expected_version: '0'.repeat(64),
+                confirm: true,
                 reason: 'Fix the issued description.',
                 lines: [
                     expect.objectContaining({
@@ -580,8 +611,7 @@ describe('reviewing and correcting an issued invoice', () => {
                     }),
                 ],
             }),
-            expect.anything(),
-        );
+        });
     });
 
     it('starts a later correction from the refreshed invoice props', () => {
@@ -590,7 +620,7 @@ describe('reviewing and correcting an issued invoice', () => {
             send: null,
             payment: null,
             void: null,
-            correct: '/workspaces/w-1/invoices/invoice-1/correct',
+            correct: '/api/v1/workspaces/w-1/invoices/invoice-1/correct',
         };
         const { rerender } = render(
             <ClientInvoiceDetail
@@ -715,7 +745,7 @@ describe('changing a draft due date through the API', () => {
     const detailsUrl = '/api/v1/workspaces/w-1/invoices/invoice-1/details';
     const draft = (): Partial<Props> => ({
         actions: {
-            issue: '/workspaces/w-1/invoices/invoice-1/issue',
+            issue: '/api/v1/workspaces/w-1/invoices/invoice-1/issue',
             send: null,
             payment: null,
             void: null,

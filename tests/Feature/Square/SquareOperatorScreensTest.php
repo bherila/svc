@@ -41,7 +41,7 @@ final class SquareOperatorScreensTest extends TestCase
             ->where('square.link_href', $linkHref)
             ->where('square.unlink_href', null)
             ->where('actions.send', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
-            ->where('actions.release_automatic', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release"));
+            ->where('actions.release_automatic', "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release"));
 
         app(SquareLinkService::class)->link($workspace, $invoice, $owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv:0-fixture1', '000001-R-0003', null, SquareMatchMethod::Suggested, 90, ['exact amount']), false);
 
@@ -57,7 +57,7 @@ final class SquareOperatorScreensTest extends TestCase
             ->where('square.invoice_version', AgentApiVersion::for($invoice))
             ->where('actions.send', null)
             ->where('actions.release_automatic', null)
-            ->where('actions.payment', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments"));
+            ->where('actions.payment', "/api/v1/workspaces/{$workspace->public_id}/payments"));
         $this->assertStringNotContainsStringIgnoringCase('squareup', (string) $response->getContent());
     }
 

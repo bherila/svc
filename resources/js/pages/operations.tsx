@@ -7,11 +7,14 @@ import { AppearanceSelector } from '@/components/appearance-selector';
 import { CommandPaletteTrigger } from '@/components/command-palette';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import {
     predatesInvoiceIssue,
     predatesInvoiceIssueWarning,
 } from '@/lib/payments';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { todayIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { AttachmentPanel as SharedFilePanel } from '@/types/files';
@@ -70,6 +73,10 @@ type BillingSchedule = {
 
 type Invoice = {
     id: string;
+    version: string;
+    issue_href: string | null;
+    payment_href: string | null;
+    pdf_href: string;
     invoice_number: string;
     status: string;
     total_amount: number;
@@ -374,14 +381,14 @@ function InvoiceForm({
  * payment recorded here was dated the day it was typed in, silently.
  */
 export function PaymentForm({
-    workspaceId,
     invoice,
     timezone,
 }: {
-    workspaceId: string;
     invoice: Invoice;
     timezone: string;
 }) {
+    const [busy, setBusy] = useState(false);
+    const [apiError, setApiError] = useState<string | null>(null);
     const form = useForm({
         amount: (invoice.balance_amount / 100).toFixed(2),
         // Same calendar as the time form, and now rendered as well as sent:
@@ -401,34 +408,56 @@ export function PaymentForm({
     // it is not one of this form's own keys; the bag itself carries whatever
     // the server put in it.
     const errors: Record<string, string | undefined> = form.errors;
-    const refusal = errors.billing ?? errors.received_on;
+    const refusal = apiError ?? errors.billing ?? errors.received_on;
 
-    const submit = (event: FormEvent) => {
+    const submit = async (event: FormEvent) => {
         event.preventDefault();
-        form.transform((data) => ({
-            ...data,
-            amount: toMinorUnits(data.amount),
-        }));
-        form.post(
-            `/workspaces/${workspaceId}/invoices/${invoice.id}/payments`,
+
+        if (busy || invoice.payment_href === null) {
+            return;
+        }
+
+        setBusy(true);
+        const result = await apiRequest(
+            'POST',
+            invoice.payment_href,
             {
-                onSuccess: () => {
-                    form.setData('idempotency_key', crypto.randomUUID());
-                    form.reset('reference', 'notes');
-                    // Back to today, and read from the clock rather than
-                    // `form.reset('received_on')`. Inertia keeps this form
-                    // mounted across the redirect, so a date typed to record a
-                    // backdated payment stayed in the field and the *next*
-                    // payment recorded here silently carried it - the same
-                    // wrong-period defect this field exists to fix, arrived at
-                    // from the other side and quieter, because a stale date
-                    // reads exactly like the default it replaced. `reset()`
-                    // would restore the value captured when the page loaded,
-                    // which is yesterday's on a screen left open overnight.
-                    form.setData('received_on', todayIn(timezone));
-                },
+                invoice_id: invoice.id,
+                expected_version: invoice.version,
+                confirm: true,
+                amount: toMinorUnits(form.data.amount),
+                currency: form.data.currency,
+                method: form.data.method,
+                reference: form.data.reference,
+                notes: form.data.notes,
+                received_on: form.data.received_on,
+                status: form.data.status,
             },
+            form.data.idempotency_key,
         );
+
+        if (result.ok) {
+            setApiError(null);
+            form.setData('idempotency_key', newIdempotencyKey());
+            form.reset('reference', 'notes');
+            // Back to today, and read from the clock rather than
+            // `form.reset('received_on')`. Inertia keeps this form
+            // mounted across the redirect, so a date typed to record a
+            // backdated payment stayed in the field and the *next*
+            // payment recorded here silently carried it - the same
+            // wrong-period defect this field exists to fix, arrived at
+            // from the other side and quieter, because a stale date
+            // reads exactly like the default it replaced. `reset()`
+            // would restore the value captured when the page loaded,
+            // which is yesterday's on a screen left open overnight.
+            form.setData('received_on', todayIn(timezone));
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setApiError(result.message);
+        setBusy(false);
     };
 
     return (
@@ -466,7 +495,7 @@ export function PaymentForm({
                     form.setData('reference', event.target.value)
                 }
             />
-            <button className={secondaryButtonClass} disabled={form.processing}>
+            <button className={secondaryButtonClass} disabled={busy}>
                 Record payment
             </button>
             {predatesInvoiceIssue(
@@ -494,6 +523,44 @@ export function PaymentForm({
                 </p>
             )}
         </form>
+    );
+}
+
+export function InvoiceIssueButton({ invoice }: { invoice: Invoice }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [key] = useState(newIdempotencyKey);
+    const issue = async () => {
+        if (busy || invoice.issue_href === null) {
+return;
+}
+
+        setBusy(true);
+        const result = await apiRequest(
+            'POST',
+            invoice.issue_href,
+            { expected_version: invoice.version, confirm: true },
+            key,
+        );
+
+        if (result.ok) {
+            setError(null);
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setError(result.message);
+        setBusy(false);
+    };
+
+    return (
+        <div>
+            <button disabled={busy} onClick={() => void issue()}>
+                Issue
+            </button>
+            {error !== null && <p role="alert">{error}</p>}
+        </div>
     );
 }
 
@@ -845,44 +912,38 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                                 invoice.currency,
                                                             )}{' '}
                                                             due ·{' '}
-                                                            {invoice.status}
+                                                            {statusLabel(
+                                                                invoice.status,
+                                                            )}
                                                         </p>
                                                     </div>
                                                     <div className="flex gap-3 text-sm font-semibold text-cyan-700">
                                                         <a
-                                                            href={`/workspaces/${workspace.id}/invoices/${invoice.id}/pdf`}
+                                                            href={
+                                                                invoice.pdf_href
+                                                            }
                                                         >
                                                             PDF
                                                         </a>
-                                                        {invoice.status ===
-                                                            'draft' && (
-                                                            <button
-                                                                onClick={() =>
-                                                                    router.post(
-                                                                        `/workspaces/${workspace.id}/invoices/${invoice.id}/issue`,
-                                                                    )
+                                                        {invoice.issue_href !==
+                                                            null && (
+                                                            <InvoiceIssueButton
+                                                                invoice={
+                                                                    invoice
                                                                 }
-                                                            >
-                                                                Issue
-                                                            </button>
+                                                            />
                                                         )}
                                                     </div>
                                                 </div>
-                                                {invoice.balance_amount > 0 &&
-                                                    invoice.status !==
-                                                        'draft' &&
-                                                    invoice.status !==
-                                                        'void' && (
-                                                        <PaymentForm
-                                                            workspaceId={
-                                                                workspace.id
-                                                            }
-                                                            invoice={invoice}
-                                                            timezone={
-                                                                workspace.timezone
-                                                            }
-                                                        />
-                                                    )}
+                                                {invoice.payment_href !==
+                                                    null && (
+                                                    <PaymentForm
+                                                        invoice={invoice}
+                                                        timezone={
+                                                            workspace.timezone
+                                                        }
+                                                    />
+                                                )}
                                                 <OperationFiles
                                                     panel={
                                                         invoice.attachment_panel

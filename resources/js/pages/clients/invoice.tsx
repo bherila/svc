@@ -1,5 +1,5 @@
-import { Head, Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { Head, Link } from '@inertiajs/react';
+import { useRef, useState } from 'react';
 import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
 import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
 import { PaymentRemindersCard } from '@/components/billing/payment-reminders';
@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { apiRequest } from '@/lib/api';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
@@ -303,6 +303,9 @@ export default function ClientInvoiceDetail({
     const [editingDates, setEditingDates] = useState(false);
     const [dueDate, setDueDate] = useState('');
     const [scheduledIssueDate, setScheduledIssueDate] = useState('');
+    const mutationAttempt = useRef<{ fingerprint: string; key: string } | null>(
+        null,
+    );
 
     const saveDates = async (href: string) => {
         if (busy) {
@@ -351,34 +354,51 @@ export default function ClientInvoiceDetail({
         setBusy(false);
     };
 
-    const post = (
+    const mutate = async (
+        method: 'POST' | 'PATCH',
         href: string,
-        data: Record<
-            string,
-            string | number | null | Array<Record<string, string | number>>
-        > = {},
+        data: Record<string, unknown> = {},
+        expectedVersion: string = version,
     ) => {
         if (busy) {
             return;
         }
 
         setBusy(true);
-        router.post(href, data, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setNotice(null);
-                setPaying(false);
-                setVoiding(false);
-                setCorrectingInvoice(false);
-                setCorrecting(null);
-            },
-            onError: (errors) =>
-                setNotice(
-                    Object.values(errors)[0] ??
-                        'That action could not be completed.',
-                ),
-            onFinish: () => setBusy(false),
-        });
+        const body = { expected_version: expectedVersion, ...data };
+        const fingerprint = JSON.stringify([method, href, body]);
+
+        if (mutationAttempt.current?.fingerprint !== fingerprint) {
+            mutationAttempt.current = { fingerprint, key: newIdempotencyKey() };
+        }
+
+        // A lost response is still the same logical attempt on retry. The
+        // version also prevents a different request against an outdated page.
+        const result = await apiRequest(
+            method,
+            href,
+            body,
+            mutationAttempt.current.key,
+        );
+
+        if (result.ok) {
+            mutationAttempt.current = null;
+            setNotice(null);
+            setPaying(false);
+            setVoiding(false);
+            setCorrectingInvoice(false);
+            setCorrecting(null);
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setNotice(result.message);
+        setBusy(false);
+    };
+
+    const post = (href: string, data: Record<string, unknown> = {}) => {
+        void mutate('POST', href, data);
     };
 
     const backHref = invoicesHref;
@@ -442,7 +462,9 @@ export default function ClientInvoiceDetail({
                             <Button
                                 size="sm"
                                 disabled={busy}
-                                onClick={() => post(actions.issue ?? '')}
+                                onClick={() =>
+                                    post(actions.issue ?? '', { confirm: true })
+                                }
                             >
                                 Issue
                             </Button>
@@ -509,7 +531,9 @@ export default function ClientInvoiceDetail({
                                 size="sm"
                                 disabled={busy}
                                 onClick={() =>
-                                    post(actions.release_automatic ?? '')
+                                    post(actions.release_automatic ?? '', {
+                                        confirm: true,
+                                    })
                                 }
                             >
                                 Release automatic sending
@@ -653,6 +677,8 @@ export default function ClientInvoiceDetail({
                                 }
 
                                 post(actions.payment ?? '', {
+                                    invoice_id: invoice.id,
+                                    confirm: true,
                                     // Minor units, the way every amount in this
                                     // system travels. Rounded rather than
                                     // truncated: 12.34 is not exactly
@@ -793,8 +819,7 @@ export default function ClientInvoiceDetail({
                             onSubmit={(event) => {
                                 event.preventDefault();
                                 post(actions.correct ?? '', {
-                                    expected_revision:
-                                        invoice.document_revision ?? 1,
+                                    confirm: true,
                                     reason: correctionReason,
                                     due_date:
                                         correctionDueDate === ''
@@ -1256,14 +1281,18 @@ export default function ClientInvoiceDetail({
                                                                         ''
                                                                 }
                                                                 onClick={() =>
-                                                                    post(
+                                                                    void mutate(
+                                                                        'PATCH',
                                                                         payment.correct_date_href ??
                                                                             '',
                                                                         {
+                                                                            confirm: true,
                                                                             received_on:
                                                                                 correctedDate,
                                                                             reason: correctedDateReason.trim(),
                                                                         },
+                                                                        payment.version ??
+                                                                            '',
                                                                     )
                                                                 }
                                                             >
@@ -1565,6 +1594,7 @@ export default function ClientInvoiceDetail({
                                     disabled={busy || voidReason.trim() === ''}
                                     onClick={() =>
                                         post(actions.void ?? '', {
+                                            confirm: true,
                                             reason: voidReason.trim(),
                                         })
                                     }

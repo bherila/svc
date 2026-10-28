@@ -446,7 +446,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where(
                 'actions.hold_automatic',
-                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/hold",
+                "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/hold",
             ));
 
         for ($attempt = 1; $attempt <= 5; $attempt++) {
@@ -673,7 +673,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('actions.correct', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct")
+                ->where('actions.correct', "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct")
                 ->where('lines.0.money_correctable', true));
 
         $this->actingAs($owner)->postJson(
@@ -831,7 +831,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where(
                 'actions.release_automatic',
-                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release",
+                "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release",
             ));
     }
 
