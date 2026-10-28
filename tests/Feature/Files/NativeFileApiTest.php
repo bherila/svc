@@ -28,8 +28,8 @@ final class NativeFileApiTest extends TestCase
         $this->assertSame(AgentApiVersion::for($project), $prepared['expected_version']);
         $bytes = ['file' => UploadedFile::fake()->createWithContent('synthetic-native-file.txt', 'Synthetic native file bytes.'), 'expected_version' => $prepared['expected_version']];
         $this->withHeader('Accept', 'application/json')->withHeader('Idempotency-Key', 'native-file-upload');
-        $created = $this->post($prepared['url'], $bytes)->assertCreated()->assertJsonPath('data.record_id', $project->public_id)->json('data');
-        $this->post($prepared['url'], $bytes)->assertCreated()->assertJsonPath('data.id', $created['id']);
+        $created = $this->post($prepared['url'], $bytes, ['Content-Type' => 'multipart/form-data'])->assertCreated()->assertJsonPath('data.record_id', $project->public_id)->json('data');
+        $this->post($prepared['url'], $bytes, ['Content-Type' => 'multipart/form-data'])->assertCreated()->assertJsonPath('data.id', $created['id']);
         $this->assertDatabaseCount('client_attachments', 1);
         $delete = route('agent-api.v1.attachments.destroy', [$workspace, $created['id']]);
         $body = ['expected_version' => $created['version'], 'confirm' => true];

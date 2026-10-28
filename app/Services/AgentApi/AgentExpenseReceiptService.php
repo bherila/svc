@@ -23,6 +23,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentPageBudget;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\CursorPage;
+use App\Support\AgentApi\Presenters\ExpenseReceiptPresenter;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Builder;
@@ -233,7 +234,6 @@ final class AgentExpenseReceiptService
     /** @return array<string,mixed> */
     private function present(ClientAttachment $receipt): array
     {
-        return ['id' => $receipt->public_id, 'filename' => $receipt->original_filename, 'media_type' => $receipt->media_type,
-            'bytes' => $receipt->bytes, 'sha256' => $receipt->sha256, 'uploaded_at' => $receipt->available_at?->toISOString(), 'version' => AgentApiVersion::for($receipt), 'lifecycle_state' => $receipt->lifecycle_state];
+        return ExpenseReceiptPresenter::for($receipt);
     }
 }

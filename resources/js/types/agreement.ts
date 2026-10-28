@@ -56,7 +56,6 @@ export type AgreementTerms = CompanyAgreement & {
  */
 export type AgreementActions = {
     update: string | null;
-    upload_file: string | null;
     deferred_buydown?: { preview: string; create: string } | null;
 };
 

@@ -532,9 +532,6 @@ class ClientDirectoryController extends Controller
                     'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
                     'create' => route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $clientAgreement], absolute: false),
                 ] : null,
-                'upload_file' => $manages && $validFileParent
-                    ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
-                    : null,
             ],
             'files' => $filePage->files,
             'files_next_href' => $filePage->nextHref,

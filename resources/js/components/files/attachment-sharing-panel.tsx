@@ -327,8 +327,8 @@ export function UploadAttachment({
                 />
             </label>
             <p className="text-sm text-muted-foreground">
-                New files are private. Choose “Visible to client” after
-                uploading to share a file.
+                {upload.description ??
+                    'New files are private. Choose “Visible to client” after uploading to share a file.'}
             </p>
             <div>
                 <Button type="submit" disabled={busy || stale || file === null}>

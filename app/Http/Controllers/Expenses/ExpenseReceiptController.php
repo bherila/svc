@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentAudience;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Files\AttachmentListing;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -29,7 +30,7 @@ class ExpenseReceiptController extends Controller
             ->where('public_id', $expense)->firstOrFail();
 
         $filePage = AttachmentListing::page($workspace, 'expense', $record->public_id, true, $actor, AttachmentAudience::Native,
-            $request->integer('files_page', 1), route('svc.expenses.receipts', [$workspace, $clientCompany, $record->public_id], absolute: false));
+            $request->integer('files_page', 1), route('svc.expenses.receipts', [$workspace, $clientCompany, $record->public_id], absolute: false), AgentApiVersion::for($record));
 
         return Inertia::render('clients/expense-receipts', [
             'expense' => [
@@ -42,7 +43,8 @@ class ExpenseReceiptController extends Controller
             'files' => $filePage->files,
             'files_next_href' => $filePage->nextHref,
             'files_previous_href' => $filePage->previousHref,
-            'upload_href' => route('svc.files.store', [$workspace, 'expense', $record->public_id], absolute: false),
+            'upload' => ['href' => route('agent-api.v1.expense-receipts.upload-url', [$workspace, $record->public_id], absolute: false),
+                'parent_version' => AgentApiVersion::for($record), 'description' => 'New receipts are private to workspace managers.'],
         ]);
     }
 }
