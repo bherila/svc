@@ -13,14 +13,14 @@ final class AgentMcpSquareCoveredPaymentTools
 
     /** @return array<string,mixed> */
     public function review(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id,
-        #[Schema(maxLength: 191)] string $square_invoice_id): array
+        #[Schema(maxLength: 191, pattern: '^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$')] string $square_invoice_id): array
     {
         return $this->send('GET', "workspaces/{$workspace_id}/invoices/{$invoice_id}/square-coverage/{$square_invoice_id}/payments");
     }
 
     /** @return array<string,mixed> */
     public function record(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id,
-        #[Schema(maxLength: 191)] string $square_invoice_id, #[Schema(maxLength: 191)] string $payment_id,
+        #[Schema(maxLength: 191, pattern: '^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$')] string $square_invoice_id, #[Schema(maxLength: 191, pattern: '^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$')] string $payment_id,
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema(minLength: 64, maxLength: 64)] string $reviewed_version,
         #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
