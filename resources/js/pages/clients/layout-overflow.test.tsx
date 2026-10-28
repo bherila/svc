@@ -390,10 +390,17 @@ describe('client screens under data that does not fit', () => {
                         repository: LONG_REPOSITORY,
                         status: 'active',
                         is_visible_to_client: true,
-                        lock_version: 3,
+                        version: 'b'.repeat(64),
+                        update_url: '/synthetic/project-update',
+                        members_update_url: '/synthetic/project-members',
                         members: [{ user: 'user-1', role: 'contributor' }],
                     },
                 ]}
+                project_create={{
+                    url: '/synthetic/project-create',
+                    company_id: 'company-1',
+                    expected_version: 'c'.repeat(64),
+                }}
                 assignable={[{ id: 'user-1', name: LONG_NAME }]}
                 portal={{
                     add_url:
