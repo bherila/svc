@@ -2,6 +2,7 @@
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientComment;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
@@ -11,6 +12,10 @@ use App\Services\Collaboration\CollaborationAction;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Collaboration\CommentDraft;
 use App\Services\Collaboration\TopicDraft;
+use App\Services\Files\AttachmentMutationOrigin;
+use App\Services\Files\AttachmentParentReference;
+use App\Services\Files\AttachmentPrivacyLatch;
+use App\Services\Files\AttachmentSharingTransport;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Expenses\NewExpense;
@@ -31,6 +36,10 @@ if (! is_string($runtime) || filesize($runtime.'/database.sqlite') !== 0) {
     throw new RuntimeException('An empty disposable SQLite database is required.');
 }
 Artisan::call('migrate', ['--force' => true]);
+$sharingLayout = getenv('SVC_LAYOUT_ATTACHMENT_SHARING') === 'true';
+if ($sharingLayout) {
+    file_put_contents($runtime.'/storage/app/private/'.AttachmentPrivacyLatch::MARKER, "enabled\n");
+}
 $manager = User::factory()->create(['name' => str_repeat('SyntheticAuthor', 13), 'email' => 'collaboration-layout@synthetic.test']);
 $workspace = Workspace::query()->create(['name' => 'Synthetic Collaboration Workspace', 'slug' => 'synthetic-collaboration-layout']);
 $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
@@ -49,7 +58,7 @@ foreach (['note', 'discussion'] as $kind) {
         'title' => str_repeat('Synthetic'.ucfirst($kind), 12), 'body' => '<script>Literal synthetic text</script>'."\n".str_repeat('SyntheticUnbrokenBody', 120),
         'project_id' => ($kind === 'note' ? $privateProject : $project)->public_id, 'is_visible_to_client' => true]), CollaborationAudience::Internal);
     $topics[$kind] = $topic;
-    for ($index = 1; $index <= 32; $index++) {
+    for ($index = 1; $index <= ($sharingLayout ? 3 : 32); $index++) {
         $comment = $action->createComment($manager, $workspace, $company, 'topic', $topic->public_id,
             CommentDraft::fromInput(['body' => 'Synthetic reply '.$index."\n".str_repeat('SyntheticCommentBody', 30), 'is_visible_to_client' => true, 'expected_version' => AgentApiVersion::for($topic)]), CollaborationAudience::Internal);
         if ($index === 2) {
@@ -59,15 +68,16 @@ foreach (['note', 'discussion'] as $kind) {
 }
 $task = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => str_repeat('SyntheticTask', 12), 'status' => 'pending']);
 $action->createComment($manager, $workspace, $company, 'task', $task->public_id, CommentDraft::fromInput(['body' => 'Synthetic task comment', 'expected_version' => AgentApiVersion::for($task)]), CollaborationAudience::Internal);
-// Reader-only future/private rows are synthetic. Every real uploader remains R1 legacy-true.
+// Explicit historical-reader fixtures below retain legacy-public flags; real uploads remain private.
 $agreement = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'client_project_id' => $project->id, 'title' => str_repeat('SyntheticAgreement', 10), 'starts_on' => '2026-10-01',
     'currency' => 'USD', 'status' => 'active', 'is_visible_to_client' => true]);
 $expense = (new WorkspaceExpenses($workspace))->record($company, $project,
     new NewExpense(CarbonImmutable::parse('2026-10-01'), 10000, 'USD', str_repeat('SyntheticReceiptExpense', 10)), $manager);
 $storage = app(AttachmentStorageService::class);
-foreach ([[$agreement, 301], [$expense, 101]] as [$parent, $count]) {
+foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 : 101]] as [$parent, $count]) {
     $first = $storage->store($workspace, $parent, UploadedFile::fake()->createWithContent('SyntheticReaderFile.txt', 'Synthetic browser file bytes'), $manager);
+    DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->update(['is_visible_to_client' => true]);
     $row = (array) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->first();
     unset($row['id']);
     for ($index = 1; $index < $count; $index++) {
@@ -79,8 +89,29 @@ foreach ([[$agreement, 301], [$expense, 101]] as [$parent, $count]) {
         Storage::disk('svc_files')->put($key, 'Synthetic browser file bytes');
     }
 }
+if ($sharingLayout) {
+    $transport = app(AttachmentSharingTransport::class);
+    foreach ($topics as $topic) {
+        $comment = ClientComment::query()->where('workspace_id', $workspace->id)->where('client_collaboration_topic_id', $topic->id)->whereNull('deleted_at')->firstOrFail();
+        foreach ([new AttachmentParentReference('topic', $topic->public_id, $company->public_id),
+            new AttachmentParentReference('comment', $comment->public_id, $company->public_id)] as $reference) {
+            $parent = $reference->type === 'topic' ? $topic : $comment;
+            foreach (range(1, 4) as $index) {
+                $filename = $index === 1 ? 'SyntheticPrivateFile.txt' : str_repeat('SyntheticLongFile', 15).'-'.$index.'.txt';
+                $file = $transport->upload($manager, $workspace, $reference, UploadedFile::fake()->createWithContent($filename, 'Synthetic sharing browser bytes'),
+                    ['expected_version' => AgentApiVersion::for($parent)], 'synthetic-browser', 'upload-'.$reference->publicId.'-'.$index, AttachmentMutationOrigin::Native)['data'];
+                if ($index !== 1) {
+                    $transport->updateVisibility($manager, $workspace, $reference, $file['id'], ['is_visible_to_client' => true,
+                        'expected_version' => $file['version'], 'expected_parent_version' => AgentApiVersion::for($parent)],
+                        'synthetic-browser', 'share-'.$file['id'], AttachmentMutationOrigin::Native);
+                }
+            }
+        }
+    }
+}
 file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->id, 'portal_user_id' => $portal->id,
     'company_name' => $company->name,
+    'parentfiles' => route('svc.files.collaboration.show', [$workspace, $company->public_id, 'topic', $topics['note']->public_id], absolute: false),
     'dual_preview_user_id' => $dualPreview->id,
     'agreementfiles' => route('clients.agreement', [$workspace, $company, $agreement], absolute: false),
     'portalagreementfiles' => route('portal.agreement', [$company, $agreement], absolute: false),
