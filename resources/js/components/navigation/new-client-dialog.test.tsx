@@ -5,7 +5,12 @@ import { NewClientDialog } from '@/components/navigation/new-client-dialog';
 import { apiRequest } from '@/lib/api';
 
 const visit = vi.hoisted(() => vi.fn());
-vi.mock('@inertiajs/react', () => ({ router: { visit } }));
+const beforeNavigation = vi.hoisted(() =>
+    vi.fn((_name: string, _listener: (event: Event) => void) => vi.fn()),
+);
+vi.mock('@inertiajs/react', () => ({
+    router: { visit, on: beforeNavigation },
+}));
 vi.mock('@/lib/api', () => ({
     apiRequest: vi.fn(),
     newIdempotencyKey: () => crypto.randomUUID(),
@@ -213,6 +218,65 @@ describe('new client API creation', () => {
         expect(vi.mocked(apiRequest).mock.calls[1]).toEqual(
             vi.mocked(apiRequest).mock.calls[0],
         );
+    });
+
+    it('retains a created client when another pending change prevents its destination visit', async () => {
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            data: { version: 'created-version' },
+            location: '/synthetic/created-client',
+        });
+        visit.mockImplementationOnce(() => {
+            const event = new Event('inertia:before', { cancelable: true });
+            Object.defineProperty(event, 'detail', {
+                value: { visit: { url: '/synthetic/created-client' } },
+            });
+            event.preventDefault();
+            beforeNavigation.mock.calls.at(-1)?.[1](event);
+            // A canceled global before event has no later Inertia callbacks.
+        });
+        const close = vi.fn();
+        const view = render(
+            <NewClientDialog
+                open
+                action="/synthetic/create-client"
+                onOpenChange={close}
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('Name'), {
+            target: { value: 'Synthetic blocked client' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Add client' }));
+        await screen.findByText(
+            'The change was recorded, but this page could not load it. Check the original change.',
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(close).toHaveBeenCalledWith(false);
+        view.rerender(
+            <NewClientDialog
+                open={false}
+                action="/synthetic/changed-url"
+                onOpenChange={close}
+            />,
+        );
+        view.rerender(
+            <NewClientDialog
+                open
+                action="/synthetic/changed-url"
+                onOpenChange={close}
+            />,
+        );
+        expect(screen.getByLabelText('Name')).toHaveValue(
+            'Synthetic blocked client',
+        );
+        expect(screen.getByLabelText('Name')).toBeDisabled();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original change' }),
+        );
+        await waitFor(() => expect(visit).toHaveBeenCalledTimes(2));
+        expect(visit.mock.calls[1][0]).toBe('/synthetic/created-client');
+        expect(apiRequest).toHaveBeenCalledOnce();
     });
 
     it('retries only the finished client destination after network or HTTP navigation failure', async () => {

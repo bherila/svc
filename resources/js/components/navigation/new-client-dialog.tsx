@@ -55,21 +55,59 @@ export function NewClientDialog({
 
                 await new Promise<void>((resolve, reject) => {
                     let loaded = false;
-                    router.visit(destination, {
-                        onNetworkError: () => false,
-                        onHttpException: () => false,
-                        onSuccess: () => {
-                            loaded = true;
-                        },
-                        onFinish: () =>
-                            loaded
-                                ? resolve()
-                                : reject(
-                                      new Error(
-                                          'The client page could not load.',
-                                      ),
-                                  ),
+                    const fail = () => {
+                        stopBefore?.();
+                        reject(new Error('The client page could not load.'));
+                    };
+                    // Inertia emits no finish/cancel callback when a global
+                    // before listener refuses a visit. Observe that refusal
+                    // after all listeners have had a chance to prevent it.
+                    const stopBefore = router.on?.('before', (event) => {
+                        if (
+                            new URL(
+                                event.detail.visit.url,
+                                window.location.href,
+                            ).href ===
+                            new URL(destination, window.location.href).href
+                        ) {
+                            queueMicrotask(() => {
+                                if (event.defaultPrevented) {
+                                    fail();
+                                }
+                            });
+                        }
                     });
+
+                    try {
+                        router.visit(destination, {
+                            onError: fail,
+                            onCancel: fail,
+                            onNetworkError: () => {
+                                fail();
+
+                                return false;
+                            },
+                            onHttpException: () => {
+                                fail();
+
+                                return false;
+                            },
+                            onSuccess: () => {
+                                loaded = true;
+                            },
+                            onFinish: () => {
+                                stopBefore?.();
+
+                                if (loaded) {
+                                    resolve();
+                                } else {
+                                    fail();
+                                }
+                            },
+                        });
+                    } catch {
+                        fail();
+                    }
                 });
                 setName('');
                 setBillingEmail('');
