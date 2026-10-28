@@ -217,4 +217,115 @@ describe('attachment sharing panel', () => {
         );
         expect(fetch).not.toHaveBeenCalled();
     });
+    it('keeps the same idempotency key for a lost-answer retry and closes stale controls until reload', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockRejectedValue(new Error('Synthetic lost answer')),
+        );
+        render(<AttachmentSharingPanel panel={panel} />);
+        fireEvent.click(screen.getByLabelText('Visible to client'));
+        await screen.findByRole('alert');
+        const firstKey = (
+            vi.mocked(fetch).mock.calls[0][1]?.headers as Record<string, string>
+        )['Idempotency-Key'];
+        vi.mocked(fetch).mockResolvedValue(
+            new Response(
+                JSON.stringify({ message: 'Synthetic version conflict' }),
+                { status: 409 },
+            ),
+        );
+        fireEvent.click(screen.getByLabelText('Visible to client'));
+        await screen.findByText('Synthetic version conflict');
+        expect(
+            (
+                vi.mocked(fetch).mock.calls[1][1]?.headers as Record<
+                    string,
+                    string
+                >
+            )['Idempotency-Key'],
+        ).toBe(firstKey);
+        expect(screen.getByLabelText('Visible to client')).toBeDisabled();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Reload current files' }),
+        );
+        expect(reload).toHaveBeenCalledWith({ preserveScroll: true });
+    });
+
+    it('replaces parent-derived sharing state and captured versions when the authorized seed changes', async () => {
+        vi.stubGlobal('fetch', vi.fn());
+        const { rerender } = render(<AttachmentSharingPanel panel={panel} />);
+        const refreshed: AttachmentPanel = {
+            ...panel,
+            files: panel.files.map((file) => ({
+                ...file,
+                sharing: {
+                    ...file.sharing!,
+                    is_visible_to_client: true,
+                    effective_visible_to_client: false,
+                    sharing_note: 'Synthetic parent changed.',
+                    parent_version: 'q'.repeat(64),
+                },
+            })),
+        };
+        rerender(<AttachmentSharingPanel panel={refreshed} />);
+        expect(screen.getByLabelText('Visible to client')).toBeChecked();
+        expect(
+            screen.getByText('Synthetic parent changed.'),
+        ).toBeInTheDocument();
+        respond({
+            data: {
+                id: 'synthetic-file',
+                ...refreshed.files[0].sharing,
+                version: 'z'.repeat(64),
+            },
+        });
+        fireEvent.click(screen.getByLabelText('Visible to client'));
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+        expect(
+            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))
+                .expected_parent_version,
+        ).toBe('q'.repeat(64));
+    });
+
+    it('ignores continuation results from a prior authorized seed', async () => {
+        let finish: (response: Response) => void = () => {};
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockImplementation(
+                () =>
+                    new Promise<Response>((resolve) => {
+                        finish = resolve;
+                    }),
+            ),
+        );
+        const { rerender } = render(<AttachmentSharingPanel panel={panel} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Load more files' }),
+        );
+        const refreshed: AttachmentPanel = {
+            files: [],
+            upload: null,
+            next_href: null,
+        };
+        rerender(<AttachmentSharingPanel panel={refreshed} />);
+        finish(
+            new Response(
+                JSON.stringify({
+                    files: [
+                        { ...panel.files[0], filename: 'Stale synthetic file' },
+                    ],
+                    upload: null,
+                    next_href: '/stale',
+                }),
+            ),
+        );
+        await waitFor(() =>
+            expect(screen.getByText('No files.')).toBeInTheDocument(),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(screen.queryByRole('link')).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole('button', { name: 'Load more files' }),
+        ).not.toBeInTheDocument();
+    });
 });

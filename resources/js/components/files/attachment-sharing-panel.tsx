@@ -8,6 +8,33 @@ import type {
     SharedAttachment,
 } from '@/types/files';
 
+function MutationError({
+    message,
+    stale,
+}: {
+    message: string;
+    stale: boolean;
+}) {
+    return (
+        <div className="grid min-w-0 grid-cols-1 gap-2">
+            <p role="alert" className="text-sm wrap-anywhere text-destructive">
+                {message}
+            </p>
+            {stale && (
+                <div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => router.reload({ preserveScroll: true })}
+                    >
+                        Reload current files
+                    </Button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function SharingControl({
     file,
     onChanged,
@@ -18,6 +45,7 @@ function SharingControl({
     const [sharing, setSharing] = useState(file.sharing);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [stale, setStale] = useState(false);
     const attempt = useRef<{ visible: boolean; key: string } | null>(null);
 
     if (!sharing) {
@@ -60,6 +88,7 @@ function SharingControl({
             setError(null);
         } else {
             setError(result.message);
+            setStale(result.status === 409);
 
             if (result.status !== 0 && result.status < 500) {
                 attempt.current = null;
@@ -73,7 +102,7 @@ function SharingControl({
                 <input
                     type="checkbox"
                     checked={sharing.is_visible_to_client}
-                    disabled={busy}
+                    disabled={busy || stale}
                     onChange={(event) => void change(event.target.checked)}
                 />
                 Visible to client
@@ -84,11 +113,7 @@ function SharingControl({
                         {sharing.sharing_note}
                     </p>
                 )}
-            {error && (
-                <p role="alert" className="wrap-anywhere text-destructive">
-                    {error}
-                </p>
-            )}
+            {error && <MutationError message={error} stale={stale} />}
         </div>
     );
 }
@@ -103,6 +128,7 @@ function RemoveAttachment({
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [stale, setStale] = useState(false);
     const attempt = useRef<string | null>(null);
 
     if (!file.delete_href || (!nativeForm && !file.sharing)) {
@@ -150,6 +176,7 @@ function RemoveAttachment({
             router.reload({ preserveScroll: true });
         } else {
             setError(result.message);
+            setStale(result.status === 409);
 
             if (result.status !== 0 && result.status < 500) {
                 attempt.current = null;
@@ -165,7 +192,7 @@ function RemoveAttachment({
                     <Button
                         type="button"
                         variant="destructive"
-                        disabled={busy}
+                        disabled={busy || stale}
                         onClick={() => void remove()}
                     >
                         Confirm removal
@@ -173,7 +200,7 @@ function RemoveAttachment({
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={busy}
+                        disabled={busy || stale}
                         onClick={() => setConfirming(false)}
                     >
                         Cancel
@@ -188,14 +215,7 @@ function RemoveAttachment({
                     Remove file
                 </Button>
             )}
-            {error && (
-                <p
-                    role="alert"
-                    className="text-sm wrap-anywhere text-destructive"
-                >
-                    {error}
-                </p>
-            )}
+            {error && <MutationError message={error} stale={stale} />}
         </div>
     );
 }
@@ -258,6 +278,7 @@ function UploadAttachment({
     const [file, setFile] = useState<File | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [stale, setStale] = useState(false);
     const attempt = useRef<string | null>(null);
 
     return (
@@ -293,6 +314,7 @@ function UploadAttachment({
                     router.reload({ preserveScroll: true });
                 } else {
                     setError(result.message);
+                    setStale(result.status === 409);
 
                     if (result.status !== 0 && result.status < 500) {
                         attempt.current = null;
@@ -305,7 +327,7 @@ function UploadAttachment({
                 <input
                     type="file"
                     className="w-full min-w-0 rounded-md border p-2 text-sm"
-                    disabled={busy}
+                    disabled={busy || stale}
                     required
                     onChange={(event) => {
                         setFile(event.target.files?.[0] ?? null);
@@ -319,18 +341,11 @@ function UploadAttachment({
                 uploading to share a file.
             </p>
             <div>
-                <Button type="submit" disabled={busy || file === null}>
+                <Button type="submit" disabled={busy || stale || file === null}>
                     Upload file
                 </Button>
             </div>
-            {error && (
-                <p
-                    role="alert"
-                    className="text-sm wrap-anywhere text-destructive"
-                >
-                    {error}
-                </p>
-            )}
+            {error && <MutationError message={error} stale={stale} />}
         </form>
     );
 }
@@ -349,16 +364,22 @@ export default function AttachmentSharingPanel({
         source: panel,
         files: panel.files,
         next: panel.next_href,
+        busy: false,
+        error: null as string | null,
     });
 
     // Inertia refreshes supply a new authorized seed after upload/delete or parent changes.
     if (pages.source !== panel) {
-        setPages({ source: panel, files: panel.files, next: panel.next_href });
+        setPages({
+            source: panel,
+            files: panel.files,
+            next: panel.next_href,
+            busy: false,
+            error: null,
+        });
     }
 
-    const { files, next } = pages;
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const { files, next, busy, error } = pages;
 
     return (
         <section aria-label={title} className="grid min-w-0 grid-cols-1 gap-4">
@@ -382,20 +403,25 @@ export default function AttachmentSharingPanel({
                             {file.bytes.toLocaleString()} bytes
                         </p>
                         <SharingControl
-                            key={file.sharing?.version ?? 'read-only'}
+                            key={`sharing:${JSON.stringify(file.sharing)}`}
                             file={file}
                             onChanged={(sharing) => {
-                                setPages((current) => ({
-                                    ...current,
-                                    files: current.files.map((row) =>
-                                        row.id === file.id
-                                            ? { ...row, sharing }
-                                            : row,
-                                    ),
-                                }));
+                                setPages((current) =>
+                                    current.source !== panel
+                                        ? current
+                                        : {
+                                              ...current,
+                                              files: current.files.map((row) =>
+                                                  row.id === file.id
+                                                      ? { ...row, sharing }
+                                                      : row,
+                                              ),
+                                          },
+                                );
                             }}
                         />
                         <RemoveAttachment
+                            key={`remove:${JSON.stringify(file.sharing)}`}
                             file={file}
                             nativeForm={legacyForms !== undefined}
                         />
@@ -413,17 +439,29 @@ export default function AttachmentSharingPanel({
                         variant="outline"
                         disabled={busy}
                         onClick={async () => {
-                            setBusy(true);
+                            setPages((current) => ({ ...current, busy: true }));
                             const result = await apiRequest<AttachmentPanel>(
                                 'GET',
                                 next,
                                 {},
                             );
-                            setBusy(false);
+                            setPages((current) => {
+                                if (current.source !== panel) {
+                                    return current;
+                                }
 
-                            if (result.ok) {
-                                setPages((current) => ({
+                                if (!result.ok) {
+                                    return {
+                                        ...current,
+                                        busy: false,
+                                        error: result.message,
+                                    };
+                                }
+
+                                return {
                                     ...current,
+                                    busy: false,
+                                    error: null,
                                     files: [
                                         ...current.files,
                                         ...result.data.files.filter(
@@ -435,11 +473,8 @@ export default function AttachmentSharingPanel({
                                         ),
                                     ],
                                     next: result.data.next_href,
-                                }));
-                                setError(null);
-                            } else {
-                                setError(result.message);
-                            }
+                                };
+                            });
                         }}
                     >
                         Load more files
