@@ -6,6 +6,7 @@ use App\Models\ClientCollaborationTopic;
 use App\Models\ClientInvoice;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Services\Files\AttachmentPrivacyLatch;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\AgentApi\AgentApiVersion;
@@ -184,6 +185,73 @@ final class AttachmentSharingNativeTest extends TestCase
             $this->assertSame([], $fileQueries, 'A refused parent must not query or disclose file metadata.');
             $this->get(route('portal.files.parent.download', $parameters + ['attachment' => $files[2]->public_id]))->assertNotFound();
         }
+    }
+
+    public function test_existing_commercial_page_is_preserved_when_its_file_lineage_is_invalid(): void
+    {
+        [$workspace, $company, $project, $owner] = $this->fixture();
+        $proposal = ClientProposal::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'title' => 'Synthetic existing commercial terms', 'status' => 'sent', 'currency' => 'USD', 'is_visible_to_client' => true]);
+        $file = app(AttachmentStorageService::class)->store($workspace, $proposal, UploadedFile::fake()->createWithContent('SyntheticHiddenParentFile.txt', 'Synthetic file bytes'), $owner);
+        DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $file->id)->update(['is_visible_to_client' => true]);
+        $sibling = $this->syntheticCompany($workspace, 'commercial-file-malformed-sibling');
+        $foreignProject = $this->syntheticProject($sibling, 'commercial-file-malformed-project');
+        DB::table('client_proposals')->where('workspace_id', $workspace->id)->where('id', $proposal->id)->update(['client_project_id' => $foreignProject->id]);
+        $portal = $this->syntheticUser('commercial-parent-portal');
+        $company->portalUsers()->attach($portal->id, ['role' => 'viewer', 'access_scope' => 'company']);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $this->actingAs($portal)->get(route('portal.proposal', [$company, $proposal]))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('proposal.title', 'Synthetic existing commercial terms')->where('attachment_panel', null));
+        $fileQueries = array_filter(DB::getQueryLog(), fn (array $query): bool => str_contains($query['query'], 'client_attachments'));
+        DB::disableQueryLog();
+        $this->assertSame([], $fileQueries);
+        $this->getJson(route('portal.files.parent.index', [$company, 'proposal', $proposal->public_id]))->assertNotFound();
+    }
+
+    public function test_portal_project_and_task_file_leaves_follow_current_grants_and_ancestry_without_company_disclosure(): void
+    {
+        [$workspace, $company, $project, $owner] = $this->fixture();
+        $project->update(['is_visible_to_client' => true]);
+        $task = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+            'title' => 'Synthetic file task', 'status' => 'pending', 'is_visible_to_client' => true]);
+        $child = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+            'title' => 'Synthetic descendant file task', 'status' => 'pending', 'is_visible_to_client' => true]);
+        DB::table('client_tasks')->where('workspace_id', $workspace->id)->where('id', $child->id)->update(['parent_task_id' => $task->id]);
+        $portal = $this->syntheticUser('project-file-portal');
+        $company->portalUsers()->attach($portal->id, ['role' => 'viewer', 'access_scope' => 'projects']);
+        $membership = DB::table('client_company_memberships')->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->where('user_id', $portal->id)->firstOrFail();
+        DB::table('client_portal_project_access')->insert(['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $project->id]);
+        $held = [];
+        foreach (['project' => $project, 'task' => $child] as $type => $parent) {
+            $file = app(AttachmentStorageService::class)->store($workspace, $parent, UploadedFile::fake()->createWithContent('Synthetic-'.$type.'-shared.txt', 'Synthetic project/task bytes'), $owner);
+            $private = app(AttachmentStorageService::class)->store($workspace, $parent, UploadedFile::fake()->createWithContent('Synthetic-'.$type.'-private.txt', 'Synthetic private bytes'), $owner);
+            $this->actingAs($owner)->withHeader('Idempotency-Key', 'project-task-share-'.$type)->patchJson(route('svc.files.visibility.update', [$workspace, $file->public_id]),
+                ['is_visible_to_client' => true, 'expected_version' => AgentApiVersion::for($file), 'expected_parent_version' => AgentApiVersion::for($parent)])->assertOk();
+            config(['svc.attachments.sharing_writes_enabled' => false]);
+            $parameters = [$company, $type, $parent->public_id];
+            $this->actingAs($portal)->get(route('portal.files.parent.show', $parameters))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->component('files/parent')->has('attachment_panel.files', 1)->where('attachment_panel.files.0.id', $file->public_id)
+                ->where('attachment_panel.files.0.sharing', null)->where('attachment_panel.files.0.delete_href', null)->where('attachment_panel.upload', null));
+            $url = route('portal.files.parent.download', [...$parameters, $file->public_id]);
+            $held[$type] = $url;
+            $this->get($url)->assertOk()->assertStreamedContent('Synthetic project/task bytes');
+            $this->get(route('portal.files.parent.download', [...$parameters, $private->public_id]))->assertNotFound();
+            config(['svc.attachments.sharing_writes_enabled' => true]);
+        }
+        $this->get(route('portal.show', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->missing('files_href')->where('open_tasks.0.files_href', route('portal.files.parent.show', [$company, 'task', $child->public_id], absolute: false)));
+        $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('projects.0.files_href', route('portal.files.parent.show', [$company, 'project', $project->public_id], absolute: false))->has('tasks', 2));
+        $this->get(route('portal.files.parent.show', [$company, 'company', $company->public_id]))->assertNotFound();
+        $this->getJson(route('portal.files.parent.index', [$company, 'company', $company->public_id]))->assertNotFound();
+        DB::table('client_tasks')->where('workspace_id', $workspace->id)->where('id', $task->id)->update(['is_visible_to_client' => false]);
+        $this->get($held['task'])->assertNotFound();
+        $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->has('tasks', 0));
+        DB::table('client_portal_project_access')->where('client_company_membership_id', $membership->id)->delete();
+        $this->get($held['project'])->assertNotFound();
+        $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->has('projects', 0)->has('tasks', 0));
+        $sibling = $this->syntheticCompany($workspace, 'project-task-file-sibling');
+        $this->get(route('portal.files.parent.show', [$sibling, 'project', $project->public_id]))->assertNotFound();
     }
 
     private function fixture(): array

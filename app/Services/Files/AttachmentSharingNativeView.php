@@ -5,7 +5,9 @@ namespace App\Services\Files;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientProject;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
@@ -26,6 +28,7 @@ final class AttachmentSharingNativeView
     public function collaboration(User $actor, Workspace $workspace, AttachmentParentReference $reference,
         AttachmentAudience $audience, ?AttachmentPageQuery $page = null): array
     {
+        $page ??= AttachmentPageQuery::fromInput([]);
         $result = $this->files->listing($actor, $workspace, $reference, $audience, $page);
         $view = $this->presenter->view($actor, $workspace, $reference, $audience);
         $ids = array_column($result['data'], 'id');
@@ -56,18 +59,41 @@ final class AttachmentSharingNativeView
             'upload' => $canWrite ? ['href' => route('svc.files.collaboration.upload', $parameters, absolute: false),
                 'parent_version' => AgentApiVersion::for($view->parent)] : null,
             'next_href' => $cursor === null ? null : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', [...$readParameters,
-                'limit' => $page?->limit ?? 100, 'cursor' => $cursor], absolute: false)];
+                'limit' => $page->limit, 'cursor' => $cursor], absolute: false)];
     }
 
     /** Current client-safe parent access precedes attachment rows or bytes. */
     public function portalParent(User $actor, ClientCompany $company, string $type, string $id): Model
     {
-        abort_unless(in_array($type, ['proposal', 'invoice'], true), 404);
+        abort_unless(in_array($type, ['proposal', 'invoice', 'project', 'task'], true), 404);
         $parent = app(AttachmentRecordResolver::class)->resolve($company->workspace, $type, $id);
-        abort_unless(($parent instanceof ClientProposal || $parent instanceof ClientInvoice) && $parent->client_company_id === $company->id, 404);
+        if ($parent instanceof ClientTask) {
+            $project = $parent->project;
+            abort_unless($project instanceof ClientProject && $project->workspace_id === $company->workspace_id && $project->client_company_id === $company->id, 404);
+        } else {
+            abort_unless(($parent instanceof ClientProposal || $parent instanceof ClientInvoice || $parent instanceof ClientProject)
+                && $parent->client_company_id === $company->id, 404);
+        }
         $this->reader->assertParentAccess($actor, $company->workspace, $type, $id, $this->reader->nativePortalAudience($actor, $company->workspace));
 
         return $parent;
+    }
+
+    /** Preserve commercial page access when its stricter file audience is unavailable.
+     * @return array<string,mixed>|null */
+    public function portalLegacyIfReadable(User $actor, ClientCompany $company, string $type, string $id): ?array
+    {
+        try {
+            return $this->portalLegacy($actor, $company, $type, $id);
+        } catch (ModelNotFoundException) {
+            return null;
+        } catch (HttpExceptionInterface $exception) {
+            if ($exception->getStatusCode() !== 404) {
+                throw $exception;
+            }
+
+            return null;
+        }
     }
 
     /** Read-only native Portal files, with no internal sharing notes or writer capabilities.

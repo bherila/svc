@@ -62,7 +62,9 @@ final class AttachmentSharingTransport
         $this->mutations->run($actor, $workspace, $clientId, $operation, $key,
             [...$this->identity($reference), 'attachment_id' => $id, ...$payload],
             fn (): array => [$this->action->setVisibility($actor, $workspace, $id, $change, $origin, $reference)->public_id],
-            fn (array $ids) => $this->action->assertReplayAllowed($actor, $workspace, $reference, $ids[0], $origin));
+            function (array $ids) use ($actor, $workspace, $reference, $origin): void {
+                $this->action->assertReplayAllowed($actor, $workspace, $reference, $ids[0], $origin);
+            });
 
         return $this->visibility($actor, $workspace, $reference, $id, $this->writeAudience($actor, $workspace, $origin));
     }
@@ -150,7 +152,9 @@ final class AttachmentSharingTransport
         $receiptPayload = [...$this->identity($reference), 'expected_version' => $data['expected_version'],
             'filename' => $file->getClientOriginalName(), 'bytes' => $file->getSize(), 'sha256' => $digest, 'media_type' => $file->getMimeType()];
         $operation = 'collaboration.attachments.upload';
-        $guard = fn (array $ids) => $this->action->assertReplayAllowed($actor, $workspace, $reference, $ids[0], $origin);
+        $guard = function (array $ids) use ($actor, $workspace, $reference, $origin): void {
+            $this->action->assertReplayAllowed($actor, $workspace, $reference, $ids[0], $origin);
+        };
         // Exact replay must not fail stale original CAS versions or stage another object.
         $existing = AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)
             ->where('oauth_client_id', $clientId)->where('operation', $operation)->where('idempotency_key', $key)->exists();
@@ -192,7 +196,9 @@ final class AttachmentSharingTransport
         $ids = $this->mutations->run($actor, $workspace, $clientId, 'collaboration.attachments.delete', $key,
             [...$this->identity($reference), 'attachment_id' => $id, ...$payload],
             fn (): array => [$this->action->delete($actor, $workspace, $reference, $id, $deletion, $origin)->public_id],
-            fn (array $ids) => $this->action->assertReplayAllowed($actor, $workspace, $reference, $ids[0], $origin, true));
+            function (array $ids) use ($actor, $workspace, $reference, $origin): void {
+                $this->action->assertReplayAllowed($actor, $workspace, $reference, $ids[0], $origin, true);
+            });
 
         return $this->fileResponse($actor, $workspace, $reference, $ids[0], $origin);
     }

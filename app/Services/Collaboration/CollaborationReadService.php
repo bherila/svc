@@ -137,7 +137,7 @@ final class CollaborationReadService
             ? $this->url('show', $workspace, $company, $audience, ['topic' => $id])
             : $this->url('comments.index', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]);
         $effective = $this->access->effectiveVisible($workspace, $company, $parent);
-        $previews = $includeFiles ? $this->filePreviews->comments($actor, $workspace, $company, $rows->items(),
+        $previews = $includeFiles ? $this->filePreviews->comments($actor, $workspace, $company, array_values($rows->items()),
             $this->fileAudience($audience), $publisher, $effective, $agentFiles) : [];
 
         return ['parent_kind' => $parent instanceof ClientTask ? 'task' : $parent->kind->value, 'parent_title' => $parent->title,
@@ -175,17 +175,19 @@ final class CollaborationReadService
         if ($includeFiles) {
             $key .= $agentFiles ? ':agent-files' : ':native-files';
         }
+        /** @var array<string,array<string,mixed>> $previews */
         $previews = [];
         $result = CursorPage::run($workspace, $key, $limit, $cursor,
             function (int $take, ?int $after) use ($query, $actor, $workspace, $company, $audience, $publisher, $effective, $includeFiles, $agentFiles, &$previews) {
                 $rows = (clone $query)->when($after !== null, fn ($rows) => $rows->where('id', '>', $after))->orderBy('id')->limit($take)->get();
                 if ($includeFiles) {
-                    $previews = $this->filePreviews->comments($actor, $workspace, $company, $rows->all(), $this->fileAudience($audience), $publisher, $effective, $agentFiles);
+                    $previews = $this->filePreviews->comments($actor, $workspace, $company, array_values($rows->all()), $this->fileAudience($audience), $publisher, $effective, $agentFiles);
                 }
 
                 return $rows;
             },
             function (ClientComment $comment) use ($workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective, $agentFiles, &$previews): array {
+                /** @var array<string,array<string,mixed>> $previews Populated by the bounded fetch closure before presentation. */
                 return $this->withFiles($this->presentComment($comment, $workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective),
                     $previews[$comment->public_id] ?? null, $agentFiles);
             },

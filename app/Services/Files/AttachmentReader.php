@@ -141,7 +141,10 @@ final class AttachmentReader
     {
         abort_unless(count($ids) <= 300 && in_array($type, ['proposal', 'agreement', 'invoice'], true), 422);
 
-        return $ids === [] ? [] : $this->portalParents($actor, $workspace, $type, true)->whereIn('public_id', $ids)->pluck('public_id')->all();
+        /** @var list<string> $visible Character UUID column projected by the scoped parent query. */
+        $visible = $ids === [] ? [] : array_values($this->portalParents($actor, $workspace, $type, true)->whereIn('public_id', $ids)->pluck('public_id')->all());
+
+        return $visible;
     }
 
     /** @return Builder<covariant Model> */

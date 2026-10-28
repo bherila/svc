@@ -309,7 +309,11 @@ describe('client screens under data that does not fit', () => {
                 audience="operator"
                 filters={{ project_id: null }}
                 projects={[
-                    { id: 'project-1', name: LONG_NAME },
+                    {
+                        id: 'project-1',
+                        name: LONG_NAME,
+                        files_href: '/synthetic/authorized-project-files',
+                    },
                     { id: 'project-2', name: 'Second project' },
                 ]}
                 tasks={[
@@ -321,6 +325,7 @@ describe('client screens under data that does not fit', () => {
                         is_visible_to_client: true,
                         completed_at: null,
                         comment_thread_url: '/synthetic/task-comments',
+                        files_href: '/synthetic/authorized-task-files',
                     },
                 ]}
                 pagination={{
@@ -334,6 +339,12 @@ describe('client screens under data that does not fit', () => {
             'href',
             '/synthetic/task-comments',
         );
+        expect(
+            screen.getByRole('link', { name: 'Task files' }),
+        ).toHaveAttribute('href', '/synthetic/authorized-task-files');
+        expect(
+            screen.getByRole('link', { name: `${LONG_NAME} files` }),
+        ).toHaveAttribute('href', '/synthetic/authorized-project-files');
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 

@@ -108,6 +108,11 @@ final class AttachmentSharingController extends Controller
             $attachment, $this->reader->nativePortalAudience($actor, $workspace));
     }
 
+    public function portalLegacyPage(Request $request, ClientCompany $clientCompany, string $recordType, string $recordPublicId): Response
+    {
+        return Inertia::render('files/parent', ['attachment_panel' => $this->view->portalLegacy($this->actor($request), $clientCompany, $recordType, $recordPublicId)]);
+    }
+
     public function portalLegacyIndex(Request $request, ClientCompany $clientCompany, string $recordType, string $recordPublicId): JsonResponse
     {
         return response()->json($this->view->portalLegacy($this->actor($request), $clientCompany, $recordType, $recordPublicId,

@@ -2,6 +2,7 @@
 
 namespace App\Services\Files;
 
+use App\Contracts\WorkspaceOwned;
 use App\Models\ClientAttachment;
 use App\Models\User;
 use App\Models\Workspace;
@@ -44,7 +45,8 @@ final class AttachmentSharingAction
         return $this->storage->prepareForPublication($workspace, $parent, $file, $actor);
     }
 
-    /** Read-only URL/CLI preview validation; never stages bytes or creates a receipt. */
+    /** Read-only URL/CLI preview validation; never stages bytes or creates a receipt.
+     * @return Model&WorkspaceOwned */
     public function uploadPreflight(User $actor, Workspace $workspace, AttachmentParentReference $parentScope,
         AttachmentMutationOrigin $origin, ?string $expectedParentVersion = null): Model
     {

@@ -81,7 +81,7 @@ $portalInvoice = ClientInvoice::query()->create(['workspace_id' => $workspace->i
 $expense = (new WorkspaceExpenses($workspace))->record($company, $project,
     new NewExpense(CarbonImmutable::parse('2026-10-01'), 10000, 'USD', str_repeat('SyntheticReceiptExpense', 10)), $manager);
 $storage = app(AttachmentStorageService::class);
-foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 : 101], [$portalProposal, 2], [$portalInvoice, 2]] as [$parent, $count]) {
+foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 : 101], [$portalProposal, 2], [$portalInvoice, 2], [$project, 2], [$task, 2]] as [$parent, $count]) {
     $first = $storage->store($workspace, $parent, UploadedFile::fake()->createWithContent('SyntheticReaderFile.txt', 'Synthetic browser file bytes'), $manager);
     DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->update(['is_visible_to_client' => true]);
     $row = (array) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->first();
@@ -91,7 +91,7 @@ foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 
         $key = 'synthetic-reader/'.$id;
         $filename = $index === $count - 1 ? str_repeat('SyntheticLongUnbrokenFilename', 15).'.txt' : 'SyntheticFile-'.$index.'.txt';
         DB::table('client_attachments')->insert([...$row, 'public_id' => $id, 'object_key' => $key,
-            'original_filename' => Crypt::encryptString($filename), 'is_visible_to_client' => ! ($parent instanceof ClientProposal || $parent instanceof ClientInvoice)]);
+            'original_filename' => Crypt::encryptString($filename), 'is_visible_to_client' => ! ($parent instanceof ClientProposal || $parent instanceof ClientInvoice || $parent instanceof ClientProject || $parent instanceof ClientTask)]);
         Storage::disk('svc_files')->put($key, 'Synthetic browser file bytes');
     }
 }
@@ -117,6 +117,8 @@ if ($sharingLayout) {
 }
 file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->id, 'portal_user_id' => $portal->id,
     'company_name' => $company->name,
+    'portalprojectfiles' => route('portal.files.parent.show', [$company, 'project', $project->public_id], absolute: false),
+    'portaltaskfiles' => route('portal.files.parent.show', [$company, 'task', $task->public_id], absolute: false),
     'portalproposalfiles' => route('portal.proposal', [$company, $portalProposal], absolute: false),
     'portalinvoicefiles' => route('portal.invoice', [$company, $portalInvoice], absolute: false),
     'parentfiles' => route('svc.files.collaboration.show', [$workspace, $company->public_id, 'topic', $topics['note']->public_id], absolute: false),

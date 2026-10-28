@@ -178,7 +178,8 @@ class WorkspaceOperationsController extends Controller
         $visible = [];
         if ($canManage && AttachmentSharingGate::available()) {
             foreach (array_keys($parents) as $type) {
-                $ids = $attachments->flatten(1)->where('record_type', $type)->pluck('record_public_id')->unique()->values()->all();
+                /** @var list<string> $ids Scoped character UUID columns from the authorized file window. */
+                $ids = array_values($attachments->flatten(1)->where('record_type', $type)->pluck('record_public_id')->unique()->all());
                 $visible[$type] = array_fill_keys(app(AttachmentReader::class)->visibleParentIds($actor, $workspace, $type, $ids), true);
             }
         }

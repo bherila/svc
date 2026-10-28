@@ -19,7 +19,7 @@ final class AttachmentSharingOperations
         'collaboration.attachments.delete' => ['collaboration.attachments.destroy', self::ROOT.'/{attachment}', [200]],
     ];
 
-    /** @return array<string,array<string,mixed>> */
+    /** @return array<string,array{method:string,scopes:list<string>,summary:string,description:string,parameters:list<string|array<string,mixed>>,errors:array<int,string>,response?:string,request?:string,request_types?:list<string>,binary?:array{0:string,1:string}}> */
     public static function documentation(): array
     {
         $definitions = [

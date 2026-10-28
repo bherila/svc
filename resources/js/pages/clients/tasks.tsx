@@ -25,7 +25,7 @@ import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
 
-type TaskProject = { id: string; name: string };
+type TaskProject = { id: string; name: string; files_href?: string | null };
 
 type CompanyTask = {
     id: string;
@@ -38,6 +38,7 @@ type CompanyTask = {
     due_on?: string | null;
     detail_url?: string | null;
     comment_thread_url?: string | null;
+    files_href?: string | null;
 };
 
 const ALL_PROJECTS = 'all';
@@ -154,6 +155,24 @@ export default function ClientTasks({
                         </div>
                     </CardHeader>
                     <CardContent>
+                        {projects.some((project) => project.files_href) && (
+                            <nav
+                                aria-label="Project files"
+                                className="mb-4 grid min-w-0 grid-cols-1 gap-2 text-sm"
+                            >
+                                {projects
+                                    .filter((project) => project.files_href)
+                                    .map((project) => (
+                                        <Link
+                                            key={project.id}
+                                            className="wrap-anywhere underline"
+                                            href={project.files_href!}
+                                        >
+                                            {project.name} files
+                                        </Link>
+                                    ))}
+                            </nav>
+                        )}
                         {tasks.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
                                 {projects.length === 0
@@ -209,6 +228,16 @@ export default function ClientTasks({
                                                             className="mt-1 block text-sm font-normal underline underline-offset-4"
                                                         >
                                                             Comments
+                                                        </Link>
+                                                    )}
+                                                    {task.files_href && (
+                                                        <Link
+                                                            href={
+                                                                task.files_href
+                                                            }
+                                                            className="mt-1 block text-sm font-normal underline underline-offset-4"
+                                                        >
+                                                            Task files
                                                         </Link>
                                                     )}
                                                     {task.starts_on && (

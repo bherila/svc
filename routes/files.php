@@ -39,7 +39,8 @@ Route::middleware(['web', 'auth', ResolveWorkspaceNavigation::class])->group(fun
             Route::delete('/{attachment}', [AttachmentSharingController::class, 'collaborationDelete'])->whereUuid('attachment')->name('svc.files.collaboration.destroy');
         });
     Route::prefix('/portal/{clientCompany}/attachments/{recordType}/{recordPublicId}')
-        ->whereIn('recordType', ['proposal', 'invoice'])->whereUuid('recordPublicId')->group(function (): void {
+        ->whereIn('recordType', ['proposal', 'invoice', 'project', 'task'])->whereUuid('recordPublicId')->group(function (): void {
+            Route::get('/files', [AttachmentSharingController::class, 'portalLegacyPage'])->name('portal.files.parent.show');
             Route::get('/', [AttachmentSharingController::class, 'portalLegacyIndex'])->name('portal.files.parent.index');
             Route::get('/{attachment}/content', [AttachmentSharingController::class, 'portalLegacyDownload'])->whereUuid('attachment')->name('portal.files.parent.download');
         });

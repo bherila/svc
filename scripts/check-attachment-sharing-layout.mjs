@@ -174,17 +174,21 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
 
         for (const screen of process.argv.includes('--parent-only')
             ? ['parentfiles']
-            : process.argv.includes('--portal-commercial-only')
-              ? ['portalproposalfiles', 'portalinvoicefiles']
-              : [
-                    'note',
-                    'portal',
-                    'agreementfiles',
-                    'operationsfiles',
-                    'parentfiles',
-                    'portalproposalfiles',
-                    'portalinvoicefiles',
-                ]) {
+            : process.argv.includes('--portal-structural-only')
+              ? ['portalprojectfiles', 'portaltaskfiles']
+              : process.argv.includes('--portal-commercial-only')
+                ? ['portalproposalfiles', 'portalinvoicefiles']
+                : [
+                      'note',
+                      'portal',
+                      'agreementfiles',
+                      'operationsfiles',
+                      'parentfiles',
+                      'portalproposalfiles',
+                      'portalinvoicefiles',
+                      'portalprojectfiles',
+                      'portaltaskfiles',
+                  ]) {
             const errors = [];
             const requests = [];
             const onError = (error) => errors.push(error.message);
@@ -215,10 +219,13 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                       })
                     : page
                           .getByRole('region', {
-                              name:
-                                  screen === 'parentfiles'
-                                      ? 'Attached files'
-                                      : 'Files',
+                              name: [
+                                  'parentfiles',
+                                  'portalprojectfiles',
+                                  'portaltaskfiles',
+                              ].includes(screen)
+                                  ? 'Attached files'
+                                  : 'Files',
                               exact: true,
                           })
                           .first();

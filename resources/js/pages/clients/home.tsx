@@ -55,6 +55,7 @@ type TimeRow = {
 };
 
 type TaskRow = {
+    files_href?: string | null;
     id: string;
     title: string;
     project: string | null;
@@ -299,6 +300,14 @@ export default function ClientHome({
                                         <span className="block text-xs text-muted-foreground">
                                             {task.project}
                                         </span>
+                                    )}
+                                    {task.files_href && (
+                                        <Link
+                                            className="mt-1 block text-sm underline"
+                                            href={task.files_href}
+                                        >
+                                            Task files
+                                        </Link>
                                     )}
                                 </span>
                                 <Badge variant="outline" className="shrink-0">
