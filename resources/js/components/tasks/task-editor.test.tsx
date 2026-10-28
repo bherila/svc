@@ -684,7 +684,7 @@ describe('task editor', () => {
             assignees_action: `/synthetic/people-${number}`,
             assignee_options: { data: [], has_more: false },
         }));
-        render(<TaskCreateDialog projects={projects} />);
+        const view = render(<TaskCreateDialog projects={projects} />);
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: 'New task' }));
         });
@@ -696,6 +696,10 @@ describe('task editor', () => {
                 screen.getByRole('button', { name: 'Create task' }),
             );
         });
+        view.rerender(<TaskCreateDialog projects={[projects[1]]} />);
+        expect(screen.getByRole('combobox')).toHaveTextContent(
+            'Synthetic project 1',
+        );
         expect(screen.getByRole('combobox')).toBeDisabled();
         expect(
             screen.queryByRole('button', { name: 'Close' }),

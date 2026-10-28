@@ -26,8 +26,17 @@ export function TaskCreateDialog({
     const [open, setOpen] = useState(false);
     const [locked, setLocked] = useState(false);
     const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
-    const project =
+    const [openedProject, setOpenedProject] =
+        useState<TaskEditorProject | null>(null);
+    const availableProject =
         projects.find((item) => item.id === projectId) ?? projects[0];
+    const project = open
+        ? (openedProject ?? availableProject)
+        : availableProject;
+    const options =
+        project && !projects.some((item) => item.id === project.id)
+            ? [project, ...projects]
+            : projects;
 
     if (!project) {
         return null;
@@ -35,7 +44,14 @@ export function TaskCreateDialog({
 
     return (
         <>
-            <Button onClick={() => setOpen(true)}>New task</Button>
+            <Button
+                onClick={() => {
+                    setOpenedProject(project);
+                    setOpen(true);
+                }}
+            >
+                New task
+            </Button>
             <Dialog
                 open={open}
                 onOpenChange={(next) => {
@@ -58,7 +74,7 @@ export function TaskCreateDialog({
                     <Label htmlFor="new-task-project">Project</Label>
                     <Select
                         disabled={locked}
-                        items={projects.map((item) => ({
+                        items={options.map((item) => ({
                             value: item.id,
                             label: item.name,
                         }))}
@@ -66,6 +82,10 @@ export function TaskCreateDialog({
                         onValueChange={(value) => {
                             if (!locked && value !== null) {
                                 setProjectId(value);
+                                setOpenedProject(
+                                    options.find((item) => item.id === value) ??
+                                        null,
+                                );
                             }
                         }}
                     >
@@ -76,7 +96,7 @@ export function TaskCreateDialog({
                             <SelectValue className="min-w-0 truncate" />
                         </SelectTrigger>
                         <SelectContent>
-                            {projects.map((item) => (
+                            {options.map((item) => (
                                 <SelectItem
                                     key={item.id}
                                     value={item.id}
