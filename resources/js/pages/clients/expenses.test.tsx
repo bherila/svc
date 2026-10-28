@@ -308,6 +308,31 @@ describe('the expense list', () => {
         expect(vi.mocked(apiRequest).mock.calls[1][3]).toBe(firstKey);
     });
 
+    it('shows a discard conflict after closing its confirmation', async () => {
+        const user = userEvent.setup();
+        vi.mocked(apiRequest).mockResolvedValue({
+            ok: false,
+            status: 409,
+            message: 'This expense was approved; reload it.',
+        });
+        render(<ClientExpenses {...props()} />);
+        await user.click(
+            screen.getByRole('button', { name: 'Discard expense' }),
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Discard', exact: true }),
+        );
+        expect(apiRequest).toHaveBeenCalledWith(
+            'DELETE',
+            '/api/v1/workspaces/w/expenses/expense-1',
+            { expected_version: 'a'.repeat(64) },
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'This expense was approved; reload it.',
+        );
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+
     it('offers a reader nothing to press', () => {
         render(
             <ClientExpenses

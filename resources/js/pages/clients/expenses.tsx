@@ -116,6 +116,10 @@ export default function ClientExpenses({
         });
         setBusy(false);
 
+        if (method === 'DELETE') {
+            setPendingDiscard(null);
+        }
+
         if (result.ok) {
             setPendingDiscard(null);
             router.reload({ only: ['expenses'], preserveScroll: true });
