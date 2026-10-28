@@ -15,7 +15,7 @@ final class SquareInvoicePaymentReader
         private readonly SquareMirrorRepository $mirror, private readonly WorkspaceClock $clock) {}
 
     /** @return list<SquarePaymentFacts> */
-    public function read(Workspace $workspace, string $squareInvoiceId, string $currency): array
+    public function read(Workspace $workspace, string $squareInvoiceId, string $currency, bool $refreshMirror = true): array
     {
         if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
             throw SquareRequestFailed::notConnected();
@@ -52,7 +52,9 @@ final class SquareInvoicePaymentReader
                 $facts[$id] = $fact;
             }
         }
-        $this->mirror->storeInvoices($workspace, [$row], $this->clock->now()->utc());
+        if ($refreshMirror) {
+            $this->mirror->storeInvoices($workspace, [$row], $this->clock->now()->utc());
+        }
 
         return array_values($facts);
     }

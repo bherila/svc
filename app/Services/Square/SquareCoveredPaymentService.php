@@ -147,7 +147,7 @@ final class SquareCoveredPaymentService
         if (! $this->limiter->attempt('square-covered-payments:'.$workspace->id, 20, static fn (): bool => true, 600)) {
             abort(429, 'Square payment review was requested often just now. Retry later.', ['Retry-After' => (string) max(1, $this->limiter->availableIn('square-covered-payments:'.$workspace->id))]);
         }
-        $payments = $this->reader->read($workspace, $squareInvoiceId, $invoice->currency);
+        $payments = $this->reader->read($workspace, $squareInvoiceId, $invoice->currency, refreshMirror: false);
 
         return new SquareCoveredPaymentObservation($coverage->public_id, $payments,
             $payments === [] ? [] : $this->disputes->read(array_map(static fn (SquarePaymentFacts $fact): string => $fact->id, $payments)));
