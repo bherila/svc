@@ -55,6 +55,11 @@ const profile = {
 const props = {
     workspace: { id: 'synthetic-workspace' },
     company,
+    project_create: {
+        url: '/synthetic/project-create',
+        company_id: company.id,
+        expected_version: company.version,
+    },
     company_profile: profile,
     profile_action: '/synthetic/profile-update',
     projects: [],
@@ -82,6 +87,11 @@ describe('shared company form versions', () => {
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save client' }));
         await waitFor(() => expect(refreshPageProps).toHaveBeenCalled());
+        expect(refreshPageProps).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                only: expect.arrayContaining(['project_create']),
+            }),
+        );
         view.rerender(
             <Settings
                 {...props}
@@ -122,6 +132,11 @@ describe('shared company form versions', () => {
             screen.getByRole('button', { name: 'Save company profile' }),
         );
         await waitFor(() => expect(refreshPageProps).toHaveBeenCalled());
+        expect(refreshPageProps).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                only: expect.arrayContaining(['project_create']),
+            }),
+        );
         view.rerender(
             <Settings
                 {...props}
