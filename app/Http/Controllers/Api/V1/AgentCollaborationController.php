@@ -68,7 +68,8 @@ final class AgentCollaborationController extends Controller
         $parentPublicId = $this->parameter($request, 'parentPublicId');
         $operation = $request->routeIs('*.collaboration.topics.index') ? 'topics.list' : ($topic !== null ? 'topics.get' : 'comments.list');
 
-        return response()->json($this->collaboration->read($actor, $workspace, $client, $operation, $topic ?? $parentPublicId, $parentType, $request->query(), $this->collaboration->agentAudience($actor, $workspace)));
+        return response()->json($this->collaboration->read($actor, $workspace, $client, $operation, $topic ?? $parentPublicId, $parentType, $request->query(), $this->collaboration->agentAudience($actor, $workspace),
+            includeFiles: $actor->tokenCan('files:read') && $actor->tokenCan('collaboration:read')));
     }
 
     private function write(Request $request, Workspace $workspace, string $client): JsonResponse

@@ -4,6 +4,7 @@ namespace App\Services\AgentApi\Operations;
 
 use App\Services\Mcp\AgentMcpAgreementResource;
 use App\Services\Mcp\AgentMcpAgreementTools;
+use App\Services\Mcp\AgentMcpAttachmentSharingTools;
 use App\Services\Mcp\AgentMcpBillingAuditTools;
 use App\Services\Mcp\AgentMcpBillingScheduleTools;
 use App\Services\Mcp\AgentMcpCapacityLedgerTools;
@@ -65,6 +66,7 @@ final class AgentOperationCatalog
      */
     private const array ROUTES = [
         ...TaskOrganizationOperations::ROUTES,
+        ...AttachmentSharingOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -260,7 +262,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1737,6 +1739,8 @@ final class AgentOperationCatalog
     private function restOnly(): array
     {
         return [
+            $this->restOperation('collaboration.attachments.download', 'Download collaboration file', Effect::Download),
+            $this->restOperation('collaboration.attachments.upload', 'Upload collaboration file', Effect::Upload, [AgentDeploymentFlags::FILES, AgentDeploymentFlags::COLLABORATION, AgentDeploymentFlags::ATTACHMENT_SHARING], new WriteSafety(IdempotencyKey::Header, expectedVersion: true)),
             $this->restOperation('attachments.download', 'Download attachment', Effect::Download),
             $this->restOperation('attachments.upload', 'Upload attachment', Effect::Upload, [AgentDeploymentFlags::FILES], new WriteSafety(IdempotencyKey::Header, expectedVersion: true)),
             $this->restOperation('expenses.receipts.content', 'Download expense receipt content', Effect::Download),
@@ -1968,6 +1972,29 @@ final class AgentOperationCatalog
                 $read ? Effect::Read : ($suffix === 'lists.archive' ? Effect::Destructive : Effect::LocalWrite), true,
                 $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::WRITES],
                 availability: [AgentDeploymentFlags::TASK_ORGANIZATION]);
+        }
+
+        return $operations;
+    }
+
+    /** @return list<Operation> */
+    private function attachmentSharingTools(): array
+    {
+        $handlers = ['attachments.visibility.get' => 'visibilityGet', 'attachments.visibility.update' => 'visibilityUpdate',
+            'collaboration.attachments.list' => 'collaborationList', 'collaboration.attachments.download_url' => 'collaborationDownloadUrl',
+            'collaboration.attachments.upload_url' => 'collaborationUploadUrl',
+            'collaboration.attachments.visibility.update' => 'collaborationVisibilityUpdate', 'collaboration.attachments.delete' => 'collaborationDelete'];
+        $definitions = AttachmentSharingOperations::documentation();
+        $operations = [];
+        foreach ($handlers as $id => $handler) {
+            $write = AttachmentSharingOperations::writes($id);
+            $collaboration = str_starts_with($id, 'collaboration.');
+            $operations[] = $this->tool($id, $definitions[$id]['summary'], $definitions[$id]['description'],
+                [AgentMcpAttachmentSharingTools::class, $handler],
+                $write ? ($id === 'collaboration.attachments.delete' ? Effect::Destructive : Effect::LocalWrite) : Effect::Read,
+                true, $write ? 'mcp.write' : 'mcp.read',
+                cutovers: $write ? [AgentDeploymentFlags::FILES, ...($collaboration ? [AgentDeploymentFlags::COLLABORATION] : [])] : [],
+                manager: ! $collaboration, availability: $write ? [AgentDeploymentFlags::ATTACHMENT_SHARING] : []);
         }
 
         return $operations;
