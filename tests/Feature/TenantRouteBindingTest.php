@@ -106,11 +106,11 @@ final class TenantRouteBindingTest extends TestCase
     #[DataProvider('tenantRoutes')]
     public function test_each_implicit_binding_surface_queries_with_its_workspace(string $method, string $suffix, string $table): void
     {
-        [$user, $workspace] = $this->fixture();
+        [$user, $workspace, $company] = $this->fixture();
         Sanctum::actingAs($user, ['finance.reconcile']);
         $queries = $this->capture();
         $prefix = str_starts_with($suffix, '/api/') ? '/api/v1' : '';
-        $suffix = str_replace('/api/', '/', $suffix);
+        $suffix = str_replace(['/api/', '{company}'], ['/', $company->public_id], $suffix);
         $this->actingAs($user)->json($method, $prefix.'/workspaces/'.$workspace->public_id.$suffix)->assertNotFound();
         $this->assertScopedReads($queries, $table, $workspace->id);
     }
@@ -121,10 +121,10 @@ final class TenantRouteBindingTest extends TestCase
         $id = '00000000-0000-4000-8000-000000000001';
         yield 'company' => ['GET', "/clients/{$id}", 'client_companies'];
         yield 'invoice' => ['POST', "/invoices/{$id}/issue", 'client_invoices'];
-        yield 'agreement' => ['POST', "/agreements/{$id}/activate", 'client_agreements'];
-        yield 'proposal' => ['POST', "/proposals/{$id}/send", 'client_proposals'];
+        yield 'agreement' => ['POST', "/agreements/{$id}/sign", 'client_agreements'];
+        yield 'proposal' => ['GET', "/clients/{company}/proposals/{$id}", 'client_proposals'];
         yield 'task' => ['PATCH', "/tasks/{$id}", 'client_tasks'];
-        yield 'schedule' => ['POST', "/billing-schedules/{$id}/generate", 'client_billing_schedules'];
+        yield 'schedule' => ['GET', "/billing-schedules/{$id}", 'client_billing_schedules'];
         yield 'reconciliation' => ['DELETE', "/api/invoice-payments/{$id}/reconciliations/synthetic/{$id}", 'client_invoice_payments'];
     }
 

@@ -98,9 +98,7 @@ it('preserves blank terms as null and converts a stated price to minor units', a
     fireEvent.change(screen.getByLabelText('Hourly rate'), {
         target: { value: '125.50' },
     });
-    fireEvent.click(
-        screen.getByRole('button', { name: 'Save terms' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save terms' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
         'Synthetic validation refusal.',
     );
