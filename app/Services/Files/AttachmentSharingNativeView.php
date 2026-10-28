@@ -54,7 +54,7 @@ final class AttachmentSharingNativeView
      * @return array<string,mixed> */
     public function legacy(User $actor, Workspace $workspace, AttachmentParentReference $reference, int $page = 1): array
     {
-        abort_unless(in_array($reference->type, ['company', 'project', 'task'], true), 404);
+        abort_unless(in_array($reference->type, ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'], true), 404);
         $view = $this->presenter->view($actor, $workspace, $reference, AttachmentAudience::Internal);
         $rows = $this->reader->forParent($actor, $workspace, $reference->type, $reference->publicId, AttachmentAudience::Internal)
             ->orderByDesc('id')->simplePaginate(100, ['*'], 'page', $page);

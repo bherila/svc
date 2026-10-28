@@ -26,7 +26,7 @@ class CommentController extends Controller
         $actor = $request->user();
         abort_unless($actor instanceof User, 401);
 
-        return Inertia::render('collaboration/thread', ['thread' => $read->thread($actor, $workspace, $clientCompany, $parentType, $parentPublicId, CollaborationAudience::Internal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment'))]);
+        return Inertia::render('collaboration/thread', ['thread' => $read->thread($actor, $workspace, $clientCompany, $parentType, $parentPublicId, CollaborationAudience::Internal, (int) ($request->validated('comments_page') ?? 1), $request->validated('comment'), includeFiles: true)]);
     }
 
     public function store(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $parentType, string $parentPublicId, CollaborationAction $action): RedirectResponse

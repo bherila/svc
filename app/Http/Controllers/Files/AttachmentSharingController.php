@@ -119,7 +119,7 @@ final class AttachmentSharingController extends Controller
     /** @return array<string,mixed> */
     private function legacyPanel(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): array
     {
-        abort_unless(in_array($recordType, ['company', 'project', 'task'], true), 404);
+        abort_unless(in_array($recordType, ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'], true), 404);
         $input = $request->validate(['page' => ['sometimes', 'integer', 'min:1', 'max:100000']]);
 
         return $this->view->legacy($this->actor($request), $workspace, new AttachmentParentReference($recordType, $recordPublicId), (int) ($input['page'] ?? 1));

@@ -1,6 +1,7 @@
 import { Head, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import CommentThread from '@/components/collaboration/comment-thread';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import {
     CollaborationErrors,
     RemoveContent,
@@ -152,6 +153,12 @@ export default function CollaborationShow({
                             />
                         </div>
                     </>
+                )}
+                {topic.attachment_panel && (
+                    <AttachmentSharingPanel
+                        key={topic.attachment_panel.parent_version}
+                        panel={topic.attachment_panel}
+                    />
                 )}
                 {thread && <CommentThread thread={thread} />}
             </main>
