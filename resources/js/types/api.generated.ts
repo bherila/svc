@@ -4206,8 +4206,17 @@ export interface components {
             /** @constant */
             confirm: true;
         };
-        /** @enum {string} */
-        InvoiceStatus: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'void';
+        /**
+         * @description An unresolved disputed payment keeps its invoice disputed, including partial disputes and invoices covered by replacement payments. Disputed invoices remain charged and visible but collection and reminders are suspended; resolving all disputes restores the status derived from net payments. Void remains terminal.
+         * @enum {string}
+         */
+        InvoiceStatus:
+            | 'draft'
+            | 'issued'
+            | 'partially_paid'
+            | 'paid'
+            | 'disputed'
+            | 'void';
         InvoiceUpdateRequest: {
             expected_version: components['schemas']['Version'];
             currency?: string | null;

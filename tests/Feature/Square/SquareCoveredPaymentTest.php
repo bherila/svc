@@ -105,6 +105,7 @@ final class SquareCoveredPaymentTest extends TestCase
         if ($reason === 'refunded') {
             $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 100, 'currency' => 'USD'];
         } elseif ($reason === 'disputed') {
+            $invoice->forceFill(['status' => 'disputed'])->save();
             $this->squareDisputes['dispute_fixture'] = self::squareDispute('dispute_fixture', 'pay_fixture_1', 'LOST');
         } elseif ($reason === 'overpaid') {
             $invoice->forceFill(['balance_amount' => 12_344])->save();

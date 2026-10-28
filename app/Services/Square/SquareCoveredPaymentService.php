@@ -157,7 +157,7 @@ final class SquareCoveredPaymentService
     private function refusal(ClientInvoice $invoice, SquarePaymentFacts $fact, SquareCoveredPaymentObservation $observation, int $pending): ?string
     {
         $issued = match (InvoiceStatus::tryFrom((string) $invoice->status)) {
-            InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid => true,
+            InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid, InvoiceStatus::Disputed => true,
             InvoiceStatus::Draft, InvoiceStatus::Void, null => false,
         };
         if (! $issued) {
