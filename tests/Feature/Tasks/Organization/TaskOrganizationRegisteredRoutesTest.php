@@ -235,6 +235,7 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
         $foreignCompany = ClientCompany::query()->create(['workspace_id' => $foreignWorkspace->id, 'name' => 'Synthetic foreign company secret', 'slug' => 'synthetic-foreign-organization-company']);
         $foreignProject = ClientProject::query()->create(['workspace_id' => $foreignWorkspace->id, 'client_company_id' => $foreignCompany->id, 'name' => 'Synthetic foreign project secret']);
         $this->getJson($this->url('native', $workspace, $foreignProject, 'get'))->assertNotFound();
+        $this->connect('native', $manager);
         $this->get(route('tasks.organization.show', [$workspace, $company, $foreignProject->public_id]))->assertNotFound();
         $this->get(route('tasks.organization.show', [$workspace, $foreignCompany, $project->public_id]))->assertNotFound();
         $this->assertDatabaseCount('client_task_graph_states', 1);
@@ -244,8 +245,10 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
     private function connect(string $surface, User $actor): void
     {
         $this->flushHeaders();
+        $this->defaultCookies = [];
+        $this->unencryptedCookies = [];
         if ($surface === 'native') {
-            $this->actingAs($actor, 'web');
+            $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
 
             return;
         }
@@ -312,7 +315,7 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
 
     private function url(string $surface, Workspace $workspace, ClientProject $project, string $operation, ?string $identity = null): string
     {
-        $prefix = $surface === 'native' ? '' : '/api/v1';
+        $prefix = '/api/v1';
 
         return $prefix.'/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/task-organization'
             .str_replace('{id}', $identity ?? '', self::BINDINGS[$operation][1]);

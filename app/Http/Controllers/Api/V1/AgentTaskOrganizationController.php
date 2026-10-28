@@ -12,6 +12,7 @@ use App\Services\AgentApi\AgentTaskOrganizationMutationAction;
 use App\Services\Tasks\Organization\TaskOrganizationAction;
 use App\Services\Tasks\Organization\TaskOrganizationGate;
 use App\Services\Tasks\TaskMutationOrigin;
+use App\Support\AgentApi\FirstPartySession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,7 +27,7 @@ final class AgentTaskOrganizationController extends Controller
         $actor = User::query()->whereKey($principal->id)->firstOrFail();
         $container = TaskOrganizationInput::container($request->query());
 
-        return response()->json(['data' => $organization->snapshot($actor, $workspace, $project, $container, TaskMutationOrigin::Agent)->data]);
+        return response()->json(['data' => $organization->snapshot($actor, $workspace, $project, $container, FirstPartySession::is($request) ? TaskMutationOrigin::Internal : TaskMutationOrigin::Agent)->data]);
     }
 
     /** Keep PATCH and DELETE on the same URI distinct for generated route clients. */
@@ -43,7 +44,8 @@ final class AgentTaskOrganizationController extends Controller
         $context = $contexts->from($request);
         $operation = TaskOrganizationInput::operation($request);
         $input = TaskOrganizationInput::body($request->all(), TaskOrganizationInput::routeIdentity($request, 'list'), TaskOrganizationInput::routeIdentity($request, 'task'));
-        $ids = $writes->execute($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $project, $operation, $input);
+        $method = FirstPartySession::is($request) ? 'executeInternal' : 'execute';
+        $ids = $writes->{$method}($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $project, $operation, $input);
 
         return response()->json(['data' => ['affected_ids' => $ids]], str_ends_with($operation, '.create') ? 201 : 200);
     }

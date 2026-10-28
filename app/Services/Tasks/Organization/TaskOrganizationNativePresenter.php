@@ -23,7 +23,7 @@ final class TaskOrganizationNativePresenter
         $browse = fn (TaskContainer $target, ?string $moving = null): string => route('tasks.organization.show',
             $path + ['clientCompany' => $company, 'parent_id' => $target->parentId, 'list_id' => $target->listId, 'moving_task_id' => $moving]);
         $currentHref = $browse($container);
-        $createTaskHref = route('tasks.organization.tasks.store', $path);
+        $createTaskHref = route('agent-api.v1.task-organization.tasks.store', $path);
         $moveTarget = function (TaskContainer $target) use ($graph, $movingId): ?array {
             if ($movingId === null) {
                 return null;
@@ -58,9 +58,9 @@ final class TaskOrganizationNativePresenter
                 $orderedListIds[] = $list->public_id;
             }
             $listRows[] = $row + ['browse_href' => $browse($target, $movingId),
-                'update_href' => $row['archived'] ? null : route('tasks.organization.lists.update', $path + ['list' => $list->public_id]),
-                'archive_href' => $row['archived'] ? null : route('tasks.organization.lists.archive', $path + ['list' => $list->public_id]),
-                'restore_href' => $row['archived'] ? route('tasks.organization.lists.restore', $path + ['list' => $list->public_id]) : null,
+                'update_href' => $row['archived'] ? null : route('agent-api.v1.task-organization.lists.update', $path + ['list' => $list->public_id]),
+                'archive_href' => $row['archived'] ? null : route('agent-api.v1.task-organization.lists.archive', $path + ['list' => $list->public_id]),
+                'restore_href' => $row['archived'] ? route('agent-api.v1.task-organization.lists.restore', $path + ['list' => $list->public_id]) : null,
                 'move_target' => $moveTarget($target)];
         }
         $taskRows = [];
@@ -90,18 +90,18 @@ final class TaskOrganizationNativePresenter
             $breadcrumbs[] = ['label' => $title, 'href' => $browse(new TaskContainer($id, null), $movingId)];
         }
         $moving = $movingId === null ? null : AgentTaskPresenter::identity($tasks[$movingId]) + [
-            'version' => $graph->tasks[$movingId]['version'], 'move_href' => route('tasks.organization.tasks.move', $path + ['task' => $movingId]), 'cancel_href' => $currentHref];
+            'version' => $graph->tasks[$movingId]['version'], 'move_href' => route('agent-api.v1.task-organization.tasks.move', $path + ['task' => $movingId]), 'cancel_href' => $currentHref];
 
         return new TaskOrganizationNativeView(['company' => ['name' => AgentClientPresenter::identity($company)['name'], 'href' => route('clients.show', [$workspace, $company])],
             'project' => AgentProjectPresenter::identity($records->project) + ['href' => route('clients.project', [$workspace, $company, $records->project])],
             'organization' => ['graph_version' => $graph->graphVersion(), 'lists_version' => $graph->graphVersion(),
-                'create_list_href' => count($graph->lists) < TaskGraph::MAX_LISTS ? route('tasks.organization.lists.store', $path) : null,
-                'reorder_lists_href' => route('tasks.organization.lists.reorder', $path), 'ordered_list_ids' => $orderedListIds,
+                'create_list_href' => count($graph->lists) < TaskGraph::MAX_LISTS ? route('agent-api.v1.task-organization.lists.store', $path) : null,
+                'reorder_lists_href' => route('agent-api.v1.task-organization.lists.reorder', $path), 'ordered_list_ids' => $orderedListIds,
                 'assignees_href' => route('tasks.assignees', [$workspace, $records->project]),
                 'unlisted' => ['browse_href' => $browse(new TaskContainer(null, null), $movingId), 'move_target' => $moveTarget(new TaskContainer(null, null))],
                 'lists' => $listRows, 'moving' => $moving,
                 'container' => ['title' => $title, 'target' => $this->target($container), 'move_target' => $moveTarget($container), 'version' => $graph->containerVersion($container),
-                    'create_task_href' => $createHref($container), 'reorder_href' => route('tasks.organization.tasks.reorder', $path),
+                    'create_task_href' => $createHref($container), 'reorder_href' => route('agent-api.v1.task-organization.tasks.reorder', $path),
                     'breadcrumbs' => $breadcrumbs, 'tasks' => $taskRows, 'sharing_note' => $this->sharingNote($records, $graph, $container)]]]);
     }
 

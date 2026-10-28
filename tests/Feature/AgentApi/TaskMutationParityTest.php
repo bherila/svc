@@ -31,31 +31,29 @@ final class TaskMutationParityTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-10-08 12:00:00', 'UTC'));
     }
 
-    public function test_web_task_creation_requires_an_explicit_visibility_choice(): void
+    public function test_native_task_creation_defaults_to_private_like_the_shared_api(): void
     {
         [$workspace, , $project, $owner] = $this->fixture();
-        $this->actingAs($owner)->postJson($this->createPath($workspace, $project, true), ['title' => 'Synthetic explicit task'])->assertUnprocessable()->assertJsonValidationErrors('is_visible_to_client');
-        $this->actingAs($owner)->post($this->createPath($workspace, $project, true), ['title' => 'Synthetic hidden task', 'is_visible_to_client' => false])->assertRedirect();
+        $this->browser($owner)->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic private task'])->assertCreated();
         $this->assertFalse(ClientTask::query()->where('workspace_id', $workspace->id)->sole()->is_visible_to_client);
     }
 
     public function test_callers_choose_visibility_explicitly_and_share_completion_rules(): void
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
-        $return = '/workspaces/'.$workspace->public_id.'/clients/'.$company->public_id.'/tasks';
-        $this->actingAs($owner)->from($return)->post($this->createPath($workspace, $project, web: true), ['title' => 'Synthetic web task', 'is_visible_to_client' => true])
-            ->assertRedirect($return)->assertSessionHas('status', 'Task created.');
+        $this->browser($owner)->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic web task', 'is_visible_to_client' => true])
+            ->assertCreated();
         $webTask = ClientTask::query()->where('workspace_id', $workspace->id)->sole();
         $this->assertTrue($webTask->is_visible_to_client);
         $this->assertSame('open', $webTask->status);
         $this->assertNull($webTask->completed_at);
-        $this->actingAsMcp($owner, ['tasks:write']);
+        $this->agent($owner, ['tasks:write']);
         $created = $this->withHeader('Idempotency-Key', 'synthetic-task-create')->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic agent task'])->assertCreated();
         $created->assertJsonPath('data.is_visible_to_client', false)->assertJsonPath('data.status', 'open');
         $agentTask = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $created->json('data.id'))->firstOrFail();
-        $this->actingAs($owner)->from($return)->patch($this->updatePath($workspace, $webTask, true), ['expected_version' => AgentApiVersion::for($webTask->fresh()), 'status' => 'completed'])
-            ->assertRedirect($return)->assertSessionHas('status', 'Task updated.');
-        $this->actingAsMcp($owner, ['tasks:write']);
+        $this->browser($owner)->patchJson($this->updatePath($workspace, $webTask), ['expected_version' => AgentApiVersion::for($webTask->fresh()), 'status' => 'completed'])
+            ->assertOk();
+        $this->agent($owner, ['tasks:write']);
         $completed = $this->withHeader('Idempotency-Key', 'synthetic-task-complete')->patchJson($this->updatePath($workspace, $agentTask), ['expected_version' => $created->json('data.version'), 'status' => 'completed'])->assertOk();
         $this->assertSame('2026-10-08 12:00:00', $webTask->fresh()->completed_at->format('Y-m-d H:i:s'));
         $this->assertTrue($webTask->fresh()->completed_at->equalTo($agentTask->fresh()->completed_at));
@@ -64,8 +62,8 @@ final class TaskMutationParityTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-10-09 12:00:00', 'UTC'));
         $edited = $this->withHeader('Idempotency-Key', 'synthetic-task-title')->patchJson($this->updatePath($workspace, $agentTask), ['expected_version' => $completed->json('data.version'), 'title' => 'Revised synthetic agent task', 'description' => null])->assertOk();
         $this->assertSame('2026-10-08 12:00:00', $agentTask->fresh()->completed_at->format('Y-m-d H:i:s'));
-        $this->actingAs($owner)->patch($this->updatePath($workspace, $webTask, true), ['expected_version' => AgentApiVersion::for($webTask->fresh()), 'status' => 'in_progress', 'is_visible_to_client' => false])->assertRedirect();
-        $this->actingAsMcp($owner, ['tasks:write']);
+        $this->browser($owner)->patchJson($this->updatePath($workspace, $webTask), ['expected_version' => AgentApiVersion::for($webTask->fresh()), 'status' => 'in_progress', 'is_visible_to_client' => false])->assertOk();
+        $this->agent($owner, ['tasks:write']);
         $this->withHeader('Idempotency-Key', 'synthetic-task-reopen')->patchJson($this->updatePath($workspace, $agentTask), ['expected_version' => $edited->json('data.version'), 'status' => 'open', 'is_visible_to_client' => true])->assertOk();
         $this->assertNull($webTask->fresh()->completed_at);
         $this->assertNull($agentTask->fresh()->completed_at);
@@ -76,14 +74,14 @@ final class TaskMutationParityTest extends TestCase
     public function test_web_and_agent_share_title_and_description_limits(): void
     {
         [$workspace, , $project, $owner] = $this->fixture();
-        $this->actingAs($owner)->postJson($this->createPath($workspace, $project, true), ['title' => str_repeat('x', 256), 'is_visible_to_client' => true])->assertUnprocessable();
-        $this->actingAs($owner)->postJson($this->createPath($workspace, $project, true), ['title' => 'Synthetic web task', 'description' => str_repeat('x', 10001), 'is_visible_to_client' => true])->assertUnprocessable();
-        $this->actingAs($owner)->post($this->createPath($workspace, $project, true), ['title' => str_repeat('x', 255), 'description' => str_repeat('x', 10000), 'is_visible_to_client' => true])->assertRedirect();
-        $this->actingAsMcp($owner, ['tasks:write']);
+        $this->browser($owner)->postJson($this->createPath($workspace, $project), ['title' => str_repeat('x', 256), 'is_visible_to_client' => true])->assertUnprocessable();
+        $this->browser($owner)->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic web task', 'description' => str_repeat('x', 10001), 'is_visible_to_client' => true])->assertUnprocessable();
+        $this->browser($owner)->postJson($this->createPath($workspace, $project), ['title' => str_repeat('x', 255), 'description' => str_repeat('x', 10000), 'is_visible_to_client' => true])->assertCreated();
+        $this->agent($owner, ['tasks:write']);
         $created = $this->withHeader('Idempotency-Key', 'long-agent-task')->postJson($this->createPath($workspace, $project), ['title' => str_repeat('x', 255), 'description' => str_repeat('x', 10000)])->assertCreated();
         $task = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $created->json('data.id'))->firstOrFail();
-        $this->actingAs($owner)->patchJson($this->updatePath($workspace, $task, true), ['is_visible_to_client' => true])->assertUnprocessable()->assertJsonValidationErrors('expected_version');
-        $this->actingAsMcp($owner, ['tasks:write']);
+        $this->browser($owner)->patchJson($this->updatePath($workspace, $task), ['is_visible_to_client' => true])->assertUnprocessable()->assertJsonValidationErrors('expected_version');
+        $this->agent($owner, ['tasks:write']);
         $this->withHeader('Idempotency-Key', 'partial-agent-task')->patchJson($this->updatePath($workspace, $task), ['expected_version' => $created->json('data.version'), 'description' => null])->assertOk()->assertJsonPath('data.description', null);
     }
 
@@ -101,9 +99,9 @@ final class TaskMutationParityTest extends TestCase
             ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $actor->id, 'role' => $projectRole]);
         }
         $task = $this->task($workspace, $project);
-        $this->actingAs($actor)->postJson($this->createPath($workspace, $project, true), ['title' => 'Synthetic web role task', 'is_visible_to_client' => true])->assertStatus($webAllowed ? 302 : 403);
-        $this->actingAs($actor)->patchJson($this->updatePath($workspace, $task, true), ['expected_version' => AgentApiVersion::for($task), 'status' => 'in_progress'])->assertStatus($webAllowed ? 302 : 403);
-        $this->actingAsMcp($actor, ['tasks:write']);
+        $this->browser($actor)->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic web role task', 'is_visible_to_client' => true])->assertStatus($webAllowed ? 201 : 403);
+        $this->browser($actor)->patchJson($this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task), 'status' => 'in_progress'])->assertStatus($webAllowed ? 200 : 403);
+        $this->agent($actor, ['tasks:write']);
         $this->withHeader('Idempotency-Key', 'role-create')->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic agent role task'])->assertStatus($agentAllowed ? 201 : 403);
         $this->withHeader('Idempotency-Key', 'role-update')->patchJson($this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task->fresh()), 'title' => 'Revised synthetic role task'])->assertStatus($agentAllowed ? 200 : 403);
     }
@@ -119,7 +117,7 @@ final class TaskMutationParityTest extends TestCase
         $manager = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'member']);
         $membership = ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $manager->id, 'role' => 'manager']);
-        $this->actingAsMcp($manager, ['tasks:write']);
+        $this->agent($manager, ['tasks:write']);
         $body = ['title' => 'Synthetic replay task'];
         $created = $this->withHeader('Idempotency-Key', 'replay-task-create')->postJson($this->createPath($workspace, $project), $body)->assertCreated();
         $this->postJson($this->createPath($workspace, $project), $body)->assertCreated()->assertJsonPath('data.id', $created->json('data.id'));
@@ -152,11 +150,11 @@ final class TaskMutationParityTest extends TestCase
         $foreignTask = $this->task($foreign, $foreignProject);
         $malformed = $this->writingLegacyCrossTenantRows(fn () => $this->task($workspace, $foreignProject));
         $badProject = $this->writingLegacyCrossTenantRows(fn () => ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $foreignCompany->id, 'name' => 'Malformed synthetic project']));
-        $this->actingAs($owner)->postJson($this->createPath($workspace, $foreignProject, true), ['title' => 'Foreign synthetic task', 'is_visible_to_client' => true])->assertNotFound();
+        $this->browser($owner)->postJson($this->createPath($workspace, $foreignProject), ['title' => 'Foreign synthetic task', 'is_visible_to_client' => true])->assertNotFound();
         foreach ([$foreignTask, $malformed] as $record) {
-            $this->actingAs($owner)->patchJson($this->updatePath($workspace, $record, true), ['expected_version' => AgentApiVersion::for($record), 'status' => 'completed'])->assertNotFound();
+            $this->browser($owner)->patchJson($this->updatePath($workspace, $record), ['expected_version' => AgentApiVersion::for($record), 'status' => 'completed'])->assertNotFound();
         }
-        $this->actingAsMcp($owner, ['tasks:write']);
+        $this->agent($owner, ['tasks:write']);
         foreach ([$foreignProject, $badProject] as $record) {
             $this->withHeader('Idempotency-Key', 'foreign-task-create-'.$record->public_id)->postJson($this->createPath($workspace, $record), ['title' => 'Foreign synthetic task', 'is_visible_to_client' => true])->assertNotFound();
         }
@@ -184,13 +182,26 @@ final class TaskMutationParityTest extends TestCase
         return ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'Synthetic task', 'status' => 'open']);
     }
 
-    private function createPath(Workspace $workspace, ClientProject $project, bool $web = false): string
+    private function createPath(Workspace $workspace, ClientProject $project): string
     {
-        return ($web ? '' : '/api/v1').'/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/tasks';
+        return '/api/v1'.'/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/tasks';
     }
 
-    private function updatePath(Workspace $workspace, ClientTask $task, bool $web = false): string
+    private function updatePath(Workspace $workspace, ClientTask $task): string
     {
-        return ($web ? '' : '/api/v1').'/workspaces/'.$workspace->public_id.'/tasks/'.$task->public_id;
+        return '/api/v1'.'/workspaces/'.$workspace->public_id.'/tasks/'.$task->public_id;
+    }
+
+    private function browser(User $actor): static
+    {
+        return $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-native-'.Str::uuid());
+    }
+
+    /** @param list<string> $scopes */
+    private function agent(User $actor, array $scopes): void
+    {
+        $this->unencryptedCookies = [];
+        $this->actingAsMcp($actor, $scopes);
     }
 }
