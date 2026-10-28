@@ -3,6 +3,7 @@
 namespace App\Support\Engagement;
 
 use App\Models\ClientAgreement;
+use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 
 /**
  * One agreement's commercial terms, as both audiences read them.
@@ -25,38 +26,26 @@ final class AgreementTermsPayload
      */
     public static function for(ClientAgreement $agreement, ?string $projectName): array
     {
-        $grantsRetainer = $agreement->billsOnARecurringCadence()
-            && ($agreement->retainer_minutes !== null || $agreement->period_retainer_minutes !== null);
+        $facts = AgreementReadPresenter::commercialTerms($agreement, $projectName);
 
         return [
-            'id' => $agreement->public_id,
-            'title' => $agreement->title,
-            'status' => $agreement->status,
-            'currency' => $agreement->currency,
-            'billing_cadence' => $agreement->billing_cadence,
-            // The operator payload names the billing engine's effective terms.
-            // Keep one stable page contract without disclosing those derived
-            // values through the client portal.
+            'id' => $facts['id'],
+            'title' => $facts['title'],
+            'status' => $facts['status'],
+            'currency' => $facts['currency'],
+            'billing_cadence' => $facts['billing_cadence'],
             'effective_billing_cadence' => null,
             'effective_first_cycle_proration' => null,
-            'is_recurring' => $agreement->billsOnARecurringCadence(),
-            'starts_on' => $agreement->starts_on->toDateString(),
-            'ends_on' => $agreement->ends_on?->toDateString(),
-            'signed_at' => $agreement->signed_at?->toISOString(),
-            'retainer_minutes_per_period' => $grantsRetainer
-                ? (int) round($agreement->periodRetainerHours() * 60)
-                : null,
+            'is_recurring' => $facts['is_recurring'],
+            'starts_on' => $facts['starts_on'],
+            'ends_on' => $facts['ends_on'],
+            'signed_at' => $facts['signed_at'],
+            'retainer_minutes_per_period' => $facts['retainer_minutes_per_period'],
             'retainer_minutes_per_month' => null,
-            'retainer_amount_per_period' => $grantsRetainer
-                ? (int) round($agreement->periodRetainerFee() * 100)
-                : null,
-            'hourly_rate_amount' => $agreement->hourly_rate_amount === null
-                ? null
-                : (int) $agreement->hourly_rate_amount,
-            'rollover_months' => $agreement->rollover_months === null
-                ? null
-                : (int) $agreement->rollover_months,
-            'project' => $projectName,
+            'retainer_amount_per_period' => $facts['retainer_amount_per_period'],
+            'hourly_rate_amount' => $facts['hourly_rate_amount'],
+            'rollover_months' => $facts['rollover_months'],
+            'project' => $facts['project'],
         ];
     }
 }
