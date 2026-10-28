@@ -374,7 +374,7 @@ final class AgentRestDocumentation
                     ],
                 ],
                 'binary' => [
-                    'application/octet-stream',
+                    '*/*',
                     'Stream the private file using the signed URL, same bearer credential and current manager permission.',
                 ],
             ],
@@ -967,7 +967,7 @@ final class AgentRestDocumentation
                         'schema' => ['type' => 'string'],
                     ],
                 ],
-                'binary' => ['application/octet-stream', 'Receipt bytes'],
+                'binary' => ['*/*', 'Receipt bytes'],
             ],
             'expenses.receipts.download' => [
                 'method' => 'GET',
