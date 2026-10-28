@@ -83,7 +83,7 @@ final class InvoiceStatusVocabularyTest extends TestCase
     public function test_the_enum_covers_every_status_the_schema_allows(): void
     {
         $this->assertSame(
-            ['draft', 'issued', 'partially_paid', 'paid', 'void'],
+            ['draft', 'issued', 'partially_paid', 'paid', 'disputed', 'void'],
             InvoiceStatus::all(),
         );
 
@@ -119,6 +119,7 @@ final class InvoiceStatusVocabularyTest extends TestCase
             InvoiceStatus::Issued->value,
             InvoiceStatus::PartiallyPaid->value,
             InvoiceStatus::Paid->value,
+            InvoiceStatus::Disputed->value,
         ], InvoiceStatus::live());
     }
 
