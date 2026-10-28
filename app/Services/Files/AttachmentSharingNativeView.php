@@ -6,6 +6,8 @@ use App\Models\ClientAttachment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /** Initial bounded data is embedded in Inertia props; continuation is a finished URL. */
 final class AttachmentSharingNativeView
@@ -48,6 +50,23 @@ final class AttachmentSharingNativeView
                 'parent_version' => AgentApiVersion::for($view->parent)] : null,
             'next_href' => $cursor === null ? null : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', [...$readParameters,
                 'limit' => $page?->limit ?? 100, 'cursor' => $cursor], absolute: false)];
+    }
+
+    /** Commercial pages may remain readable for repairing malformed old project references.
+     * @return array<string,mixed>|null */
+    public function legacyIfReadable(User $actor, Workspace $workspace, AttachmentParentReference $reference): ?array
+    {
+        try {
+            return $this->legacy($actor, $workspace, $reference);
+        } catch (ModelNotFoundException) {
+            return null;
+        } catch (HttpExceptionInterface $exception) {
+            if ($exception->getStatusCode() !== 404) {
+                throw $exception;
+            }
+
+            return null;
+        }
     }
 
     /** Legacy native forms retain their existing upload/deletion contracts.

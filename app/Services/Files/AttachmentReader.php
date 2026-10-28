@@ -134,6 +134,16 @@ final class AttachmentReader
         return $this->portalParents($actor, $workspace, $type, true)->where('public_id', $id)->exists();
     }
 
+    /** Structural disclosure for an already-authorized bounded native file page.
+     * @param list<string> $ids
+     * @return list<string> */
+    public function visibleParentIds(User $actor, Workspace $workspace, string $type, array $ids): array
+    {
+        abort_unless(count($ids) <= 300 && in_array($type, ['proposal', 'agreement', 'invoice'], true), 422);
+
+        return $ids === [] ? [] : $this->portalParents($actor, $workspace, $type, true)->whereIn('public_id', $ids)->pluck('public_id')->all();
+    }
+
     /** @return Builder<covariant Model> */
     private function base(Workspace $workspace, string $type): Builder
     {

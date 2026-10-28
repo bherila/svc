@@ -1,4 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,7 @@ import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { cn } from '@/lib/utils';
+import type { AttachmentPanel } from '@/types/files';
 
 /**
  * One proposal, and - for the client it was sent to - the decision on it.
@@ -42,12 +44,15 @@ type ProposalItem = {
 };
 
 export default function ClientProposalDetail({
+    attachment_panel = null,
     company,
     home_href: homeHref,
     proposal,
     items,
     accept_href: acceptHref,
 }: {
+    attachment_panel?:
+        (AttachmentPanel & { legacy_upload_href?: string | null }) | null;
     company: { id: string; name: string };
     home_href: string;
     proposal: {
@@ -231,6 +236,16 @@ export default function ClientProposalDetail({
                     <p className="text-sm text-muted-foreground">
                         Accepted {formatTimestamp(proposal.accepted_at)}.
                     </p>
+                )}
+                {attachment_panel && (
+                    <AttachmentSharingPanel
+                        key={attachment_panel.parent_version}
+                        panel={attachment_panel}
+                        legacyForms={{
+                            upload_href:
+                                attachment_panel.legacy_upload_href ?? null,
+                        }}
+                    />
                 )}
             </main>
         </WorkspaceShell>

@@ -72,6 +72,7 @@ type Engagement = {
 };
 
 export type ClientHomeProps = {
+    files_href?: string | null;
     company: { id: string; name: string };
     latest_invoice: InvoiceSummary | null;
     recent_time: TimeRow[];
@@ -133,6 +134,7 @@ function Section({
 }
 
 export default function ClientHome({
+    files_href = null,
     company,
     latest_invoice: latestInvoice,
     recent_time: recentTime,
@@ -336,6 +338,11 @@ export default function ClientHome({
                             )}
                         </p>
                     </section>
+                )}
+                {files_href && (
+                    <Link className="text-sm underline" href={files_href}>
+                        Client files
+                    </Link>
                 )}
             </main>
         </WorkspaceShell>

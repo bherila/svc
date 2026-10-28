@@ -14,7 +14,12 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentMetadata;
+use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentReader;
+use App\Services\Files\AttachmentSharingGate;
+use App\Services\Files\AttachmentSharingPresenter;
+use App\Services\Files\AttachmentSharingView;
 use App\Support\Access\StaffRole;
 use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
 use Illuminate\Http\Request;
@@ -139,7 +144,7 @@ class WorkspaceOperationsController extends Controller
 
         if (collect($attachmentRecordIds)->contains(fn (array $recordIds): bool => $recordIds !== [])) {
             $fileRows = app(AttachmentReader::class)->queryForTypes($actor, $workspace, AttachmentAudience::Native, ['proposal', 'agreement', 'invoice'])
-                ->select(['public_id', 'record_type', 'record_public_id', 'original_filename', 'media_type', 'bytes'])
+                ->select('client_attachments.*')
                 ->where('workspace_id', $workspace->id)
                 ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
                 ->where(function ($query) use ($attachmentRecordIds): void {
@@ -168,6 +173,27 @@ class WorkspaceOperationsController extends Controller
                 'bytes' => $attachment->bytes,
                 'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}",
             ])->values()->all();
+
+        $parents = ['proposal' => $proposals->keyBy('public_id'), 'agreement' => $agreements->keyBy('public_id'), 'invoice' => $invoices->keyBy('public_id')];
+        $visible = [];
+        if ($canManage && AttachmentSharingGate::available()) {
+            foreach (array_keys($parents) as $type) {
+                $ids = $attachments->flatten(1)->where('record_type', $type)->pluck('record_public_id')->unique()->values()->all();
+                $visible[$type] = array_fill_keys(app(AttachmentReader::class)->visibleParentIds($actor, $workspace, $type, $ids), true);
+            }
+        }
+        $filePanel = function (string $type, string $id) use ($attachments, $parents, $visible, $canManage, $workspace): array {
+            $parent = $parents[$type]->get($id);
+            $view = new AttachmentSharingView(new AttachmentParentReference($type, $id), $parent, isset($visible[$type][$id]), $canManage);
+            $rows = $attachments->get($type.':'.$id) ?? collect();
+
+            return ['files' => $rows->map(fn (ClientAttachment $file): array => AttachmentMetadata::native($file,
+                route('svc.files.download', [$workspace, $file->public_id], absolute: false),
+                $canManage ? route('svc.files.destroy', [$workspace, $file->public_id], absolute: false) : null,
+                app(AttachmentSharingPresenter::class)->nativeControl($file, $view, route('svc.files.visibility.update', [$workspace, $file->public_id], absolute: false), AttachmentAudience::Internal)))->values()->all(),
+                'upload' => null, 'next_href' => null,
+                'legacy_upload_href' => $canManage ? route('svc.files.store', [$workspace, $type, $id], absolute: false) : null];
+        };
 
         $clients = [];
 
@@ -205,6 +231,7 @@ class WorkspaceOperationsController extends Controller
                         'total_amount' => $proposal->totalAmount(),
                         'currency' => $proposal->currency,
                         'attachments' => $attachmentPayload('proposal', $proposal->public_id),
+                        'attachment_panel' => $filePanel('proposal', $proposal->public_id),
                     ])
                     ->all(),
                 'agreements' => ($agreementsByCompany->get($company->id) ?? collect())
@@ -214,6 +241,7 @@ class WorkspaceOperationsController extends Controller
                         'status' => $agreement->status,
                         'billing_cadence' => $agreement->billing_cadence,
                         'attachments' => $attachmentPayload('agreement', $agreement->public_id),
+                        'attachment_panel' => $filePanel('agreement', $agreement->public_id),
                     ])
                     ->all(),
                 'billing_schedules' => ($schedulesByCompany->get($company->id) ?? collect())
@@ -236,6 +264,7 @@ class WorkspaceOperationsController extends Controller
                         'issue_date' => $invoice->issue_date?->toDateString(),
                         'due_date' => $invoice->due_date?->toDateString(),
                         'attachments' => $attachmentPayload('invoice', $invoice->public_id),
+                        'attachment_panel' => $filePanel('invoice', $invoice->public_id),
                     ])
                     ->all(),
                 'activities' => ($activitiesByCompany->get($company->id) ?? collect())

@@ -55,6 +55,7 @@ export default function ClientProjectDetail({
     time,
     agreements,
     task_management = null,
+    files_href = null,
     tasks_next_href = null,
     organization_href = null,
 }: {
@@ -69,6 +70,7 @@ export default function ClientProjectDetail({
     };
     tasks: ProjectTask[];
     task_management?: { projects: TaskEditorProject[] } | null;
+    files_href?: string | null;
     tasks_next_href?: string | null;
     organization_href?: string | null;
     time: TimeByStatus[];
@@ -299,6 +301,11 @@ export default function ClientProjectDetail({
                         )}
                     </CardContent>
                 </Card>
+                {files_href && (
+                    <Link className="text-sm underline" href={files_href}>
+                        Project files
+                    </Link>
+                )}
             </main>
         </WorkspaceShell>
     );
