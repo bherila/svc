@@ -63,11 +63,11 @@ final class ExpenseReceiptApiTest extends TestCase
         $receipt = $this->uploaded($actor, $workspace, $expense);
         $body = $this->deleteBody($expense, $receipt);
         $this->actingAsMcp($actor, ['mcp:use', 'expenses:read', 'expenses:write']);
-        $this->deleteJson($this->base($workspace, $expense->public_id).'/'.$receipt->public_id, $body, ['Idempotency-Key' => 'synthetic-cross-delete'])->assertOk();
+        $first = $this->deleteJson($this->base($workspace, $expense->public_id).'/'.$receipt->public_id, $body, ['Idempotency-Key' => 'synthetic-cross-delete'])->assertOk()->json();
         $session = $this->mcp($this->initializeMessage())->headers->get('Mcp-Session-Id');
         $result = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'expenses.receipts.delete', 'arguments' => [
             'workspace_id' => $workspace->public_id, 'expense_id' => $expense->public_id, 'receipt_id' => $receipt->public_id, 'idempotency_key' => 'synthetic-cross-delete', ...$body]]], $session);
-        $this->assertFalse($result->json('result.isError') ?? false);
+        $result->assertOk()->assertJsonPath('result.structuredContent', $first);
         $this->assertDatabaseCount('agent_mutation_receipts', 2); // Upload and one deletion shared by REST/MCP.
         $this->assertSame(ClientAttachment::STATE_DELETING, $receipt->fresh()->lifecycle_state);
     }
