@@ -4,16 +4,27 @@ import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 
 type SavedContent = { version: string; web_url: string };
+type Attempt = {
+    method: 'POST' | 'PATCH' | 'DELETE';
+    href: string;
+    body: object;
+    key: string;
+    uncertain: boolean;
+    content?: SavedContent;
+    saved?: (content: SavedContent) => void;
+    navigate: boolean;
+};
 
-/** One logical edit retains its receipt until authoritative content is loaded. */
+/** Keep the original request until its outcome and authoritative content are known. */
 export function useCollaborationMutation() {
     const [pending, setPending] = useState(false);
+    const [unresolved, setUnresolved] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const inFlight = useRef(false);
-    const attempt = useRef<{ signature: string; key: string } | null>(null);
+    const attempt = useRef<Attempt | null>(null);
 
     async function run(
-        method: 'POST' | 'PATCH' | 'DELETE',
+        method: Attempt['method'],
         href: string,
         body: object,
         saved?: (content: SavedContent) => void,
@@ -23,45 +34,78 @@ export function useCollaborationMutation() {
             return;
         }
 
-        const signature = JSON.stringify([method, href, body]);
-
-        if (attempt.current?.signature !== signature) {
-            attempt.current = { signature, key: newIdempotencyKey() };
-        }
-
+        attempt.current ??= {
+            method,
+            href,
+            body: structuredClone(body),
+            key: newIdempotencyKey(),
+            uncertain: false,
+            saved,
+            navigate,
+        };
+        const original = attempt.current;
         inFlight.current = true;
         setPending(true);
         setErrors({});
 
         try {
-            const result = await apiRequest<SavedContent>(
-                method,
-                href,
-                body,
-                attempt.current.key,
-            );
+            // A confirmed save only needs its failed read/navigation retried.
+            if (!original.content) {
+                const result = await apiRequest<SavedContent>(
+                    original.method,
+                    original.href,
+                    original.body,
+                    original.key,
+                );
 
-            if (!result.ok) {
-                setErrors({
-                    message: result.message,
-                    ...Object.fromEntries(
-                        Object.entries(result.errors ?? {}).map(
-                            ([field, messages]) => [field, messages[0]],
+                if (!result.ok) {
+                    setErrors({
+                        message: result.message,
+                        ...Object.fromEntries(
+                            Object.entries(result.errors ?? {}).map(
+                                ([field, messages]) => [field, messages[0]],
+                            ),
                         ),
-                    ),
-                });
+                    });
+                    original.uncertain ||=
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    setUnresolved(original.uncertain);
 
-                if (result.status >= 400 && result.status < 500) {
-                    attempt.current = null;
+                    if (!original.uncertain) {
+                        attempt.current = null;
+                    }
+
+                    return;
                 }
 
-                return;
+                if (
+                    !result.data ||
+                    typeof result.data.version !== 'string' ||
+                    result.data.version.trim() === '' ||
+                    typeof result.data.web_url !== 'string' ||
+                    result.data.web_url.trim() === ''
+                ) {
+                    original.uncertain = true;
+                    setUnresolved(true);
+                    setErrors({
+                        message:
+                            'SVC’s response could not be read. Check the original change.',
+                    });
+
+                    return;
+                }
+
+                original.content = result.data;
             }
 
-            if (navigate) {
+            const content = original.content;
+
+            if (original.navigate) {
                 await new Promise<void>((resolve, reject) => {
                     let loaded = false;
-                    router.visit(result.data.web_url, {
+                    router.visit(content.web_url, {
                         onSuccess: () => {
                             loaded = true;
                             resolve();
@@ -80,12 +124,15 @@ export function useCollaborationMutation() {
                 });
             }
 
+            original.saved?.(content);
             attempt.current = null;
-            saved?.(result.data);
+            setUnresolved(false);
         } catch {
+            original.uncertain = true;
+            setUnresolved(true);
             setErrors({
                 message:
-                    'The change was saved, but current content could not be loaded. Retry or reload before making another change.',
+                    'The change could not be confirmed on this page. Check the original change before editing again.',
             });
         } finally {
             inFlight.current = false;
@@ -93,5 +140,5 @@ export function useCollaborationMutation() {
         }
     }
 
-    return { pending, errors, run };
+    return { pending, unresolved, locked: pending || unresolved, errors, run };
 }

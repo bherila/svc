@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CommentThread from '@/components/collaboration/comment-thread';
@@ -314,7 +315,7 @@ describe('native collaboration pages', () => {
         const key = mutations.request.mock.calls[0][3];
         await act(async () => {
             fireEvent.click(
-                screen.getByRole('button', { name: 'Add comment' }),
+                screen.getByRole('button', { name: 'Check original change' }),
             );
         });
         expect(mutations.request.mock.calls[1][3]).toBe(key);
@@ -476,7 +477,7 @@ describe('native collaboration pages', () => {
         );
     });
 
-    it('replays a saved reply when its server focus destination cannot load', async () => {
+    it('retries only navigation when a recorded reply destination cannot load', async () => {
         mutations.request.mockResolvedValue({
             ok: true,
             status: 201,
@@ -498,17 +499,282 @@ describe('native collaboration pages', () => {
             );
         });
         expect(screen.getByRole('alert')).toHaveTextContent(
-            'saved, but current content could not be loaded',
+            'Check the original change before editing again',
         );
         const key = mutations.request.mock.calls[0][3];
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
+        expect(mutations.request).toHaveBeenCalledTimes(1);
+        expect(mutations.visit).toHaveBeenCalledTimes(2);
+        expect(mutations.request.mock.calls[0][3]).toBe(key);
+        expect(mutations.visit.mock.calls[1][0]).toBe(
+            '/synthetic/finished-comment',
+        );
+    });
+
+    it('freezes a timed-out topic creation through changed props and later refusals', async () => {
+        mutations.request.mockResolvedValueOnce({
+            ok: false,
+            status: 408,
+            message: 'Synthetic timeout',
+        });
+        mutations.request.mockResolvedValueOnce({
+            ok: false,
+            status: 409,
+            message: 'Synthetic current conflict cannot settle the lost result',
+        });
+        mutations.request.mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            data: {
+                version: 'saved-topic-version',
+                web_url: '/synthetic/created-topic',
+            },
+        });
+        const props = {
+            company: { id: 'synthetic-company', name: 'Synthetic company' },
+            audience: 'internal' as const,
+            topics: [],
+            filters: { kind: null, project_id: null },
+            filter_href: '/synthetic/filter',
+            create_href: '/synthetic/original-create',
+            create_scopes: [{ id: '', label: 'Company-wide' }],
+            next_href: null,
+            previous_href: null,
+        };
+        const view = render(<CollaborationIndex {...props} />);
+        await userEvent.type(
+            screen.getByLabelText('Title'),
+            'Synthetic original title',
+        );
+        await userEvent.type(
+            screen.getByLabelText('Content'),
+            'Synthetic original text',
+        );
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+        });
+        const original = mutations.request.mock.calls[0];
+        expect(screen.getByLabelText('Title')).toBeDisabled();
+        expect(screen.getByLabelText('Content')).toBeDisabled();
+        expect(screen.getByRole('combobox', { name: 'Scope' })).toBeDisabled();
+        await userEvent.type(screen.getByLabelText('Title'), ' changed');
+        expect(screen.getByLabelText('Title')).toHaveValue(
+            'Synthetic original title',
+        );
+        view.rerender(
+            <CollaborationIndex
+                {...props}
+                create_href="/synthetic/changed-create"
+            />,
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
+        expect(mutations.request.mock.calls[1]).toEqual(original);
+        expect(screen.getByLabelText('Title')).toBeDisabled();
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
+        expect(mutations.request.mock.calls[2]).toEqual(original);
+        expect(mutations.visit).toHaveBeenCalledWith(
+            '/synthetic/created-topic',
+            expect.any(Object),
+        );
+    });
+
+    it('retains an unknown comment update and disables cancellation across a later authorization refusal', async () => {
+        mutations.request.mockResolvedValueOnce({
+            ok: false,
+            status: 0,
+            message: 'Synthetic lost answer',
+        });
+        mutations.request.mockResolvedValueOnce({
+            ok: false,
+            status: 403,
+            message: 'Synthetic current access refusal',
+        });
+        mutations.request.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            data: { version: 'saved-comment-version', web_url: comment.href },
+        });
+        const view = render(<CommentThread thread={thread} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Edit comment' }));
+        fireEvent.change(screen.getByLabelText('Edit comment'), {
+            target: { value: 'Synthetic original edit' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Save comment' }),
+            );
+        });
+        const original = mutations.request.mock.calls[0];
+        expect(screen.getByLabelText('Edit comment')).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(screen.getByLabelText('Edit comment')).toBeInTheDocument();
+        view.rerender(
+            <CommentThread
+                thread={{
+                    ...thread,
+                    comments: [
+                        {
+                            ...comment,
+                            version: 'new-unreviewed-version',
+                            update_href: '/synthetic/changed-edit',
+                            body: 'Synthetic remote text',
+                        },
+                    ],
+                }}
+            />,
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
+        expect(mutations.request.mock.calls[1]).toEqual(original);
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
+        expect(mutations.request.mock.calls[2]).toEqual(original);
+        expect(
+            screen.queryByRole('textbox', { name: 'Edit comment' }),
+        ).not.toBeInTheDocument();
+    });
+
+    it('keeps a known topic save locked until authoritative refresh succeeds without rewriting it', async () => {
+        mutations.request.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            data: { version: 'saved-topic-version', web_url: topic.href },
+        });
+        vi.mocked(refreshPageProps).mockRejectedValueOnce(
+            new Error('Synthetic refresh failed'),
+        );
+        render(<CollaborationShow topic={topic} thread={null} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Edit content' }));
+        fireEvent.change(screen.getByLabelText('Content'), {
+            target: { value: 'Synthetic saved topic text' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Save content' }),
+            );
+        });
+        expect(screen.getByLabelText('Content')).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Check the original change',
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
+        expect(mutations.request).toHaveBeenCalledTimes(1);
+        expect(refreshPageProps).toHaveBeenCalledTimes(2);
+        expect(refreshPageProps).toHaveBeenLastCalledWith({
+            only: ['topic', 'thread', 'topics'],
+            requireSuccess: true,
+        });
+        expect(
+            screen.getByRole('button', { name: 'Edit content' }),
+        ).toBeInTheDocument();
+    });
+
+    it('allows correction after a definitive validation refusal using a fresh receipt', async () => {
+        mutations.request.mockResolvedValueOnce({
+            ok: false,
+            status: 422,
+            message: 'Synthetic validation refusal',
+            errors: { body: ['Synthetic body needs correction'] },
+        });
+        mutations.request.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            data: { version: 'saved-comment-version', web_url: comment.href },
+        });
+        render(<CommentThread thread={thread} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Edit comment' }));
+        fireEvent.change(screen.getByLabelText('Edit comment'), {
+            target: { value: 'Synthetic rejected text' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Save comment' }),
+            );
+        });
+        const first = mutations.request.mock.calls[0];
+        expect(screen.getByLabelText('Edit comment')).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Synthetic body needs correction',
+        );
+        fireEvent.change(screen.getByLabelText('Edit comment'), {
+            target: { value: 'Synthetic corrected text' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Save comment' }),
+            );
+        });
+        expect(mutations.request.mock.calls[1][2]).toEqual({
+            body: 'Synthetic corrected text',
+            expected_version: comment.version,
+        });
+        expect(mutations.request.mock.calls[1][3]).not.toBe(first[3]);
+    });
+
+    it('keeps an unreadable successful creation unresolved instead of starting another write', async () => {
+        mutations.request.mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            data: { version: '', web_url: '/synthetic/missing-version' },
+        });
+        mutations.request.mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            data: {
+                version: 'saved-version',
+                web_url: '/synthetic/recovered-comment',
+            },
+        });
+        render(<CommentThread thread={thread} />);
+        fireEvent.change(screen.getByLabelText('New comment'), {
+            target: { value: 'Synthetic creation needing reconciliation' },
+        });
         await act(async () => {
             fireEvent.click(
                 screen.getByRole('button', { name: 'Add comment' }),
             );
         });
-        expect(mutations.request.mock.calls[1][3]).toBe(key);
-        expect(mutations.request.mock.calls[1][2]).toEqual(
-            mutations.request.mock.calls[0][2],
+        const original = mutations.request.mock.calls[0];
+        expect(screen.getByLabelText('New comment')).toBeDisabled();
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'response could not be read',
+        );
+        expect(mutations.visit).not.toHaveBeenCalled();
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
+        expect(mutations.request.mock.calls[1]).toEqual(original);
+        expect(mutations.visit).toHaveBeenCalledWith(
+            '/synthetic/recovered-comment',
+            expect.any(Object),
         );
     });
 

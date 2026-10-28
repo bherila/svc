@@ -58,6 +58,7 @@ function TopicEditor({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Title
                 <Input
+                    disabled={mutation.locked}
                     required
                     maxLength={255}
                     value={form.data.title}
@@ -69,6 +70,7 @@ function TopicEditor({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Content
                 <Textarea
+                    disabled={mutation.locked}
                     required
                     maxLength={50000}
                     className="min-h-64"
@@ -81,9 +83,16 @@ function TopicEditor({
             <CollaborationErrors errors={mutation.errors} />
             <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={mutation.pending}>
-                    Save content
+                    {mutation.unresolved
+                        ? 'Check original change'
+                        : 'Save content'}
                 </Button>
-                <Button type="button" variant="outline" onClick={onCancel}>
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={mutation.locked}
+                    onClick={onCancel}
+                >
                     Cancel
                 </Button>
             </div>

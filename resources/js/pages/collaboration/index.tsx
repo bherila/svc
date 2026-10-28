@@ -49,6 +49,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Type
                 <select
+                    disabled={mutation.locked}
                     className="min-w-0 rounded-md border bg-background p-2"
                     value={form.data.kind}
                     onChange={(event) =>
@@ -62,6 +63,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Scope
                 <select
+                    disabled={mutation.locked}
                     className="min-w-0 rounded-md border bg-background p-2"
                     value={form.data.project_id}
                     onChange={(event) =>
@@ -78,6 +80,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Title
                 <Input
+                    disabled={mutation.locked}
                     required
                     maxLength={255}
                     value={form.data.title}
@@ -89,6 +92,7 @@ function NewTopic({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Content
                 <Textarea
+                    disabled={mutation.locked}
                     required
                     maxLength={50000}
                     className="min-h-48"
@@ -101,6 +105,7 @@ function NewTopic({
             <label className="flex items-center gap-2 text-sm">
                 <input
                     type="checkbox"
+                    disabled={mutation.locked}
                     checked={form.data.is_visible_to_client}
                     onChange={(event) =>
                         form.setData(
@@ -117,7 +122,7 @@ function NewTopic({
                 disabled={mutation.pending}
                 className="justify-self-start"
             >
-                Create
+                {mutation.unresolved ? 'Check original change' : 'Create'}
             </Button>
         </form>
     );

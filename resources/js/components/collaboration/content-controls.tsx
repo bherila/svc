@@ -56,6 +56,7 @@ export function VisibilityControl({
             <label className="flex items-center gap-2 text-sm">
                 <input
                     type="checkbox"
+                    disabled={mutation.locked}
                     checked={form.data.is_visible_to_client}
                     onChange={(event) =>
                         form.setData(
@@ -79,7 +80,7 @@ export function VisibilityControl({
                 className="justify-self-start"
                 disabled={mutation.pending}
             >
-                Save sharing
+                {mutation.unresolved ? 'Check original change' : 'Save sharing'}
             </Button>
         </form>
     );
@@ -128,11 +129,14 @@ export function RemoveContent({ content }: { content: CollaborationContent }) {
                     variant="destructive"
                     disabled={mutation.pending}
                 >
-                    Confirm removal
+                    {mutation.unresolved
+                        ? 'Check original change'
+                        : 'Confirm removal'}
                 </Button>
                 <Button
                     type="button"
                     variant="outline"
+                    disabled={mutation.locked}
                     onClick={() => setConfirmedVersion(null)}
                 >
                     Cancel

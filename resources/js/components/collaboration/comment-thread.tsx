@@ -52,6 +52,7 @@ function CommentEditor({
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Edit comment
                 <Textarea
+                    disabled={mutation.locked}
                     required
                     maxLength={50000}
                     value={form.data.body}
@@ -64,9 +65,16 @@ function CommentEditor({
             <CollaborationErrors errors={mutation.errors} />
             <div className="flex flex-wrap gap-2">
                 <Button disabled={mutation.pending} type="submit">
-                    Save comment
+                    {mutation.unresolved
+                        ? 'Check original change'
+                        : 'Save comment'}
                 </Button>
-                <Button variant="outline" type="button" onClick={onCancel}>
+                <Button
+                    variant="outline"
+                    type="button"
+                    disabled={mutation.locked}
+                    onClick={onCancel}
+                >
                     Cancel
                 </Button>
             </div>
@@ -174,6 +182,7 @@ function NewComment({ thread }: { thread: CollaborationThread }) {
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 New comment
                 <Textarea
+                    disabled={mutation.locked}
                     required
                     maxLength={50000}
                     value={form.data.body}
@@ -187,6 +196,7 @@ function NewComment({ thread }: { thread: CollaborationThread }) {
                 <label className="flex items-center gap-2 text-sm">
                     <input
                         type="checkbox"
+                        disabled={mutation.locked}
                         checked={form.data.is_visible_to_client}
                         onChange={(event) =>
                             form.setData(
@@ -204,7 +214,7 @@ function NewComment({ thread }: { thread: CollaborationThread }) {
                 disabled={mutation.pending}
                 className="justify-self-start"
             >
-                Add comment
+                {mutation.unresolved ? 'Check original change' : 'Add comment'}
             </Button>
         </form>
     );
