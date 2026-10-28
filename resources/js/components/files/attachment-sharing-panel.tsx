@@ -171,7 +171,10 @@ function RemoveAttachment({ file }: { file: SharedAttachment }) {
     const [busy, setBusy] = useState(false);
     const running = useRef(false);
     const [error, setError] = useState<string | null>(null);
-    const [staleVersion, setStaleVersion] = useState<string | null>(null);
+    const [staleVersions, setStaleVersions] = useState<{
+        attachment: string;
+        parent?: string;
+    } | null>(null);
     const [unresolved, setUnresolved] = useState(false);
     const [accepted, setAccepted] = useState(false);
     const attempt = useRef<{
@@ -193,8 +196,9 @@ function RemoveAttachment({ file }: { file: SharedAttachment }) {
             ),
     );
     const stale =
-        staleVersion !== null &&
-        staleVersion === file.deletion?.expected_version;
+        staleVersions !== null &&
+        staleVersions.attachment === file.deletion?.expected_version &&
+        staleVersions.parent === file.deletion?.expected_parent_version;
 
     if ((!file.delete_href || !file.deletion) && !busy && !unresolved) {
         return null;
@@ -235,9 +239,12 @@ function RemoveAttachment({ file }: { file: SharedAttachment }) {
                     result.status >= 500;
                 setError(result.message);
                 setUnresolved(original.uncertain);
-                setStaleVersion(
+                setStaleVersions(
                     !original.uncertain && result.status === 409
-                        ? original.body.expected_version
+                        ? {
+                              attachment: original.body.expected_version,
+                              parent: original.body.expected_parent_version,
+                          }
                         : null,
                 );
 
@@ -435,6 +442,7 @@ export function UploadAttachment({
             upload_url?: string;
         }>(original.method, original.href, {});
         let result;
+        let attemptedUpload = false;
 
         if (!prepared.ok) {
             result = prepared;
@@ -452,6 +460,7 @@ export function UploadAttachment({
                 const body = new FormData();
                 body.set('file', original.file);
                 body.set('expected_version', original.parentVersion);
+                attemptedUpload = true;
                 result = await apiRequest(
                     'POST',
                     destination,
@@ -468,9 +477,10 @@ export function UploadAttachment({
             setError(result.message);
             const uncertain =
                 original.uncertain ||
-                result.status === 0 ||
-                result.status === 408 ||
-                result.status >= 500;
+                (attemptedUpload &&
+                    (result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500));
             original.uncertain = uncertain;
             setStaleVersion(
                 !uncertain && result.status === 409

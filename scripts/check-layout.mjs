@@ -1856,6 +1856,25 @@ try {
                             'Synthetic receipt browser acceptance bytes.',
                         ),
                     });
+                    await page.route(
+                        (url) =>
+                            url.pathname.startsWith(fixture.receipt_upload) &&
+                            url.pathname.endsWith('/upload-url'),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await page
+                        .getByRole('button', {
+                            name: 'Upload file',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(page.getByRole('alert')).toBeVisible();
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeEnabled();
+                    expect(uploads).toHaveLength(0);
+                    await capture(screen, 'preparation-failed', width);
                     await page
                         .getByRole('button', {
                             name: 'Upload file',

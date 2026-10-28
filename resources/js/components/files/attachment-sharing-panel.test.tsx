@@ -890,6 +890,257 @@ describe('attachment sharing panel', () => {
         expect(fetch).toHaveBeenCalledTimes(2);
     });
 
+    it.each(['expense', 'collaboration'])(
+        'recovers a %s removal when only its parent version advances',
+        async (kind) => {
+            const local = {
+                ...panel,
+                files: panel.files.map((file) => ({
+                    ...file,
+                    delete_href: `/synthetic/${kind}/delete`,
+                })),
+            };
+            respond({ message: 'Synthetic stale parent' }, 409);
+            const view = render(<AttachmentSharingPanel panel={local} />);
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Remove file' }),
+            );
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Confirm removal' }),
+            );
+            await screen.findByText('Synthetic stale parent');
+            expect(
+                screen.getByRole('button', { name: 'Confirm removal' }),
+            ).toBeDisabled();
+            expect(
+                screen.getByRole('button', { name: 'Cancel' }),
+            ).toBeDisabled();
+            const first = vi.mocked(fetch).mock.calls[0][1]!;
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Reload current files' }),
+            );
+            view.rerender(
+                <AttachmentSharingPanel
+                    panel={{
+                        ...local,
+                        files: local.files.map((file) => ({
+                            ...file,
+                            deletion: {
+                                ...file.deletion!,
+                                expected_parent_version: 'q'.repeat(64),
+                            },
+                        })),
+                    }}
+                />,
+            );
+            expect(
+                screen.getByRole('button', { name: 'Confirm removal' }),
+            ).toBeEnabled();
+            expect(
+                screen.getByRole('button', { name: 'Cancel' }),
+            ).toBeEnabled();
+            respond({ data: { status: 'deleted' } });
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Confirm removal' }),
+            );
+            await waitFor(() =>
+                expect(
+                    screen.getByRole('button', { name: 'Remove file' }),
+                ).toBeVisible(),
+            );
+            const second = vi.mocked(fetch).mock.calls[0][1]!;
+            expect(JSON.parse(String(second.body))).toEqual({
+                confirm: true,
+                expected_version: 'v'.repeat(64),
+                expected_parent_version: 'q'.repeat(64),
+            });
+            expect(second.headers).not.toEqual(first.headers);
+        },
+    );
+
+    it.each([0, 408, 503])(
+        'keeps preparation failure %s editable without an unknown multipart write',
+        async (status) => {
+            const prepare = vi.fn();
+
+            if (status === 0) {
+                prepare.mockRejectedValueOnce(
+                    new Error('Synthetic preparation response lost'),
+                );
+            } else {
+                prepare.mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            message: 'Synthetic preparation failure',
+                        }),
+                        { status },
+                    ),
+                );
+            }
+
+            prepare
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: {
+                                upload_url:
+                                    '/synthetic/signed-after-preparation',
+                            },
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { id: 'synthetic-after-preparation' },
+                        }),
+                        { status: 201 },
+                    ),
+                );
+            vi.stubGlobal('fetch', prepare);
+            render(
+                <AttachmentSharingPanel
+                    panel={{
+                        ...panel,
+                        upload: {
+                            href: '/synthetic/preparation',
+                            method: 'GET',
+                            parent_version: 'p'.repeat(64),
+                        },
+                    }}
+                />,
+            );
+            await userEvent.upload(
+                screen.getByLabelText('Upload a file'),
+                new File(['Synthetic first choice'], 'synthetic-first.txt'),
+            );
+            fireEvent.submit(
+                screen.getByLabelText('Upload a file').closest('form')!,
+            );
+            await screen.findByRole('alert');
+            expect(fetch).toHaveBeenCalledTimes(1);
+            expect(screen.getByLabelText('Upload a file')).toBeEnabled();
+            expect(
+                screen.queryByRole('button', { name: 'Check upload' }),
+            ).not.toBeInTheDocument();
+            const before = new CustomEvent('inertia:before', {
+                cancelable: true,
+                detail: {
+                    visit: {
+                        method: 'get',
+                        url: '/synthetic/elsewhere',
+                        only: [],
+                    },
+                },
+            });
+            document.dispatchEvent(before);
+            expect(before.defaultPrevented).toBe(false);
+            const unload = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(unload);
+            expect(unload.defaultPrevented).toBe(false);
+            const next = new File(
+                ['Synthetic changed choice'],
+                'synthetic-next.txt',
+            );
+            await userEvent.upload(
+                screen.getByLabelText('Upload a file'),
+                next,
+            );
+            fireEvent.submit(
+                screen.getByLabelText('Upload a file').closest('form')!,
+            );
+            await waitFor(() =>
+                expect(screen.getByLabelText('Upload a file')).toBeEnabled(),
+            );
+            expect(fetch).toHaveBeenCalledTimes(3);
+            expect(
+                (prepare.mock.calls[2][1]!.body as FormData).get('file'),
+            ).toBe(next);
+        },
+    );
+
+    it('keeps earlier multipart uncertainty through a later preparation failure', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { upload_url: '/synthetic/original-signed' },
+                        }),
+                    ),
+                )
+                .mockRejectedValueOnce(
+                    new Error('Synthetic lost multipart answer'),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            message: 'Synthetic later preparation failure',
+                        }),
+                        { status: 503 },
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { upload_url: '/synthetic/renewed-signed' },
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({ data: { id: 'synthetic-recovered' } }),
+                        { status: 201 },
+                    ),
+                ),
+        );
+        render(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: {
+                        href: '/synthetic/preparation',
+                        method: 'GET',
+                        parent_version: 'p'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        const file = new File(
+            ['Synthetic retained multipart bytes'],
+            'synthetic-retained.txt',
+        );
+        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await screen.findByRole('button', { name: 'Check upload' });
+        const original = vi.mocked(fetch).mock.calls[1][1]!;
+        fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+        await screen.findByText('Synthetic later preparation failure');
+        expect(screen.getByLabelText('Upload a file')).toBeDisabled();
+        const before = new CustomEvent('inertia:before', {
+            cancelable: true,
+            detail: {
+                visit: { method: 'get', url: '/synthetic/elsewhere', only: [] },
+            },
+        });
+        document.dispatchEvent(before);
+        expect(before.defaultPrevented).toBe(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+        await waitFor(() =>
+            expect(screen.getByLabelText('Upload a file')).toBeEnabled(),
+        );
+        const replayed = vi.mocked(fetch).mock.calls[4][1]!;
+        expect(replayed.headers).toEqual(original.headers);
+        expect((replayed.body as FormData).get('file')).toBe(file);
+        expect((replayed.body as FormData).get('expected_version')).toBe(
+            'p'.repeat(64),
+        );
+    });
+
     it('replaces parent-derived sharing state and captured versions when the authorized seed changes', async () => {
         vi.stubGlobal('fetch', vi.fn());
         const { rerender } = render(<AttachmentSharingPanel panel={panel} />);
