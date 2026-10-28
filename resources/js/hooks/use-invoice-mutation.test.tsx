@@ -95,6 +95,17 @@ it('retains a known saved result until refresh succeeds and retries only its rea
     expect(result.current.error).toContain('The change was saved');
     expect(result.current.locked).toBe(true);
     expect(done).not.toHaveBeenCalled();
+    const navigation = {
+        detail: {
+            visit: { url: new URL('/other-page', window.location.href) },
+        },
+        preventDefault: vi.fn(),
+    };
+    act(() => inertia.on.mock.calls[0][1](navigation));
+    expect(navigation.preventDefault).not.toHaveBeenCalled();
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
     const firstKey = vi.mocked(apiRequest).mock.calls[0][3];
 
     act(() => {

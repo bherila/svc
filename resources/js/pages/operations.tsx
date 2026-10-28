@@ -578,7 +578,7 @@ export function InvoiceIssueButton({ invoice }: { invoice: Invoice }) {
     }
 
     return (
-        <div>
+        <div className="grid min-w-0 flex-1 basis-40 grid-cols-1 gap-1">
             <button
                 disabled={mutation.busy}
                 onClick={() => {
@@ -598,7 +598,14 @@ export function InvoiceIssueButton({ invoice }: { invoice: Invoice }) {
                       ? 'Check original request'
                       : 'Issue'}
             </button>
-            {mutation.error !== null && <p role="alert">{mutation.error}</p>}
+            {mutation.error !== null && (
+                <p
+                    role="alert"
+                    className="text-sm font-normal wrap-anywhere text-red-700"
+                >
+                    {mutation.error}
+                </p>
+            )}
         </div>
     );
 }
@@ -827,7 +834,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                             )}
                                                         </p>
                                                     </div>
-                                                    <div className="flex shrink-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
+                                                    <div className="flex max-w-full min-w-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
                                                         <a
                                                             href={
                                                                 invoice.pdf_href

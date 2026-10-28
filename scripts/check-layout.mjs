@@ -38,6 +38,7 @@ const clientsOnly = process.argv.includes('--clients');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
 const invoiceActionsOnly = process.argv.includes('--invoice-actions');
+const invoiceRecoveryOnly = process.argv.includes('--invoice-recovery');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
 const disputesOnly = process.argv.includes('--disputes');
@@ -260,6 +261,94 @@ try {
         failures.push(`Browser error: ${error.message}`),
     );
 
+    async function checkInvoiceRecovery(
+        screen,
+        width,
+        state,
+        pattern,
+        submit,
+        field,
+    ) {
+        // Synthetic API outcomes never write fixture money or send mail. The
+        // normal invoice journey below separately checks real canonical writes.
+        const requests = [];
+        await page.route(
+            pattern,
+            async (route) => {
+                const request = route.request();
+                requests.push({
+                    method: request.method(),
+                    url: request.url(),
+                    body: request.postData(),
+                    key: request.headers()['idempotency-key'],
+                });
+                expect(requests.at(-1).key).toBeTruthy();
+
+                if (requests.length > 1) {
+                    expect(requests.at(-1)).toEqual(requests[0]);
+                }
+
+                await route.fulfill({
+                    status:
+                        requests.length === 1
+                            ? 408
+                            : requests.length === 2
+                              ? 422
+                              : 200,
+                    json:
+                        requests.length < 3
+                            ? {
+                                  message:
+                                      'Synthetic uncertain result. Check the original request before starting another change.',
+                              }
+                            : { data: {} },
+                });
+            },
+            { times: 3 },
+        );
+        await submit.click();
+        const check = page.getByRole('button', {
+            name: 'Check original request',
+            exact: true,
+        });
+        await expect(check).toBeEnabled();
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await capture(screen, `${state}-uncertain`, width);
+        await check.click();
+        await expect.poll(() => requests.length).toBe(2);
+        await expect(check).toBeEnabled();
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await page.route(page.url(), (route) => route.abort('failed'), {
+            times: 1,
+        });
+        await check.click();
+        const refresh = page.getByRole('button', {
+            name: 'Refresh saved result',
+            exact: true,
+        });
+        await expect(refresh).toBeEnabled();
+        await expect(page.getByRole('alert')).toContainText(
+            'The change was saved, but the page could not refresh',
+        );
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await capture(screen, `${state}-saved-refresh-failure`, width);
+        await refresh.click();
+        await expect(refresh).toHaveCount(0);
+        expect(requests).toHaveLength(3);
+    }
+
     async function checkExpenseRecovery(screen, width, pattern, submitLabel) {
         // Exercise browser recovery without adding rows to the width fixtures.
         // Real canonical writes are checked separately after these captures.
@@ -394,70 +483,79 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of projectsOnly
-            ? ['settings']
-            : schedulesOnly
-              ? ['expense_schedules']
-              : expensesOnly
-                ? ['expenses']
-                : workspacesOnly
-                  ? ['selector']
-                  : invoiceActionsOnly
-                    ? [
-                          'invoice',
-                          'invoice_review',
-                          'draft_invoice',
-                          'draft_time',
-                      ]
-                    : engagementOnly
-                      ? ['operations', 'agreement']
-                      : disputesOnly
-                        ? ['invoice', 'square_portal']
-                        : tasksOnly
-                          ? [
-                                'task_list',
-                                'task_project',
-                                'task_editor',
-                                'task_portal',
-                            ]
-                          : historyOnly
+        for (const screen of invoiceRecoveryOnly
+            ? [
+                  'invoice',
+                  'operations',
+                  'draft_time',
+                  'time',
+                  'draft_invoice',
+                  'invoice_review',
+              ]
+            : projectsOnly
+              ? ['settings']
+              : schedulesOnly
+                ? ['expense_schedules']
+                : expensesOnly
+                  ? ['expenses']
+                  : workspacesOnly
+                    ? ['selector']
+                    : invoiceActionsOnly
+                      ? [
+                            'invoice',
+                            'invoice_review',
+                            'draft_invoice',
+                            'draft_time',
+                        ]
+                      : engagementOnly
+                        ? ['operations', 'agreement']
+                        : disputesOnly
+                          ? ['invoice', 'square_portal']
+                          : tasksOnly
                             ? [
-                                  'history_index',
-                                  'history_discussion',
-                                  'history_invoice',
+                                  'task_list',
+                                  'task_project',
+                                  'task_editor',
+                                  'task_portal',
                               ]
-                            : portalOnly
-                              ? ['settings']
-                              : correctionOnly
-                                ? ['invoice_review']
-                                : squareOnly
-                                  ? [
-                                        'square_explore',
-                                        'square_invoice',
-                                        'square_portal',
-                                    ]
-                                  : remindersOnly
-                                    ? ['reminder_invoice', 'settings']
-                                    : timeOnly
-                                      ? ['time', 'draft_time']
-                                      : backlogOnly
-                                        ? ['agreement']
-                                        : [
-                                              'mcp_setup',
-                                              'invoice',
-                                              'invoice_review',
-                                              'reminder_invoice',
-                                              'settings',
-                                              'draft_invoice',
-                                              'draft_time',
-                                              'proposal',
-                                              'proposal_acceptance',
-                                              'operations',
-                                              'time',
-                                              'expenses',
-                                              'receipts',
-                                              'expense_schedules',
-                                          ]) {
+                            : historyOnly
+                              ? [
+                                    'history_index',
+                                    'history_discussion',
+                                    'history_invoice',
+                                ]
+                              : portalOnly
+                                ? ['settings']
+                                : correctionOnly
+                                  ? ['invoice_review']
+                                  : squareOnly
+                                    ? [
+                                          'square_explore',
+                                          'square_invoice',
+                                          'square_portal',
+                                      ]
+                                    : remindersOnly
+                                      ? ['reminder_invoice', 'settings']
+                                      : timeOnly
+                                        ? ['time', 'draft_time']
+                                        : backlogOnly
+                                          ? ['agreement']
+                                          : [
+                                                'mcp_setup',
+                                                'invoice',
+                                                'invoice_review',
+                                                'reminder_invoice',
+                                                'settings',
+                                                'draft_invoice',
+                                                'draft_time',
+                                                'proposal',
+                                                'proposal_acceptance',
+                                                'operations',
+                                                'time',
+                                                'expenses',
+                                                'receipts',
+                                                'expense_schedules',
+                                            ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -931,6 +1029,181 @@ try {
 
             if (screen !== 'task_editor') {
                 await capture(screen, 'initial', width, false);
+            }
+
+            if (invoiceRecoveryOnly) {
+                if (screen === 'invoice') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Record payment',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Reference', { exact: true })
+                        .fill('SyntheticOriginalReference'.repeat(8));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'payment',
+                        '**/api/v1/workspaces/*/payments',
+                        page.getByRole('button', {
+                            name: 'Record',
+                            exact: true,
+                        }),
+                        page.getByLabel('Reference', { exact: true }),
+                    );
+                } else if (screen === 'operations') {
+                    const draft = page
+                        .getByRole('form', { name: 'Draft invoice' })
+                        .first();
+                    await draft
+                        .getByPlaceholder('Invoice number', { exact: true })
+                        .fill('SYNTHETIC-RECOVERY');
+                    await draft
+                        .getByPlaceholder('Line description', { exact: true })
+                        .fill('SyntheticUnbrokenInvoiceDescription'.repeat(10));
+                    await draft
+                        .getByPlaceholder('Unit price', { exact: true })
+                        .fill('123.45');
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'draft',
+                        '**/api/v1/workspaces/*/invoices',
+                        draft.getByRole('button', {
+                            name: 'Draft invoice',
+                            exact: true,
+                        }),
+                        draft.getByPlaceholder('Invoice number', {
+                            exact: true,
+                        }),
+                    );
+                    const payment = page
+                        .locator('form')
+                        .filter({
+                            has: page.getByLabel('Payment amount', {
+                                exact: true,
+                            }),
+                        })
+                        .first();
+                    await payment
+                        .getByPlaceholder('Payment reference', { exact: true })
+                        .fill('SyntheticUnbrokenReference'.repeat(10));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'payment',
+                        '**/api/v1/workspaces/*/payments',
+                        payment.getByRole('button', {
+                            name: 'Record payment',
+                            exact: true,
+                        }),
+                        payment.getByLabel('Payment amount', { exact: true }),
+                    );
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'issue',
+                        '**/api/v1/workspaces/*/invoices/*/issue',
+                        page
+                            .getByRole('button', { name: 'Issue', exact: true })
+                            .first(),
+                        null,
+                    );
+                } else if (screen === 'draft_time' || screen === 'time') {
+                    if (screen === 'time') {
+                        await page
+                            .getByRole('button', {
+                                name: 'Select time to invoice',
+                                exact: true,
+                            })
+                            .click();
+                    }
+
+                    await page
+                        .getByRole('checkbox', { name: / for invoice$/ })
+                        .first()
+                        .check();
+                    await page
+                        .getByRole('button', {
+                            name: 'Review draft invoice',
+                            exact: true,
+                        })
+                        .click();
+
+                    if (screen === 'time') {
+                        await page
+                            .getByLabel('Invoice number', { exact: true })
+                            .fill('SYNTHETIC-SELECTED-RECOVERY');
+                    }
+
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'selection',
+                        screen === 'time'
+                            ? '**/api/v1/workspaces/*/invoices'
+                            : '**/api/v1/workspaces/*/invoices/*/time',
+                        page.getByRole('button', {
+                            name:
+                                screen === 'time'
+                                    ? 'Create draft invoice'
+                                    : 'Add time to draft',
+                            exact: true,
+                        }),
+                        page.getByRole('button', {
+                            name: 'Cancel',
+                            exact: true,
+                        }),
+                    );
+                } else if (screen === 'draft_invoice') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Change dates',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Due date', { exact: true })
+                        .fill('2026-12-31');
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'dates',
+                        '**/api/v1/workspaces/*/invoices/*/details',
+                        page.getByRole('button', {
+                            name: 'Save dates',
+                            exact: true,
+                        }),
+                        page.getByLabel('Due date', { exact: true }),
+                    );
+                } else if (screen === 'invoice_review') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Correct invoice',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Reason for correction', { exact: true })
+                        .fill('SyntheticCorrectionReason'.repeat(10));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'correction',
+                        '**/api/v1/workspaces/*/invoices/*/correct',
+                        page.getByRole('button', {
+                            name: 'Save audited correction',
+                            exact: true,
+                        }),
+                        page.getByLabel('Reason for correction', {
+                            exact: true,
+                        }),
+                    );
+                }
+
+                continue;
             }
 
             if (engagementOnly && screen === 'operations') {
@@ -1626,6 +1899,7 @@ try {
 
     if (
         !invoiceActionsOnly &&
+        !invoiceRecoveryOnly &&
         !schedulesOnly &&
         !expensesOnly &&
         !disputesOnly &&
@@ -1665,6 +1939,7 @@ try {
     }
 
     if (
+        !invoiceRecoveryOnly &&
         !schedulesOnly &&
         !expensesOnly &&
         !disputesOnly &&
