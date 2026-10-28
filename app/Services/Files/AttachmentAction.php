@@ -34,26 +34,26 @@ final class AttachmentAction
     }
 
     /** Publish preverified bytes under the current tenant-owned parent revision. */
-    public function publishPrepared(Workspace $workspace, string $type, string $id, ClientAttachment $prepared, string $expectedVersion, ?User $agentActor = null): ClientAttachment
+    public function publishPrepared(Workspace $workspace, string $type, string $id, ClientAttachment $prepared, string $expectedVersion, ?User $agentActor = null, AttachmentMutationOrigin $origin = AttachmentMutationOrigin::Agent): ClientAttachment
     {
         abort_unless(in_array($type, AttachmentRecordResolver::uploadableTypes(), true), 422);
 
-        return DB::transaction(function () use ($workspace, $type, $id, $prepared, $expectedVersion, $agentActor): ClientAttachment {
+        return DB::transaction(function () use ($workspace, $type, $id, $prepared, $expectedVersion, $agentActor, $origin): ClientAttachment {
             BillingMaintenance::share($workspace->id);
-            $record = $agentActor === null ? $this->lockedRecord($workspace, $type, $id) : $this->lockAgentParent($workspace, $type, $id, $agentActor);
+            $record = $agentActor === null ? $this->lockedRecord($workspace, $type, $id) : $this->lockAgentParent($workspace, $type, $id, $agentActor, $origin);
             abort_unless(AgentApiVersion::matches($record, $expectedVersion), 409, 'The record changed. Read it again before uploading.');
 
             return $this->storage->publishPrepared($workspace, $record, $prepared);
         });
     }
 
-    public function delete(Workspace $workspace, string $id, ?string $expectedVersion = null, ?User $agentActor = null): ClientAttachment
+    public function delete(Workspace $workspace, string $id, ?string $expectedVersion = null, ?User $agentActor = null, AttachmentMutationOrigin $origin = AttachmentMutationOrigin::Agent): ClientAttachment
     {
-        return DB::transaction(function () use ($workspace, $id, $expectedVersion, $agentActor): ClientAttachment {
+        return DB::transaction(function () use ($workspace, $id, $expectedVersion, $agentActor, $origin): ClientAttachment {
             BillingMaintenance::share($workspace->id);
             if ($agentActor !== null) {
                 $identity = ClientAttachment::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->firstOrFail();
-                $this->lockAgentParent($workspace, $identity->record_type, $identity->record_public_id, $agentActor);
+                $this->lockAgentParent($workspace, $identity->record_type, $identity->record_public_id, $agentActor, $origin);
             }
             $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->where('public_id', $id)
                 ->tap(Locks::forUpdate())->firstOrFail();
@@ -72,7 +72,7 @@ final class AttachmentAction
     /** Caller holds its mutation receipt. Publication and replay acquire the same current authority.
      * @return Model&WorkspaceOwned
      */
-    public function lockAgentParent(Workspace $workspace, string $type, string $id, User $actor): Model
+    public function lockAgentParent(Workspace $workspace, string $type, string $id, User $actor, AttachmentMutationOrigin $origin = AttachmentMutationOrigin::Agent): Model
     {
         $early = in_array($type, ['proposal', 'agreement', 'invoice'], true);
         if (! $early) {
@@ -82,7 +82,7 @@ final class AttachmentAction
         if ($early) {
             $this->access->lockWorkspace($workspace);
         }
-        $this->access->assertCurrentManager($actor, $workspace);
+        $this->access->assertCurrentManager($actor, $workspace, $origin);
 
         return $record;
     }

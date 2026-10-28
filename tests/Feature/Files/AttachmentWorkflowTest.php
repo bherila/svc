@@ -13,10 +13,12 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\CallsNativeFileApi;
 use Tests\TestCase;
 
 class AttachmentWorkflowTest extends TestCase
 {
+    use CallsNativeFileApi;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -35,15 +37,11 @@ class AttachmentWorkflowTest extends TestCase
         $content = 'Synthetic private agreement contents.';
         $this->assertTrue(Gate::forUser($owner)->allows('manage', $workspace));
 
-        $response = $this->actingAs($owner)->post(route('svc.files.store', [
-            'workspace' => $workspace,
-            'recordType' => 'company',
-            'recordPublicId' => $company->public_id,
-        ]), [
+        $response = $this->actingAs($owner, 'web')->uploadNativeFile($workspace, 'company', $company->public_id, [
             'file' => UploadedFile::fake()->createWithContent('secret-contract.txt', $content),
         ]);
 
-        $response->assertRedirect();
+        $response->assertCreated();
         $attachment = ClientAttachment::query()->sole();
 
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $attachment->lifecycle_state);
@@ -59,7 +57,7 @@ class AttachmentWorkflowTest extends TestCase
         Storage::disk('svc_files')->assertExists($attachment->object_key);
         Storage::disk('svc_files')->assertDirectoryEmpty('_staged');
 
-        $download = $this->actingAs($owner)->get(route('svc.files.download', [
+        $download = $this->actingAs($owner, 'web')->get(route('svc.files.download', [
             'workspace' => $workspace,
             'clientAttachment' => $attachment->public_id,
         ]));
@@ -84,60 +82,40 @@ class AttachmentWorkflowTest extends TestCase
             $owner,
         );
 
-        $this->actingAs($outsider)->get(route('svc.files.download', [
+        $this->actingAs($outsider, 'web')->get(route('svc.files.download', [
             'workspace' => $workspace,
             'clientAttachment' => $attachment->public_id,
         ]))->assertForbidden();
 
-        $this->actingAs($outsider)->delete(route('svc.files.destroy', [
-            'workspace' => $workspace,
-            'clientAttachment' => $attachment->public_id,
-        ]))->assertForbidden();
+        $this->actingAs($outsider, 'web')->deleteNativeFile($workspace, $attachment->public_id)->assertNotFound();
 
-        $this->actingAs($outsider)->post(route('svc.files.store', [
-            'workspace' => $workspace,
-            'recordType' => 'company',
-            'recordPublicId' => $company->public_id,
-        ]), [
+        $this->actingAs($outsider, 'web')->uploadNativeFile($workspace, 'company', $company->public_id, [
             'file' => UploadedFile::fake()->createWithContent('other.txt', 'other'),
-        ])->assertForbidden();
+        ])->assertNotFound();
 
         $this->assertSame($otherWorkspace->id, $outsider->workspaces()->first()->id);
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $attachment->fresh()->lifecycle_state);
     }
 
-    /**
-     * The browser routes answer the page, never a metadata body of their own
-     * (#454): even a JSON request is redirected, so nothing about the stored
-     * object - its key, its filename - can leak through this response. A
-     * program reads attachment metadata through the versioned API.
-     */
-    public function test_json_upload_and_delete_redirect_without_a_metadata_body(): void
+    /** The session API returns authorized metadata without exposing storage keys. */
+    public function test_session_upload_and_delete_return_authorized_metadata_without_storage_keys(): void
     {
         [$owner, $workspace, $company] = $this->companyWorkspace();
 
-        $upload = $this->actingAs($owner)->postJson(route('svc.files.store', [
-            'workspace' => $workspace,
-            'recordType' => 'company',
-            'recordPublicId' => $company->public_id,
-        ]), [
+        $upload = $this->actingAs($owner, 'web')->uploadNativeFile($workspace, 'company', $company->public_id, [
             'file' => UploadedFile::fake()->createWithContent('private.txt', 'synthetic'),
         ]);
 
         $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
-        $upload->assertRedirect()->assertSessionHas('attachment_id', $attachment->public_id);
+        $upload->assertCreated()->assertJsonPath('data.id', $attachment->public_id)->assertJsonPath('data.filename', 'private.txt')->assertJsonMissingPath('data.object_key');
         $this->assertStringNotContainsString($attachment->object_key, (string) $upload->getContent());
-        $this->assertStringNotContainsString('private.txt', (string) $upload->getContent());
         $this->assertSame('company', $attachment->record_type);
         $this->assertSame($company->public_id, $attachment->record_public_id);
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $attachment->lifecycle_state);
 
-        $delete = $this->actingAs($owner)->deleteJson(route('svc.files.destroy', [
-            'workspace' => $workspace,
-            'clientAttachment' => $attachment->public_id,
-        ]));
+        $delete = $this->actingAs($owner, 'web')->deleteNativeFile($workspace, $attachment->public_id);
 
-        $delete->assertRedirect()->assertSessionHas('status', 'Attachment queued for deletion.');
+        $delete->assertStatus(202)->assertJsonPath('data.id', $attachment->public_id)->assertJsonMissingPath('data.object_key');
         $this->assertStringNotContainsString($attachment->object_key, (string) $delete->getContent());
         $this->assertSame(
             ClientAttachment::STATE_DELETING,
@@ -176,12 +154,12 @@ class AttachmentWorkflowTest extends TestCase
             $owner,
         );
 
-        $this->actingAs($portalUser)->get(route('svc.files.download', [
+        $this->actingAs($portalUser, 'web')->get(route('svc.files.download', [
             'workspace' => $workspace,
             'clientAttachment' => $visibleAttachment->public_id,
         ]))->assertOk()->assertStreamedContent('visible');
 
-        $this->actingAs($portalUser)->get(route('svc.files.download', [
+        $this->actingAs($portalUser, 'web')->get(route('svc.files.download', [
             'workspace' => $workspace,
             'clientAttachment' => $internalAttachment->public_id,
         ]))->assertForbidden();
@@ -197,16 +175,13 @@ class AttachmentWorkflowTest extends TestCase
             $owner,
         );
 
-        $this->actingAs($owner)->delete(route('svc.files.destroy', [
-            'workspace' => $workspace,
-            'clientAttachment' => $attachment->public_id,
-        ]))->assertRedirect();
+        $this->actingAs($owner, 'web')->deleteNativeFile($workspace, $attachment->public_id)->assertStatus(202);
 
         $attachment = $attachment->fresh();
         $this->assertSame(ClientAttachment::STATE_DELETING, $attachment->lifecycle_state);
         Storage::disk('svc_files')->assertExists($attachment->object_key);
 
-        $this->actingAs($owner)->get(route('svc.files.download', [
+        $this->actingAs($owner, 'web')->get(route('svc.files.download', [
             'workspace' => $workspace,
             'clientAttachment' => $attachment->public_id,
         ]))->assertNotFound();

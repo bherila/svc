@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAttachment;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -117,6 +118,7 @@ if ($sharingLayout) {
 }
 file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->id, 'portal_user_id' => $portal->id,
     'company_name' => $company->name,
+    'attachment_visibility' => route('agent-api.v1.attachments.visibility.update', [$workspace, ClientAttachment::query()->where('workspace_id', $workspace->id)->where('record_type', 'agreement')->where('record_public_id', $agreement->public_id)->orderBy('id')->firstOrFail()->public_id], absolute: false),
     'portalprojectfiles' => route('portal.files.parent.show', [$company, 'project', $project->public_id], absolute: false),
     'portaltaskfiles' => route('portal.files.parent.show', [$company, 'task', $task->public_id], absolute: false),
     'portalproposalfiles' => route('portal.proposal', [$company, $portalProposal], absolute: false),

@@ -198,10 +198,9 @@ class WorkspaceOperationsController extends Controller
 
             return ['files' => $rows->map(fn (ClientAttachment $file): array => AttachmentMetadata::native($file,
                 route('svc.files.download', [$workspace, $file->public_id], absolute: false),
-                $canManage ? route('svc.files.destroy', [$workspace, $file->public_id], absolute: false) : null,
-                app(AttachmentSharingPresenter::class)->nativeControl($file, $view, route('svc.files.visibility.update', [$workspace, $file->public_id], absolute: false), AttachmentAudience::Internal)))->values()->all(),
-                'upload' => null, 'next_href' => null,
-                'legacy_upload_href' => $canManage ? route('svc.files.store', [$workspace, $type, $id], absolute: false) : null];
+                $canManage ? route('agent-api.v1.attachments.destroy', [$workspace, $file->public_id], absolute: false) : null,
+                app(AttachmentSharingPresenter::class)->nativeControl($file, $view, route('agent-api.v1.attachments.visibility.update', [$workspace, $file->public_id], absolute: false), AttachmentAudience::Internal)))->values()->all(),
+                'upload' => $canManage ? ['href' => route('agent-api.v1.attachments.upload-url', ['workspace' => $workspace, 'recordType' => $type, 'recordPublicId' => $id], absolute: false), 'parent_version' => AgentApiVersion::for($parent)] : null, 'next_href' => null];
         };
 
         $clients = [];

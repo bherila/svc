@@ -234,8 +234,7 @@ export default function ClientInvoiceDetail({
     square = null,
     payment_reminders: paymentReminders = null,
 }: {
-    attachment_panel?:
-        (AttachmentPanel & { legacy_upload_href?: string | null }) | null;
+    attachment_panel?: AttachmentPanel | null;
     company: { id: string; name: string };
     invoices_href: string;
     pdf_href: string;
@@ -1616,12 +1615,8 @@ export default function ClientInvoiceDetail({
                 )}
                 {attachment_panel && (
                     <AttachmentSharingPanel
-                        key={attachment_panel.parent_version}
+                        key={invoice.id}
                         panel={attachment_panel}
-                        legacyForms={{
-                            upload_href:
-                                attachment_panel.legacy_upload_href ?? null,
-                        }}
                     />
                 )}
             </main>

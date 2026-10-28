@@ -461,6 +461,8 @@ file_put_contents($runtime.'/fixture.json', json_encode([
             '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/approve'],
         'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],
+    'receipt_upload' => route('agent-api.v1.expense-receipts.store', [$workspace, $receiptExpense->public_id], absolute: false),
+    'receipt_prefix' => '/api/v1/workspaces/'.$workspace->public_id.'/expenses/'.$receiptExpense->public_id.'/receipts/',
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $taskViewer->id, 'date' => $date,
     'expense_schedule_store' => route('agent-api.v1.expense-schedules.store', $workspace, absolute: false),

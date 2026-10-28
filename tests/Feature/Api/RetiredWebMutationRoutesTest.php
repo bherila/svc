@@ -103,6 +103,19 @@ final class RetiredWebMutationRoutesTest extends TestCase
         }
     }
 
+    public function test_file_mutations_use_only_the_versioned_api(): void
+    {
+        foreach (['svc.files.store', 'svc.files.destroy', 'svc.files.visibility.update',
+            'svc.files.collaboration.upload', 'svc.files.collaboration.destroy', 'svc.files.collaboration.visibility.update'] as $name) {
+            $this->assertFalse(Route::has($name), $name);
+        }
+        foreach (['attachments.upload-url', 'attachments.destroy', 'attachments.visibility.update',
+            'collaboration.attachments.upload-url', 'collaboration.attachments.destroy', 'collaboration.attachments.visibility.update',
+            'expense-receipts.upload-url', 'expense-receipts.store', 'expense-receipts.destroy'] as $name) {
+            $this->assertTrue(Route::has('agent-api.v1.'.$name), $name);
+        }
+    }
+
     public function test_frontend_does_not_reference_retired_mutation_routes(): void
     {
         $violations = [];
@@ -116,6 +129,9 @@ final class RetiredWebMutationRoutesTest extends TestCase
             }
             if (preg_match('/svc\.(?:engagement\.time-entries\.(?:store|update|destroy|approve|unapprove)|billing\.invoices\.(?:time|store|issue|send|correct|void|payments\.(?:store|received-on)|automatic-delivery\.(?:hold|release)))\b|(?<![\w.-])clients\.portal-(?:access|invitations)\.(?:store|update|destroy|resend)\b|(?<![\w.-])projects\.(?:store|update|access\.update)\b/', $source)) {
                 $violations[] = $file->getRelativePathname().': retired named route';
+            }
+            if (preg_match('/svc\.files\.(?:store|destroy|visibility\.update|collaboration\.(?:upload|destroy|visibility\.update))\b/', $source)) {
+                $violations[] = $file->getRelativePathname().': retired file mutation';
             }
         }
         $this->assertSame([], $violations, 'Frontend references to retired web mutations: '.implode(', ', $violations));

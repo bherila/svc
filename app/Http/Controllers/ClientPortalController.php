@@ -169,6 +169,7 @@ class ClientPortalController extends Controller
             $request->integer('files_page', 1), route('portal.agreement', [$clientCompany, $clientAgreement], absolute: false));
 
         return Inertia::render('clients/agreement', [
+            'attachment_upload' => null,
             'company' => AgentClientPresenter::identity($clientCompany),
             'home_href' => route('portal.show', $clientCompany, absolute: false),
             'audience' => 'client',
@@ -178,7 +179,6 @@ class ClientPortalController extends Controller
             // so both audiences share one payload shape.
             'actions' => [
                 'update' => null,
-                'upload_file' => null,
                 'deferred_buydown' => null,
             ],
             // The files themselves are the client's to read - a countersigned

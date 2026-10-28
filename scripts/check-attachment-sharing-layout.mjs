@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* global process */
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
     existsSync,
     mkdirSync,
@@ -67,12 +67,19 @@ try {
     );
     writeFileSync(path.join(runtime, '.env'), '');
     writeFileSync(path.join(runtime, 'database.sqlite'), '');
+    const oauthKeys = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
     const env = {
         ...process.env,
         APP_ENV: 'testing',
         APP_DEBUG: 'true',
         APP_KEY: `base64:${randomBytes(32).toString('base64')}`,
         APP_URL: origin,
+        PASSPORT_PRIVATE_KEY: oauthKeys.privateKey,
+        PASSPORT_PUBLIC_KEY: oauthKeys.publicKey,
         APP_CONFIG_CACHE: path.join(runtime, 'config.php'),
         DB_CONNECTION: 'sqlite',
         DB_DATABASE: path.join(runtime, 'database.sqlite'),
@@ -132,11 +139,12 @@ try {
         `<?php
 $runtime = getenv('SVC_LAYOUT_RUNTIME');
 $settings = json_decode(file_get_contents($runtime.'/harness.json'), true);
-if (PHP_SAPI !== 'cli-server' || ($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' || ($_SERVER['HTTP_HOST'] ?? '') !== $settings['host'] || !hash_equals($settings['token'], $_SERVER['HTTP_X_SVC_Layout_TOKEN'] ?? $_SERVER['HTTP_X_SVC_LAYOUT_TOKEN'] ?? '') || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') { http_response_code(403); exit; }
+if (PHP_SAPI !== 'cli-server' || ($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' || ($_SERVER['HTTP_HOST'] ?? '') !== $settings['host'] || !hash_equals($settings['token'], $_SERVER['HTTP_X_SVC_Layout_TOKEN'] ?? $_SERVER['HTTP_X_SVC_LAYOUT_TOKEN'] ?? '')) { http_response_code(403); exit; }
 $root = ${JSON.stringify(root)};
 $app = require $root.'/scripts/layout/bootstrap.php';
 $fixture = json_decode(file_get_contents($runtime.'/fixture.json'), true);
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET' && !(($_SERVER['REQUEST_METHOD'] ?? '') === 'PATCH' && $path === $fixture['attachment_visibility'])) { http_response_code(403); exit; }
 Illuminate\\Support\\Facades\\Auth::onceUsingId(str_starts_with($path, '/portal/') ? $fixture['portal_user_id'] : $fixture['user_id']);
 $app->handleRequest(Illuminate\\Http\\Request::capture());
 `,
@@ -153,8 +161,18 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         .poll(
             async () => {
                 try {
-                    return (await fetch(origin + fixture.note, { headers }))
-                        .status;
+                    const response = await fetch(origin + fixture.note, {
+                        headers,
+                    });
+
+                    if (response.status >= 500) {
+                        writeFileSync(
+                            path.join(artifacts, 'initial-error.html'),
+                            await response.text(),
+                        );
+                    }
+
+                    return response.status;
                 } catch {
                     return 0;
                 }
@@ -278,6 +296,77 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 animations: 'disabled',
                 path: path.join(artifacts, `${screen}-${width}.png`),
             });
+
+            if (screen === 'agreementfiles') {
+                const row = panel.locator('li').filter({
+                    has: page.getByRole('link', {
+                        name: 'SyntheticReaderFile.txt',
+                        exact: true,
+                    }),
+                });
+                const checkbox = row.getByLabel('Visible to client');
+                const writes = [];
+                await page.route(
+                    origin + fixture.attachment_visibility,
+                    async (route) => {
+                        if (route.request().method() !== 'PATCH') {
+                            await route.continue();
+
+                            return;
+                        }
+
+                        writes.push({
+                            body: route.request().postData(),
+                            key: route.request().headers()['idempotency-key'],
+                        });
+                        const result = await route.fetch();
+
+                        if (result.status() !== 200) {
+                            writeFileSync(
+                                path.join(
+                                    artifacts,
+                                    'sharing-recovery-error.txt',
+                                ),
+                                await result.text(),
+                            );
+                        }
+
+                        if (writes.length === 1) {
+                            await route.abort('failed');
+                        } else {
+                            await route.fulfill({ response: result });
+                        }
+                    },
+                );
+                await checkbox.click();
+                await expect(
+                    row.getByRole('button', {
+                        name: 'Check sharing',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(checkbox).toBeDisabled();
+                await row.scrollIntoViewIfNeeded();
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: path.join(artifacts, `sharing-unknown-${width}.png`),
+                });
+                await row
+                    .getByRole('button', { name: 'Check sharing', exact: true })
+                    .click();
+                await expect(checkbox).toBeEnabled();
+                expect(writes).toHaveLength(2);
+                expect(writes[1]).toEqual(writes[0]);
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: path.join(
+                        artifacts,
+                        `sharing-recovered-${width}.png`,
+                    ),
+                });
+                await page.unroute(origin + fixture.attachment_visibility);
+                expect(errors, 'sharing recovery runtime errors').toEqual([]);
+            }
 
             if (screen === 'note') {
                 const comment = page

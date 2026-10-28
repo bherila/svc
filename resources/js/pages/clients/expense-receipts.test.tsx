@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ExpenseReceipts from '@/pages/clients/expense-receipts';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
@@ -9,6 +9,7 @@ import { workspaceNavigation } from '@/test/workspace-navigation';
 
 const inertia = vi.hoisted(() => ({
     delete: vi.fn(),
+    reload: vi.fn(),
     patch: vi.fn(),
     post: vi.fn(),
     visit: vi.fn(),
@@ -26,10 +27,23 @@ vi.mock('@inertiajs/react', () => ({
 }));
 
 beforeEach(() => {
+    vi.stubGlobal(
+        'fetch',
+        vi
+            .fn()
+            .mockResolvedValue(
+                new Response(
+                    JSON.stringify({ data: { lifecycle_state: 'deleting' } }),
+                    { status: 202 },
+                ),
+            ),
+    );
     inertia.delete.mockReset();
     inertia.patch.mockReset();
     inertia.post.mockReset();
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('expense receipts', () => {
     const file = {
@@ -40,6 +54,11 @@ describe('expense receipts', () => {
         uploaded_at: null,
         download_href: '/synthetic/download',
         delete_href: '/synthetic/delete',
+        sharing: null,
+        deletion: {
+            expected_version: 'r'.repeat(64),
+            expected_parent_version: 'e'.repeat(64),
+        },
     };
     const props = {
         expense: {
@@ -50,7 +69,11 @@ describe('expense receipts', () => {
             status: 'draft',
         },
         files: [file],
-        upload_href: '/synthetic/upload',
+        upload: {
+            href: '/synthetic/upload',
+            parent_version: 'e'.repeat(64),
+            description: 'Receipts are private to workspace managers.',
+        },
     };
     it('wraps hostile descriptions and filenames and uses server download URLs', () => {
         const { container } = render(<ExpenseReceipts {...props} />);
@@ -62,16 +85,17 @@ describe('expense receipts', () => {
     it('does not remove on cancel, and submits only after confirmation', async () => {
         const user = userEvent.setup();
         render(<ExpenseReceipts {...props} />);
-        await user.click(screen.getByRole('button', { name: 'Remove' }));
+        await user.click(screen.getByRole('button', { name: 'Remove file' }));
         await user.click(screen.getByRole('button', { name: 'Cancel' }));
-        expect(inertia.delete).not.toHaveBeenCalled();
-        await user.click(screen.getByRole('button', { name: 'Remove' }));
+        expect(fetch).not.toHaveBeenCalled();
+        await user.click(screen.getByRole('button', { name: 'Remove file' }));
         await user.click(
-            screen.getByRole('button', { name: 'Remove receipt' }),
+            screen.getByRole('button', { name: 'Confirm removal' }),
         );
-        expect(inertia.delete).toHaveBeenCalledWith(
-            file.delete_href,
-            expect.objectContaining({ preserveScroll: true }),
-        );
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(fetch).mock.calls[0][0]).toBe(file.delete_href);
+        expect(
+            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)),
+        ).toEqual({ confirm: true, ...file.deletion });
     });
 });

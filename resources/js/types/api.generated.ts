@@ -184,7 +184,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
         post: operations['attachments.upload'];
         delete?: never;
         options?: never;
@@ -1075,7 +1075,8 @@ export interface paths {
         get: operations['expenses.receipts.download'];
         put?: never;
         post?: never;
-        delete?: never;
+        /** @description Workspace-manager-only logical deletion of one receipt on this expense. Requires confirm true, current receipt expected_version, current expense expected_parent_version and Idempotency-Key. Checks tenant ownership and current role under the expense and receipt locks, advances expense revision once, and retains existing purge policy. No expense amount or posting changes. Completed receipt replay rechecks current authority and parent lineage. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. */
+        delete: operations['expenses.receipts.delete'];
         options?: never;
         head?: never;
         patch?: never;
@@ -1088,10 +1089,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied. */
+        /** @description Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. */
         get: operations['expenses.receipts.list'];
         put?: never;
-        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
         post: operations['expenses.receipts.upload'];
         delete?: never;
         options?: never;
@@ -3336,6 +3337,16 @@ export interface components {
             sha256: string;
             /** Format: date-time */
             uploaded_at: string | null;
+            version: components['schemas']['Version'];
+            /** @enum {string} */
+            lifecycle_state:
+                'staged' | 'available' | 'corrupt' | 'deleting' | 'deleted';
+        };
+        ExpenseReceiptDeleteRequest: {
+            expected_version: components['schemas']['Version'];
+            expected_parent_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
         };
         ExpenseReceiptDownloadResponse: {
             data: {
@@ -6687,7 +6698,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+            /** @description Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -10599,6 +10610,46 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseReceiptDownloadResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+                receipt: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseReceiptDeleteRequest'];
+            };
+        };
+        responses: {
+            /** @description Deleted expense receipt and current expense version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
+                };
+            };
+            /** @description The receipt or expense revision changed, or the retry key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

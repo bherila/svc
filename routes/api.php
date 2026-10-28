@@ -209,6 +209,8 @@ Route::prefix('v1')
             ->whereUuid('expense');
         $workspaceOperation('expenses.receipts.upload', [AgentExpenseReceiptController::class, 'store'])
             ->whereUuid('expense');
+        $workspaceOperation('expenses.receipts.delete', [AgentExpenseReceiptController::class, 'destroy'])
+            ->whereUuid(['expense', 'receipt']);
         $workspaceOperation('expenses.receipts.download', [AgentExpenseReceiptController::class, 'download'])
             ->whereUuid(['expense', 'receipt']);
         $workspaceOperation('expenses.receipts.content', [AgentExpenseReceiptController::class, 'content'])

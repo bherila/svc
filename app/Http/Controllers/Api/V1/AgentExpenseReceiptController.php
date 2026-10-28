@@ -7,8 +7,10 @@ use App\Models\AgentPrincipal;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentExpenseReceiptService;
 use App\Services\AgentApi\AgentMutationContextFactory;
+use App\Services\Files\AttachmentMutationOrigin;
 use App\Services\Files\AttachmentPageQuery;
 use App\Services\Files\AttachmentUploadPolicy;
+use App\Support\AgentApi\FirstPartySession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -20,24 +22,24 @@ final class AgentExpenseReceiptController extends Controller
 
     public function index(Request $request, Workspace $workspace, string $expense): JsonResponse
     {
-        return response()->json($this->receipts->listing($this->actor($request), $workspace, $expense, AttachmentPageQuery::fromInput($request->query())));
+        return response()->json($this->receipts->listing($this->actor($request), $workspace, $expense, AttachmentPageQuery::fromInput($request->query()), $this->origin($request)));
     }
 
     public function download(Request $request, Workspace $workspace, string $expense, string $receipt): JsonResponse
     {
-        return response()->json($this->receipts->downloadUrl($this->actor($request), $workspace, $expense, $receipt));
+        return response()->json($this->receipts->downloadUrl($this->actor($request), $workspace, $expense, $receipt, $this->origin($request)));
     }
 
     public function uploadUrl(Request $request, Workspace $workspace, string $expense): JsonResponse
     {
         AttachmentUploadPolicy::validateLegacyPayload($request->all());
 
-        return response()->json($this->receipts->uploadUrl($this->actor($request), $workspace, $expense));
+        return response()->json($this->receipts->uploadUrl($this->actor($request), $workspace, $expense, $this->origin($request)));
     }
 
     public function content(Request $request, Workspace $workspace, string $expense, string $receipt): StreamedResponse
     {
-        return $this->receipts->content($this->actor($request), $workspace, $expense, $receipt);
+        return $this->receipts->content($this->actor($request), $workspace, $expense, $receipt, $this->origin($request));
     }
 
     public function store(Request $request, Workspace $workspace, string $expense): JsonResponse
@@ -53,7 +55,20 @@ final class AgentExpenseReceiptController extends Controller
         abort_unless($file instanceof UploadedFile, 422, 'A receipt file is required.');
 
         return response()->json($this->receipts->upload($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $expense,
-            $request->request->all(), $file), 201);
+            $request->request->all(), $file, $this->origin($request)), 201);
+    }
+
+    public function destroy(Request $request, Workspace $workspace, string $expense, string $receipt): JsonResponse
+    {
+        $context = $this->contexts->fromAuthenticatedClient($request);
+
+        return response()->json($this->receipts->delete($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey,
+            $expense, $receipt, $request->all(), $this->origin($request)));
+    }
+
+    private function origin(Request $request): AttachmentMutationOrigin
+    {
+        return FirstPartySession::is($request) ? AttachmentMutationOrigin::Native : AttachmentMutationOrigin::Agent;
     }
 
     private function actor(Request $request): AgentPrincipal
