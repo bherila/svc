@@ -579,6 +579,14 @@ try {
                 ).toBeDisabled();
                 await page.keyboard.press('Escape');
                 await expect(page.getByRole('dialog')).toBeVisible();
+                const unresolvedUrl = page.url();
+                await page.evaluate(() => window.history.back());
+                await expect(page.getByRole('alert')).toContainText(
+                    'Check the original change before leaving this page.',
+                );
+                expect(page.url()).toBe(unresolvedUrl);
+                await expect(page.getByRole('dialog')).toBeVisible();
+                expect(writes).toHaveLength(1);
                 await check.scrollIntoViewIfNeeded();
                 await capture(screen, 'create-unknown', width);
                 await check.click();
