@@ -134,14 +134,14 @@ final class ExpenseReceiptApiTest extends TestCase
         $arguments = ['workspace' => $workspace->public_id, 'expense' => $expense->public_id, 'receipt' => $receipt->public_id, '--actor' => $actor->public_id,
             '--expected-version' => $body['expected_version'], '--expected-parent-version' => $body['expected_parent_version'], '--format' => 'json'];
         $beforeAudits = DB::table('agent_mutation_audits')->count();
-        $this->assertSame(0, Artisan::call('svc:expense-receipts:delete', $arguments));
+        $this->assertSame(0, Artisan::call('svc:attachments:delete-expense-receipt', $arguments));
         $this->assertTrue(json_decode(Artisan::output(), true)['dry_run']);
         $this->assertSame($beforeAudits, DB::table('agent_mutation_audits')->count());
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $receipt->fresh()->lifecycle_state);
-        $this->assertSame(1, Artisan::call('svc:expense-receipts:delete', [...$arguments, '--apply' => true, '--key' => 'synthetic-cli-delete']));
-        $this->assertSame(0, Artisan::call('svc:expense-receipts:delete', [...$arguments, '--apply' => true, '--confirm' => true, '--key' => 'synthetic-cli-delete']));
+        $this->assertSame(1, Artisan::call('svc:attachments:delete-expense-receipt', [...$arguments, '--apply' => true, '--key' => 'synthetic-cli-delete']));
+        $this->assertSame(0, Artisan::call('svc:attachments:delete-expense-receipt', [...$arguments, '--apply' => true, '--confirm' => true, '--key' => 'synthetic-cli-delete']));
         $version = AgentApiVersion::for($expense->fresh());
-        $this->assertSame(0, Artisan::call('svc:expense-receipts:delete', [...$arguments, '--apply' => true, '--confirm' => true, '--key' => 'synthetic-cli-delete']));
+        $this->assertSame(0, Artisan::call('svc:attachments:delete-expense-receipt', [...$arguments, '--apply' => true, '--confirm' => true, '--key' => 'synthetic-cli-delete']));
         $this->assertSame($version, AgentApiVersion::for($expense->fresh()));
         $this->assertDatabaseCount('agent_mutation_receipts', 2);
     }

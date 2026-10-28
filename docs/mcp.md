@@ -1248,7 +1248,7 @@ upload, list, download and deletion even if they also have portal access.
 Native CLI deletion previews by default, with no receipt, audit or storage writes:
 
 ```sh
-php artisan svc:expense-receipts:delete WORKSPACE_UUID EXPENSE_UUID RECEIPT_UUID \
+php artisan svc:attachments:delete-expense-receipt WORKSPACE_UUID EXPENSE_UUID RECEIPT_UUID \
   --actor=MANAGER_UUID --expected-version=RECEIPT_VERSION \
   --expected-parent-version=EXPENSE_VERSION --format=json
 # Add --apply --confirm --key=STABLE_RETRY_KEY only after reviewing the preview.

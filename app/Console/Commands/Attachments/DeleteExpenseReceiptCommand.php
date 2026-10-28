@@ -15,7 +15,7 @@ final class DeleteExpenseReceiptCommand extends MutationCommand
 {
     use FindsUserByPublicId;
 
-    protected $signature = 'svc:expense-receipts:delete
+    protected $signature = 'svc:attachments:delete-expense-receipt
         {workspace : Workspace public UUID}
         {expense : Expense public UUID}
         {receipt : Receipt public UUID}
