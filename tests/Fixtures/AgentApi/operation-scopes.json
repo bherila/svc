@@ -1288,6 +1288,31 @@
             "mcp.switch:invoices.square_cover"
         ]
     },
+    "invoices.square_covered_payment_record": {
+        "scopes": [
+            "billing:read",
+            "payments:record"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_covered_payment_record"
+        ]
+    },
+    "invoices.square_covered_payments": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.square_covered_payments"
+        ]
+    },
     "invoices.square_link": {
         "scopes": [
             "billing:write",

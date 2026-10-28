@@ -130,6 +130,8 @@ final class AgentMcpInventoryTest extends TestCase
         'invoices.send_reminder',
         'invoices.square_candidates',
         'invoices.square_cover',
+        'invoices.square_covered_payment_record',
+        'invoices.square_covered_payments',
         'invoices.square_link',
         'invoices.square_reconcile',
         'invoices.square_uncover',
@@ -217,7 +219,7 @@ final class AgentMcpInventoryTest extends TestCase
             'time_entry_writes_enabled' => ['time_entries.log', 'time_entries.update', 'time_entries.delete', 'time_entries.unapprove'],
             'invoice_writes_enabled' => ['invoices.create_deferred_buydown', 'billing_schedules.create', 'billing_schedules.generate', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.create_draft', 'invoices.update_draft', 'invoices.update_details', 'invoices.correct', 'invoices.discard_draft', 'invoices.issue', 'invoices.send', 'invoices.void', 'invoices.square_link', 'invoices.square_unlink', 'invoices.square_cover', 'invoices.square_uncover', 'invoices.send_reminder'],
             'expense_writes_enabled' => ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate', 'expenses.receipts.upload_url', 'expenses.receipts.delete'],
-            'payment_writes_enabled' => ['payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
+            'payment_writes_enabled' => ['invoices.square_covered_payment_record', 'payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
             'client_writes_enabled' => ['clients.contacts.create', 'clients.contacts.update', 'clients.contacts.archive', 'clients.contacts.restore', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
                 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set'],
             'collaboration_writes_enabled' => ['collaboration.attachments.upload_url', 'collaboration.attachments.visibility.update', 'collaboration.attachments.delete', 'collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete'],
@@ -259,7 +261,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_185_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_187_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['task_planning.labels.create', 'task_planning.labels.update', 'task_planning.labels.archive', 'task_planning.labels.restore', 'task_planning.labels.replace', 'task_planning.dependencies.replace', 'task_planning.contacts.replace', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -270,14 +272,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(185, self::TOOLS);
+        $this->assertCount(187, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_185_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_187_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
