@@ -1,5 +1,5 @@
-import { router } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 
@@ -17,59 +17,22 @@ type Attempt = {
 export function useInvoiceMutation() {
     const attempt = useRef<Attempt | null>(null);
     const running = useRef(false);
-    const refreshing = useRef(false);
     const [busy, setBusy] = useState(false);
     const [locked, setLocked] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        const stopNavigation = router.on?.('before', (event) => {
-            const destination = new URL(
-                event.detail.visit.url,
-                window.location.href,
-            );
-            const samePage =
-                destination.origin === window.location.origin &&
-                destination.pathname === window.location.pathname &&
-                destination.search === window.location.search;
-
-            if (
-                attempt.current !== null &&
-                !attempt.current.saved &&
-                !(refreshing.current && samePage)
-            ) {
-                event.preventDefault();
-                setError('Check the original result before leaving this page.');
-            }
-        });
-        const stopUnload = (event: BeforeUnloadEvent) => {
-            if (attempt.current !== null && !attempt.current.saved) {
-                event.preventDefault();
-            }
-        };
-        window.addEventListener('beforeunload', stopUnload);
-
-        return () => {
-            stopNavigation?.();
-            window.removeEventListener('beforeunload', stopUnload);
-        };
-    }, []);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.saved,
+        () => setError('Check the original result before leaving this page.'),
+    );
 
     const release = () => {
         attempt.current = null;
         setLocked(false);
         setSaved(false);
     };
-    const refresh = async () => {
-        refreshing.current = true;
-
-        try {
-            await refreshPageProps({ requireSuccess: true });
-        } finally {
-            refreshing.current = false;
-        }
-    };
+    const refresh = () => refreshPageProps({ requireSuccess: true });
     const run = async () => {
         const current = attempt.current;
 

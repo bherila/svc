@@ -95,14 +95,18 @@ it('retains a known saved result until refresh succeeds and retries only its rea
     expect(result.current.error).toContain('The change was saved');
     expect(result.current.locked).toBe(true);
     expect(done).not.toHaveBeenCalled();
-    const navigation = {
+    const navigation = new CustomEvent('inertia:before', {
+        cancelable: true,
         detail: {
-            visit: { url: new URL('/other-page', window.location.href) },
+            visit: {
+                url: new URL('/other-page', window.location.href),
+                method: 'get',
+                only: [],
+            },
         },
-        preventDefault: vi.fn(),
-    };
-    act(() => inertia.on.mock.calls[0][1](navigation));
-    expect(navigation.preventDefault).not.toHaveBeenCalled();
+    });
+    act(() => document.dispatchEvent(navigation));
+    expect(navigation.defaultPrevented).toBe(false);
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(false);
@@ -160,9 +164,7 @@ it('allows a fresh corrected request after a definite first refusal', async () =
     );
 });
 
-it('blocks competing navigation and warns on unload until original outcome resolves', async () => {
-    const stop = vi.fn();
-    inertia.on.mockReturnValue(stop);
+it('blocks native navigation and browser history while retaining the original invoice request', async () => {
     const { result, unmount } = renderHook(() => useInvoiceMutation());
     vi.mocked(apiRequest).mockResolvedValue({
         ok: false,
@@ -170,20 +172,41 @@ it('blocks competing navigation and warns on unload until original outcome resol
         message: 'Synthetic timeout',
     });
     await act(() => result.current.submit('POST', '/invoices', {}));
-    const preventDefault = vi.fn();
-    act(() =>
-        inertia.on.mock.calls[0][1]({
-            detail: {
-                visit: { url: new URL('/another-page', window.location.href) },
+    const href = window.location.href;
+    const navigation = new CustomEvent('inertia:before', {
+        cancelable: true,
+        detail: {
+            visit: {
+                url: new URL('/another-page', href),
+                method: 'get',
+                only: [],
             },
-            preventDefault,
-        }),
-    );
-    expect(preventDefault).toHaveBeenCalledOnce();
+        },
+    });
+    act(() => document.dispatchEvent(navigation));
+    expect(navigation.defaultPrevented).toBe(true);
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
+    window.history.replaceState(
+        { synthetic: 'older' },
+        '',
+        '/synthetic-older-page',
+    );
+    act(() =>
+        window.dispatchEvent(
+            new PopStateEvent('popstate', { state: { synthetic: 'older' } }),
+        ),
+    );
+    expect(window.location.href).toBe(href);
     expect(result.current.error).toContain('before leaving');
+    expect(result.current.locked).toBe(true);
+    await act(() => result.current.retry());
+    expect(vi.mocked(apiRequest).mock.calls[1]).toEqual(
+        vi.mocked(apiRequest).mock.calls[0],
+    );
     unmount();
-    expect(stop).toHaveBeenCalledOnce();
+    const after = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(false);
 });

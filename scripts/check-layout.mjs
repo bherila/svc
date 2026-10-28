@@ -38,7 +38,9 @@ const clientsOnly = process.argv.includes('--clients');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
 const invoiceActionsOnly = process.argv.includes('--invoice-actions');
-const invoiceRecoveryOnly = process.argv.includes('--invoice-recovery');
+const invoiceHistoryOnly = process.argv.includes('--invoice-history');
+const invoiceRecoveryOnly =
+    process.argv.includes('--invoice-recovery') || invoiceHistoryOnly;
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
 const disputesOnly = process.argv.includes('--disputes');
@@ -313,6 +315,16 @@ try {
         });
         await expect(check).toBeEnabled();
 
+        if (invoiceHistoryOnly) {
+            const keptUrl = page.url();
+            await page.evaluate(() => window.history.back());
+            await expect(page.getByRole('alert')).toContainText(
+                'Check the original result before leaving this page.',
+            );
+            await expect(page).toHaveURL(keptUrl);
+            await expect(page.getByRole('dialog')).toBeVisible();
+        }
+
         if (field) {
             await expect(field).toBeDisabled();
         }
@@ -483,79 +495,81 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of invoiceRecoveryOnly
-            ? [
-                  'invoice',
-                  'operations',
-                  'draft_time',
-                  'time',
-                  'draft_invoice',
-                  'invoice_review',
-              ]
-            : projectsOnly
-              ? ['settings']
-              : schedulesOnly
-                ? ['expense_schedules']
-                : expensesOnly
-                  ? ['expenses']
-                  : workspacesOnly
-                    ? ['selector']
-                    : invoiceActionsOnly
-                      ? [
-                            'invoice',
-                            'invoice_review',
-                            'draft_invoice',
-                            'draft_time',
-                        ]
-                      : engagementOnly
-                        ? ['operations', 'agreement']
-                        : disputesOnly
-                          ? ['invoice', 'square_portal']
-                          : tasksOnly
-                            ? [
-                                  'task_list',
-                                  'task_project',
-                                  'task_editor',
-                                  'task_portal',
-                              ]
-                            : historyOnly
+        for (const screen of invoiceHistoryOnly
+            ? ['draft_time']
+            : invoiceRecoveryOnly
+              ? [
+                    'invoice',
+                    'operations',
+                    'draft_time',
+                    'time',
+                    'draft_invoice',
+                    'invoice_review',
+                ]
+              : projectsOnly
+                ? ['settings']
+                : schedulesOnly
+                  ? ['expense_schedules']
+                  : expensesOnly
+                    ? ['expenses']
+                    : workspacesOnly
+                      ? ['selector']
+                      : invoiceActionsOnly
+                        ? [
+                              'invoice',
+                              'invoice_review',
+                              'draft_invoice',
+                              'draft_time',
+                          ]
+                        : engagementOnly
+                          ? ['operations', 'agreement']
+                          : disputesOnly
+                            ? ['invoice', 'square_portal']
+                            : tasksOnly
                               ? [
-                                    'history_index',
-                                    'history_discussion',
-                                    'history_invoice',
+                                    'task_list',
+                                    'task_project',
+                                    'task_editor',
+                                    'task_portal',
                                 ]
-                              : portalOnly
-                                ? ['settings']
-                                : correctionOnly
-                                  ? ['invoice_review']
-                                  : squareOnly
-                                    ? [
-                                          'square_explore',
-                                          'square_invoice',
-                                          'square_portal',
-                                      ]
-                                    : remindersOnly
-                                      ? ['reminder_invoice', 'settings']
-                                      : timeOnly
-                                        ? ['time', 'draft_time']
-                                        : backlogOnly
-                                          ? ['agreement']
-                                          : [
-                                                'mcp_setup',
-                                                'invoice',
-                                                'invoice_review',
-                                                'reminder_invoice',
-                                                'settings',
-                                                'draft_invoice',
-                                                'draft_time',
-                                                'proposal',
-                                                'proposal_acceptance',
-                                                'operations',
-                                                'time',
-                                                'expenses',
-                                                'receipts',
-                                                'expense_schedules',
-                                            ]) {
+                              : historyOnly
+                                ? [
+                                      'history_index',
+                                      'history_discussion',
+                                      'history_invoice',
+                                  ]
+                                : portalOnly
+                                  ? ['settings']
+                                  : correctionOnly
+                                    ? ['invoice_review']
+                                    : squareOnly
+                                      ? [
+                                            'square_explore',
+                                            'square_invoice',
+                                            'square_portal',
+                                        ]
+                                      : remindersOnly
+                                        ? ['reminder_invoice', 'settings']
+                                        : timeOnly
+                                          ? ['time', 'draft_time']
+                                          : backlogOnly
+                                            ? ['agreement']
+                                            : [
+                                                  'mcp_setup',
+                                                  'invoice',
+                                                  'invoice_review',
+                                                  'reminder_invoice',
+                                                  'settings',
+                                                  'draft_invoice',
+                                                  'draft_time',
+                                                  'proposal',
+                                                  'proposal_acceptance',
+                                                  'operations',
+                                                  'time',
+                                                  'expenses',
+                                                  'receipts',
+                                                  'expense_schedules',
+                                              ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -1314,6 +1328,21 @@ try {
                         null,
                     );
                 } else if (screen === 'draft_time' || screen === 'time') {
+                    if (invoiceHistoryOnly) {
+                        // Enter by Inertia so Back exercises same-document history,
+                        // rather than the browser's separate beforeunload prompt.
+                        await page.goto(origin + fixture.draft_invoice);
+                        await page
+                            .getByRole('link', {
+                                name: 'Add time',
+                                exact: true,
+                            })
+                            .click();
+                        await expect(page).toHaveURL(
+                            origin + fixture.draft_time,
+                        );
+                    }
+
                     if (screen === 'time') {
                         await page
                             .getByRole('button', {
