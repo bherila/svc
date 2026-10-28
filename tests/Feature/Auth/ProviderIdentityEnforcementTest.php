@@ -109,8 +109,8 @@ final class ProviderIdentityEnforcementTest extends TestCase
         // Within the freshness window a read is answered from the last check...
         $this->get('/app')->assertOk();
         // ...but an unsafe method always asks.
-        $this->post('/workspaces', ['name' => 'Synthetic after disable'])->assertRedirect(route('login'));
-        $this->assertGuest();
+        $this->sessionApi()->withHeader('Idempotency-Key', 'workspace-after-disable')->postJson('/api/v1/workspaces', ['name' => 'Synthetic after disable'])->assertUnauthorized();
+        $this->assertGuest('web');
         $this->assertDatabaseMissing('workspaces', ['name' => 'Synthetic after disable']);
     }
 

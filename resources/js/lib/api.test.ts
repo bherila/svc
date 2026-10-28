@@ -119,4 +119,39 @@ describe('apiRequest refusals', () => {
             status: 0,
         });
     });
+    it('treats an interrupted successful JSON response as uncertain', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValue(new Response('{"data":', { status: 201 })),
+        );
+        expect(
+            await apiRequest(
+                'POST',
+                '/api/v1/example',
+                {},
+                'synthetic-attempt',
+            ),
+        ).toMatchObject({
+            ok: false,
+            status: 0,
+            message: expect.stringContaining('could not be read'),
+        });
+    });
+
+    it('accepts intentionally empty successful responses', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+        );
+        expect(
+            await apiRequest(
+                'DELETE',
+                '/api/v1/example',
+                {},
+                'synthetic-delete',
+            ),
+        ).toEqual({ ok: true, status: 204, data: null });
+    });
 });
