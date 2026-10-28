@@ -110,7 +110,11 @@ function useProjectWrite() {
                 url.pathname === window.location.pathname &&
                 url.search === window.location.search;
 
-            if (attempt.current !== null && !readingCurrentProps) {
+            if (
+                attempt.current !== null &&
+                attempt.current.saved === undefined &&
+                !readingCurrentProps
+            ) {
                 event.preventDefault();
                 setFailure(
                     'Check the original project result before leaving this page.',
@@ -118,7 +122,10 @@ function useProjectWrite() {
             }
         });
         const stopUnload = (event: BeforeUnloadEvent) => {
-            if (attempt.current !== null) {
+            if (
+                attempt.current !== null &&
+                attempt.current.saved === undefined
+            ) {
                 event.preventDefault();
             }
         };

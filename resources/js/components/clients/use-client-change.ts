@@ -32,7 +32,7 @@ export function useClientChange() {
         const stopNavigation = router.on?.('before', (event) => {
             const original = attempt.current;
 
-            if (!original) {
+            if (!original || original.accepted) {
                 return;
             }
 
@@ -44,20 +44,14 @@ export function useClientChange() {
                 destination.origin === window.location.origin &&
                 destination.pathname === window.location.pathname &&
                 destination.search === window.location.search;
-            const followingCreatedClient =
-                original.requireLocation &&
-                original.accepted?.location &&
-                destination.href ===
-                    new URL(original.accepted.location, window.location.href)
-                        .href;
 
-            if (!readingCurrentProps && !followingCreatedClient) {
+            if (!readingCurrentProps) {
                 event.preventDefault();
                 setError('Check the original change before leaving this page.');
             }
         });
         const stopUnload = (event: BeforeUnloadEvent) => {
-            if (attempt.current !== null) {
+            if (attempt.current !== null && !attempt.current.accepted) {
                 event.preventDefault();
             }
         };

@@ -75,11 +75,7 @@ function NewWorkspaceDialog({
         const stopNavigation = router.on?.('before', (event) => {
             if (
                 attempt.current !== null &&
-                (attempt.current.savedUrl === undefined ||
-                    new URL(event.detail.visit.url, window.location.href)
-                        .href !==
-                        new URL(attempt.current.savedUrl, window.location.href)
-                            .href)
+                attempt.current.savedUrl === undefined
             ) {
                 event.preventDefault();
                 setError(
@@ -88,7 +84,10 @@ function NewWorkspaceDialog({
             }
         });
         const stopUnload = (event: BeforeUnloadEvent) => {
-            if (attempt.current !== null) {
+            if (
+                attempt.current !== null &&
+                attempt.current.savedUrl === undefined
+            ) {
                 event.preventDefault();
             }
         };

@@ -418,6 +418,22 @@ describe('historical client details', () => {
             'The change was recorded, but this page could not load it. Check the original change.',
         );
         expect(screen.getByLabelText('Internal company notes')).toBeDisabled();
+        const guard = beforeNavigation.mock.calls.at(-1)?.[1];
+        const unrelatedNavigation = {
+            detail: {
+                visit: {
+                    url: '/synthetic/other-client',
+                    method: 'get',
+                    only: [],
+                },
+            },
+            preventDefault: vi.fn(),
+        };
+        guard(unrelatedNavigation);
+        expect(unrelatedNavigation.preventDefault).not.toHaveBeenCalled();
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(false);
         fireEvent.click(
             screen.getByRole('button', { name: 'Check original change' }),
         );
