@@ -101,17 +101,15 @@ final class AgentProjectNameCollisionTest extends TestCase
     }
 
     #[DataProvider('writes')]
-    public function test_browser_duplicate_project_names_return_to_the_form_with_a_name_error(bool $create): void
+    public function test_browser_duplicate_project_names_return_a_json_name_error(bool $create): void
     {
         $version = AgentApiVersion::for($this->project);
-        $path = $create
-            ? route('projects.store', [$this->workspace, $this->company])
-            : route('projects.update', [$this->workspace, $this->company, $this->project]);
-        $body = ['name' => $this->sibling->name, 'description' => null, 'repository' => null, 'status' => 'active', 'is_visible_to_client' => true, 'lock_version' => $this->project->lock_version];
-        $this->actingAs($this->owner)->from('/synthetic-project-form')->json($create ? 'POST' : 'PATCH', $path, $body, ['Accept' => 'text/html'])
-            ->assertRedirect('/synthetic-project-form')->assertSessionHasErrors(['name' => self::MESSAGE]);
+        $this->actingAs($this->owner, 'web')->withCredentials()
+            ->withUnencryptedCookie((string) config('session.cookie'), str_repeat('p', 40));
+        $this->withHeader('Idempotency-Key', 'browser-name-collision')->json($create ? 'POST' : 'PATCH', $this->path($create), $this->body($create))
+            ->assertUnprocessable()->assertJsonValidationErrors(['name' => self::MESSAGE]);
         $this->assertUnchanged($version);
-        $this->assertDatabaseCount('agent_mutation_audits', 0);
+        $this->assertDatabaseHas('agent_mutation_audits', ['operation' => $this->operation($create), 'outcome' => 'failed']);
     }
 
     public static function constraints(): iterable

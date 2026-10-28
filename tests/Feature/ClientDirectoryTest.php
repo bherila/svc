@@ -1051,11 +1051,10 @@ class ClientDirectoryTest extends TestCase
         $company = $this->company($workspace, 'Before Rename Client', 'before-rename-client');
         $project = $this->project($workspace, $company, 'Before Rename Project');
 
-        $this->actingAs($manager, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
-            ->withHeader('Idempotency-Key', 'synthetic-client-manager-edit')
-            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
-                'expected_version' => AgentApiVersion::for($company),
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', 'project-client-rename')->patchJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
                 'name' => 'After Rename Client',
+                'expected_version' => AgentApiVersion::for($company),
                 'billing_email' => 'billing@synthetic.test',
                 'is_active' => false,
             ])
@@ -1066,16 +1065,17 @@ class ClientDirectoryTest extends TestCase
         $this->assertSame('billing@synthetic.test', $fresh?->billing_email);
         $this->assertFalse((bool) $fresh?->is_active);
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'After Rename Project',
                 'description' => 'Synthetic description',
                 'repository' => null,
                 'status' => 'archived',
                 'is_visible_to_client' => false,
-                'lock_version' => (int) $project->fresh()?->lock_version,
+                'expected_version' => AgentApiVersion::for($project->fresh()),
+                'confirm' => true,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $freshProject = $project->fresh();
         $this->assertSame('After Rename Project', $freshProject?->name);
@@ -1083,13 +1083,7 @@ class ClientDirectoryTest extends TestCase
         $this->assertFalse((bool) $freshProject?->is_visible_to_client);
     }
 
-    /**
-     * A project reached through the wrong client is not editable.
-     *
-     * Projects bind by a public id unique across every workspace, so without
-     * the company check a manager edits another client's project through their
-     * own client's Manage tab - and the redirect would look like it worked.
-     */
+    /** The retired nested write URL cannot edit a project, including through another client. */
     public function test_a_project_cannot_be_edited_through_another_client(): void
     {
         $manager = User::factory()->create();
@@ -1105,11 +1099,10 @@ class ClientDirectoryTest extends TestCase
                 'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
-                // A payload that validates, so the refusal below is the
-                // company check and not the version rule arriving first.
+                // Even a formerly valid legacy payload cannot use this route.
                 'lock_version' => (int) $project->fresh()?->lock_version,
             ])
-            ->assertNotFound();
+            ->assertStatus(405);
 
         $this->assertSame('Owned Edit Project', $project->fresh()?->name);
     }
@@ -1130,16 +1123,17 @@ class ClientDirectoryTest extends TestCase
         $company = $this->company($workspace, 'Repo Client', 'repo-client');
         $project = $this->project($workspace, $company, 'Repo Project');
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'Repo Project',
                 'description' => null,
                 'repository' => 'git@github.com:Synthetic/Example.git',
                 'status' => 'active',
                 'is_visible_to_client' => true,
-                'lock_version' => (int) $project->fresh()?->lock_version,
+                'expected_version' => AgentApiVersion::for($project->fresh()),
+                'confirm' => true,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $this->assertSame('github.com/synthetic/example', $project->fresh()?->repository);
     }
@@ -1168,36 +1162,31 @@ class ClientDirectoryTest extends TestCase
             'is_visible_to_client' => true,
         ];
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 ...$payload,
                 'repository' => 'the synthetic repo on github',
-                'lock_version' => (int) $project->fresh()?->lock_version,
+                'expected_version' => AgentApiVersion::for($project->fresh()),
+                'confirm' => true,
             ])
-            ->assertSessionHasErrors('repository');
+            ->assertUnprocessable()->assertJsonValidationErrors('repository');
 
         $this->assertSame('github.com/synthetic/mapped', $project->fresh()?->repository);
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 ...$payload,
                 'repository' => '',
-                'lock_version' => (int) $project->fresh()?->lock_version,
+                'expected_version' => AgentApiVersion::for($project->fresh()),
+                'confirm' => true,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $this->assertNull($project->fresh()?->repository);
     }
 
-    /**
-     * A save about something else does not unmap the project.
-     *
-     * `present` rather than bare `nullable`, for the same reason as the
-     * description beside it: without it a PATCH that only meant to rename would
-     * drop the mapping, and nobody would notice until the next time an agent
-     * asked which project this checkout was.
-     */
-    public function test_a_payload_omitting_the_repository_is_refused(): void
+    /** Canonical PATCH preserves a repository when the operator only renames the project. */
+    public function test_a_project_patch_preserves_an_omitted_repository(): void
     {
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic Keep', 'synthetic-keep', $manager);
@@ -1205,35 +1194,23 @@ class ClientDirectoryTest extends TestCase
         $project = $this->project($workspace, $company, 'Keep Project');
         $project->forceFill(['repository' => 'github.com/synthetic/keep'])->save();
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'Renamed Keep Project',
                 'description' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
-                'lock_version' => (int) $project->fresh()?->lock_version,
+                'expected_version' => AgentApiVersion::for($project->fresh()),
+                'confirm' => true,
             ])
-            ->assertSessionHasErrors('repository');
+            ->assertOk();
 
         $fresh = $project->fresh();
         $this->assertSame('github.com/synthetic/keep', $fresh?->repository);
-        $this->assertSame('Keep Project', $fresh?->name);
+        $this->assertSame('Renamed Keep Project', $fresh?->name);
     }
 
-    /**
-     * A pasted token does not outlive the request that refused it.
-     *
-     * A remote is the one ordinary field here that can carry a secret - a
-     * machine with stored credentials prints
-     * `https://user:token@host/owner/name.git` - and the normalizer strips it
-     * before saving. But a refused save never reaches the normalizer: Laravel
-     * flashes the raw input on the redirect back, and sessions are stored in
-     * the database, so without `dontFlash` the token is written to a table.
-     *
-     * The version check is what refuses it here, deliberately: it is the
-     * failure an operator hits by accident, with a payload that is otherwise
-     * entirely well-formed.
-     */
+    /** A JSON version refusal never flashes a pasted repository credential into the session. */
     public function test_a_credential_in_a_refused_remote_is_not_flashed(): void
     {
         $manager = User::factory()->create();
@@ -1241,23 +1218,20 @@ class ClientDirectoryTest extends TestCase
         $company = $this->company($workspace, 'Secret Client', 'secret-client');
         $project = $this->project($workspace, $company, 'Secret Project');
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'Secret Project',
                 'description' => null,
                 'repository' => 'https://someone:a-secret@example.com/owner/name.git',
                 'status' => 'active',
                 'is_visible_to_client' => true,
-                'lock_version' => (int) $project->fresh()?->lock_version + 99,
+                'expected_version' => str_repeat('0', 64),
+                'confirm' => true,
             ])
-            ->assertSessionHasErrors('lock_version');
+            ->assertConflict();
 
         $this->assertNull(session()->getOldInput('repository'));
-        $this->assertSame(
-            'Secret Project',
-            session()->getOldInput('name'),
-            'the rest of the form is still flashed, or this proves nothing',
-        );
+        $this->assertNull(session()->getOldInput('name'));
     }
 
     /** The Manage screen renders the stored mapping so the form can round-trip it. */
@@ -1432,25 +1406,27 @@ class ClientDirectoryTest extends TestCase
 
         $path = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
 
-        $this->actingAs($member)->get($path)->assertNotFound();
+        $this->projectSession($member)->get($path)->assertNotFound();
 
-        $this->actingAs($manager)
-            ->put("{$path}/projects/{$project->public_id}/access", [
-                'user' => $member->public_id,
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->putJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/members", [
+                'user_id' => $member->public_id,
                 'role' => 'contributor',
+                'expected_version' => AgentApiVersion::for($project->fresh()), 'confirm' => true,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
-        $this->actingAs($member)->get($path)->assertOk();
+        $this->projectSession($member)->get($path)->assertOk();
 
-        $this->actingAs($manager)
-            ->put("{$path}/projects/{$project->public_id}/access", [
-                'user' => $member->public_id,
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->putJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/members", [
+                'user_id' => $member->public_id,
                 'role' => 'none',
+                'expected_version' => AgentApiVersion::for($project->fresh()), 'confirm' => true,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
-        $this->actingAs($member)->get($path)->assertNotFound();
+        $this->projectSession($member)->get($path)->assertNotFound();
     }
 
     /**
@@ -1469,12 +1445,12 @@ class ClientDirectoryTest extends TestCase
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
 
-        $path = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access";
+        $path = "/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/members";
 
         foreach (['viewer', 'contributor'] as $role) {
-            $this->actingAs($manager)
-                ->put($path, ['user' => $member->public_id, 'role' => $role])
-                ->assertRedirect();
+            $this->projectSession($manager)
+                ->withHeader('Idempotency-Key', (string) str()->uuid())->putJson($path, ['user_id' => $member->public_id, 'role' => $role, 'expected_version' => AgentApiVersion::for($project->fresh()), 'confirm' => true])
+                ->assertOk();
         }
 
         $rows = ClientProjectMembership::query()
@@ -1501,10 +1477,11 @@ class ClientDirectoryTest extends TestCase
 
         $outsider = User::factory()->create();
 
-        $this->actingAs($manager)
-            ->put("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access", [
-                'user' => $outsider->public_id,
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->putJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/members", [
+                'user_id' => $outsider->public_id,
                 'role' => 'contributor',
+                'expected_version' => AgentApiVersion::for($project->fresh()), 'confirm' => true,
             ])
             ->assertNotFound();
 
@@ -1538,17 +1515,15 @@ class ClientDirectoryTest extends TestCase
         $mine->memberships()->create(['user_id' => $myMember->id, 'role' => 'member']);
 
         $attempts = [
-            // Their company and project, through my workspace.
-            ["/workspaces/{$mine->public_id}/clients/{$foreignCompany->public_id}/projects/{$foreignProject->public_id}/access", $myMember],
-            // My company, their project.
-            ["/workspaces/{$mine->public_id}/clients/{$myCompany->public_id}/projects/{$foreignProject->public_id}/access", $myMember],
+            // Their project, through my workspace.
+            ["/api/v1/workspaces/{$mine->public_id}/projects/{$foreignProject->public_id}/members", $myMember],
             // My company and project, their member.
-            ["/workspaces/{$mine->public_id}/clients/{$myCompany->public_id}/projects/{$myProject->public_id}/access", $foreignMember],
+            ["/api/v1/workspaces/{$mine->public_id}/projects/{$myProject->public_id}/members", $foreignMember],
         ];
 
         foreach ($attempts as [$path, $target]) {
-            $this->actingAs($manager)
-                ->put($path, ['user' => $target->public_id, 'role' => 'contributor'])
+            $this->projectSession($manager)
+                ->withHeader('Idempotency-Key', (string) str()->uuid())->putJson($path, ['user_id' => $target->public_id, 'role' => 'contributor', 'expected_version' => AgentApiVersion::for($myProject->fresh()), 'confirm' => true])
                 ->assertNotFound();
         }
 
@@ -1578,10 +1553,11 @@ class ClientDirectoryTest extends TestCase
         $admin = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
 
-        $this->actingAs($manager)
-            ->put("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}/access", [
-                'user' => $admin->public_id,
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->putJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/members", [
+                'user_id' => $admin->public_id,
                 'role' => 'owner',
+                'expected_version' => AgentApiVersion::for($project->fresh()), 'confirm' => true,
             ])
             ->assertStatus(422);
 
@@ -1590,7 +1566,7 @@ class ClientDirectoryTest extends TestCase
             ->count());
 
         // And the Manage payload does not carry them either way.
-        $this->actingAs($manager)
+        $this->projectSession($manager)
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/settings")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1620,15 +1596,8 @@ class ClientDirectoryTest extends TestCase
         $this->assertNull($company->fresh()?->billing_email);
     }
 
-    /**
-     * Hiding a project from a client must not be undone by omission.
-     *
-     * `is_visible_to_client` is `required` rather than `sometimes` precisely so
-     * a form that forgets the checkbox cannot silently re-expose a project
-     * someone hid. That is a disclosure decision, so the refusal is asserted
-     * rather than trusted to the rule string.
-     */
-    public function test_a_project_update_that_omits_visibility_is_refused(): void
+    /** An omitted visibility field preserves a hidden project through canonical PATCH. */
+    public function test_a_project_patch_preserves_omitted_visibility(): void
     {
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic Omit', 'synthetic-omit', $manager);
@@ -1636,14 +1605,15 @@ class ClientDirectoryTest extends TestCase
         $project = $this->project($workspace, $company, 'Synthetic Omit Project');
         $project->forceFill(['is_visible_to_client' => false])->save();
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'Synthetic Omit Project',
                 'description' => null,
                 'repository' => null,
                 'status' => 'active',
+                'expected_version' => AgentApiVersion::for($project->fresh()), 'confirm' => true,
             ])
-            ->assertSessionHasErrors('is_visible_to_client');
+            ->assertOk();
 
         $this->assertFalse((bool) $project->fresh()?->is_visible_to_client);
     }
@@ -1728,14 +1698,7 @@ class ClientDirectoryTest extends TestCase
         $this->assertSame('billing@synthetic.test', $company->fresh()?->billing_email);
     }
 
-    /**
-     * The same distinction on a project's description.
-     *
-     * Asserted separately rather than trusted to the shared reasoning: the two
-     * requests are different classes, and the rule was wrong in both of them
-     * for the same reason, which is exactly the pattern a single test lets
-     * survive on one side.
-     */
+    /** Canonical PATCH preserves a description omitted by the caller. */
     public function test_a_description_survives_a_payload_that_omits_it(): void
     {
         $manager = User::factory()->create();
@@ -1744,15 +1707,16 @@ class ClientDirectoryTest extends TestCase
         $project = $this->project($workspace, $company, 'Synthetic Desc Project');
         $project->forceFill(['description' => 'Original scope of work.'])->save();
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'Renamed Project',
                 'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
-                'lock_version' => (int) $project->fresh()?->lock_version,
+                'expected_version' => AgentApiVersion::for($project->fresh()),
+                'confirm' => true,
             ])
-            ->assertSessionHasErrors('description');
+            ->assertOk();
 
         $this->assertSame('Original scope of work.', $project->fresh()?->description);
     }
@@ -1776,34 +1740,36 @@ class ClientDirectoryTest extends TestCase
         $project = $this->project($workspace, $company, 'Synthetic Stale Project');
 
         // What the second manager's browser is holding.
-        $staleVersion = (int) $project->fresh()?->lock_version;
+        $staleVersion = AgentApiVersion::for($project->fresh());
 
         // The first manager hides it, which advances the version.
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'Synthetic Stale Project',
                 'description' => null,
                 'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => false,
-                'lock_version' => $staleVersion,
+                'expected_version' => $staleVersion,
+                'confirm' => true,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $this->assertFalse((bool) $project->fresh()?->is_visible_to_client);
-        $this->assertNotSame($staleVersion, (int) $project->fresh()?->lock_version);
+        $this->assertNotSame($staleVersion, AgentApiVersion::for($project->fresh()));
 
         // The second manager saves a rename from the older form.
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}", [
+        $this->projectSession($manager)
+            ->withHeader('Idempotency-Key', (string) str()->uuid())->patchJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}", [
                 'name' => 'Renamed From A Stale Form',
                 'description' => null,
                 'repository' => null,
                 'status' => 'active',
                 'is_visible_to_client' => true,
-                'lock_version' => $staleVersion,
+                'expected_version' => $staleVersion,
+                'confirm' => true,
             ])
-            ->assertSessionHasErrors('lock_version');
+            ->assertConflict();
 
         // Neither the disclosure nor the rename lands: the save is refused as a
         // whole, so the operator reloads and decides again with current values.
@@ -1860,6 +1826,12 @@ class ClientDirectoryTest extends TestCase
         $fresh = $company->fresh();
         $this->assertSame((int) $foreign->id, (int) $fresh?->workspace_id);
         $this->assertSame('Synthetic Race Client', $fresh?->name);
+    }
+
+    private function projectSession(User $actor): static
+    {
+        return $this->actingAs($actor, 'web')->withCredentials()
+            ->withUnencryptedCookie((string) config('session.cookie'), str_repeat('p', 40));
     }
 
     private function browserClientPatch(User $user, Workspace $workspace, ClientCompany $company, array $fields): TestResponse
