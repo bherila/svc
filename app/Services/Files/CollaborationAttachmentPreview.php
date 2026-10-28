@@ -59,11 +59,11 @@ final class CollaborationAttachmentPreview
                     continue;
                 }
                 $sharing = $portal ? null : $this->presenter->nativeControl($file, $view,
-                    route('svc.files.collaboration.visibility.update', [...$nativeParameters, 'attachment' => $file->public_id], absolute: false), $audience);
+                    route('agent-api.v1.collaboration.attachments.visibility.update', [...$parameters, 'attachment' => $file->public_id], absolute: false), $audience);
                 $files[] = AttachmentMetadata::native($file,
                     $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $file->public_id], absolute: false)
                         : route('svc.files.download', [$workspace, $file->public_id], absolute: false),
-                    $sharing === null ? null : route('svc.files.collaboration.destroy', [...$nativeParameters, 'attachment' => $file->public_id], absolute: false), $sharing);
+                    $sharing === null ? null : route('agent-api.v1.collaboration.attachments.destroy', [...$parameters, 'attachment' => $file->public_id], absolute: false), $sharing);
             }
             $canWrite = ! $agent && $audience === AttachmentAudience::Internal && $publisher && AttachmentSharingGate::available();
             $page = $agent ? route('agent-api.v1.collaboration.attachments.index', $parameters, absolute: false)
@@ -75,7 +75,7 @@ final class CollaborationAttachmentPreview
                 continue;
             }
             $panels[$comment->public_id] = ['files' => $files, 'upload' => $canWrite ? [
-                'href' => route('svc.files.collaboration.upload', $nativeParameters, absolute: false), 'parent_version' => AgentApiVersion::for($comment)] : null,
+                'href' => route('agent-api.v1.collaboration.attachments.upload-url', $parameters, absolute: false), 'parent_version' => AgentApiVersion::for($comment)] : null,
                 'parent_version' => AgentApiVersion::for($comment), 'next_href' => $rows->count() > 3 ? $page : null];
         }
 

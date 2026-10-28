@@ -20,7 +20,7 @@ final class NativeFileApiTest extends TestCase
 
     public function test_a_native_dual_manager_can_upload_and_remove_with_receipts_and_current_versions(): void
     {
-        Storage::fake('local');
+        Storage::fake('svc_files');
         config(['agent_api.writes_enabled' => false, 'agent_api.file_writes_enabled' => false]);
         [$owner, $workspace, $company, $project] = $this->tenant();
         $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('f', 40));

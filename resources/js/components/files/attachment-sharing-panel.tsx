@@ -243,7 +243,7 @@ export function UploadAttachment({
         const prepared = await apiRequest<{
             url?: string;
             upload_url?: string;
-        }>('POST', original.href, {});
+        }>(original.method, original.href, {});
         let result;
 
         if (!prepared.ok) {

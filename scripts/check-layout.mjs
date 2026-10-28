@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* global process */
 
+import { Buffer } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
@@ -44,6 +45,7 @@ const timeOnly = process.argv.includes('--time');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
 const tasksOnly = process.argv.includes('--tasks');
+const receiptsOnly = process.argv.includes('--receipts');
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -151,6 +153,7 @@ try {
         SVC_LAYOUT_TASKS: tasksOnly ? '1' : '0',
         SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
+        SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -308,40 +311,42 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of disputesOnly
-            ? ['invoice', 'square_portal']
-            : tasksOnly
-              ? ['task_list', 'task_project', 'task_editor', 'task_portal']
-              : historyOnly
-                ? ['history_index', 'history_discussion', 'history_invoice']
-                : portalOnly
-                  ? ['settings']
-                  : correctionOnly
-                    ? ['invoice_review']
-                    : squareOnly
-                      ? ['square_explore', 'square_invoice', 'square_portal']
-                      : remindersOnly
-                        ? ['reminder_invoice', 'settings']
-                        : timeOnly
-                          ? ['time', 'draft_time']
-                          : backlogOnly
-                            ? ['agreement']
-                            : [
-                                  'mcp_setup',
-                                  'invoice',
-                                  'invoice_review',
-                                  'reminder_invoice',
-                                  'settings',
-                                  'draft_invoice',
-                                  'draft_time',
-                                  'proposal',
-                                  'proposal_acceptance',
-                                  'operations',
-                                  'time',
-                                  'expenses',
-                                  'receipts',
-                                  'expense_schedules',
-                              ]) {
+        for (const screen of receiptsOnly
+            ? ['receipts']
+            : disputesOnly
+              ? ['invoice', 'square_portal']
+              : tasksOnly
+                ? ['task_list', 'task_project', 'task_editor', 'task_portal']
+                : historyOnly
+                  ? ['history_index', 'history_discussion', 'history_invoice']
+                  : portalOnly
+                    ? ['settings']
+                    : correctionOnly
+                      ? ['invoice_review']
+                      : squareOnly
+                        ? ['square_explore', 'square_invoice', 'square_portal']
+                        : remindersOnly
+                          ? ['reminder_invoice', 'settings']
+                          : timeOnly
+                            ? ['time', 'draft_time']
+                            : backlogOnly
+                              ? ['agreement']
+                              : [
+                                    'mcp_setup',
+                                    'invoice',
+                                    'invoice_review',
+                                    'reminder_invoice',
+                                    'settings',
+                                    'draft_invoice',
+                                    'draft_time',
+                                    'proposal',
+                                    'proposal_acceptance',
+                                    'operations',
+                                    'time',
+                                    'expenses',
+                                    'receipts',
+                                    'expense_schedules',
+                                ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -844,7 +849,7 @@ try {
                     .selectOption('projects');
                 await capture(screen, 'portal-project-selection', width);
                 await card
-                    .getByRole('button', { name: 'Remove', exact: true })
+                    .getByRole('button', { name: 'Remove file', exact: true })
                     .first()
                     .click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
@@ -1041,16 +1046,73 @@ try {
 
             if (screen === 'receipts') {
                 await page
-                    .getByRole('button', { name: 'Remove', exact: true })
+                    .getByRole('button', { name: 'Remove file', exact: true })
+                    .first()
                     .click();
-                await expect(page.getByRole('alertdialog')).toHaveCSS(
-                    'opacity',
-                    '1',
-                );
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Confirm removal',
+                        exact: true,
+                    }),
+                ).toBeVisible();
                 await capture(screen, 'remove-receipt', width);
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();
+
+                if (receiptsOnly && width === 1920) {
+                    await page
+                        .getByLabel('Upload a file')
+                        .setInputFiles({
+                            name: 'synthetic-browser-receipt.txt',
+                            mimeType: 'text/plain',
+                            buffer: Buffer.from(
+                                'Synthetic receipt browser acceptance bytes.',
+                            ),
+                        });
+                    const uploaded = page.waitForResponse(
+                        (response) =>
+                            response.request().method() === 'POST' &&
+                            new URL(response.url()).pathname ===
+                                fixture.receipt_upload,
+                    );
+                    await page
+                        .getByRole('button', {
+                            name: 'Upload file',
+                            exact: true,
+                        })
+                        .click();
+                    expect((await uploaded).status()).toBe(201);
+                    const link = page.getByRole('link', {
+                        name: 'synthetic-browser-receipt.txt',
+                        exact: true,
+                    });
+                    await expect(link).toBeVisible();
+                    await capture(screen, 'uploaded', width);
+                    const row = page.locator('li').filter({ has: link });
+                    await row
+                        .getByRole('button', {
+                            name: 'Remove file',
+                            exact: true,
+                        })
+                        .click();
+                    const removed = page.waitForResponse(
+                        (response) =>
+                            response.request().method() === 'DELETE' &&
+                            new URL(response.url()).pathname.startsWith(
+                                fixture.receipt_prefix,
+                            ),
+                    );
+                    await row
+                        .getByRole('button', {
+                            name: 'Confirm removal',
+                            exact: true,
+                        })
+                        .click();
+                    expect((await removed).status()).toBe(200);
+                    await expect(link).toHaveCount(0);
+                    await capture(screen, 'removed', width);
+                }
             }
 
             if (screen === 'invoice') {
@@ -1333,21 +1395,23 @@ try {
         [
             '# Browser layout evidence',
             '',
-            disputesOnly
-                ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
-                : clientsOnly
-                  ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
-                : tasksOnly
-                  ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                  : portalOnly
-                    ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                    : squareOnly
-                      ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                      : remindersOnly
-                        ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                        : backlogOnly
-                          ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                          : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+            receiptsOnly
+                ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
+                : disputesOnly
+                  ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                  : clientsOnly
+                    ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                    : tasksOnly
+                      ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                      : portalOnly
+                        ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                        : squareOnly
+                          ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                          : remindersOnly
+                            ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                            : backlogOnly
+                              ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                              : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',
