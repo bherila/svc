@@ -714,7 +714,7 @@
                     "200": {
                         "description": "Stream the private file using the signed URL, same bearer credential and current manager permission.",
                         "content": {
-                            "application/octet-stream": {
+                            "*/*": {
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
@@ -4276,7 +4276,7 @@
                     "200": {
                         "description": "Authorized attachment content.",
                         "content": {
-                            "application/octet-stream": {
+                            "*/*": {
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
@@ -7745,7 +7745,7 @@
                     "200": {
                         "description": "Receipt bytes",
                         "content": {
-                            "application/octet-stream": {
+                            "*/*": {
                                 "schema": {
                                     "type": "string",
                                     "format": "binary"
@@ -20132,25 +20132,99 @@
                 }
             },
             "Error": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                    "message"
-                ],
-                "properties": {
-                    "message": {
-                        "type": "string"
-                    },
-                    "errors": {
+                "oneOf": [
+                    {
                         "type": "object",
-                        "additionalProperties": {
-                            "type": "array",
-                            "items": {
+                        "additionalProperties": false,
+                        "required": [
+                            "message"
+                        ],
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            },
+                            "errors": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "error"
+                        ],
+                        "properties": {
+                            "error": {
+                                "type": "string",
+                                "enum": [
+                                    "invalid_token",
+                                    "insufficient_scope"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "message",
+                            "operation",
+                            "reason",
+                            "detail"
+                        ],
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            },
+                            "operation": {
+                                "type": "string"
+                            },
+                            "reason": {
+                                "type": "string",
+                                "enum": [
+                                    "deployment_flag",
+                                    "unauthenticated",
+                                    "missing_scope",
+                                    "missing_permission",
+                                    "group_not_granted",
+                                    "policy",
+                                    "depends_on"
+                                ]
+                            },
+                            "detail": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "error",
+                            "message"
+                        ],
+                        "properties": {
+                            "error": {
+                                "type": "string",
+                                "enum": [
+                                    "invalid_token",
+                                    "temporarily_unavailable",
+                                    "access_denied"
+                                ]
+                            },
+                            "message": {
                                 "type": "string"
                             }
                         }
                     }
-                }
+                ]
             },
             "ExpectedVersionRequest": {
                 "type": "object",
@@ -25204,13 +25278,17 @@
                         "description": "The operator's private note."
                     },
                     "status": {
-                        "type": "string",
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "enum": [
                             "pending",
-                            "succeeded"
+                            "succeeded",
+                            null
                         ],
                         "default": "succeeded",
-                        "description": "succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status."
+                        "description": "succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status. Omitted or null means succeeded."
                     },
                     "external_finance_transaction_uuid": {
                         "type": [

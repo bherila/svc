@@ -59,7 +59,12 @@ final class AgentClientRestParityTest extends TestCase
         app(AgentMutationExecutor::class)->run($owner, $workspace, $clientId, 'clients.archive', 'synthetic-before-confirmation', ['client_id' => $client->public_id, ...$body],
             fn (): array => [app(UpdateClientCompany::class)->handle($workspace, $client, ['is_active' => false], $version)->public_id]);
         $path = '/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$client->public_id.'/archive';
-        $this->withHeader('Idempotency-Key', 'synthetic-before-confirmation')->postJson($path, $body)->assertOk()->assertJsonPath('data.is_active', false);
+        $legacy = AgentApiResponseSchemaCatalog::requestForOperation('clients.archive');
+        $legacy['required'] = array_values(array_diff($legacy['required'], ['confirm']));
+        $this->withHistoricalApiRequestContract('clients.archive', $legacy,
+            'A completed receipt from before confirmation was required must replay its original body; a new unconfirmed request below is refused.',
+            fn () => $this->withHeader('Idempotency-Key', 'synthetic-before-confirmation')->postJson($path, $body),
+        )->assertOk()->assertJsonPath('data.is_active', false);
         $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'clients.archive', 'outcome' => 'replay']);
         $this->withHeader('Idempotency-Key', 'synthetic-new-unconfirmed')->postJson($path, ['expected_version' => AgentApiVersion::for($client->fresh())])->assertUnprocessable();
         $this->assertDatabaseCount('agent_mutation_receipts', 1);
