@@ -50,7 +50,7 @@ final class AgentOperationRegistryTest extends TestCase
             'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate',
             'finance.reconciliations.acknowledge',
             'invoices.correct', 'invoices.discard_draft', 'invoices.generate_period', 'invoices.issue',
-            'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_cover', 'invoices.square_link', 'invoices.square_uncover', 'invoices.square_unlink', 'invoices.void',
+            'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_cover', 'invoices.square_covered_payment_record', 'invoices.square_link', 'invoices.square_uncover', 'invoices.square_unlink', 'invoices.void',
             'payments.correct', 'payments.record', 'payments.refund', 'payments.reverse_refund', 'payments.set_status', 'projects.archive', 'projects.create', 'projects.members.update', 'projects.update',
             'proposals.accept', 'proposals.send', 'square.import_customer', 'task_organization.lists.archive', 'task_planning.labels.archive',
         ];

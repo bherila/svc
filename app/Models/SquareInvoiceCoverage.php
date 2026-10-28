@@ -13,9 +13,9 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * A Square invoice covered by an svc invoice (#487): one svc invoice covers
  * what Square split into several, its primary Square invoice is linked, and
- * each other one is recorded here. Not a link - nothing collects, reconciles
- * or records a payment through it; it tells the billing audit the Square
- * invoice is accounted for.
+ * each other one is recorded here. Not a link: it never starts automatic collection or payment allocation.
+ * A separate explicit review may record a covered payment. It also tells the
+ * billing audit the Square invoice is accounted for.
  *
  * Clearing is soft: the row stays as history with `cleared_at`, and its
  * active slot is emptied so the Square invoice may be covered or linked again.
