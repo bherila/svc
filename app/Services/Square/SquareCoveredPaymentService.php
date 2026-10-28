@@ -113,6 +113,7 @@ final class SquareCoveredPaymentService
                 // before classifying payment rows read without out-of-order locks.
                 $seen = $this->records->invoice($workspace, $invoiceId);
                 abort_unless(AgentApiVersion::matches($seen, AgentApiVersion::for($invoice)), 409, 'The invoice changed while this payment waited. Review it again.');
+                abort_unless($invoice->workspace->timezone === $observed->timezone, 409, 'Workspace timezone changed. Review the payment again.');
                 $fact = $observed->payment($paymentId);
                 abort_unless(hash_equals($observed->version($fact), $data['reviewed_version']), 409, 'Square payment facts changed. Review the payment again.');
                 $refusal = $this->refusal($invoice, $fact, $observed, $this->collection->summary($invoice)['pending_payments']);
@@ -150,7 +151,7 @@ final class SquareCoveredPaymentService
         $payments = $this->reader->read($workspace, $squareInvoiceId, $invoice->currency, refreshMirror: false);
 
         return new SquareCoveredPaymentObservation($coverage->public_id, $payments,
-            $payments === [] ? [] : $this->disputes->read(array_map(static fn (SquarePaymentFacts $fact): string => $fact->id, $payments)));
+            $payments === [] ? [] : $this->disputes->read(array_map(static fn (SquarePaymentFacts $fact): string => $fact->id, $payments)), $workspace->timezone);
     }
 
     private function refusal(ClientInvoice $invoice, SquarePaymentFacts $fact, SquareCoveredPaymentObservation $observation, int $pending): ?string

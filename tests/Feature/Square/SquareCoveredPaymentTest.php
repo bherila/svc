@@ -214,6 +214,17 @@ final class SquareCoveredPaymentTest extends TestCase
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
     }
 
+    public function test_changed_workspace_timezone_invalidates_the_reviewed_received_date(): void
+    {
+        [$workspace, , , , $base] = $this->fixture();
+        $review = $this->getJson($base)->assertOk()->json('data');
+        $workspace->update(['timezone' => 'America/Los_Angeles']);
+        $this->withHeader('Idempotency-Key', 'synthetic-covered-timezone-race')->postJson($base.'/pay_fixture_1', [
+            'expected_version' => $review['invoice_version'], 'reviewed_version' => $review['payments'][0]['reviewed_version'], 'confirm' => true,
+        ])->assertConflict();
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+    }
+
     public function test_first_party_session_uses_the_same_operation_when_agent_writers_are_disabled(): void
     {
         [$workspace, $owner, , , $base] = $this->fixture();
@@ -246,6 +257,7 @@ final class SquareCoveredPaymentTest extends TestCase
         $review = $this->getJson($base)->assertOk()->json('data');
         $arguments = ['workspace' => $workspace->public_id, 'invoice' => $invoice->public_id, 'square_invoice' => 'inv_fixture_1', '--actor' => $owner->public_id, '--format' => 'json'];
         $this->artisan('svc:square:covered-payments', $arguments)->assertSuccessful();
+        $this->assertDatabaseCount('square_invoice_snapshots', 0);
         $this->assertDatabaseCount('client_invoice_payments', 0);
         $apply = [...$arguments, '--apply' => true, '--payment' => 'pay_fixture_1', '--expected-version' => $review['invoice_version'], '--reviewed-version' => $review['payments'][0]['reviewed_version'], '--idempotency-key' => 'synthetic-covered-cli'];
         $this->artisan('svc:square:covered-payments', $apply)->assertFailed();

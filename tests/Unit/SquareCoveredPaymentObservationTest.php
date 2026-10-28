@@ -22,7 +22,7 @@ final class SquareCoveredPaymentObservationTest extends TestCase
 
     public static function changedFacts(): array
     {
-        return [['id'], ['order'], ['location'], ['currency'], ['amount'], ['refund'], ['captured'], ['coverage'], ['dispute']];
+        return [['id'], ['order'], ['location'], ['currency'], ['amount'], ['refund'], ['captured'], ['coverage'], ['dispute'], ['timezone']];
     }
 
     #[DataProvider('changedFacts')]
@@ -63,7 +63,7 @@ final class SquareCoveredPaymentObservationTest extends TestCase
         }
         $after = SquarePaymentFacts::from($changed, $changed['id']);
         $old = new SquareCoveredPaymentObservation('synthetic_coverage', [$before], []);
-        $new = new SquareCoveredPaymentObservation($coverage, [$after], $disputes);
+        $new = new SquareCoveredPaymentObservation($coverage, [$after], $disputes, $change === 'timezone' ? 'America/Los_Angeles' : 'UTC');
         $this->assertNotSame($old->version($before), $new->version($after));
         $this->assertSame($before, $old->payment('synthetic_payment'));
         $this->assertNull($old->providerRefusal($before));

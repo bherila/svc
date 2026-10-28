@@ -11,12 +11,12 @@ final readonly class SquareCoveredPaymentObservation
 {
     /** @param list<SquarePaymentFacts> $payments
      * @param array<string,list<SquareDisputeFacts>> $disputes */
-    public function __construct(public string $coverageId, public array $payments, public array $disputes) {}
+    public function __construct(public string $coverageId, public array $payments, public array $disputes, public string $timezone = 'UTC') {}
 
     public function version(SquarePaymentFacts $payment): string
     {
         return hash('sha256', json_encode([
-            $this->coverageId, $payment->id, $payment->orderId, $payment->locationId,
+            $this->coverageId, $this->timezone, $payment->id, $payment->orderId, $payment->locationId,
             $payment->currency, $payment->amount, $payment->refundedAmount, $payment->receivedAt->toISOString(),
             $this->disputes[$payment->id] ?? [],
         ], JSON_THROW_ON_ERROR));
