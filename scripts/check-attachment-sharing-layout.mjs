@@ -132,11 +132,12 @@ try {
         `<?php
 $runtime = getenv('SVC_LAYOUT_RUNTIME');
 $settings = json_decode(file_get_contents($runtime.'/harness.json'), true);
-if (PHP_SAPI !== 'cli-server' || ($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' || ($_SERVER['HTTP_HOST'] ?? '') !== $settings['host'] || !hash_equals($settings['token'], $_SERVER['HTTP_X_SVC_Layout_TOKEN'] ?? $_SERVER['HTTP_X_SVC_LAYOUT_TOKEN'] ?? '') || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') { http_response_code(403); exit; }
+if (PHP_SAPI !== 'cli-server' || ($_SERVER['REMOTE_ADDR'] ?? '') !== '127.0.0.1' || ($_SERVER['HTTP_HOST'] ?? '') !== $settings['host'] || !hash_equals($settings['token'], $_SERVER['HTTP_X_SVC_Layout_TOKEN'] ?? $_SERVER['HTTP_X_SVC_LAYOUT_TOKEN'] ?? '')) { http_response_code(403); exit; }
 $root = ${JSON.stringify(root)};
 $app = require $root.'/scripts/layout/bootstrap.php';
 $fixture = json_decode(file_get_contents($runtime.'/fixture.json'), true);
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET' && !(($_SERVER['REQUEST_METHOD'] ?? '') === 'PATCH' && $path === $fixture['attachment_visibility'])) { http_response_code(403); exit; }
 Illuminate\\Support\\Facades\\Auth::onceUsingId(str_starts_with($path, '/portal/') ? $fixture['portal_user_id'] : $fixture['user_id']);
 $app->handleRequest(Illuminate\\Http\\Request::capture());
 `,
@@ -288,6 +289,70 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 animations: 'disabled',
                 path: path.join(artifacts, `${screen}-${width}.png`),
             });
+
+            if (screen === 'agreementfiles') {
+                const row = panel
+                    .locator('li')
+                    .filter({
+                        has: panel.getByRole('link', {
+                            name: 'SyntheticReaderFile.txt',
+                            exact: true,
+                        }),
+                    });
+                const checkbox = row.getByLabel('Visible to client');
+                const writes = [];
+                await page.route(
+                    origin + fixture.attachment_visibility,
+                    async (route) => {
+                        if (route.request().method() !== 'PATCH') {
+                            await route.continue();
+
+                            return;
+                        }
+
+                        writes.push({
+                            body: route.request().postData(),
+                            key: route.request().headers()['idempotency-key'],
+                        });
+                        const result = await route.fetch();
+                        expect(result.status()).toBe(200);
+
+                        if (writes.length === 1) {
+                            await route.abort('failed');
+                        } else {
+                            await route.fulfill({ response: result });
+                        }
+                    },
+                );
+                await checkbox.click();
+                await expect(
+                    row.getByRole('button', {
+                        name: 'Check sharing',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(checkbox).toBeDisabled();
+                await row.scrollIntoViewIfNeeded();
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: path.join(artifacts, `sharing-unknown-${width}.png`),
+                });
+                await row
+                    .getByRole('button', { name: 'Check sharing', exact: true })
+                    .click();
+                await expect(checkbox).toBeEnabled();
+                expect(writes).toHaveLength(2);
+                expect(writes[1]).toEqual(writes[0]);
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: path.join(
+                        artifacts,
+                        `sharing-recovered-${width}.png`,
+                    ),
+                });
+                await page.unroute(origin + fixture.attachment_visibility);
+                expect(errors, 'sharing recovery runtime errors').toEqual([]);
+            }
 
             if (screen === 'note') {
                 const comment = page

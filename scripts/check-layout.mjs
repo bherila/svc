@@ -1463,55 +1463,182 @@ try {
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();
 
-                if (receiptsOnly && width === 1920) {
-                    await page.getByLabel('Upload a file').setInputFiles({
-                        name: 'synthetic-browser-receipt.txt',
-                        mimeType: 'text/plain',
-                        buffer: Buffer.from(
-                            'Synthetic receipt browser acceptance bytes.',
-                        ),
-                    });
-                    const uploaded = page.waitForResponse(
-                        (response) =>
-                            response.request().method() === 'POST' &&
-                            new URL(response.url()).pathname ===
-                                fixture.receipt_upload,
+                if (receiptsOnly) {
+                    const filename = `synthetic-browser-receipt-${width}.txt`;
+                    const uploads = [];
+                    await page.route(
+                        origin + fixture.receipt_upload + '*',
+                        async (route) => {
+                            if (route.request().method() !== 'POST') {
+                                await route.continue();
+
+                                return;
+                            }
+
+                            uploads.push({
+                                key: route.request().headers()[
+                                    'idempotency-key'
+                                ],
+                                bytes: route
+                                    .request()
+                                    .postDataBuffer()
+                                    .toString()
+                                    .replace(
+                                        /------WebKitFormBoundary[^\r\n]+/g,
+                                        'SYNTHETIC_BOUNDARY',
+                                    ),
+                            });
+                            const result = await route.fetch();
+                            expect(result.status()).toBe(201);
+
+                            if (uploads.length === 1) {
+                                await route.abort('failed');
+                            } else {
+                                await route.fulfill({ response: result });
+                            }
+                        },
                     );
+                    await page
+                        .getByLabel('Upload a file')
+                        .setInputFiles({
+                            name: filename,
+                            mimeType: 'text/plain',
+                            buffer: Buffer.from(
+                                'Synthetic receipt browser acceptance bytes.',
+                            ),
+                        });
                     await page
                         .getByRole('button', {
                             name: 'Upload file',
                             exact: true,
                         })
                         .click();
-                    expect((await uploaded).status()).toBe(201);
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeDisabled();
+                    await capture(screen, 'upload-unknown', width);
+                    await page.route(
+                        page.url(),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await page
+                        .getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        page.getByText(
+                            'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
+                            { exact: true },
+                        ),
+                    ).toBeVisible();
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await capture(screen, 'upload-refresh-failed', width);
+                    await page
+                        .getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        })
+                        .click();
                     const link = page.getByRole('link', {
-                        name: 'synthetic-browser-receipt.txt',
+                        name: filename,
                         exact: true,
                     });
                     await expect(link).toBeVisible();
+                    expect(uploads).toHaveLength(2);
+                    expect(uploads[1]).toEqual(uploads[0]);
+                    await page.unroute(origin + fixture.receipt_upload + '*');
                     await capture(screen, 'uploaded', width);
                     const row = page.locator('li').filter({ has: link });
+                    const removals = [];
+                    const deletionMatch = (url) =>
+                        url.pathname.startsWith(fixture.receipt_prefix);
+                    await page.route(deletionMatch, async (route) => {
+                        if (route.request().method() !== 'DELETE') {
+                            await route.continue();
+
+                            return;
+                        }
+
+                        removals.push({
+                            body: route.request().postData(),
+                            key: route.request().headers()['idempotency-key'],
+                        });
+                        const result = await route.fetch();
+                        expect(result.status()).toBe(200);
+
+                        if (removals.length === 1) {
+                            await route.abort('failed');
+                        } else {
+                            await route.fulfill({ response: result });
+                        }
+                    });
                     await row
                         .getByRole('button', {
                             name: 'Remove file',
                             exact: true,
                         })
                         .click();
-                    const removed = page.waitForResponse(
-                        (response) =>
-                            response.request().method() === 'DELETE' &&
-                            new URL(response.url()).pathname.startsWith(
-                                fixture.receipt_prefix,
-                            ),
-                    );
                     await row
                         .getByRole('button', {
                             name: 'Confirm removal',
                             exact: true,
                         })
                         .click();
-                    expect((await removed).status()).toBe(200);
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Check removal',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Cancel',
+                            exact: true,
+                        }),
+                    ).toBeDisabled();
+                    await capture(screen, 'removal-unknown', width);
+                    await page.route(
+                        page.url(),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await row
+                        .getByRole('button', {
+                            name: 'Check removal',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Refresh removed file',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await capture(screen, 'removal-refresh-failed', width);
+                    await row
+                        .getByRole('button', {
+                            name: 'Refresh removed file',
+                            exact: true,
+                        })
+                        .click();
                     await expect(link).toHaveCount(0);
+                    expect(removals).toHaveLength(2);
+                    expect(removals[1]).toEqual(removals[0]);
+                    await page.unroute(deletionMatch);
                     await capture(screen, 'removed', width);
                 }
             }
