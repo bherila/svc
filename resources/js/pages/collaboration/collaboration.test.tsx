@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CommentThread from '@/components/collaboration/comment-thread';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import CollaborationIndex from '@/pages/collaboration/index';
 import CollaborationShow from '@/pages/collaboration/show';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
@@ -16,48 +17,38 @@ const mutations = vi.hoisted(() => ({
     patch: vi.fn(),
     delete: vi.fn(),
     get: vi.fn(),
+    visit: vi.fn(),
+    request: vi.fn(),
 }));
 vi.mock('@/layouts/workspace-shell', () => ({
     default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
-vi.mock('@inertiajs/react', async () => {
-    const { useState } = await import('react');
+vi.mock('@/lib/api', () => ({
+    newIdempotencyKey: () => crypto.randomUUID(),
+    apiRequest: (
+        method: 'POST' | 'PATCH' | 'DELETE',
+        href: string,
+        body: object,
+        key: string,
+    ) => {
+        mutations[method.toLowerCase() as 'post' | 'patch' | 'delete'](
+            href,
+            body,
+        );
 
-    return {
-        Head: () => null,
-        Link: ({
-            children,
-            ...props
-        }: {
-            children: ReactNode;
-            href: string;
-        }) => <a {...props}>{children}</a>,
-        router: { get: mutations.get },
-        useForm: function useForm(initial: Record<string, unknown>) {
-            const [data, setData] = useState(initial);
-            let transform = (value: Record<string, unknown>) => value;
-            const form = {
-                data,
-                processing: false,
-                errors: {},
-                setData: (field: string, value: unknown) =>
-                    setData((prior) => ({ ...prior, [field]: value })),
-                transform: (callback: typeof transform) => {
-                    transform = callback;
-
-                    return form;
-                },
-                reset: () => setData(initial),
-                post: (href: string) => mutations.post(href, transform(data)),
-                patch: (href: string) => mutations.patch(href, transform(data)),
-                delete: (href: string) =>
-                    mutations.delete(href, transform(data)),
-            };
-
-            return form;
-        },
-    };
-});
+        return mutations.request(method, href, body, key);
+    },
+}));
+vi.mock('@/lib/refresh-page-props', () => ({
+    refreshPageProps: vi.fn(async () => {}),
+}));
+vi.mock('@inertiajs/react', () => ({
+    Head: () => null,
+    Link: ({ children, ...props }: { children: ReactNode; href: string }) => (
+        <a {...props}>{children}</a>
+    ),
+    router: { get: mutations.get, visit: mutations.visit },
+}));
 
 const comment: CollaborationContent = {
     id: 'synthetic-comment',
@@ -99,7 +90,17 @@ const thread: CollaborationThread = {
 };
 
 describe('native collaboration pages', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mutations.request.mockReset();
+        mutations.request.mockImplementation(() => new Promise(() => {}));
+        mutations.visit.mockImplementation((_url, options) => {
+            options.onSuccess();
+            options.onFinish();
+        });
+        vi.mocked(refreshPageProps).mockReset();
+        vi.mocked(refreshPageProps).mockResolvedValue();
+    });
 
     it('renders complete escaped topic/comment content, parent sharing state and pagination without overflow risks', () => {
         const view = render(
@@ -159,6 +160,7 @@ describe('native collaboration pages', () => {
         );
         expect(mutations.delete).toHaveBeenCalledWith(comment.delete_href, {
             expected_version: comment.version,
+            confirm: true,
         });
     });
 
@@ -279,6 +281,136 @@ describe('native collaboration pages', () => {
         );
         expect(screen.queryByRole('button', { name: 'Create' })).toBeNull();
         expect(horizontalOverflowRisks(view.container)).toEqual([]);
+    });
+
+    it('retains an uncertain comment draft and key, then follows the server focus URL', async () => {
+        mutations.request.mockResolvedValueOnce({
+            ok: false,
+            status: 503,
+            message: 'Synthetic retryable refusal',
+        });
+        const destination =
+            '/synthetic/finished-comment-page?comment=synthetic-comment#comment-synthetic-comment';
+        mutations.request.mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            data: { version: 'saved-version', web_url: destination },
+        });
+        render(<CommentThread thread={thread} />);
+        fireEvent.change(screen.getByLabelText('New comment'), {
+            target: { value: 'Keep this synthetic reply' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Add comment' }),
+            );
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Synthetic retryable refusal',
+        );
+        expect(screen.getByLabelText('New comment')).toHaveValue(
+            'Keep this synthetic reply',
+        );
+        const key = mutations.request.mock.calls[0][3];
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Add comment' }),
+            );
+        });
+        expect(mutations.request.mock.calls[1][3]).toBe(key);
+        expect(mutations.visit).toHaveBeenCalledWith(
+            destination,
+            expect.any(Object),
+        );
+    });
+
+    it('preserves an unsaved text edit across a sharing save and rebases unchanged text facts', async () => {
+        mutations.request.mockResolvedValue({
+            ok: true,
+            status: 200,
+            data: { version: 'next-version', web_url: comment.href },
+        });
+        const view = render(<CommentThread thread={thread} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Edit comment' }));
+        fireEvent.change(
+            screen.getByRole('textbox', { name: 'Edit comment' }),
+            { target: { value: 'Unsaved synthetic text draft' } },
+        );
+        fireEvent.click(
+            screen.getAllByRole('checkbox', { name: 'Visible to client' })[0],
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Save sharing' }),
+            );
+        });
+        view.rerender(
+            <CommentThread
+                thread={{
+                    ...thread,
+                    comments: [
+                        {
+                            ...comment,
+                            version: 'next-version',
+                            is_visible_to_client: false,
+                        },
+                    ],
+                }}
+            />,
+        );
+        expect(
+            screen.getByRole('textbox', { name: 'Edit comment' }),
+        ).toHaveValue('Unsaved synthetic text draft');
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Save comment' }),
+            );
+        });
+        expect(mutations.request).toHaveBeenLastCalledWith(
+            'PATCH',
+            comment.update_href,
+            {
+                body: 'Unsaved synthetic text draft',
+                expected_version: 'next-version',
+            },
+            expect.any(String),
+        );
+    });
+
+    it('retains a new reply original parent version when refreshed parent facts change', async () => {
+        mutations.request.mockResolvedValue({
+            ok: false,
+            status: 409,
+            message: 'Synthetic changed parent',
+        });
+        const view = render(<CommentThread thread={thread} />);
+        fireEvent.change(screen.getByLabelText('New comment'), {
+            target: { value: 'Keep my original synthetic reply' },
+        });
+        view.rerender(
+            <CommentThread
+                thread={{ ...thread, parent_version: 'new-parent-version' }}
+            />,
+        );
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Add comment' }),
+            );
+        });
+        expect(mutations.request).toHaveBeenCalledWith(
+            'POST',
+            thread.store_href,
+            expect.objectContaining({
+                expected_version: thread.parent_version,
+            }),
+            expect.any(String),
+        );
+        expect(screen.getByLabelText('New comment')).toHaveValue(
+            'Keep my original synthetic reply',
+        );
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Synthetic changed parent',
+        );
     });
 
     it('embeds authorized comment files without requesting them on mount', () => {

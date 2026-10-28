@@ -1,8 +1,10 @@
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { CollaborationErrors } from '@/components/collaboration/content-controls';
+import { useCollaborationMutation } from '@/components/collaboration/use-collaboration-mutation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useVersionedDraft } from '@/hooks/use-versioned-draft';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -15,24 +17,30 @@ function NewTopic({
     href: string;
     scopes: CollaborationIndexProps['create_scopes'];
 }) {
-    const form = useForm({
-        kind: 'note',
-        title: '',
-        body: '',
-        project_id: scopes[0]?.id ?? '',
-        is_visible_to_client: false,
-    });
+    const form = useVersionedDraft(
+        {
+            kind: 'note',
+            title: '',
+            body: '',
+            project_id: scopes[0]?.id ?? '',
+            is_visible_to_client: false as boolean,
+        },
+        'new-topic',
+    );
+    const mutation = useCollaborationMutation();
 
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-3 rounded-lg border p-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.transform((data) => ({
-                    ...data,
-                    project_id: data.project_id || null,
-                }));
-                form.post(href);
+                void mutation.run(
+                    'POST',
+                    href,
+                    { ...form.data, project_id: form.data.project_id || null },
+                    undefined,
+                    true,
+                );
             }}
         >
             <h2 className="text-lg font-semibold">
@@ -103,10 +111,10 @@ function NewTopic({
                 />
                 Visible to client
             </label>
-            <CollaborationErrors errors={form.errors} />
+            <CollaborationErrors errors={mutation.errors} />
             <Button
                 type="submit"
-                disabled={form.processing}
+                disabled={mutation.pending}
                 className="justify-self-start"
             >
                 Create

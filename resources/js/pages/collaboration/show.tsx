@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import CommentThread from '@/components/collaboration/comment-thread';
 import {
@@ -6,10 +6,12 @@ import {
     RemoveContent,
     VisibilityControl,
 } from '@/components/collaboration/content-controls';
+import { useCollaborationMutation } from '@/components/collaboration/use-collaboration-mutation';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useVersionedDraft } from '@/hooks/use-versioned-draft';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatTimestamp } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
@@ -26,21 +28,30 @@ function TopicEditor({
     topic: CollaborationTopic;
     onCancel: () => void;
 }) {
-    const form = useForm({
-        title: topic.title,
-        body: topic.body ?? '',
-        expected_version: topic.version,
-    });
+    const form = useVersionedDraft(
+        {
+            title: topic.title,
+            body: topic.body ?? '',
+        },
+        topic.version,
+    );
+    const mutation = useCollaborationMutation();
 
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-3"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.patch(topic.update_href!, {
-                    preserveScroll: true,
-                    onSuccess: onCancel,
-                });
+                const submitted = { ...form.data };
+                void mutation.run(
+                    'PATCH',
+                    topic.update_href!,
+                    { ...submitted, expected_version: form.version },
+                    (saved) => {
+                        form.saved(submitted, saved.version);
+                        onCancel();
+                    },
+                );
             }}
         >
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
@@ -66,9 +77,9 @@ function TopicEditor({
                     }
                 />
             </label>
-            <CollaborationErrors errors={form.errors} />
+            <CollaborationErrors errors={mutation.errors} />
             <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={form.processing}>
+                <Button type="submit" disabled={mutation.pending}>
                     Save content
                 </Button>
                 <Button type="button" variant="outline" onClick={onCancel}>
@@ -119,7 +130,7 @@ export default function CollaborationShow({
                     </p>
                 ) : editing && topic.update_href ? (
                     <TopicEditor
-                        key={topic.version}
+                        key={topic.id}
                         topic={topic}
                         onCancel={() => setEditing(false)}
                     />
@@ -134,7 +145,7 @@ export default function CollaborationShow({
                 {!topic.deleted && (
                     <>
                         <VisibilityControl
-                            key={`sharing-${topic.version}`}
+                            key={`sharing-${topic.id}`}
                             content={topic}
                         />
                         <div className="flex flex-wrap items-start gap-2">
@@ -148,7 +159,7 @@ export default function CollaborationShow({
                                 </Button>
                             )}
                             <RemoveContent
-                                key={`remove-${topic.version}`}
+                                key={`remove-${topic.id}`}
                                 content={topic}
                             />
                         </div>

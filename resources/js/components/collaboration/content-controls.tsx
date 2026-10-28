@@ -1,6 +1,7 @@
-import { useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import { useCollaborationMutation } from '@/components/collaboration/use-collaboration-mutation';
 import { Button } from '@/components/ui/button';
+import { useVersionedDraft } from '@/hooks/use-versioned-draft';
 import type { CollaborationContent } from '@/types/collaboration';
 
 export function CollaborationErrors({
@@ -27,10 +28,11 @@ export function VisibilityControl({
 }: {
     content: CollaborationContent;
 }) {
-    const form = useForm({
-        expected_version: content.version,
-        is_visible_to_client: content.is_visible_to_client ?? false,
-    });
+    const form = useVersionedDraft(
+        { is_visible_to_client: content.is_visible_to_client ?? false },
+        content.version,
+    );
+    const mutation = useCollaborationMutation();
 
     if (!content.visibility_update_href) {
         return null;
@@ -41,9 +43,13 @@ export function VisibilityControl({
             className="grid min-w-0 grid-cols-1 gap-2"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.patch(content.visibility_update_href!, {
-                    preserveScroll: true,
-                });
+                const submitted = { ...form.data };
+                void mutation.run(
+                    'PATCH',
+                    content.visibility_update_href!,
+                    { ...submitted, expected_version: form.version },
+                    (saved) => form.saved(submitted, saved.version),
+                );
             }}
         >
             <label className="flex items-center gap-2 text-sm">
@@ -65,12 +71,12 @@ export function VisibilityControl({
                         Hidden from clients because a parent is private.
                     </p>
                 )}
-            <CollaborationErrors errors={form.errors} />
+            <CollaborationErrors errors={mutation.errors} />
             <Button
                 type="submit"
                 variant="outline"
                 className="justify-self-start"
-                disabled={form.processing}
+                disabled={mutation.pending}
             >
                 Save sharing
             </Button>
@@ -80,7 +86,7 @@ export function VisibilityControl({
 
 export function RemoveContent({ content }: { content: CollaborationContent }) {
     const [confirming, setConfirming] = useState(false);
-    const form = useForm({ expected_version: content.version });
+    const mutation = useCollaborationMutation();
 
     if (!content.delete_href) {
         return null;
@@ -103,18 +109,21 @@ export function RemoveContent({ content }: { content: CollaborationContent }) {
             className="grid min-w-0 grid-cols-1 gap-2"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.delete(content.delete_href!, { preserveScroll: true });
+                void mutation.run('DELETE', content.delete_href!, {
+                    expected_version: content.version,
+                    confirm: true,
+                });
             }}
         >
             <p className="text-sm wrap-anywhere">
                 Remove this content? Its text will no longer be shown.
             </p>
-            <CollaborationErrors errors={form.errors} />
+            <CollaborationErrors errors={mutation.errors} />
             <div className="flex flex-wrap gap-2">
                 <Button
                     type="submit"
                     variant="destructive"
-                    disabled={form.processing}
+                    disabled={mutation.pending}
                 >
                     Confirm removal
                 </Button>

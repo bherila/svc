@@ -88,6 +88,15 @@ final class CollaborationTransportService
         return $this->execute($actor, $workspace, $companyId, 'svc-cli:collaboration', $key, $operation, $id, $parentType, $payload, CollaborationOrigin::Native);
     }
 
+    /** The trusted website session retains native authority and its own receipt identity.
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function mutateInternal(User $actor, Workspace $workspace, string $companyId, string $clientId, string $key, string $operation, ?string $id, ?string $parentType, array $payload): array
+    {
+        return $this->execute($actor, $workspace, $companyId, $clientId, $key, $operation, $id, $parentType, $payload, CollaborationOrigin::Native);
+    }
+
     /** @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
