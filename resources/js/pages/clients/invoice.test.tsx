@@ -11,7 +11,8 @@ const inertia = vi.hoisted(() => ({
     reload: vi.fn(),
 }));
 
-const requestFetch = vi.fn();
+const requestFetch =
+    vi.fn<(url: string, init: RequestInit) => Promise<Response>>();
 
 beforeEach(() => {
     requestFetch.mockReset();
@@ -28,13 +29,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 function apiRequests() {
-    return requestFetch.mock.calls.map(
-        ([url, init]: [string, RequestInit]) => ({
-            url,
-            method: init.method,
-            body: JSON.parse(String(init.body)),
-        }),
-    );
+    return requestFetch.mock.calls.map(([url, init]) => ({
+        url,
+        method: init.method,
+        body: JSON.parse(String(init.body)),
+    }));
 }
 
 vi.mock('@inertiajs/react', () => ({

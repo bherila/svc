@@ -401,7 +401,7 @@ export function PaymentForm({
         notes: '',
         currency: invoice.currency,
         status: 'succeeded',
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: newIdempotencyKey(),
     });
 
     // A service refusal arrives under `billing` rather than under a field, so
