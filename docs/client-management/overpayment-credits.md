@@ -14,6 +14,16 @@
 > cannot be voided. `svc:billing:audit-overpayment-credit` (optionally `--workspace=PUBLIC_ID`) compares credit funded
 > with credit consumed.
 
+While a payment is disputed, all of that payment stays out of the spendable
+credit pool, even though its undisputed remainder reduces its invoice's balance.
+Its invoice carries `disputed` until every disputed payment leaves that state,
+including when replacement payments already cover the full invoice. The invoice
+still consumes credit already applied to it and cannot be regenerated. A won
+dispute restores the payment; any resulting excess becomes available credit
+without an extra hold. Collection and reminders pause during a dispute, while
+operators can record replacement money already received. See the current
+[disputed invoice contract](../finance-api.md#disputed-invoice-state).
+
 ## What it does
 
 When a client pays more than an invoice's remaining balance, the extra amount is **not** rejected. Instead it is kept on file as a credit and automatically applied to the next draft invoice(s) for that company. Credits never expire.

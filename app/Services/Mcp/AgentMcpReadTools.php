@@ -181,7 +181,7 @@ final class AgentMcpReadTools
      */
     public function invoices(
         #[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(enum: ['draft', 'issued', 'partially_paid', 'paid', 'void'])] ?string $status = null,
+        #[Schema(enum: ['draft', 'issued', 'partially_paid', 'paid', 'disputed', 'void'])] ?string $status = null,
         #[Schema(minimum: 1, maximum: 100)] int $limit = 25,
         #[Schema(maxLength: 2048)] ?string $cursor = null,
         #[Schema(format: 'uuid')] ?string $company_id = null,
