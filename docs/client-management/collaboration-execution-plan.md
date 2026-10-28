@@ -2,22 +2,53 @@
 
 Planning baseline: `fa6d72a8f34af60386dfc876abc190b0404cb74a`.
 
-## Implementation checkpoint (2026-10-22)
+## Implementation checkpoint (2026-10-28)
 
-Production now includes the permission prerequisite, contacts/company profiles,
-task dates/assignments, and the collaboration foundation (PR527–530). Each release
-passed independent serving checks; imported historical records remain unchanged.
-The dedicated Agent collaboration write switch remains off. AC retirement still
-depends on the agreed owner review.
+The permission prerequisite, company/contact profiles, task dates/assignment and
+native collaboration foundation are deployed. Imported history has been reviewed
+and accepted; ActiveCollab retirement is complete. Its recovery material remains
+private and preserved. Retirement is not a remaining feature-delivery gate.
 
-Three worktrees continue in parallel: the combined task/file reader floor and
-durable upload privacy policy (PR533); organization writers and native/REST/MCP/CLI
-integration; and labels/dependencies/contact responsibilities behind an independent
-default-off gate. Root owns shared registration, UI integration and production
-verification. Exact full/mutation runs and dependent production rollouts remain
-sequenced. Reader compatibility must be verified before activating new privacy
-state or organization writers; application rollback must restore service while
-preserving that privacy state.
+The combined task/file reader floor (PR533) is deployed, and its retained runtime
+privacy marker forces new ordinary uploads private across configuration caches
+and compatible application rollback. Organization writers (PR534) are deployed
+but their independent product switch remains disabled at the latest readback.
+Do not remove that marker or roll back below the documented reader floor.
+
+PR535 embeds authorized initial assignee choices and narrows safe page refreshes.
+It and dependency updates537/539 are merged with exact-head CI. Its deployment
+refused before migration after a MariaDB server upgrade changed Laravel's UUID
+schema type; automatic recovery restored the prior serving release. PR542 now
+preserves existing character UUID columns across MariaDB upgrades and tests the
+11.4 family in CI. Its exact-head checks and actual12/12mutation artifact passed;
+normal main deployment and independent serving verification are being completed.
+A merged PR alone is not evidence of a serving production release.
+
+Two feature delivery candidates remain in parallel:
+
+- **PR543 / R2:** explicit per-file sharing, private-first topic/comment uploads,
+  shared native file panels, bounded seeded comment previews, scoped REST/MCP
+  operations and preview-first CLI. Existing generic attachment schemas/parents
+  remain compatible. New writers need their strict product switch and retained
+  privacy marker; readers remain available with writers disabled.
+- **PR544 / R3:** task labels, prerequisites/dependents, client-contact
+  responsibilities, native planning panel/catalog and all15registered
+  native/REST/MCP operations plus CLI. Ordinary task read enrichment is bounded
+  and Internal-only; contacts remain separate owner/admin-only reads. The shared
+  completion advisory is optional and never changes task status or billing.
+
+Focused security/parity and browser checks have passed on implementation
+checkpoints. Both candidates still require final exact-head CI, actual mutation
+artifact review, normal deployment and independent production verification.
+Product activation and protected/history fingerprints remain pending. Existing
+Agent write cutovers remain independent; native product activation must not
+silently enable financial or global Agent writes.
+
+Use CI for full suites, PHPStan and mutation/coverage. Local validation stays
+focused on relevant small tests, formatting/lint and targeted browser checks.
+Push reviewable candidates promptly; required hosted results on the exact commit
+are the merge gate. A green advisory mutation job does not substitute for
+inspecting its actual escapes, timeouts and skips.
 
 The first native collaboration slice now supplies company/project notes and
 discussions, flat comments on both topic kinds and tasks, escaped plain text,
@@ -42,10 +73,10 @@ For CLI continuation, `svc:collaboration comments.list` takes the parent UUID in
 private JSON `id`, its `parent_type`, and optional `payload.limit` and
 `payload.cursor`. It returns the same opaque `meta.next_cursor` as REST/MCP.
 
-This checkpoint does not complete the later task graph or attachment-sharing
-slices below. Add their shared readers and parent guards before their writers;
-register no topic/comment file parents until attachment authorization is
-integrated. Existing file disclosure and grants remain intact. Portal write
+The later task-planning and attachment-sharing slices below remain delivery
+candidates until their deployment/activation verification is complete. Their
+shared readers and parent guards precede writers. Existing file disclosure and
+grants remain intact. Portal write
 opt-in remains a separate unanswered product decision, and no new client write
 grant or collaboration email delivery is inferred.
 

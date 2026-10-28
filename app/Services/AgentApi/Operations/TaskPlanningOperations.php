@@ -43,7 +43,7 @@ final class TaskPlanningOperations
         'contacts.replace' => ['PUT', 'Replace client-contact responsibilities', 'TaskPlanningMutationResponse', 'TaskContactResponsibilityReplacementRequest'],
     ];
 
-    /** @return array<string,array<string,mixed>> */
+    /** @return array<string,array{method:string,scopes:list<string>,summary:string,description:string,parameters:list<string|array<string,mixed>>,response:string,errors:array<int,string>,request?:string}> */
     public static function documentation(): array
     {
         $result = [];

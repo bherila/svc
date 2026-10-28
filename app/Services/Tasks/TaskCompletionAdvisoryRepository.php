@@ -46,7 +46,7 @@ final class TaskCompletionAdvisoryRepository
             return [];
         }
 
-        return DB::table('client_task_dependencies as edges')
+        return array_values(DB::table('client_task_dependencies as edges')
             ->join('client_tasks as source', function (JoinClause $join): void {
                 $join->on('source.id', '=', 'edges.client_task_id')->on('source.workspace_id', '=', 'edges.workspace_id')
                     ->on('source.client_project_id', '=', 'edges.client_project_id');
@@ -56,6 +56,6 @@ final class TaskCompletionAdvisoryRepository
                     ->on('prerequisite.client_project_id', '=', 'edges.client_project_id');
             })->where('edges.workspace_id', $workspace->id)->whereIn('source.id', $taskIds)
             ->where('prerequisite.status', '!=', 'completed')->distinct()->pluck('source.id')
-            ->map(static fn (mixed $id): int => (int) $id)->values()->all();
+            ->map(static fn (mixed $id): int => (int) $id)->all());
     }
 }

@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 /* global process */
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import {
+    mkdirSync,
+    mkdtempSync,
+    writeFileSync,
+    readFileSync,
+    rmSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
@@ -10,6 +18,7 @@ import { createServer } from 'vite';
 
 // A focused presentation check: Vite serves synthetic props directly. No build,
 // database, production data, PHPStan, full tests or mutation run is involved.
+const integrated = process.argv.includes('--integrated');
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const artifactsRoot = path.join(root, 'test-results', 'task-planning');
 mkdirSync(artifactsRoot, { recursive: true });
@@ -108,6 +117,8 @@ import {createRoot} from 'react-dom/client';
 import {createInertiaApp} from '@inertiajs/react';
 import {TaskPlanningPanel} from '@/components/tasks/task-planning-panel';
 import TaskLabelsPage from '@/pages/clients/task-labels';
+import TaskPage from '@/pages/clients/task';
+${integrated ? "import controllerPage from './controller-props.json';" : ''}
 import WorkspaceShell from '@/layouts/workspace-shell';
 import {SHELL_CONTAINER} from '@/lib/layout';
 import {sharedPageProps} from '@/test/shared-page-props';
@@ -119,10 +130,12 @@ if(state==='empty'){details.labels.selected=[];details.labels.options.data=[];de
 if(state==='readonly'){delete details.contacts;details.label_catalog_href=null;details.labels.replace_href=null;details.labels.options=null;details.dependencies.replace_href=null;details.dependencies.options=null;}
 if(state==='unsupported'){details.dependencies.data=null;details.dependencies.options=null;details.dependencies.replace_href=null;details.dependencies.unsupported_notice='This project exceeds the supported dependency size. Labels and contact responsibility remain available.';}
 if(state==='stale'){details.labels.selected=[];details.labels.options.data=[{...details.labels.options.data[0],name:'Synthetic selectable label'}];}
-const originalFetch=window.fetch.bind(window);window.fetch=(url,opts)=>String(url).includes('/synthetic/')?Promise.resolve(new Response(JSON.stringify({message:'Synthetic stale revision'}),{status:409,headers:{'Content-Type':'application/json'}})):originalFetch(url,opts);
+const originalFetch=window.fetch.bind(window);if(!state.startsWith('integrated'))window.fetch=(url,opts)=>String(url).includes('/synthetic/')?Promise.resolve(new Response(JSON.stringify({message:'Synthetic stale revision'}),{status:409,headers:{'Content-Type':'application/json'}})):originalFetch(url,opts);
 const props={...sharedPageProps({workspaceNavigation:workspaceNavigation({permissions:{manage_workspace:false,create_client:false,manage_current_client:false,search:false}})}),...${JSON.stringify(catalog)}};
-function Page(){return state==='catalog'?<TaskLabelsPage {...props}/>:<WorkspaceShell activeModule="tasks"><main className={SHELL_CONTAINER+' grid grid-cols-1 gap-6 py-6'}><h1 className="text-2xl font-semibold">Synthetic task planning</h1><TaskPlanningPanel details={details} onRefresh={async()=>{}}/></main></WorkspaceShell>;}
-createInertiaApp({page:{component:'SyntheticPlanning',props,url:location.pathname+location.search,version:null,clearHistory:false,encryptHistory:false},resolve:()=>Page,setup({el,App,props}){createRoot(el).render(<App {...props}/>);}});
+function Page(props){if(state.startsWith('integrated'))return <TaskPage {...props}/>;return state==='catalog'?<TaskLabelsPage {...props}/>:<WorkspaceShell activeModule="tasks"><main className={SHELL_CONTAINER+' grid grid-cols-1 gap-6 py-6'}><h1 className="text-2xl font-semibold">Synthetic task planning</h1><TaskPlanningPanel details={details} onRefresh={async()=>{}}/></main></WorkspaceShell>;}
+const initialPage=${integrated ? '{...controllerPage,props:{...props,...controllerPage.props}}' : "{component:'SyntheticPlanning',props,url:location.pathname+location.search,version:null,clearHistory:false,encryptHistory:false}"};
+if(state.startsWith('integrated'))history.replaceState(null,'',initialPage.url);
+createInertiaApp({page:initialPage,resolve:()=>Page,setup({el,App,props}){createRoot(el).render(<App {...props}/>);}});
 `,
 );
 let server;
@@ -141,6 +154,71 @@ try {
     await server.listen();
     const address = server.httpServer.address();
     const origin = `http://127.0.0.1:${address.port}`;
+    let controllerPage;
+
+    if (integrated) {
+        for (const folder of [
+            'framework/views',
+            'framework/sessions',
+            'framework/cache/data',
+            'logs',
+        ]) {
+            mkdirSync(path.join(runtime, 'storage', folder), {
+                recursive: true,
+            });
+        }
+
+        writeFileSync(
+            path.join(runtime, 'harness.json'),
+            JSON.stringify({
+                host: address.address + ':' + address.port,
+                token: 'synthetic-browser-only',
+            }),
+            { mode: 0o600 },
+        );
+        writeFileSync(path.join(runtime, 'database.sqlite'), '', {
+            mode: 0o600,
+        });
+        writeFileSync(path.join(runtime, '.env'), '', { mode: 0o600 });
+        const seeded = spawnSync(
+            'php',
+            ['scripts/layout/task-planning-props.php'],
+            {
+                cwd: root,
+                env: {
+                    PATH: process.env.PATH,
+                    HOME: process.env.HOME,
+                    APP_ENV: 'testing',
+                    APP_DEBUG: 'true',
+                    APP_KEY: 'base64:' + randomBytes(32).toString('base64'),
+                    APP_URL: origin,
+                    APP_CONFIG_CACHE: path.join(runtime, 'config.php'),
+                    DB_CONNECTION: 'sqlite',
+                    DB_DATABASE: path.join(runtime, 'database.sqlite'),
+                    SESSION_DRIVER: 'array',
+                    CACHE_STORE: 'array',
+                    MAIL_MAILER: 'array',
+                    QUEUE_CONNECTION: 'sync',
+                    TASK_PLANNING_DETAILS_ENABLED: 'true',
+                    SVC_LAYOUT_RUNTIME: runtime,
+                },
+                encoding: 'utf8',
+            },
+        );
+
+        if (seeded.status !== 0) {
+            throw new Error(
+                'Synthetic controller props failed: ' +
+                    seeded.stdout +
+                    seeded.stderr,
+            );
+        }
+
+        controllerPage = JSON.parse(
+            readFileSync(path.join(runtime, 'controller-props.json'), 'utf8'),
+        );
+    }
+
     browser = await chromium.launch({ headless: true });
 
     for (const width of [390, 820, 1440, 1920]) {
@@ -148,22 +226,160 @@ try {
             viewport: { width, height: 1000 },
         });
 
-        for (const state of [
-            'full',
-            'empty',
-            'readonly',
-            'unsupported',
-            'stale',
-            'catalog',
-        ]) {
+        for (const state of integrated
+            ? ['integrated', 'integrated-saved']
+            : [
+                  'full',
+                  'empty',
+                  'readonly',
+                  'unsupported',
+                  'stale',
+                  'catalog',
+              ]) {
             const browserPage = await context.newPage();
             const errors = [];
             browserPage.on('pageerror', (error) => errors.push(error.message));
+            const captured = [];
+            let refreshed = false;
+
+            if (integrated) {
+                const task = controllerPage.props.task;
+                const planning = controllerPage.props.planning_details;
+                await browserPage.route('**/workspaces/**', async (route) => {
+                    const request = route.request();
+                    captured.push({
+                        method: request.method(),
+                        url: request.url(),
+                        partial: request.headers()['x-inertia-partial-data'],
+                        body: request.postDataJSON(),
+                    });
+
+                    if (
+                        request.method() === 'PUT' &&
+                        request.url() === planning.labels.replace_href
+                    ) {
+                        expect(request.postDataJSON()).toEqual({
+                            expected_version: planning.version,
+                            label_ids: [],
+                        });
+                        await route.fulfill({
+                            status: 200,
+                            json: { data: { id: task.id } },
+                        });
+                    } else if (
+                        request.method() === 'GET' &&
+                        request.headers()['x-inertia-partial-data'] ===
+                            'planning_details'
+                    ) {
+                        refreshed = true;
+                        await route.fulfill({
+                            status: 200,
+                            headers: { 'X-Inertia': 'true' },
+                            json: {
+                                ...controllerPage,
+                                props: {
+                                    planning_details: {
+                                        ...planning,
+                                        version: 'n'.repeat(64),
+                                        labels: {
+                                            ...planning.labels,
+                                            selected: [],
+                                        },
+                                    },
+                                },
+                            },
+                        });
+                    } else if (
+                        request.method() === 'PATCH' &&
+                        request.url() === task.update_action
+                    ) {
+                        expect(request.postDataJSON().expected_version).toBe(
+                            task.version,
+                        );
+                        expect(request.postDataJSON().title).toBe(
+                            'Synthetic unsaved task-body draft',
+                        );
+                        await route.fulfill({
+                            status: 200,
+                            headers: { 'X-Inertia': 'true' },
+                            json: {
+                                ...controllerPage,
+                                props: {
+                                    ...controllerPage.props,
+                                    planning_details: {
+                                        ...planning,
+                                        version: 'n'.repeat(64),
+                                        labels: {
+                                            ...planning.labels,
+                                            selected: [],
+                                        },
+                                    },
+                                    errors: {
+                                        expected_version:
+                                            'Synthetic task version remains captured.',
+                                    },
+                                },
+                            },
+                        });
+                    } else {
+                        await route.abort();
+                    }
+                });
+            }
+
             await browserPage.goto(
                 origin + runtimePath + '/index.html?state=' + state,
             );
             await expect(browserPage.locator('main')).toBeVisible();
             await browserPage.evaluate(() => document.fonts.ready);
+
+            if (integrated) {
+                await expect(
+                    browserPage.getByLabel('Title', { exact: true }),
+                ).toHaveValue(controllerPage.props.task.title);
+                await expect(
+                    browserPage.getByText('Task labels', { exact: true }),
+                ).toBeVisible();
+                await browserPage.waitForTimeout(250);
+                expect(captured).toEqual([]);
+
+                if (state === 'integrated-saved') {
+                    await browserPage
+                        .getByLabel('Title', { exact: true })
+                        .fill('Synthetic unsaved task-body draft');
+                    await browserPage
+                        .getByRole('button', {
+                            name: 'Remove Synthetic controller label',
+                        })
+                        .click();
+                    await browserPage
+                        .getByRole('button', {
+                            name: 'Save labels',
+                            exact: true,
+                        })
+                        .click();
+                    await expect.poll(() => refreshed).toBe(true);
+                    await expect(
+                        browserPage.getByRole('button', {
+                            name: 'Save labels',
+                            exact: true,
+                        }),
+                    ).toBeDisabled();
+                    await expect(
+                        browserPage.getByLabel('Title', { exact: true }),
+                    ).toHaveValue('Synthetic unsaved task-body draft');
+                    await browserPage
+                        .getByRole('button', { name: 'Save task', exact: true })
+                        .click();
+                    await expect
+                        .poll(() =>
+                            captured.some(
+                                (request) => request.method === 'PATCH',
+                            ),
+                        )
+                        .toBe(true);
+                }
+            }
 
             if (state === 'stale') {
                 await browserPage
@@ -179,6 +395,7 @@ try {
                 );
             }
 
+            await browserPage.evaluate(() => scrollTo(0, 0));
             const dimensions = await browserPage.evaluate(() => ({
                 document: document.documentElement.scrollWidth,
                 viewport: innerWidth,
@@ -192,7 +409,18 @@ try {
             expect(errors).toEqual([]);
             const screenshot = path.join(runtime, `${state}-${width}.png`);
             await browserPage.screenshot({ path: screenshot, fullPage: true });
-            results.push({ state, width, ...dimensions, screenshot });
+            results.push({
+                state,
+                width,
+                ...dimensions,
+                screenshot,
+                ...(integrated
+                    ? {
+                          captured,
+                          controller_component: controllerPage.component,
+                      }
+                    : {}),
+            });
             await browserPage.close();
         }
 

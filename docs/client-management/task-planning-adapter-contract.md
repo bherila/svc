@@ -427,3 +427,24 @@ prerequisites, paginated incoming references and ten long archived/current
 contacts. This proves the isolated components' presentation, not integrated
 production-route behavior, hosted full-suite/static/mutation results or feature
 activation. Those remain exact-candidate CI and coordinator deployment gates.
+
+The integrated follow-up also exercises the actual `clients/task` page and its
+existing `TaskEditor` alongside planning. Run the focused development harness
+with `--integrated`: a new disposable SQLite database supplies props through the
+current native task/catalog controllers and shared navigation presenter; Vite
+renders the current page without a production build. Four-width checks verify
+zero mount requests, an explicit planning save followed by a partial
+`planning_details` refresh, preservation of an unsaved task title, and a later
+task PATCH that still carries its originally captured task-body token. Synthetic
+mutation/refresh responses are intercepted in the browser; actual route,
+receipt, authorization and CAS behavior are independently covered by the
+registered-route PHP tests. All eight integrated screenshots were inspected.
+
+`TaskPlanningPageBudgetTest` closes ordinary Task list/project-embed verification:
+one-versus-twenty-five enriched tasks use the same bounded total query count;
+seven hostile-Unicode tasks each retain all twenty full label IDs/names while
+byte limits, rather than the default row cap, require continuation. Actual REST,
+MCP, SDK `CallToolResult` and JSON-RPC envelopes remain within their configured
+ceilings, decoded encrypted continuation boundaries agree, every task is returned
+once, and these reads create no GraphState or mutation receipts. These focused
+checks do not replace exact-head hosted full-suite/static/mutation gates.
