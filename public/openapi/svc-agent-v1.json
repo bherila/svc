@@ -784,7 +784,7 @@
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments": {
             "get": {
                 "operationId": "attachments.list",
-                "description": "Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.",
+                "description": "Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged.",
                 "security": [
                     {
                         "oauth2": [
@@ -845,11 +845,32 @@
                             "type": "string",
                             "maxLength": 4096
                         }
+                    },
+                    {
+                        "name": "presentation",
+                        "in": "query",
+                        "description": "Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "native",
+                                "portal"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "client",
+                        "in": "query",
+                        "description": "Required only for the portal panel representation; exact current company and parent access is rechecked.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.",
+                        "description": "Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4517,7 +4538,7 @@
         "/workspaces/{workspace}/clients/{client}/collaboration/attachments/{recordType}/{recordPublicId}": {
             "get": {
                 "operationId": "collaboration.attachments.list",
-                "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation.",
+                "description": "Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs. Portal narrows to client-safe metadata and controls even for owner previews. Bearer/MCP callers cannot select this representation. Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation.",
                 "security": [
                     {
                         "oauth2": [
@@ -4579,6 +4600,18 @@
                         "schema": {
                             "type": "string",
                             "maxLength": 4096
+                        }
+                    },
+                    {
+                        "name": "presentation",
+                        "in": "query",
+                        "description": "Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "native",
+                                "portal"
+                            ]
                         }
                     }
                 ],
@@ -16621,6 +16654,57 @@
                 "x-mcp-tool": "task_planning.labels.restore"
             }
         },
+        "/workspaces/{workspace}/projects/{project}/task-assignees": {
+            "get": {
+                "operationId": "tasks.assignees.list",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Bounded eligible staff identities",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskAssigneeOptionsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "tasks.assignees.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "tasks.assignees.list"
+            }
+        },
         "/workspaces/{workspace}/projects/{project}/tasks": {
             "post": {
                 "operationId": "tasks.create",
@@ -18279,17 +18363,22 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "data",
-                    "parent_version",
-                    "meta"
+                    "data"
                 ],
                 "properties": {
                     "data": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                            "$ref": "#/components/schemas/Attachment"
-                        }
+                        "oneOf": [
+                            {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "$ref": "#/components/schemas/Attachment"
+                                }
+                            },
+                            {
+                                "$ref": "#/components/schemas/NativeAttachmentPanel"
+                            }
+                        ]
                     },
                     "parent_version": {
                         "type": "string",
@@ -18311,7 +18400,49 @@
                             }
                         }
                     }
-                }
+                },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "$ref": "#/components/schemas/Attachment"
+                                }
+                            }
+                        },
+                        "required": [
+                            "data",
+                            "meta",
+                            "parent_version"
+                        ]
+                    },
+                    {
+                        "properties": {
+                            "data": {
+                                "$ref": "#/components/schemas/NativeAttachmentPanel"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ],
+                        "not": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "meta"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "parent_version"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
             },
             "AttachmentResponse": {
                 "type": "object",
@@ -19274,17 +19405,22 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "data",
-                    "parent_version",
-                    "meta"
+                    "data"
                 ],
                 "properties": {
                     "data": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                            "$ref": "#/components/schemas/CollaborationAttachment"
-                        }
+                        "oneOf": [
+                            {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "$ref": "#/components/schemas/CollaborationAttachment"
+                                }
+                            },
+                            {
+                                "$ref": "#/components/schemas/NativeAttachmentPanel"
+                            }
+                        ]
                     },
                     "parent_version": {
                         "type": "string",
@@ -19306,7 +19442,49 @@
                             }
                         }
                     }
-                }
+                },
+                "oneOf": [
+                    {
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "$ref": "#/components/schemas/CollaborationAttachment"
+                                }
+                            }
+                        },
+                        "required": [
+                            "data",
+                            "meta",
+                            "parent_version"
+                        ]
+                    },
+                    {
+                        "properties": {
+                            "data": {
+                                "$ref": "#/components/schemas/NativeAttachmentPanel"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ],
+                        "not": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "meta"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "parent_version"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
             },
             "CollaborationAttachmentPreview": {
                 "type": "object",
@@ -24291,6 +24469,223 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/MissingBilledOverageAudit"
+                    }
+                }
+            },
+            "NativeAttachment": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "record_type",
+                    "record_id",
+                    "filename",
+                    "media_type",
+                    "bytes",
+                    "sha256",
+                    "status",
+                    "version",
+                    "uploaded_at",
+                    "download_href",
+                    "delete_href",
+                    "sharing",
+                    "deletion"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "record_type": {
+                        "type": "string",
+                        "enum": [
+                            "company",
+                            "project",
+                            "task",
+                            "proposal",
+                            "agreement",
+                            "invoice",
+                            "topic",
+                            "comment"
+                        ]
+                    },
+                    "record_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "filename": {
+                        "type": "string"
+                    },
+                    "media_type": {
+                        "type": "string"
+                    },
+                    "bytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 52428800
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "staged",
+                            "available",
+                            "deleting",
+                            "deleted",
+                            "corrupt"
+                        ]
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "uploaded_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "download_href": {
+                        "type": "string"
+                    },
+                    "delete_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "sharing": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "is_visible_to_client",
+                                    "effective_visible_to_client",
+                                    "sharing_note",
+                                    "version",
+                                    "parent_version",
+                                    "update_href"
+                                ],
+                                "properties": {
+                                    "is_visible_to_client": {
+                                        "type": "boolean"
+                                    },
+                                    "effective_visible_to_client": {
+                                        "type": "boolean"
+                                    },
+                                    "sharing_note": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "parent_version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "update_href": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "deletion": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "expected_version"
+                                ],
+                                "properties": {
+                                    "expected_version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "expected_parent_version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                }
+            },
+            "NativeAttachmentPanel": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "files",
+                    "upload",
+                    "parent_version",
+                    "next_href"
+                ],
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/NativeAttachment"
+                        }
+                    },
+                    "upload": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "href",
+                                    "parent_version"
+                                ],
+                                "properties": {
+                                    "href": {
+                                        "type": "string"
+                                    },
+                                    "parent_version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "parent_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 }
             },
@@ -30092,6 +30487,40 @@
                     }
                 }
             },
+            "TaskAssigneeOptionsResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "has_more"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "name"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "name": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "has_more": {
+                        "type": "boolean"
+                    }
+                }
+            },
             "TaskContactOptionListResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -30122,6 +30551,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },
@@ -30296,6 +30735,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },
@@ -30329,6 +30778,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },
@@ -30505,6 +30964,16 @@
                                 "maxLength": 2048
                             }
                         }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                    },
+                    "previous_href": {
+                        "type": "null"
                     }
                 }
             },

@@ -397,7 +397,7 @@ final class AgentRestDocumentation
             'attachments.list' => [
                 'method' => 'GET',
                 'scopes' => ['files:read'],
-                'description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
+                'description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -412,9 +412,11 @@ final class AgentRestDocumentation
                     self::uuidPath('recordPublicId'),
                     self::filePageLimit(),
                     self::filePageCursor(),
+                    AttachmentSharingOperations::panelPresentation(),
+                    ['name' => 'client', 'in' => 'query', 'description' => 'Required only for the portal panel representation; exact current company and parent access is rechecked.', 'schema' => ['type' => 'string', 'format' => 'uuid']],
                 ],
                 'response' => 'AttachmentListResponse',
-                'response_description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
+                'response_description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged.',
             ],
             'attachments.upload' => [
                 'method' => 'POST',
@@ -1487,6 +1489,11 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'SearchResponse',
                 'response_description' => 'Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.',
+            ],
+            'tasks.assignees.list' => [
+                'method' => 'GET', 'scopes' => ['tasks:read'], 'description' => false,
+                'parameters' => ['WorkspaceId', 'ProjectId', self::query('q', ['type' => 'string', 'maxLength' => 100])],
+                'response' => 'TaskAssigneeOptionsResponse', 'response_description' => 'Bounded eligible staff identities',
             ],
             'tasks.create' => [
                 'method' => 'POST',

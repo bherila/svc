@@ -365,6 +365,7 @@ final class AgentMcpContractTest extends TestCase
             'task_planning.labels.replace' => ['tasks:write'],
             'task_planning.labels.restore' => ['tasks:write'],
             'task_planning.labels.update' => ['tasks:write'],
+            'tasks.assignees.list' => ['tasks:read'],
             'tasks.create' => ['tasks:write'],
             'tasks.get' => ['tasks:read'],
             'tasks.list' => ['tasks:read'],

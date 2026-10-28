@@ -8,6 +8,7 @@ use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
+use App\Models\ClientTaskLabel;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceReminderLog;
 use App\Models\User;
@@ -202,6 +203,14 @@ if (getenv('SVC_LAYOUT_TASKS') === '1') {
         ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
             'title' => 'ZZZ Synthetic paginated task '.str_repeat('UnbrokenTitle', 8).' '.str_pad((string) $index, 3, '0', STR_PAD_LEFT),
             'status' => 'open', 'is_visible_to_client' => true]);
+    }
+}
+
+if (getenv('SVC_LAYOUT_TASK_LOOKUPS') === '1') {
+    for ($index = 0; $index < 28; $index++) {
+        $name = 'Synthetic lookup label '.str_repeat('UnbrokenLabel', 10).$index;
+        ClientTaskLabel::query()->create(['workspace_id' => $workspace->id, 'name' => $name, 'name_key' => hash('sha256', $name)]);
+        ClientContact::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'first_name' => 'Synthetic lookup contact '.str_repeat('UnbrokenContact', 10).$index]);
     }
 }
 
@@ -424,7 +433,7 @@ $historyInvoice = app(HistoricalLibraryRepository::class)->publish($workspace, $
     ]), $company);
 
 $taskViewer = $owner;
-if ($planningTask !== null) {
+if ($planningTask !== null && getenv('SVC_LAYOUT_TASK_LOOKUPS') !== '1') {
     $taskViewer = User::factory()->create(['name' => 'Synthetic Project Manager', 'email' => 'layout-project-manager@example.test']);
     $workspace->memberships()->create(['user_id' => $taskViewer->id, 'role' => 'member']);
     ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);

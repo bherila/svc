@@ -177,9 +177,9 @@ final class TaskPlanningTest extends TestCase
         foreach ([[$staff->public_id, $staff->public_id], ['not-a-list' => $staff->public_id], array_map(fn () => (string) Str::uuid(), range(1, 11))] as $ids) {
             $this->native()->postJson('/api/v1'.$this->createPath($workspace, $project), ['title' => 'Synthetic bound', 'is_visible_to_client' => false, 'assignee_ids' => $ids])->assertUnprocessable();
         }
-        $this->browser($owner)->getJson(route('tasks.assignees', [$workspace, $project], false).'?q='.urlencode($staff->name))->assertOk()->assertJsonPath('data.0.id', $staff->public_id)->assertJsonCount(1, 'data');
-        $this->getJson(route('tasks.assignees', [$workspace, $foreignProject], false))->assertNotFound();
-        $this->browser($staff)->getJson(route('tasks.assignees', [$workspace, $project], false))->assertForbidden();
+        $this->browser($owner)->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $project], false).'?q='.urlencode($staff->name))->assertOk()->assertJsonPath('data.0.id', $staff->public_id)->assertJsonCount(1, 'data');
+        $this->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $foreignProject], false))->assertNotFound();
+        $this->browser($staff)->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $project], false))->assertForbidden();
     }
 
     public function test_assignee_lookup_is_bounded_and_search_can_reach_later_matches(): void
@@ -189,9 +189,9 @@ final class TaskPlanningTest extends TestCase
         for ($index = 0; $index < 26; $index++) {
             $last = $this->staff($workspace, $project);
         }
-        $this->browser($owner)->getJson(route('tasks.assignees', [$workspace, $project], false))
+        $this->browser($owner)->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $project], false))
             ->assertOk()->assertJsonCount(25, 'data')->assertJsonPath('has_more', true);
-        $this->browser($owner)->getJson(route('tasks.assignees', [$workspace, $project], false).'?q='.urlencode($last->name))
+        $this->browser($owner)->getJson(route('agent-api.v1.tasks.assignees.index', [$workspace, $project], false).'?q='.urlencode($last->name))
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $last->public_id)->assertJsonPath('has_more', false);
     }
 

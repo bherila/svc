@@ -51,7 +51,8 @@ const timeOnly = process.argv.includes('--time');
 const engagementOnly = process.argv.includes('--engagement');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
-const tasksOnly = process.argv.includes('--tasks');
+const taskLookupsOnly = process.argv.includes('--task-lookups');
+const tasksOnly = process.argv.includes('--tasks') || taskLookupsOnly;
 const receiptsOnly = process.argv.includes('--receipts');
 const schedulesOnly = process.argv.includes('--expense-schedules');
 const expensesOnly = process.argv.includes('--expenses');
@@ -163,6 +164,8 @@ try {
         SVC_LAYOUT_ENGAGEMENT: engagementOnly ? '1' : '0',
         SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
         SVC_LAYOUT_TASKS: tasksOnly ? '1' : '0',
+        SVC_LAYOUT_TASK_LOOKUPS: taskLookupsOnly ? '1' : '0',
+        TASK_PLANNING_DETAILS_ENABLED: taskLookupsOnly ? 'true' : 'false',
         SVC_LAYOUT_PROJECTS: projectsOnly ? '1' : '0',
         SVC_LAYOUT_WORKSPACES: workspacesOnly ? '1' : '0',
         SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
@@ -534,51 +537,53 @@ try {
                               ? ['operations', 'agreement']
                               : disputesOnly
                                 ? ['invoice', 'square_portal']
-                                : tasksOnly
-                                  ? [
-                                        'task_list',
-                                        'task_project',
-                                        'task_editor',
-                                        'task_portal',
-                                    ]
-                                  : historyOnly
+                                : taskLookupsOnly
+                                  ? ['task_editor']
+                                  : tasksOnly
                                     ? [
-                                          'history_index',
-                                          'history_discussion',
-                                          'history_invoice',
+                                          'task_list',
+                                          'task_project',
+                                          'task_editor',
+                                          'task_portal',
                                       ]
-                                    : portalOnly
-                                      ? ['settings']
-                                      : correctionOnly
-                                        ? ['invoice_review']
-                                        : squareOnly
-                                          ? [
-                                                'square_explore',
-                                                'square_invoice',
-                                                'square_portal',
-                                            ]
-                                          : remindersOnly
-                                            ? ['reminder_invoice', 'settings']
-                                            : timeOnly
-                                              ? ['time', 'draft_time']
-                                              : backlogOnly
-                                                ? ['agreement']
-                                                : [
-                                                      'mcp_setup',
-                                                      'invoice',
-                                                      'invoice_review',
-                                                      'reminder_invoice',
-                                                      'settings',
-                                                      'draft_invoice',
-                                                      'draft_time',
-                                                      'proposal',
-                                                      'proposal_acceptance',
-                                                      'operations',
-                                                      'time',
-                                                      'expenses',
-                                                      'receipts',
-                                                      'expense_schedules',
-                                                  ]) {
+                                    : historyOnly
+                                      ? [
+                                            'history_index',
+                                            'history_discussion',
+                                            'history_invoice',
+                                        ]
+                                      : portalOnly
+                                        ? ['settings']
+                                        : correctionOnly
+                                          ? ['invoice_review']
+                                          : squareOnly
+                                            ? [
+                                                  'square_explore',
+                                                  'square_invoice',
+                                                  'square_portal',
+                                              ]
+                                            : remindersOnly
+                                              ? ['reminder_invoice', 'settings']
+                                              : timeOnly
+                                                ? ['time', 'draft_time']
+                                                : backlogOnly
+                                                  ? ['agreement']
+                                                  : [
+                                                        'mcp_setup',
+                                                        'invoice',
+                                                        'invoice_review',
+                                                        'reminder_invoice',
+                                                        'settings',
+                                                        'draft_invoice',
+                                                        'draft_time',
+                                                        'proposal',
+                                                        'proposal_acceptance',
+                                                        'operations',
+                                                        'time',
+                                                        'expenses',
+                                                        'receipts',
+                                                        'expense_schedules',
+                                                    ]) {
             if (
                 resourceChromeOnly &&
                 !['invoice', 'proposal', 'proposal_acceptance'].includes(screen)
@@ -630,6 +635,92 @@ try {
                 }
 
                 await capture(screen, 'shared-shell', width);
+                continue;
+            }
+
+            if (taskLookupsOnly) {
+                await capture(screen, 'seeded-options', width);
+                const staffSearch = page.getByLabel(
+                    'Find staff with project access',
+                );
+                const staffResponse = page.waitForResponse(
+                    (response) =>
+                        response.url().includes('/api/v1/workspaces/') &&
+                        response.url().includes('/task-assignees?q=') &&
+                        response.request().method() === 'GET',
+                );
+                await staffSearch.fill('27');
+                const staff = await staffResponse;
+                expect(staff.status()).toBe(200);
+                const staffRows = await staff.json();
+                expect(staffRows.data).toHaveLength(1);
+                expect(Object.keys(staffRows.data[0]).sort()).toEqual([
+                    'id',
+                    'name',
+                ]);
+                expect(staffRows.data[0].name).toMatch(/27$/);
+                await capture(screen, 'searched-assignee', width);
+
+                for (const [label, pathPart, query] of [
+                    [
+                        'Find labels',
+                        '/task-label-options',
+                        'Synthetic lookup label',
+                    ],
+                    ['Find prerequisites', '/dependency-options', 'ZZZ'],
+                    [
+                        'Find contacts',
+                        '/contact-responsibility-options',
+                        'Synthetic lookup contact',
+                    ],
+                ]) {
+                    const control = page.getByLabel(label, { exact: true });
+                    const responsePromise = page.waitForResponse(
+                        (response) =>
+                            response.url().includes('/api/v1/workspaces/') &&
+                            response.url().includes(pathPart) &&
+                            response.url().includes('q=') &&
+                            response.request().method() === 'GET',
+                    );
+                    await control.fill(query);
+                    const response = await responsePromise;
+                    expect(response.status()).toBe(200);
+                    const result = await response.json();
+                    expect(result.data.length).toBe(25);
+                    expect(result.meta.next_cursor).toBeTruthy();
+                    expect(result.next_href).toContain('/api/v1/');
+                    await capture(screen, pathPart.slice(1) + '-search', width);
+                    const nextResponse = page.waitForResponse(
+                        (response) =>
+                            response.url() === result.next_href &&
+                            response.request().method() === 'GET',
+                    );
+                    await control
+                        .locator('..')
+                        .getByRole('button', {
+                            name:
+                                'Load more ' +
+                                label.replace('Find ', '').toLowerCase(),
+                            exact: true,
+                        })
+                        .click();
+                    const continuation = await nextResponse;
+                    expect(continuation.status()).toBe(200);
+                    await expect(
+                        control.locator('..').getByRole('button', {
+                            name:
+                                'Load more ' +
+                                label.replace('Find ', '').toLowerCase(),
+                            exact: true,
+                        }),
+                    ).toHaveCount(pathPart === '/dependency-options' ? 1 : 0);
+                    await capture(
+                        screen,
+                        pathPart.slice(1) + '-continued',
+                        width,
+                    );
+                }
+
                 continue;
             }
 

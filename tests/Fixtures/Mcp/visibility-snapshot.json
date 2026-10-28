@@ -2563,17 +2563,22 @@
                         "type": "object",
                         "additionalProperties": false,
                         "required": [
-                            "data",
-                            "parent_version",
-                            "meta"
+                            "data"
                         ],
                         "properties": {
                             "data": {
-                                "type": "array",
-                                "maxItems": 100,
-                                "items": {
-                                    "$ref": "#/$defs/Attachment"
-                                }
+                                "oneOf": [
+                                    {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "$ref": "#/$defs/Attachment"
+                                        }
+                                    },
+                                    {
+                                        "$ref": "#/$defs/NativeAttachmentPanel"
+                                    }
+                                ]
                             },
                             "parent_version": {
                                 "type": "string",
@@ -2596,6 +2601,48 @@
                                 }
                             }
                         },
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "data": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "$ref": "#/$defs/Attachment"
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "data",
+                                    "meta",
+                                    "parent_version"
+                                ]
+                            },
+                            {
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/$defs/NativeAttachmentPanel"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "not": {
+                                    "anyOf": [
+                                        {
+                                            "required": [
+                                                "meta"
+                                            ]
+                                        },
+                                        {
+                                            "required": [
+                                                "parent_version"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
                         "$defs": {
                             "Attachment": {
                                 "type": "object",
@@ -2663,6 +2710,223 @@
                                         "type": "string",
                                         "minLength": 64,
                                         "maxLength": 64
+                                    }
+                                }
+                            },
+                            "NativeAttachment": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "record_type",
+                                    "record_id",
+                                    "filename",
+                                    "media_type",
+                                    "bytes",
+                                    "sha256",
+                                    "status",
+                                    "version",
+                                    "uploaded_at",
+                                    "download_href",
+                                    "delete_href",
+                                    "sharing",
+                                    "deletion"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "record_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "company",
+                                            "project",
+                                            "task",
+                                            "proposal",
+                                            "agreement",
+                                            "invoice",
+                                            "topic",
+                                            "comment"
+                                        ]
+                                    },
+                                    "record_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "filename": {
+                                        "type": "string"
+                                    },
+                                    "media_type": {
+                                        "type": "string"
+                                    },
+                                    "bytes": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 52428800
+                                    },
+                                    "sha256": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "staged",
+                                            "available",
+                                            "deleting",
+                                            "deleted",
+                                            "corrupt"
+                                        ]
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "uploaded_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "download_href": {
+                                        "type": "string"
+                                    },
+                                    "delete_href": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "sharing": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "is_visible_to_client",
+                                                    "effective_visible_to_client",
+                                                    "sharing_note",
+                                                    "version",
+                                                    "parent_version",
+                                                    "update_href"
+                                                ],
+                                                "properties": {
+                                                    "is_visible_to_client": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "effective_visible_to_client": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "sharing_note": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    },
+                                                    "parent_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    },
+                                                    "update_href": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    },
+                                    "deletion": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "expected_version"
+                                                ],
+                                                "properties": {
+                                                    "expected_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    },
+                                                    "expected_parent_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            "NativeAttachmentPanel": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "files",
+                                    "upload",
+                                    "parent_version",
+                                    "next_href"
+                                ],
+                                "properties": {
+                                    "files": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "$ref": "#/$defs/NativeAttachment"
+                                        }
+                                    },
+                                    "upload": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "href",
+                                                    "parent_version"
+                                                ],
+                                                "properties": {
+                                                    "href": {
+                                                        "type": "string"
+                                                    },
+                                                    "parent_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    },
+                                    "parent_version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "next_href": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
                                     }
                                 }
                             }
@@ -9136,7 +9400,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation.",
+                    "description": "Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs. Portal narrows to client-safe metadata and controls even for owner previews. Bearer/MCP callers cannot select this representation. Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -9147,17 +9411,22 @@
                         "type": "object",
                         "additionalProperties": false,
                         "required": [
-                            "data",
-                            "parent_version",
-                            "meta"
+                            "data"
                         ],
                         "properties": {
                             "data": {
-                                "type": "array",
-                                "maxItems": 100,
-                                "items": {
-                                    "$ref": "#/$defs/CollaborationAttachment"
-                                }
+                                "oneOf": [
+                                    {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "$ref": "#/$defs/CollaborationAttachment"
+                                        }
+                                    },
+                                    {
+                                        "$ref": "#/$defs/NativeAttachmentPanel"
+                                    }
+                                ]
                             },
                             "parent_version": {
                                 "type": "string",
@@ -9180,6 +9449,48 @@
                                 }
                             }
                         },
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "data": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "$ref": "#/$defs/CollaborationAttachment"
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "data",
+                                    "meta",
+                                    "parent_version"
+                                ]
+                            },
+                            {
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/$defs/NativeAttachmentPanel"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "not": {
+                                    "anyOf": [
+                                        {
+                                            "required": [
+                                                "meta"
+                                            ]
+                                        },
+                                        {
+                                            "required": [
+                                                "parent_version"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
                         "$defs": {
                             "CollaborationAttachment": {
                                 "type": "object",
@@ -9252,6 +9563,223 @@
                                         "type": "boolean"
                                     },
                                     "sharing_note": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            },
+                            "NativeAttachment": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "record_type",
+                                    "record_id",
+                                    "filename",
+                                    "media_type",
+                                    "bytes",
+                                    "sha256",
+                                    "status",
+                                    "version",
+                                    "uploaded_at",
+                                    "download_href",
+                                    "delete_href",
+                                    "sharing",
+                                    "deletion"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "record_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "company",
+                                            "project",
+                                            "task",
+                                            "proposal",
+                                            "agreement",
+                                            "invoice",
+                                            "topic",
+                                            "comment"
+                                        ]
+                                    },
+                                    "record_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "filename": {
+                                        "type": "string"
+                                    },
+                                    "media_type": {
+                                        "type": "string"
+                                    },
+                                    "bytes": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 52428800
+                                    },
+                                    "sha256": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "staged",
+                                            "available",
+                                            "deleting",
+                                            "deleted",
+                                            "corrupt"
+                                        ]
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "uploaded_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "download_href": {
+                                        "type": "string"
+                                    },
+                                    "delete_href": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "sharing": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "is_visible_to_client",
+                                                    "effective_visible_to_client",
+                                                    "sharing_note",
+                                                    "version",
+                                                    "parent_version",
+                                                    "update_href"
+                                                ],
+                                                "properties": {
+                                                    "is_visible_to_client": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "effective_visible_to_client": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "sharing_note": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    },
+                                                    "parent_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    },
+                                                    "update_href": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    },
+                                    "deletion": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "expected_version"
+                                                ],
+                                                "properties": {
+                                                    "expected_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    },
+                                                    "expected_parent_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            "NativeAttachmentPanel": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "files",
+                                    "upload",
+                                    "parent_version",
+                                    "next_href"
+                                ],
+                                "properties": {
+                                    "files": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "$ref": "#/$defs/NativeAttachment"
+                                        }
+                                    },
+                                    "upload": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "href",
+                                                    "parent_version"
+                                                ],
+                                                "properties": {
+                                                    "href": {
+                                                        "type": "string"
+                                                    },
+                                                    "parent_version": {
+                                                        "type": "string",
+                                                        "minLength": 64,
+                                                        "maxLength": 64
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    },
+                                    "parent_version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "next_href": {
                                         "type": [
                                             "string",
                                             "null"
@@ -34861,6 +35389,16 @@
                                         "maxLength": 2048
                                     }
                                 }
+                            },
+                            "next_href": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                            },
+                            "previous_href": {
+                                "type": "null"
                             }
                         },
                         "$defs": {
@@ -35041,6 +35579,16 @@
                                         "maxLength": 2048
                                     }
                                 }
+                            },
+                            "next_href": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                            },
+                            "previous_href": {
+                                "type": "null"
                             }
                         },
                         "$defs": {
@@ -35199,6 +35747,16 @@
                                         "maxLength": 2048
                                     }
                                 }
+                            },
+                            "next_href": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                            },
+                            "previous_href": {
+                                "type": "null"
                             }
                         },
                         "$defs": {
@@ -35737,6 +36295,16 @@
                                         "maxLength": 2048
                                     }
                                 }
+                            },
+                            "next_href": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                            },
+                            "previous_href": {
+                                "type": "null"
                             }
                         },
                         "$defs": {
@@ -35851,6 +36419,16 @@
                                         "maxLength": 2048
                                     }
                                 }
+                            },
+                            "next_href": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "Finished canonical API continuation URL, preserving the current filter and page size."
+                            },
+                            "previous_href": {
+                                "type": "null"
                             }
                         },
                         "$defs": {
@@ -36102,6 +36680,74 @@
                                         "format": "uuid"
                                     }
                                 }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "tasks.assignees.list",
+                    "title": "List eligible task assignees",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "q": {
+                                "type": "string",
+                                "default": "",
+                                "maxLength": 100
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Find at most 25 eligible staff identities by name in a project whose tasks the caller may manage. Portal identities are excluded for agents; trusted native sessions retain internal project management access.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data",
+                            "has_more"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "maxItems": 25,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "name"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "has_more": {
+                                "type": "boolean"
                             }
                         }
                     }
@@ -38584,7 +39230,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -38622,7 +39268,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -38735,20 +39381,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -38920,7 +39567,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -38962,12 +39609,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -39136,7 +39784,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -39178,12 +39826,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -39352,7 +40001,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -39394,12 +40043,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -39568,7 +40218,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -39610,12 +40260,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -39766,7 +40417,7 @@
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -39785,7 +40436,7 @@
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -39832,13 +40483,14 @@
                 "square.series.list": "45d8133149067200",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -40139,7 +40791,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -40156,10 +40808,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -40404,7 +41057,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -40421,10 +41074,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -40534,7 +41188,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -40572,7 +41226,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -40684,6 +41338,7 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -40752,7 +41407,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -40790,7 +41445,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -40902,6 +41557,7 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -41079,7 +41735,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -41121,6 +41777,7 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -41295,7 +41952,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -41337,6 +41994,7 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -41511,7 +42169,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -41553,6 +42211,7 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -41727,7 +42386,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -41769,6 +42428,7 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -41825,7 +42485,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
@@ -41861,7 +42521,7 @@
                 "clients.restore": "de0ca9638b40973b",
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.create": "bfc5740feb048bdc",
                 "collaboration.comments.delete": "591fd477b35b9eef",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -41972,20 +42632,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -42043,7 +42704,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
@@ -42079,7 +42740,7 @@
                 "clients.restore": "de0ca9638b40973b",
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.create": "bfc5740feb048bdc",
                 "collaboration.comments.delete": "591fd477b35b9eef",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -42190,20 +42851,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -42377,7 +43039,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.create": "bfc5740feb048bdc",
                 "collaboration.comments.delete": "591fd477b35b9eef",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -42417,12 +43079,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -42593,7 +43256,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.create": "bfc5740feb048bdc",
                 "collaboration.comments.delete": "591fd477b35b9eef",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -42633,12 +43296,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -42809,7 +43473,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.create": "bfc5740feb048bdc",
                 "collaboration.comments.delete": "591fd477b35b9eef",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -42849,12 +43513,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -43025,7 +43690,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.create": "bfc5740feb048bdc",
                 "collaboration.comments.delete": "591fd477b35b9eef",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -43065,12 +43730,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -43243,7 +43909,7 @@
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -43261,7 +43927,7 @@
                 "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -43293,6 +43959,7 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -43460,7 +44127,7 @@
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -43478,7 +44145,7 @@
                 "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -43510,6 +44177,7 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -43711,7 +44379,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -43727,6 +44395,7 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -43926,7 +44595,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -43942,6 +44611,7 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -44141,7 +44811,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -44157,6 +44827,7 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -44356,7 +45027,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -44372,6 +45043,7 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -44516,7 +45188,7 @@
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -44535,7 +45207,7 @@
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -44585,13 +45257,14 @@
                 "square.series.list": "45d8133149067200",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -44731,7 +45404,7 @@
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -44750,7 +45423,7 @@
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -44800,13 +45473,14 @@
                 "square.series.list": "45d8133149067200",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -45001,7 +45675,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -45018,10 +45692,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -45214,7 +45889,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -45231,10 +45906,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -45427,7 +46103,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -45444,10 +46120,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -45640,7 +46317,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -45657,10 +46334,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -45797,7 +46475,7 @@
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -45816,7 +46494,7 @@
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -45866,13 +46544,14 @@
                 "square.series.list": "45d8133149067200",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -46014,7 +46693,7 @@
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -46033,7 +46712,7 @@
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -46083,13 +46762,14 @@
                 "square.series.list": "45d8133149067200",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -46286,7 +46966,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -46303,10 +46983,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -46501,7 +47182,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -46518,10 +47199,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -46716,7 +47398,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -46733,10 +47415,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -46931,7 +47614,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -46948,10 +47631,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -47019,7 +47703,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -47055,7 +47739,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -47150,20 +47834,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -47236,7 +47921,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -47272,7 +47957,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -47367,20 +48052,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -47559,7 +48245,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -47593,12 +48279,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -47774,7 +48461,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -47808,12 +48495,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -47989,7 +48677,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -48023,12 +48711,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -48204,7 +48893,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -48238,12 +48927,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -48378,7 +49068,7 @@
                 "agreements.update": "a789f6d75536d298",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -48411,7 +49101,7 @@
                 "clients.restore": "de0ca9638b40973b",
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -48461,13 +49151,14 @@
                 "square.series.list": "45d8133149067200",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -48593,7 +49284,7 @@
                 "agreements.update": "a789f6d75536d298",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -48626,7 +49317,7 @@
                 "clients.restore": "de0ca9638b40973b",
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -48676,13 +49367,14 @@
                 "square.series.list": "45d8133149067200",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -48877,7 +49569,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -48894,10 +49586,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -49090,7 +49783,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -49107,10 +49800,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -49303,7 +49997,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -49320,10 +50014,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -49516,7 +50211,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
                 "collaboration.topics.get": "f950131c065860c9",
                 "collaboration.topics.list": "ec87fc542ef22f17",
@@ -49533,10 +50228,11 @@
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
                 "task_organization.get": "f9adae72b05c876d",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd"
@@ -49579,7 +50275,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -49617,7 +50313,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -49730,20 +50426,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -49795,7 +50492,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -49833,7 +50530,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -49946,20 +50643,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -50129,7 +50827,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -50171,12 +50869,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -50345,7 +51044,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -50387,12 +51086,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -50561,7 +51261,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -50603,12 +51303,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -50777,7 +51478,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -50819,12 +51520,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -50880,7 +51582,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -50918,7 +51620,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -51029,20 +51731,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -51095,7 +51798,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -51133,7 +51836,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -51244,20 +51947,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -51428,7 +52132,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -51468,12 +52172,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -51641,7 +52346,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -51681,12 +52386,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -51854,7 +52560,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -51894,12 +52600,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -52067,7 +52774,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -52107,12 +52814,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -52310,6 +53018,7 @@
                     "task_planning.labels.replace deployment_disabled",
                     "task_planning.labels.restore deployment_disabled",
                     "task_planning.labels.update deployment_disabled",
+                    "tasks.assignees.list deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -52504,6 +53213,7 @@
                     "task_planning.labels.replace deployment_disabled",
                     "task_planning.labels.restore deployment_disabled",
                     "task_planning.labels.update deployment_disabled",
+                    "tasks.assignees.list deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -52698,6 +53408,7 @@
                     "task_planning.labels.replace deployment_disabled",
                     "task_planning.labels.restore deployment_disabled",
                     "task_planning.labels.update deployment_disabled",
+                    "tasks.assignees.list deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -52892,6 +53603,7 @@
                     "task_planning.labels.replace deployment_disabled",
                     "task_planning.labels.restore deployment_disabled",
                     "task_planning.labels.update deployment_disabled",
+                    "tasks.assignees.list deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -53086,6 +53798,7 @@
                     "task_planning.labels.replace deployment_disabled",
                     "task_planning.labels.restore deployment_disabled",
                     "task_planning.labels.update deployment_disabled",
+                    "tasks.assignees.list deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -53280,6 +53993,7 @@
                     "task_planning.labels.replace deployment_disabled",
                     "task_planning.labels.restore deployment_disabled",
                     "task_planning.labels.update deployment_disabled",
+                    "tasks.assignees.list deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -53331,7 +54045,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -53365,7 +54079,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -53478,20 +54192,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -53549,7 +54264,7 @@
                 "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "e6af5a017d610a3a",
-                "attachments.list": "1800a4dbc598dbc6",
+                "attachments.list": "04a2970f76efd86f",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "attachments.visibility.get": "244254e030db8e9b",
                 "attachments.visibility.update": "41df7092cb37d68f",
@@ -53583,7 +54298,7 @@
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -53696,20 +54411,21 @@
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
                 "task_planning.contacts.get": "b5410dc4998c6424",
-                "task_planning.contacts.options": "d207d76c4d424344",
+                "task_planning.contacts.options": "ebcd04dbbe00c34b",
                 "task_planning.contacts.replace": "b30d728eb3eb437a",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
                 "task_planning.labels.archive": "bdedd73f8992c684",
                 "task_planning.labels.create": "166a8d6971c2dc50",
                 "task_planning.labels.get": "8d7dcf9ee26e3ac4",
-                "task_planning.labels.list": "f5dd0aad6092294a",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.list": "982ce9f3b8c44c74",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
                 "task_planning.labels.restore": "e8294872822c8968",
                 "task_planning.labels.update": "a7760ee299451ec8",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -53881,7 +54597,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -53923,12 +54639,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -54097,7 +54814,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -54139,12 +54856,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -54313,7 +55031,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -54355,12 +55073,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -54529,7 +55248,7 @@
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
-                "collaboration.attachments.list": "4c5288f2a227e34b",
+                "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.attachments.upload_url": "d7aeba880f904244",
                 "collaboration.attachments.visibility.update": "4d902c7c1e639943",
                 "collaboration.comments.create": "bfc5740feb048bdc",
@@ -54571,12 +55290,13 @@
                 "task_organization.tasks.create": "df90b169fc200d49",
                 "task_organization.tasks.move": "dbf4a66f614f9730",
                 "task_organization.tasks.reorder": "03968aeb7ea15eba",
-                "task_planning.dependencies.get": "ac71c27fc5c26fc7",
-                "task_planning.dependencies.options": "0ccbca635979366e",
+                "task_planning.dependencies.get": "cb38d15b1e15c8e9",
+                "task_planning.dependencies.options": "41a2b755cbc7b2d8",
                 "task_planning.dependencies.replace": "558396004c0157c3",
                 "task_planning.get": "0f1b761ffb726140",
-                "task_planning.labels.options": "1fcec3f5ac2d60a6",
+                "task_planning.labels.options": "bde62601f42bb6d3",
                 "task_planning.labels.replace": "061bebd482921d5f",
+                "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.create": "125a4af007234f5f",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",

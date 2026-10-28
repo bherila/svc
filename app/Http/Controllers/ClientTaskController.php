@@ -15,7 +15,6 @@ use App\Services\Tasks\TaskEditorPresenter;
 use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Services\WorkspaceTaskMutationAction;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -40,16 +39,6 @@ class ClientTaskController extends Controller
             'files_href' => route('svc.files.parent.show', [$workspace, 'task', $task->public_id], absolute: false),
             'comment_thread_url' => app(CollaborationReadService::class)->taskThreadHref($actor, $workspace, $company, $task, CollaborationAudience::Internal),
         ]);
-    }
-
-    public function assignees(Request $request, Workspace $workspace, ClientProject $clientProject, WorkspaceAuthorization $authorization, WorkspaceTaskRepository $tasks): JsonResponse
-    {
-        $authorization->assertOwnedBy($workspace, $clientProject);
-        $data = $request->validate(['q' => ['sometimes', 'nullable', 'string', 'max:100']]);
-        $project = $tasks->project($workspace, $clientProject->public_id);
-        $this->authorizeProject($request, $workspace, $project);
-
-        return response()->json($tasks->assigneeOptions($workspace, $project, $data['q'] ?? ''));
     }
 
     private function authorizeProject(Request $request, Workspace $workspace, ClientProject $project): void

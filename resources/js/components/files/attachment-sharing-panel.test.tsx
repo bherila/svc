@@ -163,15 +163,17 @@ describe('attachment sharing panel', () => {
         expect(body.get('expected_version')).toBe('p'.repeat(64));
         expect(body.has('is_visible_to_client')).toBe(false);
         respond({
-            files: [
-                {
-                    ...panel.files[0],
-                    id: 'synthetic-more',
-                    filename: 'Synthetic continuation file',
-                },
-            ],
-            upload: null,
-            next_href: null,
+            data: {
+                files: [
+                    {
+                        ...panel.files[0],
+                        id: 'synthetic-more',
+                        filename: 'Synthetic continuation file',
+                    },
+                ],
+                upload: null,
+                next_href: null,
+            },
         });
         fireEvent.click(
             screen.getByRole('button', { name: 'Load more files' }),

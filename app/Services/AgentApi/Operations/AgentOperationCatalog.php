@@ -222,6 +222,7 @@ final class AgentOperationCatalog
         'square.series.get' => ['square.series.show', '/workspaces/{workspace}/square/series/{series}', [200]],
         'square.series.list' => ['square.series.index', '/workspaces/{workspace}/square/series', [200]],
         'square.sync' => ['square.sync', '/workspaces/{workspace}/square/sync', [200]],
+        'tasks.assignees.list' => ['tasks.assignees.index', '/workspaces/{workspace}/projects/{project}/task-assignees', [200]],
         'tasks.create' => ['tasks.store', '/workspaces/{workspace}/projects/{project}/tasks', [201]],
         'tasks.get' => ['tasks.show', '/workspaces/{workspace}/tasks/{task}', [200]],
         'tasks.list' => ['tasks.index', '/workspaces/{workspace}/tasks', [200]],
@@ -356,6 +357,7 @@ final class AgentOperationCatalog
                 true,
                 'mcp.read',
             ),
+            $this->tool('tasks.assignees.list', 'List eligible task assignees', 'Find at most 25 eligible staff identities by name in a project whose tasks the caller may manage. Portal identities are excluded for agents; trusted native sessions retain internal project management access.', [AgentMcpReadTools::class, 'taskAssignees'], Effect::Read, true, 'mcp.read'),
             $this->tool(
                 'tasks.list',
                 'List tasks',

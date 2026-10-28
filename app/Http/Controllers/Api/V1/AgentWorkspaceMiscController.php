@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AgentPrincipal;
+use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentAttachmentService;
@@ -14,6 +15,8 @@ use App\Services\Authorization\AgentTokenScopes;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Files\AttachmentMutationOrigin;
 use App\Services\Files\AttachmentPageQuery;
+use App\Services\Files\AttachmentParentReference;
+use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Files\AttachmentUploadPolicy;
 use App\Services\Search\WorkspaceSearch;
 use App\Support\AgentApi\FirstPartySession;
@@ -56,6 +59,19 @@ final class AgentWorkspaceMiscController extends Controller
 
     public function index(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
     {
+        if ($request->query->has('presentation')) {
+            abort_unless(FirstPartySession::is($request), 403);
+            $input = $request->validate(['presentation' => ['required', 'in:native,portal'], 'client' => ['required_if:presentation,portal', 'uuid']]);
+            $actor = User::query()->findOrFail($this->principal($request)->id);
+            $view = app(AttachmentSharingNativeView::class);
+            $page = AttachmentPageQuery::fromInput($request->query());
+            $panel = $input['presentation'] === 'portal'
+                ? $view->portalLegacy($actor, ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $input['client'])->firstOrFail(), $recordType, $recordPublicId, $page)
+                : $view->legacy($actor, $workspace, new AttachmentParentReference($recordType, $recordPublicId), $page);
+
+            return response()->json(['data' => $panel]);
+        }
+
         return response()->json($this->files->listing($this->principal($request), $workspace, $recordType, $recordPublicId, AttachmentPageQuery::fromInput($request->query()), $this->origin($request)));
     }
 

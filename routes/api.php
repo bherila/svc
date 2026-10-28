@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentSquareCoveredPaymentController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
 use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
+use App\Http\Controllers\Api\V1\AgentTaskAssigneeController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTaskOrganizationController;
 use App\Http\Controllers\Api\V1\AgentTaskPlanningController;
@@ -168,6 +169,7 @@ Route::prefix('v1')
                 ->whereUuid(['project', 'list', 'task'])
                 ->defaults('task_organization_operation', $organizationOperation);
         }
+        $workspaceOperation('tasks.assignees.list', [AgentTaskAssigneeController::class, 'index'])->whereUuid('project');
         $workspaceOperation('tasks.list', [AgentReadController::class, 'tasks']);
         $workspaceOperation('tasks.get', [AgentReadController::class, 'task'])
             ->whereUuid('task');
