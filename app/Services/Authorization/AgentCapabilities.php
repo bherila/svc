@@ -38,12 +38,12 @@ final class AgentCapabilities
         $canDiscloseProjects = $allowsScope(AgentApiScopes::PROJECTS_READ);
         $portalCompanyIds = $this->access->portalCompanyIdsIn($user, $workspace);
         $portalViewer = $portalCompanyIds !== [];
-        // Agent context uses the portal audience when this person has portal
-        // access, even when the same identity also holds an internal role.
-        $viewable = $portalViewer || $this->projects->workspaceRole($user, $workspace) === null
+        // Internal roles authorize writes independently of portal membership.
+        // Keep those capabilities, adding portal grants only where they apply.
+        $viewable = $this->projects->workspaceRole($user, $workspace) === null
             ? [] : $this->projects->viewableProjectIds($user, $workspace);
         $manager = $viewable === null;
-        $roles = $manager || $portalViewer ? collect() : ClientProjectMembership::query()
+        $roles = $manager ? collect() : ClientProjectMembership::query()
             ->where('workspace_id', $workspace->id)
             ->where('user_id', $user->id)
             ->whereIn('client_project_id', $viewable)
@@ -62,7 +62,7 @@ final class AgentCapabilities
 
         foreach ($projects as $project) {
             $role = $manager ? ProjectRole::Owner : $roles->get($project->id)?->role;
-            $capabilities = $this->forProject($role, in_array($project->client_company_id, $portalCompanyIds, true), $allowsScope);
+            $capabilities = $this->forProject($role, in_array($project->client_company_id, $portalCompanyIds, true), $allowsScope, ! $portalViewer);
             $workspaceCapabilities = [...$workspaceCapabilities, ...$capabilities];
             if ($canDiscloseProjects) {
                 $projectEntries[] = [
@@ -74,7 +74,7 @@ final class AgentCapabilities
         }
 
         if ($manager) {
-            $workspaceCapabilities = [...$workspaceCapabilities, ...$this->managerCapabilities($allowsScope)];
+            $workspaceCapabilities = [...$workspaceCapabilities, ...$this->managerCapabilities($allowsScope, ! $portalViewer)];
         }
         if ($allowsScope(AgentApiScopes::BILLING_READ)
             && ($manager || $portalCompanyIds !== [])) {
@@ -102,7 +102,7 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function forProject(?ProjectRole $role, bool $client, Closure $allowsScope): array
+    private function forProject(?ProjectRole $role, bool $client, Closure $allowsScope, bool $fileWritesAllowed): array
     {
         $capabilities = [];
 
@@ -125,7 +125,7 @@ final class AgentCapabilities
             && ($client || $role !== null)) {
             $capabilities[] = 'files:read';
         }
-        if (! $client && ($role?->canManageTasks() ?? false)
+        if ($fileWritesAllowed && ! $client && ($role?->canManageTasks() ?? false)
             && $allowsScope(AgentApiScopes::FILES_WRITE) && $allowsScope(AgentApiScopes::COLLABORATION_WRITE)
             && AgentWriteCutover::files() && AgentWriteCutover::collaboration()
             && AttachmentSharingGate::available()) {
@@ -148,7 +148,7 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function managerCapabilities(Closure $allowsScope): array
+    private function managerCapabilities(Closure $allowsScope, bool $fileWritesAllowed): array
     {
         $mapping = [
             AgentApiScopes::PROJECTS_READ => 'projects:read',
@@ -170,7 +170,9 @@ final class AgentCapabilities
             && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROPOSALS_READ))) {
             $mapping[AgentApiScopes::PROPOSALS_WRITE] = 'proposals:write';
         }
-        if (AgentWriteCutover::files()) {
+        // File and collaboration adapters still enforce a portal audience for
+        // dual identities, including an explicit prohibition on file writes.
+        if ($fileWritesAllowed && AgentWriteCutover::files()) {
             $mapping[AgentApiScopes::FILES_WRITE] = 'files:write';
         }
         if (AgentWriteCutover::expenses()) {
