@@ -121,6 +121,28 @@ final class TaskPlanningAdaptersTest extends TestCase
         $this->assertDatabaseCount('client_task_graph_states', 0);
     }
 
+    public function test_native_option_continuations_are_finished_urls_and_agent_pages_keep_the_public_cursor_contract(): void
+    {
+        [$workspace, $project, $owner, $task] = $this->fixture();
+        for ($i = 0; $i < 27; $i++) {
+            ClientTaskLabel::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic label '.$i, 'name_key' => hash('sha256', 'synthetic label '.$i)]);
+        }
+        $this->actingAs($owner, 'web');
+        $base = '/synthetic-planning/'.$workspace->public_id;
+        $page = $this->getJson($base.'/projects/'.$project->public_id.'/labels?q=Synthetic&limit=25')->assertOk()
+            ->assertJsonCount(25, 'data')->assertJsonMissingPath('meta')->assertJsonPath('previous_href', null);
+        $next = $page->json('next_href');
+        $this->assertIsString($next);
+        $this->assertStringContainsString('q=Synthetic', $next);
+        $this->assertStringContainsString('cursor=', $next);
+        $this->getJson($next)->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('next_href', null);
+        $this->getJson($base.'/tasks/'.$task->public_id.'/dependencies')->assertOk()->assertJsonPath('next_href', null)->assertJsonMissingPath('meta');
+        $this->actingAsMcp($owner, ['tasks:read']);
+        $this->getJson('/api/v1/synthetic-planning/'.$workspace->public_id.'/projects/'.$project->public_id.'/labels')
+            ->assertOk()->assertJsonCount(25, 'data')->assertJsonMissingPath('next_href');
+        $this->assertDatabaseCount('client_task_graph_states', 0);
+    }
+
     public function test_cli_preview_rolls_back_receipts_catalog_and_associations_while_apply_and_replay_commit(): void
     {
         [$workspace, , $owner, $task] = $this->fixture();

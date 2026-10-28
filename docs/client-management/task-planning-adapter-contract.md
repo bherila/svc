@@ -388,3 +388,42 @@ archived choices, strict cursor traversal, combined outgoing/incoming byte
 budgets and real SDK envelopes, legacy malformed references, depth eight/nine,
 large-project label/contact availability and constant one-versus-100 query count.
 These are focused results, not full-suite, mutation, browser or release evidence.
+
+## Native interface checkpoint
+
+The adapter stack now includes the new `TaskPlanningPanel`, a reusable seeded
+`PlanningPicker`, and the native `clients/task-labels` catalog page. These are
+presentation components awaiting the coordinator-owned production route,
+registry/schema, existing task-page, ordinary Task metadata and single completion
+advisory integrations. Their presence does not enable the independent product
+flag or establish deployment completion.
+
+Pass the nullable `TaskPlanningNativePresenter::present()` result as a separate
+page prop named `planning_details`, and render
+`<TaskPlanningPanel details={planning_details} />` beside the existing task body
+form. The panel refreshes only that prop. Each dirty planning form retains its
+captured token and selections across other forms' saves; a successful form reads
+fresh authorized props before clearing its own draft. A refusal retains choices
+and offers an explicit section reload. The task body form is not reset or given
+a newer token by a planning save. Catalog mutation refreshes only `catalog`.
+
+Native JSON option/dependency endpoints convert their public cursor response to
+`{data, next_href, previous_href: null}` using the current authorized server route
+and query. REST/MCP keep their unchanged public `{data, meta:{next_cursor}}`
+contract. Browser requests use finished continuations and typed search against
+the supplied options URL. Seeded empty pages cause no mount request. Ordinary
+readers receive a read-only label/dependency presentation without controls;
+contact sections are omitted entirely unless the presenter authorizes them.
+
+Focused verification passed 19 React tests, TypeScript checking, targeted ESLint
+and formatting, and the native/Agent/CLI plus MCP selection (7 PHP tests / 256
+assertions). `node scripts/check-task-planning-layout.mjs` serves synthetic props
+with Vite development transforms, without a production build or database. Its
+24 states cover full/empty/ordinary-reader/unsupported-dependency/stale/catalog
+at 390, 820, 1440 and 1920 pixels. All passed document-overflow, one-row navbar and
+browser-error assertions; every original screenshot was inspected for clipping
+and overlap. Fixtures include twenty retained long labels, twenty-five outgoing
+prerequisites, paginated incoming references and ten long archived/current
+contacts. This proves the isolated components' presentation, not integrated
+production-route behavior, hosted full-suite/static/mutation results or feature
+activation. Those remain exact-candidate CI and coordinator deployment gates.
