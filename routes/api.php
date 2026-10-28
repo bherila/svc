@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\AgentProjectController;
 use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentSquareController;
+use App\Http\Controllers\Api\V1\AgentSquareCoveredPaymentController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
 use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
@@ -337,6 +338,8 @@ Route::prefix('v1')
         // billed-in-Square marker. Nothing behind these routes calls Square.
         $workspaceOperation('invoices.square_link', [AgentSquareLinkController::class, 'link'])->whereUuid('invoice');
         $workspaceOperation('invoices.square_unlink', [AgentSquareLinkController::class, 'unlink'])->whereUuid('invoice');
+        $workspaceOperation('invoices.square_covered_payments', [AgentSquareCoveredPaymentController::class, 'review'])->whereUuid('invoice')->where('squareInvoice', '[A-Za-z0-9][A-Za-z0-9:_-]{0,190}');
+        $workspaceOperation('invoices.square_covered_payment_record', [AgentSquareCoveredPaymentController::class, 'record'])->whereUuid('invoice')->where('squareInvoice', '[A-Za-z0-9][A-Za-z0-9:_-]{0,190}')->where('payment', '[A-Za-z0-9][A-Za-z0-9:_-]{0,190}');
         $workspaceOperation('invoices.square_cover', [AgentSquareLinkController::class, 'cover'])->whereUuid('invoice');
         $workspaceOperation('invoices.square_uncover', [AgentSquareLinkController::class, 'uncover'])->whereUuid('invoice');
         $workspaceOperation('companies.square_customer.get', [AgentSquareLinkController::class, 'customer'])->whereUuid('client');
