@@ -1,4 +1,4 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,8 +45,6 @@ type ProposalItem = {
 
 export default function ClientProposalDetail({
     attachment_panel = null,
-    company,
-    home_href: homeHref,
     proposal,
     items,
     accept_href: acceptHref,
@@ -82,12 +80,6 @@ export default function ClientProposalDetail({
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
                 <header className="grid grid-cols-1 gap-1">
-                    <Link
-                        href={homeHref}
-                        className="min-w-0 text-sm wrap-anywhere text-muted-foreground underline-offset-4 hover:underline"
-                    >
-                        ← {company.name}
-                    </Link>
                     <div className="flex flex-wrap items-center gap-3">
                         <h1 className="min-w-0 text-2xl font-semibold tracking-tight wrap-anywhere">
                             {proposal.title}

@@ -218,8 +218,6 @@ function ReconciledInFinance({ hrefs }: { hrefs: string[] }) {
  */
 export default function ClientInvoiceDetail({
     attachment_panel = null,
-    company,
-    invoices_href: invoicesHref,
     pdf_href: pdfHref,
     version,
     actions,
@@ -381,7 +379,6 @@ export default function ClientInvoiceDetail({
         });
     };
 
-    const backHref = invoicesHref;
     const predatingPayments = payments.filter((payment) =>
         predatesInvoiceIssue(payment.received_on, invoice.issue_date),
     ).length;
@@ -393,12 +390,6 @@ export default function ClientInvoiceDetail({
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
                 <header className="grid grid-cols-1 gap-1">
-                    <Link
-                        href={backHref}
-                        className="text-sm wrap-anywhere text-muted-foreground underline-offset-4 hover:underline"
-                    >
-                        ← {company.name} invoices
-                    </Link>
                     <div className="flex flex-wrap items-center gap-3">
                         <h1 className="text-2xl font-semibold wrap-anywhere">
                             {invoice.invoice_number ?? 'Unnumbered invoice'}

@@ -55,6 +55,7 @@ use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentUserPresenter;
+use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -130,10 +131,7 @@ class ClientDirectoryController extends Controller
         $retainers = $this->retainerUsage($workspace, $companies);
 
         return Inertia::render('clients/index', [
-            'workspace' => [
-                'id' => $workspace->public_id,
-                'name' => $workspace->name,
-            ],
+            'workspace' => AgentWorkspacePresenter::identity($workspace),
             'companies' => $companies->map(fn (ClientCompany $company): array => [
                 ...AgentClientPresenter::summary($company),
                 'project_count' => (int) $company->getAttribute('project_count'),
@@ -213,10 +211,7 @@ class ClientDirectoryController extends Controller
         )->orderByDesc('issue_date')->orderByDesc('id')->get();
 
         return Inertia::render('clients/invoices', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             // Where a row links. Sent rather than assembled in the browser
             // because the client's own copy of this screen is a different route
             // family entirely, and the page is the same page.
@@ -329,10 +324,7 @@ class ClientDirectoryController extends Controller
 
         return Inertia::render('clients/invoice', [
             'attachment_panel' => app(AttachmentSharingNativeView::class)->legacyIfReadable($user, $workspace, new AttachmentParentReference('invoice', $clientInvoice->public_id)),
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             'invoices_href' => route('clients.invoices', [$workspace, $clientCompany], absolute: false),
             'pdf_href' => $base.'/pdf',
             // The opaque version API writes are checked against.
@@ -518,10 +510,7 @@ class ClientDirectoryController extends Controller
             : new AttachmentFilePage([], null, null);
 
         return Inertia::render('clients/agreement', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             'home_href' => route('clients.show', [$workspace, $clientCompany], absolute: false),
             // The engine's behaviour when a term is unstated is an operator's
             // concern. The same page serves the client's portal, which reads
@@ -644,10 +633,7 @@ class ClientDirectoryController extends Controller
 
         return Inertia::render('clients/proposal', $this->proposalPayload($clientProposal) + [
             'attachment_panel' => app(AttachmentSharingNativeView::class)->legacyIfReadable($user, $workspace, new AttachmentParentReference('proposal', $clientProposal->public_id)),
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             'home_href' => route('clients.show', [$workspace, $clientCompany], absolute: false),
             'accept_href' => null,
         ]);

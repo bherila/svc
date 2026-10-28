@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -56,6 +57,8 @@ final class SharedReadProjectionParityTest extends TestCase
             'invoice_number' => 'SYN-SHARED-READ', 'status' => 'issued', 'currency' => 'USD', 'subtotal_amount' => 2813,
             'total_amount' => 2813, 'paid_amount' => 0, 'balance_amount' => 2813, 'issue_date' => '2026-10-28',
             'notes' => 'Synthetic internal invoice note']);
+        $agreement = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'title' => 'Synthetic identity agreement', 'status' => 'draft', 'currency' => 'USD', 'starts_on' => '2026-10-28']);
         $this->actingAs($owner, 'web');
         $canonicalCompany = app(AgentClientReadService::class)->get($owner, $workspace, $company->public_id);
         $canonicalProposal = app(AgentProposalReadService::class)->get($owner, $workspace, $proposal->public_id);
@@ -63,16 +66,26 @@ final class SharedReadProjectionParityTest extends TestCase
         $canonicalInvoice = app(AgentInvoicePresenter::class)->present($workspace, $invoice, includeNotes: true);
 
         $index = $this->get(route('clients.index', $workspace))->assertOk()->viewData('page')['props'];
+        $this->assertSame(['id' => $workspace->public_id, 'name' => $workspace->name], $index['workspace']);
         $this->assertSame(Arr::only($canonicalCompany, ['id', 'name', 'billing_email', 'is_active']), Arr::only($index['companies'][0], ['id', 'name', 'billing_email', 'is_active']));
         $this->assertEqualsCanonicalizing(['id', 'name', 'billing_email', 'is_active', 'project_count', 'draft_invoice_count', 'open_invoice_count', 'retainer'], array_keys($index['companies'][0]));
 
+        foreach ([route('clients.invoices', [$workspace, $company]), route('clients.invoice', [$workspace, $company, $invoice]),
+            route('clients.agreement', [$workspace, $company, $agreement])] as $url) {
+            $page = $this->get($url)->assertOk()->viewData('page')['props'];
+            $this->assertSame(Arr::only($canonicalCompany, ['id', 'name']), $page['company']);
+        }
+
         $nativeProposal = $this->get(route('clients.proposal', [$workspace, $company, $proposal]))->assertOk()->viewData('page')['props'];
+        $this->assertSame(Arr::only($canonicalCompany, ['id', 'name']), $nativeProposal['company']);
         $this->assertEqualsCanonicalizing(['id', 'title', 'summary', 'terms', 'status', 'currency', 'valid_until', 'sent_at', 'accepted_at', 'total_amount'], array_keys($nativeProposal['proposal']));
         $this->assertSame(Arr::except(Arr::only($canonicalProposal, array_keys($nativeProposal['proposal'])), ['sent_at', 'accepted_at']), Arr::except($nativeProposal['proposal'], ['sent_at', 'accepted_at']));
         $this->assertSame('2026-10-28T09:10:11.000000Z', $nativeProposal['proposal']['sent_at']);
         $this->assertSame([Arr::except($canonicalProposal['items'][0], ['sort_order'])], $nativeProposal['items']);
 
-        $operations = $this->get(route('workspaces.operations', $workspace))->assertOk()->viewData('page')['props']['workspace']['clients'][0];
+        $operationsWorkspace = $this->get(route('workspaces.operations', $workspace))->assertOk()->viewData('page')['props']['workspace'];
+        $this->assertSame(['id' => $workspace->public_id, 'name' => $workspace->name], Arr::only($operationsWorkspace, ['id', 'name']));
+        $operations = $operationsWorkspace['clients'][0];
         $this->assertSame(Arr::only($canonicalProposal, ['id', 'title', 'status', 'total_amount', 'currency']) + ['version' => $canonicalProposal['version'], 'send_href' => null], Arr::except($operations['proposals'][0], ['attachments', 'attachment_panel']));
         $this->assertSame(Arr::only($canonicalInvoice, ['id', 'invoice_number', 'status', 'total_amount', 'paid_amount', 'balance_amount', 'currency', 'issue_date', 'due_date']), Arr::except($operations['invoices'][0], ['attachments', 'attachment_panel']));
         $this->assertSame(['Synthetic internal second', 'Synthetic internal first'], array_column($operations['projects'][0]['time_entries'], 'description'));
