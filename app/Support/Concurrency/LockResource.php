@@ -149,6 +149,9 @@ enum LockResource: string
     // share lock after the invoice lock, so a re-link committed meanwhile is
     // seen; link changes themselves lock only the invoice.
     case InvoiceSquareLink = 'invoice_square_links';
+    // Confirmed covered-payment recording makes its final current coverage
+    // check after ledger writes, still under the covering invoice's lock.
+    case SquareInvoiceCoverage = 'square_invoice_coverages';
 
     // Credentials. Revoking an agent credential (CredentialRevoker) locks its access
     // token rows, then revokes their refresh tokens and then the access tokens

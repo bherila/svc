@@ -31,6 +31,7 @@ final class AgentMcpReadToolSchemaContractTest extends TestCase
         'collaboration.attachments.download_url' => ['recordType' => 'record_type', 'recordPublicId' => 'record_id'],
         'collaboration.comments.list' => ['parentType' => 'parent_type', 'parentPublicId' => 'parent_id'],
         'square.series.get' => ['series' => 'series_key'],
+        'invoices.square_covered_payments' => ['squareInvoice' => 'square_invoice_id'],
         'finance.invoice_payments.list' => ['invoice' => 'invoice_id'],
     ];
 
