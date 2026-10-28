@@ -40,7 +40,7 @@ final class SquareOperatorScreensTest extends TestCase
             ->where('square.square_collects', false)
             ->where('square.link_href', $linkHref)
             ->where('square.unlink_href', null)
-            ->where('actions.send', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
+            ->where('actions.send', route('agent-api.v1.invoices.send', [$workspace, $invoice->public_id], absolute: false))
             ->where('actions.release_automatic', "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release"));
 
         app(SquareLinkService::class)->link($workspace, $invoice, $owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv:0-fixture1', '000001-R-0003', null, SquareMatchMethod::Suggested, 90, ['exact amount']), false);

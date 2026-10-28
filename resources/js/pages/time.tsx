@@ -513,6 +513,7 @@ export default function TimeSheet({
                 <InvoiceSelectionDialog
                     entries={selectedEntries}
                     url={invoiceDraft.url}
+                    companyId={invoiceDraft.company_id}
                     target={invoiceDraft.target}
                     timezone={workspace.timezone}
                     onClose={() => setInvoiceDialogOpen(false)}

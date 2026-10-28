@@ -957,6 +957,31 @@ try {
             }
 
             if (screen === 'invoice') {
+                await page.getByRole('button', { name: 'Send to client', exact: true }).click();
+                const compose = page.getByRole('dialog');
+                await compose.getByLabel('Subject', { exact: true }).fill('Synthetic invoice subject '.repeat(8));
+                await compose.getByLabel('Covering note (optional)', { exact: true }).fill('SyntheticUnbrokenCoveringNote'.repeat(100));
+                await compose.getByLabel('To', { exact: true }).fill(`${'synthetic'.repeat(7)}@${'reserved'.repeat(7)}.example.test`);
+                await compose.getByRole('button', { name: 'Add', exact: true }).click();
+                await capture(screen, 'send-compose', width);
+                // Synthetic adapter outcome only: no email leaves this layout
+                // fixture. The real after-commit path is proved by
+                // InvoiceSendOutcomeTest with its replaceable mail adapter.
+                await page.route('**/api/v1/workspaces/*/invoices/*/send', async (route) => {
+                    const request = route.request();
+                    const body = request.postDataJSON();
+
+                    if (request.headers()['idempotency-key'] == null || body.confirm !== true || typeof body.expected_version !== 'string') {
+                        throw new Error('Invoice compose omitted its confirmed version or retry key.');
+                    }
+
+                    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { version: body.expected_version, delivery: { id: 'synthetic-layout-delivery', status: 'sending', error_summary: null } } }) });
+                });
+                await compose.getByRole('button', { name: 'Send', exact: true }).click();
+                await expect(compose.getByRole('button', { name: 'Check delivery', exact: true })).toBeVisible();
+                await expect(compose.getByLabel('Subject', { exact: true })).toBeDisabled();
+                await capture(screen, 'send-unresolved', width);
+                await compose.getByRole('button', { name: 'Cancel', exact: true }).click();
                 await expect(
                     page.getByText('Reconciled in finance', { exact: true }),
                 ).toBeVisible();
@@ -1239,7 +1264,9 @@ try {
         [
             '# Browser layout evidence',
             '',
-            tasksOnly
+            invoiceActionsOnly
+                ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
+                : tasksOnly
                 ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
                 : portalOnly
                   ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'

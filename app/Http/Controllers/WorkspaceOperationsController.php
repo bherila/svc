@@ -225,6 +225,7 @@ class WorkspaceOperationsController extends Controller
             $clients[] = [
                 'id' => $company->public_id,
                 'name' => $company->name,
+                'invoice_create_href' => $canManage ? route('agent-api.v1.invoices.store', $workspace, absolute: false) : null,
                 'projects' => $projects,
                 'proposals' => ($proposalsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientProposal $proposal): array => [

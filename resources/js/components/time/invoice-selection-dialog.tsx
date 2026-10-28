@@ -1,5 +1,4 @@
-import { router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -12,7 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { apiRequest } from '@/lib/api';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
 import { formatMoney } from '@/lib/money';
@@ -24,6 +23,7 @@ import type { DraftTimeTarget, TimeEntry } from '@/types/time-sheet';
 export function InvoiceSelectionDialog({
     entries,
     url,
+    companyId,
     timezone,
     target,
     onClose,
@@ -31,6 +31,7 @@ export function InvoiceSelectionDialog({
 }: {
     entries: TimeEntry[];
     url: string;
+    companyId: string;
     timezone: string;
     target?: DraftTimeTarget | null;
     onClose: () => void;
@@ -42,10 +43,11 @@ export function InvoiceSelectionDialog({
     const [notes, setNotes] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
     const currency = target?.currency ?? entries[0]?.invoice_terms?.currency;
     const valid =
         entries.length > 0 &&
-        (!target || entries.length <= 100) &&
+        entries.length <= 100 &&
         currency !== undefined &&
         entries.every((entry) => entry.invoice_terms?.currency === currency);
     const total = entries.reduce(
@@ -94,55 +96,55 @@ export function InvoiceSelectionDialog({
                         setSaving(true);
                         setError(null);
 
-                        if (target) {
-                            const body = {
-                                expected_version: target.version,
-                                time_entry_ids: entries.map(
-                                    (entry) => entry.id,
-                                ),
-                            } satisfies ApiSchema<'InvoiceAddTimeRequest'>;
-                            const result = await apiRequest('POST', url, body);
+                        const body = target
+                            ? ({
+                                  expected_version: target.version,
+                                  time_entry_ids: entries.map(
+                                      (entry) => entry.id,
+                                  ),
+                              } satisfies ApiSchema<'InvoiceAddTimeRequest'>)
+                            : ({
+                                  company_id: companyId,
+                                  invoice_number: number.trim(),
+                                  currency,
+                                  issue_date: issueDate || null,
+                                  due_date: dueDate || null,
+                                  notes: notes || null,
+                                  is_visible_to_client: false,
+                                  time_entry_ids: entries.map(
+                                      (entry) => entry.id,
+                                  ),
+                              } satisfies ApiSchema<'InvoiceCreateRequest'>);
+                        const fingerprint = JSON.stringify({ url, body });
 
-                            if (!result.ok) {
-                                setError(result.message);
-                                setSaving(false);
+                        if (attempt.current?.fingerprint !== fingerprint) {
+                            attempt.current = {
+                                fingerprint,
+                                key: newIdempotencyKey(),
+                            };
+                        }
 
-                                return;
-                            }
+                        const result = await apiRequest(
+                            'POST',
+                            url,
+                            body,
+                            attempt.current.key,
+                        );
 
-                            void refreshPageProps({
-                                onFinish: () => {
-                                    setSaving(false);
-                                    onSuccess();
-                                },
-                            });
+                        if (!result.ok) {
+                            setError(result.message);
+                            setSaving(false);
 
                             return;
                         }
 
-                        router.post(
-                            url,
-                            {
-                                invoice_number: number.trim(),
-                                currency,
-                                issue_date: issueDate || null,
-                                due_date: dueDate || null,
-                                notes: notes || null,
-                                time_entry_ids: entries.map(
-                                    (entry) => entry.id,
-                                ),
+                        attempt.current = null;
+                        void refreshPageProps({
+                            onFinish: () => {
+                                setSaving(false);
+                                onSuccess();
                             },
-                            {
-                                preserveScroll: true,
-                                onSuccess,
-                                onError: (errors) =>
-                                    setError(
-                                        Object.values(errors)[0] ??
-                                            'The invoice could not be drafted.',
-                                    ),
-                                onFinish: () => setSaving(false),
-                            },
-                        );
+                        });
                     }}
                 >
                     <ul

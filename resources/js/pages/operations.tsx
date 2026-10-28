@@ -1,5 +1,5 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
@@ -8,6 +8,7 @@ import { CommandPaletteTrigger } from '@/components/command-palette';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import {
@@ -92,6 +93,7 @@ type Invoice = {
 type Client = {
     id: string;
     name: string;
+    invoice_create_href: string | null;
     projects: Project[];
     proposals: Proposal[];
     agreements: Agreement[];
@@ -288,13 +290,16 @@ function ProposalForm({
     );
 }
 
-function InvoiceForm({
-    workspaceId,
+export function InvoiceForm({
+    href,
     clientId,
 }: {
-    workspaceId: string;
+    href: string;
     clientId: string;
 }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
     const form = useForm({
         invoice_number: '',
         due_date: '',
@@ -304,30 +309,70 @@ function InvoiceForm({
         unit_price: '',
     });
 
-    const submit = (event: FormEvent) => {
+    const submit = async (event: FormEvent) => {
         event.preventDefault();
-        form.transform((data) => ({
-            invoice_number: data.invoice_number,
-            due_date: data.due_date || null,
-            currency: data.currency,
-            lines: [
+
+        if (busy) {
+            return;
+        }
+
+        const amount = toMinorUnits(form.data.unit_price);
+
+        if (amount === null) {
+            setError('Enter a valid unit price.');
+
+            return;
+        }
+
+        const body = {
+            company_id: clientId,
+            invoice_number: form.data.invoice_number,
+            due_date: form.data.due_date || null,
+            currency: form.data.currency,
+            is_visible_to_client: false,
+            manual_lines: [
                 {
                     type: 'service',
-                    description: data.description,
-                    quantity: data.quantity,
-                    unit_amount: toMinorUnits(data.unit_price),
+                    description: form.data.description,
+                    quantity: form.data.quantity,
+                    unit_amount: amount,
                     tax_amount: 0,
-                    sort_order: 0,
                 },
             ],
-        }));
-        form.post(`/workspaces/${workspaceId}/clients/${clientId}/invoices`, {
-            onSuccess: () => form.reset(),
-        });
+        } satisfies ApiSchema<'InvoiceCreateRequest'>;
+        const fingerprint = JSON.stringify(body);
+
+        if (attempt.current?.fingerprint !== fingerprint) {
+            attempt.current = { fingerprint, key: newIdempotencyKey() };
+        }
+
+        setBusy(true);
+        const result = await apiRequest(
+            'POST',
+            href,
+            body,
+            attempt.current.key,
+        );
+
+        if (!result.ok) {
+            setError(result.message);
+            setBusy(false);
+
+            return;
+        }
+
+        attempt.current = null;
+        setError(null);
+        form.reset();
+        void refreshPageProps({ onFinish: () => setBusy(false) });
     };
 
     return (
-        <form onSubmit={submit} className="mt-4 grid gap-2 md:grid-cols-6">
+        <form
+            aria-label="Draft invoice"
+            onSubmit={submit}
+            className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-6"
+        >
             <input
                 className={inputClass}
                 placeholder="Invoice number"
@@ -366,7 +411,15 @@ function InvoiceForm({
                 }
                 required
             />
-            <button className={buttonClass} disabled={form.processing}>
+            {error !== null && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-red-700 md:col-span-6"
+                >
+                    {error}
+                </p>
+            )}
+            <button className={buttonClass} disabled={busy}>
                 Draft invoice
             </button>
         </form>
@@ -889,10 +942,12 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
 
                                 <div className="border-t border-slate-200 pt-5">
                                     <h3 className="font-semibold">Invoices</h3>
-                                    <InvoiceForm
-                                        workspaceId={workspace.id}
-                                        clientId={client.id}
-                                    />
+                                    {client.invoice_create_href !== null && (
+                                        <InvoiceForm
+                                            href={client.invoice_create_href}
+                                            clientId={client.id}
+                                        />
+                                    )}
                                     <div className="mt-4 grid gap-3 lg:grid-cols-2">
                                         {client.invoices.map((invoice) => (
                                             <article

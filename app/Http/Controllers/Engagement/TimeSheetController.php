@@ -203,7 +203,8 @@ class TimeSheetController extends Controller
             'approval_limit' => ApproveTimeEntriesRequest::MAX_ENTRIES,
             'actions' => ['approve' => route('agent-api.v1.time-entries.approve', $workspace, absolute: false)],
             'invoice_draft' => $isManager ? [
-                'url' => $draft === null ? route('svc.billing.invoices.store', [$workspace, $clientCompany])
+                'company_id' => $clientCompany->public_id,
+                'url' => $draft === null ? route('agent-api.v1.invoices.store', $workspace, absolute: false)
                     : route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false),
                 'target' => $draft === null ? null : ['number' => $draft->invoice_number, 'currency' => $draft->currency,
                     'total_amount' => $draft->total_amount, 'version' => AgentApiVersion::for($draft),

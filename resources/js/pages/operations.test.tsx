@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     AgreementActivationButton,
     InvoiceIssueButton,
+    InvoiceForm,
     PaymentForm,
 } from '@/pages/operations';
 
@@ -44,11 +45,75 @@ const form = vi.hoisted(() => ({
         options?.onSuccess?.(),
     ),
     reset: vi.fn((...keys: string[]) => {
+        if (keys.length === 0) {
+            keys = Object.keys(form.initial ?? {});
+        }
+
         for (const key of keys) {
             form.data[key] = form.initial?.[key];
         }
     }),
 }));
+
+describe('drafting an invoice from operations', () => {
+    beforeEach(() => {
+        form.data = {};
+        form.initial = null;
+        form.errors = {};
+    });
+
+    it('uses the finished capability and retains its attempt key and values after a lost response', async () => {
+        requestFetch.mockRejectedValueOnce(
+            new TypeError('Synthetic lost response'),
+        );
+        render(
+            <InvoiceForm
+                href="/synthetic/invoice-create"
+                clientId="synthetic-company"
+            />,
+        );
+        fireEvent.change(screen.getByPlaceholderText('Invoice number'), {
+            target: { value: 'SYNTHETIC-CREATED' },
+        });
+        fireEvent.change(screen.getByPlaceholderText('Line description'), {
+            target: { value: 'Synthetic service' },
+        });
+        fireEvent.change(screen.getByPlaceholderText('Unit price'), {
+            target: { value: '123.45' },
+        });
+        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
+        await screen.findByRole('alert');
+        expect(screen.getByPlaceholderText('Invoice number')).toHaveValue(
+            'SYNTHETIC-CREATED',
+        );
+        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(requestFetch.mock.calls).toHaveLength(2);
+        const first = requestFetch.mock.calls[0];
+        const second = requestFetch.mock.calls[1];
+        expect(first[0]).toBe('/synthetic/invoice-create');
+        expect(JSON.parse(first[1].body)).toEqual({
+            company_id: 'synthetic-company',
+            invoice_number: 'SYNTHETIC-CREATED',
+            due_date: null,
+            currency: 'USD',
+            is_visible_to_client: false,
+            manual_lines: [
+                {
+                    type: 'service',
+                    description: 'Synthetic service',
+                    quantity: '1',
+                    unit_amount: 12345,
+                    tax_amount: 0,
+                },
+            ],
+        });
+        expect(first[1].headers['Idempotency-Key']).toBe(
+            second[1].headers['Idempotency-Key'],
+        );
+        expect(first[1].body).toBe(second[1].body);
+    });
+});
 
 vi.mock('@inertiajs/react', () => ({
     router: inertia,

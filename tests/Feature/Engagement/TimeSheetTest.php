@@ -114,7 +114,7 @@ class TimeSheetTest extends TestCase
         $this->entry(['status' => 'approved', 'is_billable' => true, 'billing_rate_amount' => null]);
         $this->actingAs($this->manager, 'web')->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('invoice_draft.url', route('svc.billing.invoices.store', [$this->workspace, $this->company]))
+            ->where('invoice_draft.url', route('agent-api.v1.invoices.store', $this->workspace, absolute: false))
             ->where('months.0.entries', function ($rows) use ($eligible): bool {
                 $quoted = collect($rows)->filter(fn ($row) => $row['invoice_terms'] !== null)->values();
 

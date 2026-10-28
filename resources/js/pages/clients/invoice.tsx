@@ -1546,6 +1546,7 @@ export default function ClientInvoiceDetail({
                     open={sending}
                     onOpenChange={setSending}
                     sendHref={actions.send}
+                    expectedVersion={version}
                     email={email}
                 />
             )}
