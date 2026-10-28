@@ -146,10 +146,10 @@ final class AgentExpenseScheduleService
     }
 
     /** @return array<string,mixed> */
-    private function present(ClientExpenseSchedule $schedule, ClientCompany $company, ?ClientProject $project): array
+    public function present(ClientExpenseSchedule $schedule, ClientCompany $company, ?ClientProject $project): array
     {
         return ['id' => $schedule->public_id, 'company_id' => $company->public_id, 'project_id' => $project?->public_id,
-            'starts_on' => $schedule->starts_on->toDateString(), 'cadence' => $schedule->cadence, 'amount' => $schedule->amount,
+            'starts_on' => $schedule->starts_on->toDateString(), 'cadence' => $schedule->cadence, 'amount' => $schedule->amount, 'amount_exact' => (string) $schedule->amount,
             'currency' => $schedule->currency, 'description' => $schedule->description, 'active' => $schedule->is_active,
             'next_on' => (new ExpenseRecurrence($schedule->starts_on, BillingCadence::from($schedule->cadence)))->occurrence($schedule->next_occurrence)->toDateString(),
             'version' => AgentApiVersion::for($schedule)];

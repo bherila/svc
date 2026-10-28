@@ -16,6 +16,7 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\Session;
 use ReflectionMethod;
 use ReflectionNamedType;
+use ReflectionUnionType;
 use Tests\Concerns\RecordingAgentApiTransport;
 use Tests\TestCase;
 use Throwable;
@@ -85,6 +86,18 @@ final class AgentMcpWriteToolRestDispatchTest extends TestCase
                 break;
             }
             $type = $parameter->getType();
+            if ($type instanceof ReflectionUnionType) {
+                // Exact minor-unit amounts accept integer or digit-string
+                // inputs. Use the numeric branch for this transport inventory;
+                // AgentExpenseParityTest exercises the string branch over MCP.
+                $choices = $type->getTypes();
+                $this->assertEqualsCanonicalizing(['int', 'string'], array_map(fn (ReflectionNamedType $choice): string => $choice->getName(), $choices));
+                foreach ($choices as $choice) {
+                    if ($choice->getName() === 'int') {
+                        $type = $choice;
+                    }
+                }
+            }
             $this->assertInstanceOf(ReflectionNamedType::class, $type);
             $schema = ($parameter->getAttributes(Schema::class)[0] ?? null)?->newInstance();
             $arguments[] = match ($type->getName()) {

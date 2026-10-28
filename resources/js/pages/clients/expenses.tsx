@@ -24,6 +24,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { apiRequest } from '@/lib/api';
 import { formatDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
@@ -99,24 +100,32 @@ export default function ClientExpenses({
         setDialogOpen(true);
     };
 
-    const reportFailure = (errors: Record<string, string>) => {
-        setNotice(
-            Object.values(errors)[0] ?? 'That action could not be completed.',
-        );
-    };
+    const move = async (
+        url: string,
+        expense: ClientExpenseRow,
+        method: 'POST' | 'DELETE' = 'POST',
+    ) => {
+        if (busy) {
+            return;
+        }
 
-    const move = (url: string) => {
         setBusy(true);
         setNotice(null);
-        router.post(
-            url,
-            {},
-            {
-                preserveScroll: true,
-                onError: reportFailure,
-                onFinish: () => setBusy(false),
-            },
-        );
+        const result = await apiRequest(method, url, {
+            expected_version: expense.version,
+        });
+        setBusy(false);
+
+        if (method === 'DELETE') {
+            setPendingDiscard(null);
+        }
+
+        if (result.ok) {
+            setPendingDiscard(null);
+            router.reload({ only: ['expenses'] });
+        } else {
+            setNotice(result.message);
+        }
     };
 
     return (
@@ -292,6 +301,7 @@ export default function ClientExpenses({
                                                                             expense
                                                                                 .urls
                                                                                 .approve,
+                                                                            expense,
                                                                         )
                                                                     }
                                                                 >
@@ -322,6 +332,7 @@ export default function ClientExpenses({
                                                                             expense
                                                                                 .urls
                                                                                 .unapprove,
+                                                                            expense,
                                                                         )
                                                                     }
                                                                 >
@@ -377,6 +388,7 @@ export default function ClientExpenses({
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
                 storeUrl={urls.store}
+                companyId={company.id}
                 workspace={workspace}
                 projects={projects}
                 expense={dialogExpense}
@@ -403,17 +415,17 @@ export default function ClientExpenses({
                     <AlertDialogFooter>
                         <AlertDialogCancel>Keep it</AlertDialogCancel>
                         <AlertDialogAction
+                            disabled={busy}
                             onClick={() => {
                                 if (pendingDiscard === null) {
                                     return;
                                 }
 
-                                setNotice(null);
-                                router.delete(pendingDiscard.urls.discard, {
-                                    preserveScroll: true,
-                                    onError: reportFailure,
-                                    onFinish: () => setPendingDiscard(null),
-                                });
+                                void move(
+                                    pendingDiscard.urls.discard,
+                                    pendingDiscard,
+                                    'DELETE',
+                                );
                             }}
                         >
                             Discard
