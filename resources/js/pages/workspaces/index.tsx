@@ -81,10 +81,12 @@ function NewWorkspaceDialog({
         >('POST', createUrl, { name: original.name }, original.key);
 
         if (!result.ok) {
-            original.uncertain ||=
-                result.status === 0 ||
-                result.status === 408 ||
-                result.status >= 500;
+            original.uncertain =
+                result.status !== 422 &&
+                (original.uncertain ||
+                    result.status === 0 ||
+                    result.status === 408 ||
+                    result.status >= 500);
             setUnresolved(original.uncertain);
 
             if (!original.uncertain) {
@@ -95,6 +97,21 @@ function NewWorkspaceDialog({
                 Object.values(result.errors ?? {})
                     .flat()
                     .join(' ') || result.message,
+            );
+            setSaving(false);
+
+            return;
+        }
+
+        if (
+            !result.data ||
+            typeof result.data.web_url !== 'string' ||
+            result.data.web_url.trim() === ''
+        ) {
+            original.uncertain = true;
+            setUnresolved(true);
+            setError(
+                'SVC’s response could not be read. Check the original creation.',
             );
             setSaving(false);
 

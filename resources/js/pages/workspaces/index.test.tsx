@@ -191,4 +191,73 @@ describe('workspace creation through the API', () => {
         );
         expect(inertia.visit).not.toHaveBeenCalled();
     });
+    it('unlocks correction after an uncertain request is definitively refused as invalid', async () => {
+        fetchMock.mockRejectedValueOnce(
+            new TypeError('Synthetic network loss'),
+        );
+        respond(422, {
+            message: 'Validation failed.',
+            errors: { name: ['Correct the name.'] },
+        });
+        respond(201, { data: { web_url: '/synthetic/corrected-workspace' } });
+        openCreate();
+        await screen.findByRole('alert');
+        fireEvent.click(screen.getByRole('button', { name: 'Check creation' }));
+        await waitFor(() =>
+            expect(
+                screen.getByLabelText('Name', { exact: true }),
+            ).toBeEnabled(),
+        );
+        fireEvent.change(screen.getByLabelText('Name', { exact: true }), {
+            target: { value: 'Corrected workspace' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+        await waitFor(() =>
+            expect(inertia.visit).toHaveBeenCalledWith(
+                '/synthetic/corrected-workspace',
+            ),
+        );
+        expect(request(0)).toEqual(request(1));
+        expect(request(2).key).not.toBe(request(0).key);
+        expect(request(2).body).toEqual({ name: 'Corrected workspace' });
+    });
+
+    it('replays safely after the successful response body is interrupted', async () => {
+        fetchMock.mockResolvedValueOnce(
+            new Response('{"data":', { status: 201 }),
+        );
+        respond(201, {
+            data: { web_url: '/synthetic/body-recovered-workspace' },
+        });
+        openCreate();
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'could not be read',
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Check creation' }));
+        await waitFor(() =>
+            expect(inertia.visit).toHaveBeenCalledWith(
+                '/synthetic/body-recovered-workspace',
+            ),
+        );
+        expect(request(0)).toEqual(request(1));
+    });
+
+    it('keeps an uncertain receipt across closing and reopening the dialog', async () => {
+        fetchMock.mockRejectedValueOnce(
+            new TypeError('Synthetic network loss'),
+        );
+        respond(201, { data: { web_url: '/synthetic/reopened-workspace' } });
+        openCreate();
+        await screen.findByRole('alert');
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        fireEvent.click(screen.getByRole('button', { name: 'New workspace' }));
+        expect(screen.getByLabelText('Name', { exact: true })).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Check creation' }));
+        await waitFor(() =>
+            expect(inertia.visit).toHaveBeenCalledWith(
+                '/synthetic/reopened-workspace',
+            ),
+        );
+        expect(request(0)).toEqual(request(1));
+    });
 });
