@@ -1280,7 +1280,10 @@ try {
                 page.off('request', recordCreation);
                 await page.goto(origin + fixture.selector);
                 await expect(
-                    page.getByRole('link', { name: createdName, exact: true }),
+                    page.getByRole('link', {
+                        name: `${createdName} Open`,
+                        exact: true,
+                    }),
                 ).toBeVisible();
                 await capture(screen, 'created', width);
             }
