@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\AgentApi\TimeEntryAllocation;
 use App\Support\Engagement\TimeEntryCreationRules;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
@@ -132,7 +133,8 @@ final class LogTimeEntriesAction
      */
     private function approvalItems(Workspace $workspace, array $ids): array
     {
-        $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->get()->keyBy('public_id');
+        $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)
+            ->with(TimeEntryAllocation::relations($workspace->id))->get()->keyBy('public_id');
 
         return array_map(fn (string $id): array => [
             'id' => $id,

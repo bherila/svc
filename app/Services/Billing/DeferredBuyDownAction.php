@@ -8,6 +8,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\TimeEntryAllocation;
 use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\DeferredBuyDownSelection;
 use App\Support\Billing\DeferredBuyDownSnapshot;
@@ -35,6 +36,7 @@ final class DeferredBuyDownAction
         $backlog = $this->backlogs->forAgreement($workspace, $agreement, $today);
         $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)
             ->where('client_company_id', $agreement->client_company_id)->whereIn('id', $backlog->entryIds)
+            ->with(TimeEntryAllocation::relations($workspace->id))
             ->orderBy('worked_on')->orderBy('id')->get();
         $version = hash('sha256', json_encode([
             'agreement' => AgentApiVersion::for($agreement), 'through' => $backlog->through,
@@ -74,6 +76,7 @@ final class DeferredBuyDownAction
             $number = $this->numbers->next($workspace);
             $ids = array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $selection->entries);
             $current = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)
+                ->with(TimeEntryAllocation::relations($workspace->id))
                 ->whereIn('id', $ids)->orderBy('id')->tap(Locks::forUpdate())->get()->keyBy('id');
             foreach ($selection->entries as $entry) {
                 $now = $current->get($entry->id);
