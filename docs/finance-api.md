@@ -39,6 +39,27 @@ and each is an MCP tool and a console command of the same name, all running one
 | `finance.reconciliations.acknowledge` | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}/acknowledgement` | `finance:reconcile` | `svc:finance:acknowledge-reconciliation` |
 | `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
 
+## Compatibility
+
+Changes within `/api/v1` are additive: new operations, optional request
+parameters, response properties and accepted request-enum values may be added.
+Response enums may also gain values; consumers must handle an unknown value as
+"other" rather than fail parsing or assume an existing case.
+
+Removing or renaming a response property, changing its type, making an optional
+request field required, narrowing an accepted enum, or removing an operation or
+scope is breaking. A breaking change requires a new API version or an announced
+deprecation period: mark the operation `deprecated: true` in OpenAPI, describe the
+migration in the PR body, and keep serving the old contract for at least one
+release that affected consumers have re-pinned against before removing it.
+Public MCP names follow the same [deprecation convention](mcp.md#deprecations).
+
+The integer `contract_version` advertises the supported baseline; increasing it
+does not by itself waive this migration policy. Consumers that pin an exact
+baseline must deliberately adopt the next one after checking its published
+schemas and migration notes. Existing authorization, workspace isolation and
+write-cutover checks continue to apply throughout a transition.
+
 ## Billable expense provenance
 
 A finance consumer can record a billable expense through `expenses.log`, using
