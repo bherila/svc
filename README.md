@@ -76,6 +76,13 @@ The deployment installs the server-held `.env`, runs schema migrations, performs
 write/read/delete probe against the private disk, checks the redacted Stripe status,
 and verifies `/up` plus the OAuth redirect. It does not seed or import business data.
 
+SVC retains `char(36)` UUID storage on MariaDB, including `foreignUuid()` columns.
+The application registers a MariaDB schema grammar that preserves this contract
+across the server's native-UUID boundary at 10.7, without changing the MariaDB query
+grammar or JSON validation. The pre-migration database status check accepts newer
+MariaDB servers only with that grammar installed. CI exercises the full MariaDB
+lane on 11.4 and checks newly created foreign keys against retained character UUIDs.
+
 Before maintenance, persistent-path conversion or database risk, a read-only host
 preflight requires account-owned regular files at `~/.config/svc/deployment.env`,
 `~/.config/svc/database.env` and both existing Passport key paths. File modes must be

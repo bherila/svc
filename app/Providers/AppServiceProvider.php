@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Database\CharacterUuidMariaDbConnection;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\Workspace;
@@ -34,6 +35,7 @@ use BWH\Auth\OAuth\DelegatedAccess\ApplicationAccessAdapter;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Database\Connection;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Mail\MailManager;
@@ -58,6 +60,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Existing UUID and foreign-UUID columns are char(36). MariaDB 10.7+
+        // otherwise changes newly compiled UUID columns to an incompatible native type.
+        Connection::resolverFor('mariadb', static fn ($pdo, $database, $prefix, $config): CharacterUuidMariaDbConnection => new CharacterUuidMariaDbConnection($pdo, $database, $prefix, $config));
         Passport::$deviceCodeGrantEnabled = false;
         // Before the auth package boots, which installs its resource client
         // only while Passport still has its own: SVC's subclass keeps that

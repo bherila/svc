@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Database;
 
 use App\Console\Commands\SvcCommand;
+use App\Database\Schema\Grammars\CharacterUuidMariaDbGrammar;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -32,7 +33,11 @@ final class DatabaseStatusCommand extends SvcCommand
             ? 'mariadb'
             : 'unsupported';
         $compatible = is_string($serverVersion)
-            && self::isUuidGrammarCompatible($driver, $serverVersion);
+            && self::isUuidGrammarCompatible(
+                $driver,
+                $serverVersion,
+                DB::connection()->getSchemaBuilder()->getConnection()->getSchemaGrammar() instanceof CharacterUuidMariaDbGrammar,
+            );
         $status = [
             'driver' => $driver,
             'server_family' => $serverFamily,
@@ -54,11 +59,10 @@ final class DatabaseStatusCommand extends SvcCommand
 
     /**
      * MariaDBGrammar changes uuid() from char(36) to native uuid at 10.7.
-     * Production's existing UUID columns are char(36), so a server upgrade
-     * must remain blocked until a deliberate schema migration moves every UUID
-     * and foreign-UUID column together.
+     * Existing UUID columns are char(36). A newer server is compatible only
+     * while the application's explicit character UUID grammar remains installed.
      */
-    public static function isUuidGrammarCompatible(string $driver, string $serverVersion): bool
+    public static function isUuidGrammarCompatible(string $driver, string $serverVersion, bool $characterUuidGrammar = false): bool
     {
         if ($driver !== 'mariadb' || ! str_contains(strtolower($serverVersion), 'mariadb')) {
             return false;
@@ -71,6 +75,6 @@ final class DatabaseStatusCommand extends SvcCommand
         );
         $version = $foundVersion === 1 ? $matches[1] : null;
 
-        return is_string($version) && version_compare($version, '10.7.0', '<');
+        return is_string($version) && ($characterUuidGrammar || version_compare($version, '10.7.0', '<'));
     }
 }

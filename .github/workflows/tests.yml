@@ -357,7 +357,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
 
-    # The default suite runs on in-memory SQLite; production is MariaDB 10.6
+    # The default suite runs on in-memory SQLite; production is MariaDB 11.4
     # reached through Laravel's `mariadb` driver. SQLite stores whatever it is
     # handed, so a value MariaDB refuses passes there without comment - which is
     # how a `h:mm` string written into a decimal column survived 404 green
@@ -369,7 +369,7 @@ jobs:
     # is the one that has to be true.
     services:
       mariadb:
-        image: mariadb:10.6
+        image: mariadb:11.4
         env:
           MARIADB_ROOT_PASSWORD: testing
           MARIADB_DATABASE: svc_testing
