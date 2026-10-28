@@ -49,14 +49,18 @@ export default function WorkspaceShell({
             <WorkspaceNavbar
                 navigation={navigation}
                 activeModule={activeModule}
-                onCreateClient={() => setCreating(true)}
+                onCreateClient={
+                    navigation.create_client_url
+                        ? () => setCreating(true)
+                        : undefined
+                }
             />
 
             {children}
 
-            {navigation.permissions.create_client && (
+            {navigation.create_client_url && (
                 <NewClientDialog
-                    workspaceId={navigation.workspace_id}
+                    action={navigation.create_client_url}
                     open={creating}
                     onOpenChange={setCreating}
                 />

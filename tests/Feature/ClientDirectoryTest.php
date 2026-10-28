@@ -11,9 +11,11 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\ClientHome\ClientHomeViewModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
@@ -1029,8 +1031,10 @@ class ClientDirectoryTest extends TestCase
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/settings")
             ->assertForbidden();
 
-        $this->actingAs($member)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+        $this->actingAs($member, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-client-member-edit')
+            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'expected_version' => AgentApiVersion::for($company),
                 'name' => 'Renamed By Someone Who May Not',
                 'billing_email' => null,
                 'is_active' => true,
@@ -1047,13 +1051,15 @@ class ClientDirectoryTest extends TestCase
         $company = $this->company($workspace, 'Before Rename Client', 'before-rename-client');
         $project = $this->project($workspace, $company, 'Before Rename Project');
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+        $this->actingAs($manager, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-client-manager-edit')
+            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
+                'expected_version' => AgentApiVersion::for($company),
                 'name' => 'After Rename Client',
                 'billing_email' => 'billing@synthetic.test',
                 'is_active' => false,
             ])
-            ->assertRedirect();
+            ->assertOk();
 
         $fresh = $company->fresh();
         $this->assertSame('After Rename Client', $fresh?->name);
@@ -1593,33 +1599,23 @@ class ClientDirectoryTest extends TestCase
     }
 
     /**
-     * Clearing a billing address is a thing an operator does.
-     *
-     * The null comes from Laravel's `ConvertEmptyStringsToNull`, not from the
-     * controller - a mutation check proved that, by removing the controller's
-     * own empty-string guard and watching this test still pass. The guard was
-     * dead code and is gone.
-     *
-     * The test stays, and is the more valuable half: it pins the behaviour
-     * end to end rather than one line's implementation of it, so it still
-     * fails if that middleware is ever removed from the stack. What matters is
-     * that "no billing email" is null rather than a blank string every
-     * `!== null` check downstream would accept.
+     * The browser serializes a cleared email input as null, as the component
+     * request tests assert. The canonical API must persist that explicit clear
+     * without leaving a blank string that downstream email checks could use.
      */
-    public function test_clearing_a_billing_email_stores_null_rather_than_an_empty_string(): void
+    public function test_clearing_a_billing_email_over_the_api_stores_null(): void
     {
         $manager = User::factory()->create();
         $workspace = $this->workspace('Synthetic Clear', 'synthetic-clear', $manager);
         $company = $this->company($workspace, 'Synthetic Clear Client', 'synthetic-clear-client');
         $company->forceFill(['billing_email' => 'billing@synthetic.test'])->save();
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
-                'name' => 'Synthetic Clear Client',
-                'billing_email' => '',
-                'is_active' => true,
-            ])
-            ->assertRedirect();
+        $this->browserClientPatch($manager, $workspace, $company, [
+            'name' => 'Synthetic Clear Client',
+            'billing_email' => null,
+            'is_active' => true,
+        ])
+            ->assertOk();
 
         $this->assertNull($company->fresh()?->billing_email);
     }
@@ -1668,12 +1664,11 @@ class ClientDirectoryTest extends TestCase
         $foreign = Workspace::query()->create(['name' => 'Foreign Write Tenant', 'slug' => 'foreign-write']);
         $foreignCompany = $this->company($foreign, 'Foreign Write Client', 'foreign-write-client');
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$mine->public_id}/clients/{$foreignCompany->public_id}", [
-                'name' => 'Renamed Across Tenants',
-                'billing_email' => null,
-                'is_active' => true,
-            ])
+        $this->browserClientPatch($manager, $mine, $foreignCompany, [
+            'name' => 'Renamed Across Tenants',
+            'billing_email' => null,
+            'is_active' => true,
+        ])
             ->assertNotFound();
 
         $this->assertSame('Foreign Write Client', $foreignCompany->fresh()?->name);
@@ -1682,8 +1677,8 @@ class ClientDirectoryTest extends TestCase
     /**
      * The update writes the named columns and nothing else.
      *
-     * Both controllers pass an explicit array rather than `$request->all()`,
-     * so a payload naming `workspace_id` should be ignored. Asserted because
+     * The closed client-update operation refuses unsupported fields, so a
+     * payload naming `workspace_id` must never move the record. Asserted because
      * the consequence - a client moving tenant on a rename - is exactly the
      * kind of thing the composite keys exist to make unrepresentable and the
      * application should never attempt.
@@ -1696,14 +1691,13 @@ class ClientDirectoryTest extends TestCase
 
         $foreign = Workspace::query()->create(['name' => 'Foreign Anchor Tenant', 'slug' => 'foreign-anchor']);
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$mine->public_id}/clients/{$company->public_id}", [
-                'name' => 'Synthetic Anchor Client',
-                'billing_email' => null,
-                'is_active' => true,
-                'workspace_id' => $foreign->id,
-            ])
-            ->assertRedirect();
+        $this->browserClientPatch($manager, $mine, $company, [
+            'name' => 'Synthetic Anchor Client',
+            'billing_email' => null,
+            'is_active' => true,
+            'workspace_id' => $foreign->id,
+        ])
+            ->assertUnprocessable();
 
         $this->assertSame((int) $mine->id, (int) $company->fresh()?->workspace_id);
     }
@@ -1715,8 +1709,8 @@ class ClientDirectoryTest extends TestCase
      * key, so a PATCH that supplied only `name` and `is_active` validated, and
      * `validated('billing_email')` returned the same null an explicit clear
      * produces - the controller could not tell the two apart and wrote over a
-     * real address. `present` separates them, and this asserts the separation
-     * rather than the rule, because the rule reads correct either way.
+     * real address. The API treats edits as patches: omitting the field keeps
+     * its value, while an explicit null clears it.
      */
     public function test_a_billing_address_survives_a_payload_that_omits_it(): void
     {
@@ -1725,12 +1719,11 @@ class ClientDirectoryTest extends TestCase
         $company = $this->company($workspace, 'Synthetic Keep Client', 'synthetic-keep-client');
         $company->forceFill(['billing_email' => 'billing@synthetic.test'])->save();
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$workspace->public_id}/clients/{$company->public_id}", [
-                'name' => 'Synthetic Keep Client',
-                'is_active' => true,
-            ])
-            ->assertSessionHasErrors('billing_email');
+        $this->browserClientPatch($manager, $workspace, $company, [
+            'name' => 'Synthetic Keep Client',
+            'is_active' => true,
+        ])
+            ->assertOk();
 
         $this->assertSame('billing@synthetic.test', $company->fresh()?->billing_email);
     }
@@ -1854,12 +1847,11 @@ class ClientDirectoryTest extends TestCase
                 ->update(['workspace_id' => $foreign->id]);
         });
 
-        $this->actingAs($manager)
-            ->patch("/workspaces/{$mine->public_id}/clients/{$company->public_id}", [
-                'name' => 'Renamed Mid Race',
-                'billing_email' => null,
-                'is_active' => true,
-            ])
+        $this->browserClientPatch($manager, $mine, $company, [
+            'name' => 'Renamed Mid Race',
+            'billing_email' => null,
+            'is_active' => true,
+        ])
             ->assertNotFound();
 
         // The row now belongs to the other tenant and still carries its own
@@ -1868,6 +1860,13 @@ class ClientDirectoryTest extends TestCase
         $fresh = $company->fresh();
         $this->assertSame((int) $foreign->id, (int) $fresh?->workspace_id);
         $this->assertSame('Synthetic Race Client', $fresh?->name);
+    }
+
+    private function browserClientPatch(User $user, Workspace $workspace, ClientCompany $company, array $fields): TestResponse
+    {
+        return $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-client-edit-'.str()->uuid())
+            ->patchJson(route('agent-api.v1.clients.update', [$workspace, $company]), $fields + ['expected_version' => AgentApiVersion::for($company)]);
     }
 
     private function workspace(string $name, string $slug, User $member): Workspace

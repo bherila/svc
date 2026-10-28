@@ -1,7 +1,5 @@
 <?php
 
-use App\Http\Controllers\ClientCompanyController;
-use App\Http\Controllers\ClientContactController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
@@ -9,7 +7,6 @@ use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\ClientTaskOrganizationController;
 use App\Http\Controllers\ClientTaskPlanningController;
-use App\Http\Controllers\CompanyProfileController;
 use App\Http\Controllers\Finance\FinancePaymentLinkController;
 use App\Http\Controllers\HistoricalLibraryController;
 use App\Http\Controllers\McpSetupController;
@@ -22,6 +19,7 @@ use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\PublishApiDocumentation;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
 use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
@@ -36,7 +34,7 @@ Route::inertia('/', 'welcome')->name('home');
 // MCP, which is where the MCP endpoint's 401 challenge points. Browser
 // agents get CORS here from oauth_server.cors; MCP's own origin and host
 // validation stays on the MCP endpoint, not on public discovery.
-AgentOAuthServer::routes();
+AgentOAuthServer::routes([PublishApiDocumentation::class]);
 
 Route::withoutMiddleware(['web'])->group(function (): void {
     Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1')->name('openapi.document');
@@ -145,18 +143,12 @@ Route::middleware('auth')->group(function (): void {
             ->name('portal.proposal');
     });
 
-    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/profile', [CompanyProfileController::class, 'update'])->name('clients.profile.update');
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/contacts', [ClientContactController::class, 'store'])->name('contacts.store');
-    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/contacts/{clientContact}', [ClientContactController::class, 'update'])->name('contacts.update');
 
-    Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])
-        ->name('clients.update');
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientProjectController::class, 'update'])
         ->name('projects.update');
     Route::put('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access', [ClientProjectAccessController::class, 'update'])
         ->name('projects.access.update');
-    Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');
     foreach (TaskPlanningOperations::DEFINITIONS as $suffix => [$verb]) {

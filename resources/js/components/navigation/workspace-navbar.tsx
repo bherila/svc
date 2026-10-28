@@ -97,7 +97,7 @@ export function WorkspaceNavbar({
                     currentId={navigation.current_client_id}
                     module={activeModule}
                     onCreateClient={
-                        navigation.permissions.create_client
+                        navigation.create_client_url
                             ? onCreateClient
                             : undefined
                     }

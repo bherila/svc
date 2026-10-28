@@ -156,13 +156,13 @@ final class AgentExpenseParityTest extends TestCase
         $uploadUrl = $prepared['data']['upload_url'];
         $version = $prepared['data']['expected_version'];
         $file = fn (): UploadedFile => UploadedFile::fake()->createWithContent('synthetic-receipt.txt', 'Synthetic receipt only.');
-        $response = $this->post($uploadUrl, ['expected_version' => $version, 'file' => $file()], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-upload'])->assertCreated();
+        $response = $this->post($uploadUrl, ['expected_version' => $version, 'file' => $file()], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-upload'])->assertCreated();
         $this->schema('expenses.receipts.upload', $response->json());
         $receipt = $response->json('data.id');
         $this->assertNotSame($version, $response->json('expense_version'));
-        $this->post($uploadUrl, ['expected_version' => $version, 'file' => $file()], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-upload'])->assertCreated()->assertJsonPath('data.id', $receipt);
-        $this->post($uploadUrl, ['expected_version' => $version, 'file' => UploadedFile::fake()->createWithContent('synthetic-receipt.txt', 'Different synthetic bytes.')], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-upload'])->assertConflict();
-        $this->post($uploadUrl, ['expected_version' => $version, 'file' => $file()], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-stale-upload'])->assertConflict();
+        $this->post($uploadUrl, ['expected_version' => $version, 'file' => $file()], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-upload'])->assertCreated()->assertJsonPath('data.id', $receipt);
+        $this->post($uploadUrl, ['expected_version' => $version, 'file' => UploadedFile::fake()->createWithContent('synthetic-receipt.txt', 'Different synthetic bytes.')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-upload'])->assertConflict();
+        $this->post($uploadUrl, ['expected_version' => $version, 'file' => $file()], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-stale-upload'])->assertConflict();
         $this->assertDatabaseCount('client_attachments', 1);
         $listed = $this->getJson($this->base($workspace).'/expenses/'.$expense->public_id.'/receipts')->assertOk()->assertJsonPath('data.0.id', $receipt);
         $this->schema('expenses.receipts.list', $listed->json());
@@ -173,7 +173,7 @@ final class AgentExpenseParityTest extends TestCase
         $this->get(str_replace($receipt, (string) Str::uuid(), $download['data']['download_url']))->assertForbidden();
         $this->travel(11)->minutes();
         $this->get($download['data']['download_url'])->assertForbidden();
-        $this->post($uploadUrl, ['expected_version' => $response->json('expense_version'), 'file' => $file()], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-expired-upload'])->assertForbidden();
+        $this->post($uploadUrl, ['expected_version' => $response->json('expense_version'), 'file' => $file()], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-expired-upload'])->assertForbidden();
         foreach (['success', 'replay'] as $outcome) {
             $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'expenses.receipts.upload', 'outcome' => $outcome]);
         }
@@ -227,7 +227,7 @@ final class AgentExpenseParityTest extends TestCase
         $this->getJson($base.'/expenses/'.$expense->public_id.'/receipts/upload-url')->assertForbidden();
         $this->post($base.'/expenses/'.$expense->public_id.'/receipts', ['expected_version' => AgentApiVersion::for($expense),
             'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic refused bytes.')],
-            ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-no-read-upload'])->assertForbidden();
+            ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-no-read-upload'])->assertForbidden();
         $body = $this->facts() + ['company_id' => $company->public_id, 'expected_version' => AgentApiVersion::for($company), 'starts_on' => '2026-10-01', 'cadence' => 'monthly'];
         $this->postJson($base.'/expense-schedules', $body, ['Idempotency-Key' => 'synthetic-no-read-create'])->assertForbidden();
         $this->patchJson($base.'/expense-schedules/'.$schedule->public_id, $this->facts() + ['expected_version' => AgentApiVersion::for($schedule), 'active' => true],
@@ -267,7 +267,7 @@ final class AgentExpenseParityTest extends TestCase
         try {
             $this->post($this->base($workspace).'/expenses/'.$expense->public_id.'/receipts', ['expected_version' => AgentApiVersion::for($expense),
                 'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic verified bytes.')],
-                ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-prepared-upload'])->assertCreated();
+                ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-prepared-upload'])->assertCreated();
             $sequences = array_map(static fn (array $sequence): array => array_map(static fn ($resource): string => $resource->name, $sequence), LockOrderRecorder::sequences());
             $this->assertContains(['AgentMutationReceipt', 'Workspace', 'ClientExpense', 'WorkspaceMembership', 'ClientCompanyMembership', 'ClientAttachment'], $sequences);
         } finally {
@@ -296,7 +296,7 @@ final class AgentExpenseParityTest extends TestCase
         Storage::shouldReceive('disk')->with('local')->andReturn($observed);
         $this->post($this->base($workspace).'/expenses/'.$expense->public_id.'/receipts', ['expected_version' => AgentApiVersion::for($expense),
             'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic interrupted preparation.')],
-            ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-prepare-change-'.$change])->assertStatus($status);
+            ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-prepare-change-'.$change])->assertStatus($status);
         $this->assertDatabaseCount('client_attachments', 0);
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
         $this->assertSame([], $disk->allFiles());
@@ -409,7 +409,7 @@ final class AgentExpenseParityTest extends TestCase
             }
         });
         $this->post($this->base($workspace).'/expenses/'.$expense->public_id.'/receipts', ['expected_version' => AgentApiVersion::for($expense),
-            'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic receipt.')], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-failed-publication'])->assertServerError();
+            'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic receipt.')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-failed-publication'])->assertServerError();
         $this->assertDatabaseCount('client_attachments', 0);
         $this->assertSame([], Storage::disk('local')->allFiles());
     }
@@ -428,7 +428,7 @@ final class AgentExpenseParityTest extends TestCase
         $this->getJson($base.'/expenses/'.$expense->public_id.'/receipts')->assertNotFound();
         $this->getJson($base.'/expenses/'.$expense->public_id.'/receipts/upload-url')->assertNotFound();
         $this->getJson($base.'/expenses/'.$expense->public_id.'/receipts/'.Str::uuid())->assertNotFound();
-        $this->post($base.'/expenses/'.$expense->public_id.'/receipts', ['expected_version' => AgentApiVersion::for($expense), 'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic.')], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-foreign-upload'])->assertNotFound();
+        $this->post($base.'/expenses/'.$expense->public_id.'/receipts', ['expected_version' => AgentApiVersion::for($expense), 'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic.')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-foreign-upload'])->assertNotFound();
         $this->getJson($base.'/expense-schedules')->assertOk()->assertJsonCount(0, 'data');
         $this->getJson($base.'/expense-schedules?company_id='.$otherCompany->public_id)->assertNotFound();
         $this->patchJson($base.'/expense-schedules/'.$schedule->public_id, $this->facts() + ['active' => true, 'expected_version' => AgentApiVersion::for($schedule)], ['Idempotency-Key' => 'synthetic-foreign-update'])->assertNotFound();
@@ -462,7 +462,7 @@ final class AgentExpenseParityTest extends TestCase
             $this->postJson($base.'/expenses/'.$expense->public_id.'/'.$operation, ['expected_version' => AgentApiVersion::for($expense)], ['Idempotency-Key' => 'synthetic-off-'.$operation])->assertNotFound();
         }
         $this->getJson($base.'/expenses/'.$expense->public_id.'/receipts/upload-url')->assertNotFound();
-        $this->post($base.'/expenses/'.$expense->public_id.'/receipts', [], ['Accept' => 'application/json'])->assertNotFound();
+        $this->post($base.'/expenses/'.$expense->public_id.'/receipts', [], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertNotFound();
         $this->postJson($base.'/expense-schedules', [], ['Idempotency-Key' => 'synthetic-off-create'])->assertNotFound();
         $this->patchJson($base.'/expense-schedules/'.$schedule->public_id, [], ['Idempotency-Key' => 'synthetic-off-update'])->assertNotFound();
         $this->postJson($base.'/expense-schedules/'.$schedule->public_id.'/generate', [], ['Idempotency-Key' => 'synthetic-off-generate'])->assertNotFound();
@@ -512,13 +512,13 @@ final class AgentExpenseParityTest extends TestCase
         $url = $this->base($workspace).'/expenses/'.$expense->public_id.'/receipts';
         $file = fn (): UploadedFile => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic receipt.');
         $version = AgentApiVersion::for($expense);
-        $this->post($url, ['file' => $file()], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-missing-version'])->assertUnprocessable();
+        $this->post($url, ['file' => $file()], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-missing-version'])->assertUnprocessable();
         $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'expenses.receipts.upload', 'outcome' => 'failed', 'error_category' => 'validation']);
-        $this->post($url, ['file' => UploadedFile::fake()->create('synthetic-large.txt', 51201), 'expected_version' => $version], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-large-file'])->assertUnprocessable();
+        $this->post($url, ['file' => UploadedFile::fake()->create('synthetic-large.txt', 51201), 'expected_version' => $version], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-large-file'])->assertUnprocessable();
         $this->assertDatabaseCount('client_attachments', 0);
-        $this->post($url, ['file' => $file(), 'expected_version' => $version], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-auth-replay'])->assertCreated();
+        $this->post($url, ['file' => $file(), 'expected_version' => $version], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-auth-replay'])->assertCreated();
         $workspace->memberships()->where('user_id', $owner->id)->update(['role' => 'member']);
-        $this->post($url, ['file' => $file(), 'expected_version' => $version], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-auth-replay'])->assertForbidden();
+        $this->post($url, ['file' => $file(), 'expected_version' => $version], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-auth-replay'])->assertForbidden();
         $this->assertDatabaseCount('client_attachments', 1);
     }
 
@@ -553,7 +553,7 @@ final class AgentExpenseParityTest extends TestCase
         $this->postJson($base.'/expense-schedules/'.$schedule->json('data.id').'/generate', ['expected_version' => $schedule->json('data.version'), 'confirm' => true], ['Idempotency-Key' => 'synthetic-scoped-generate'])->assertOk();
         $this->getJson($base.'/expense-schedules')->assertOk();
         $upload = $this->post($base.'/expenses/'.$expense->public_id.'/receipts', ['expected_version' => AgentApiVersion::for($expense),
-            'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic.')], ['Accept' => 'application/json', 'Idempotency-Key' => 'synthetic-scoped-upload'])->assertCreated();
+            'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic.')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data', 'Idempotency-Key' => 'synthetic-scoped-upload'])->assertCreated();
         $this->getJson($base.'/expenses/'.$expense->public_id.'/receipts')->assertOk();
         $this->getJson($base.'/expenses/'.$expense->public_id.'/receipts/'.$upload->json('data.id'))->assertOk();
         $this->postJson($base.'/expenses/'.$expense->public_id.'/approve', ['expected_version' => $upload->json('expense_version')], ['Idempotency-Key' => 'synthetic-scoped-approve'])->assertOk();
