@@ -56,8 +56,8 @@ export function usePlanningMutation(refresh: () => Promise<void>) {
 
     async function reload(discardDraft: () => void) {
         if (inFlight.current) {
-return;
-}
+            return;
+        }
 
         inFlight.current = true;
         setPending(true);
