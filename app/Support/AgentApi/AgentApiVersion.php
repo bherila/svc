@@ -17,8 +17,7 @@ final class AgentApiVersion
             // Allocating time intentionally preserves its row revision. Bind
             // the public token to the allocation fields the reader sees too.
             // Page and batch boundaries eager-load these scoped relationships.
-            $model->loadMissing(TimeEntryAllocation::relations($model->workspace_id));
-            $allocation = TimeEntryAllocation::fromEntry($model);
+            $allocation = TimeEntryAllocation::forVersion($model);
             $version .= ":{$allocation->invoiceId}:{$allocation->state}";
         }
 

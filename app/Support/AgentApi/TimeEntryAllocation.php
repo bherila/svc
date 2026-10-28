@@ -11,14 +11,31 @@ final readonly class TimeEntryAllocation
 {
     public function __construct(public ?string $invoiceId, public string $state) {}
 
-    /** @return array<string, \Closure> */
+    /**
+     * @return array<string, \Closure>
+     *
+     * @infection-ignore-all Tenant-scoped Eloquent boundary, covered by AgentTimeParityTest's canonical reserve/release and malformed allocation cases and DraftInvoiceTimeRegenerationTest's partially loaded relations. The mutation lane runs database-free unit tests; fromEntry() remains fully mutated.
+     */
     public static function relations(int $workspaceId): array
     {
         return ['invoiceLines' => fn ($lines) => $lines
             ->where('client_invoice_lines.workspace_id', $workspaceId)
-            ->wherePivot('workspace_id', $workspaceId)
-            ->with(['invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspaceId)]),
+            ->wherePivot('workspace_id', $workspaceId),
+            'invoiceLines.invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspaceId),
         ];
+    }
+
+    /**
+     * Load missing allocation facts before producing a version. A caller may
+     * already have the line collection without its nested invoice relations.
+     *
+     * @infection-ignore-all Database-loading boundary covered by AgentTimeParityTest and DraftInvoiceTimeRegenerationTest; the pure classifier and composite token remain covered by database-free mutation tests.
+     */
+    public static function forVersion(ClientTimeEntry $entry): self
+    {
+        $entry->loadMissing(self::relations($entry->workspace_id));
+
+        return self::fromEntry($entry);
     }
 
     public static function fromEntry(ClientTimeEntry $entry): self

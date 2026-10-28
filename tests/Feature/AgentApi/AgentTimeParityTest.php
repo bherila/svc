@@ -23,6 +23,31 @@ final class AgentTimeParityTest extends TestCase
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
+    public function test_versions_load_missing_nested_invoice_facts_and_reuse_a_fully_loaded_snapshot(): void
+    {
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $entry = $this->entry($owner, $workspace, $company, $project);
+        $invoice = $this->allocate($workspace, $company, $entry, 'draft');
+        $entry->load('invoiceLines');
+        $this->assertFalse($entry->invoiceLines->sole()->relationLoaded('invoice'));
+        $version = AgentApiVersion::for($entry);
+        $this->assertSame($invoice->id, $entry->invoiceLines->sole()->invoice->id);
+        $connection = $entry->getConnection();
+        $connection->enableQueryLog();
+        try {
+            $this->assertSame($version, AgentApiVersion::for($entry));
+            $this->assertSame([], $connection->getQueryLog());
+        } finally {
+            $connection->disableQueryLog();
+            $connection->flushQueryLog();
+        }
+        $this->actingAsMcp($owner, [AgentApiScopes::TIME_READ]);
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")->assertOk()
+            ->assertJsonPath('data.0.invoice_id', $invoice->public_id)
+            ->assertJsonPath('data.0.allocation_state', 'reserved')
+            ->assertJsonPath('data.0.version', $version);
+    }
+
     public function test_selected_time_allocation_and_removal_change_the_read_and_mutation_version_together(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
