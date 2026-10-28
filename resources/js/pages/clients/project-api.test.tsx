@@ -17,8 +17,15 @@ vi.mock('@inertiajs/react', async () => {
 
             return {
                 data,
-                setData: (key: string, value: unknown) =>
-                    setData((current) => ({ ...current, [key]: value })),
+                setData: (
+                    key: string | Record<string, unknown>,
+                    value: unknown,
+                ) =>
+                    setData((current) =>
+                        typeof key === 'string'
+                            ? { ...current, [key]: value }
+                            : key,
+                    ),
                 errors: {},
                 processing: false,
                 reset: () => setData(initial),
@@ -92,7 +99,16 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('project settings API mutations', () => {
     it('sends current project facts and version to the server-provided URL', async () => {
-        respond(200, { data: {} });
+        respond(200, {
+            data: {
+                name: 'Synthetic Rename',
+                description: 'Existing description',
+                repository: null,
+                status: 'active',
+                is_visible_to_client: true,
+                version: 'b'.repeat(64),
+            },
+        });
         render(<ClientSettings {...props} />);
         fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
             target: { value: 'Synthetic Rename' },
@@ -126,7 +142,9 @@ describe('project settings API mutations', () => {
         });
         fireEvent.click(screen.getByRole('button', { name: 'Add project' }));
         await screen.findByRole('alert');
-        fireEvent.click(screen.getByRole('button', { name: 'Add project' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project creation' }),
+        );
         await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
         expect(request(0)).toEqual(request(1));
         expect(request().body).toEqual({
@@ -181,5 +199,119 @@ describe('project settings API mutations', () => {
                 confirm: true,
             },
         });
+    });
+    it('keeps a draft paired with its old version when another project refreshes the list', async () => {
+        respond(409, {
+            message: 'The project has changed; read it and retry.',
+        });
+        const page = render(<ClientSettings {...props} />);
+        fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+            target: { value: 'Unsaved operator draft' },
+        });
+        page.rerender(
+            <ClientSettings
+                {...props}
+                projects={[
+                    {
+                        ...props.projects[0],
+                        name: 'Concurrent rename',
+                        is_visible_to_client: false,
+                        version: 'c'.repeat(64),
+                    },
+                ]}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        expect(request().body).toMatchObject({
+            name: 'Unsaved operator draft',
+            is_visible_to_client: true,
+            expected_version: version,
+        });
+        expect(screen.getByLabelText('Name of Concurrent rename')).toHaveValue(
+            'Unsaved operator draft',
+        );
+    });
+
+    it('reconciles an own successful save before advancing the editable version', async () => {
+        const saved = {
+            name: 'Synthetic saved project',
+            description: 'Saved scope',
+            repository: 'github.com/synthetic/project',
+            status: 'active',
+            is_visible_to_client: false,
+            version: 'b'.repeat(64),
+        };
+        respond(200, { data: saved });
+        respond(200, { data: saved });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() =>
+            expect(
+                screen.getByLabelText('Name of Synthetic Project'),
+            ).toHaveValue(saved.name),
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(request(1).body).toMatchObject({
+            name: saved.name,
+            description: saved.description,
+            repository: saved.repository,
+            is_visible_to_client: false,
+            expected_version: saved.version,
+        });
+        expect(request(1).key).not.toBe(request(0).key);
+    });
+
+    it('freezes and replays the original edit while its outcome is unknown', async () => {
+        fetchMock.mockRejectedValueOnce(
+            new TypeError('synthetic lost response'),
+        );
+        respond(200, {
+            data: { ...props.projects[0], version: 'b'.repeat(64) },
+        });
+        const page = render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        expect(
+            screen.getByLabelText('Name of Synthetic Project'),
+        ).toBeDisabled();
+        page.rerender(
+            <ClientSettings
+                {...props}
+                projects={[{ ...props.projects[0], version: 'c'.repeat(64) }]}
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project save' }),
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(0)).toEqual(request(1));
+        await waitFor(() =>
+            expect(
+                screen.getByLabelText('Name of Synthetic Project'),
+            ).toBeEnabled(),
+        );
+    });
+
+    it('starts a new receipt after a definitive validation refusal', async () => {
+        respond(422, { message: 'Name refused.' });
+        respond(200, {
+            data: {
+                ...props.projects[0],
+                name: 'Corrected project',
+                version: 'b'.repeat(64),
+            },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+            target: { value: 'Corrected project' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(1).body.name).toBe('Corrected project');
+        expect(request(1).key).not.toBe(request(0).key);
     });
 });

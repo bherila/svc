@@ -653,14 +653,47 @@ try {
                 );
             }
 
+            if (projectsOnly && screen === 'settings') {
+                const form = page
+                    .locator('form')
+                    .filter({
+                        has: page.locator('input[aria-label^="Name of "]'),
+                    })
+                    .first();
+                const name = form.locator('input[aria-label^="Name of "]');
+                await name.fill(`Synthetic reconciled project ${width}`);
+                await page.route(
+                    origin + fixture.project_writes.PATCH[0],
+                    (route) => route.abort('failed'),
+                    { times: 1 },
+                );
+                await form
+                    .getByRole('button', { name: 'Save project', exact: true })
+                    .click();
+                await expect(form.getByRole('alert')).toContainText(
+                    'could not be reached',
+                );
+                await expect(name).toBeDisabled();
+                await capture(screen, 'uncertain-save', width);
+                await form
+                    .getByRole('button', {
+                        name: 'Check project save',
+                        exact: true,
+                    })
+                    .click();
+                await expect(name).toBeEnabled();
+                await expect(name).toHaveValue(
+                    `Synthetic reconciled project ${width}`,
+                );
+                await expect(form.getByRole('alert')).toHaveCount(0);
+                await capture(screen, 'reconciled-save', width);
+            }
+
             if (projectsOnly && screen === 'settings' && width === 1920) {
                 const form = page
                     .locator('form')
                     .filter({
-                        has: page.getByRole('button', {
-                            name: 'Save project',
-                            exact: true,
-                        }),
+                        has: page.locator('input[aria-label^="Name of "]'),
                     })
                     .first();
                 const name = form.locator('input[aria-label^="Name of "]');

@@ -77,8 +77,15 @@ const PROJECT_ROLES = [
 
 /** Keep a retry on its original receipt until the server confirms the write. */
 function useProjectWrite() {
-    const key = useRef<string | null>(null);
+    const attempt = useRef<{
+        method: 'POST' | 'PATCH' | 'PUT';
+        url: string;
+        body: object;
+        key: string;
+        uncertain: boolean;
+    } | null>(null);
     const [busy, setBusy] = useState(false);
+    const [unresolved, setUnresolved] = useState(false);
     const [failure, setFailure] = useState<string | null>(null);
 
     async function write(
@@ -87,26 +94,49 @@ function useProjectWrite() {
         body: object,
     ) {
         if (busy) {
-            return false;
+            return null;
         }
 
         setBusy(true);
         setFailure(null);
-        key.current ??= newIdempotencyKey();
-        const result = await apiRequest(method, url, body, key.current);
+        attempt.current ??= {
+            method,
+            url,
+            body: structuredClone(body),
+            key: newIdempotencyKey(),
+            uncertain: false,
+        };
+        const original = attempt.current;
+        const result = await apiRequest<ApiSchema<'ProjectResponse'>['data']>(
+            original.method,
+            original.url,
+            original.body,
+            original.key,
+        );
 
         if (!result.ok) {
+            original.uncertain ||=
+                result.status === 0 ||
+                result.status === 408 ||
+                result.status >= 500;
+            setUnresolved(original.uncertain);
             setFailure(
                 Object.values(result.errors ?? {})
                     .flat()
                     .join(' ') || result.message,
             );
+
+            if (!original.uncertain) {
+                attempt.current = null;
+            }
+
             setBusy(false);
 
-            return false;
+            return null;
         }
 
-        key.current = null;
+        attempt.current = null;
+        setUnresolved(false);
         await new Promise<void>((resolve) =>
             router.reload({
                 only: ['projects', 'project_create'],
@@ -115,10 +145,10 @@ function useProjectWrite() {
         );
         setBusy(false);
 
-        return true;
+        return result.data;
     }
 
-    return { busy, failure, write };
+    return { busy, unresolved, failure, write };
 }
 
 function ProjectAccess({
@@ -172,7 +202,7 @@ function AccessRow({
                 <select
                     aria-label={`Access for ${member.name}`}
                     className="h-9 rounded-md border bg-transparent px-2"
-                    disabled={mutation.busy}
+                    disabled={mutation.busy || mutation.unresolved}
                     value={role}
                     onChange={(event) =>
                         void mutation.write('PUT', project.members_update_url, {
@@ -197,6 +227,22 @@ function AccessRow({
                 >
                     {mutation.failure}
                 </p>
+            )}
+            {mutation.unresolved && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={mutation.busy}
+                    onClick={() =>
+                        void mutation.write(
+                            'PUT',
+                            project.members_update_url,
+                            {},
+                        )
+                    }
+                >
+                    Check access change
+                </Button>
             )}
         </div>
     );
@@ -392,6 +438,7 @@ function ProjectForm({
     assignable: AssignableMember[];
 }) {
     const form = useForm({
+        expected_version: project.version,
         name: project.name,
         description: project.description ?? '',
         repository: project.repository ?? '',
@@ -406,17 +453,31 @@ function ProjectForm({
             className="grid grid-cols-1 gap-3 rounded-xl border p-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                void mutation.write('PATCH', project.update_url, {
-                    ...form.data,
-                    description: form.data.description || null,
-                    repository: form.data.repository || null,
-                    expected_version: project.version,
-                    confirm: true,
-                });
+                void mutation
+                    .write('PATCH', project.update_url, {
+                        ...form.data,
+                        description: form.data.description || null,
+                        repository: form.data.repository || null,
+                        confirm: true,
+                    })
+                    .then((saved) => {
+                        if (saved) {
+                            form.setData({
+                                expected_version: saved.version,
+                                name: saved.name,
+                                description: saved.description ?? '',
+                                repository: saved.repository ?? '',
+                                status: saved.status,
+                                is_visible_to_client:
+                                    saved.is_visible_to_client,
+                            });
+                        }
+                    });
             }}
         >
             <div className="flex flex-wrap items-center gap-2">
                 <Input
+                    disabled={mutation.busy || mutation.unresolved}
                     aria-label={`Name of ${project.name}`}
                     value={form.data.name}
                     onChange={(event) =>
@@ -428,6 +489,7 @@ function ProjectForm({
             </div>
 
             <Textarea
+                disabled={mutation.busy || mutation.unresolved}
                 aria-label={`Description of ${project.name}`}
                 value={form.data.description}
                 onChange={(event) =>
@@ -446,6 +508,7 @@ function ProjectForm({
             <div className="grid grid-cols-1 gap-1">
                 <Label htmlFor={`repository-${project.id}`}>Repository</Label>
                 <Input
+                    disabled={mutation.busy || mutation.unresolved}
                     id={`repository-${project.id}`}
                     value={form.data.repository}
                     onChange={(event) =>
@@ -472,6 +535,7 @@ function ProjectForm({
             <div className="flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-3">
                     <Switch
+                        disabled={mutation.busy || mutation.unresolved}
                         id={`visible-${project.id}`}
                         checked={form.data.is_visible_to_client}
                         onCheckedChange={(next) =>
@@ -484,6 +548,7 @@ function ProjectForm({
                 </div>
                 <div className="flex items-center gap-3">
                     <Switch
+                        disabled={mutation.busy || mutation.unresolved}
                         id={`archived-${project.id}`}
                         checked={form.data.status === 'archived'}
                         onCheckedChange={(next) =>
@@ -500,10 +565,21 @@ function ProjectForm({
                     variant="outline"
                     disabled={mutation.busy}
                 >
-                    Save project
+                    {mutation.unresolved
+                        ? 'Check project save'
+                        : 'Save project'}
                 </Button>
             </div>
 
+            {mutation.unresolved && (
+                <p
+                    role="status"
+                    className="text-sm wrap-anywhere text-muted-foreground"
+                >
+                    The result is unknown. Check the original save before
+                    editing again.
+                </p>
+            )}
             <div className="grid grid-cols-1 gap-2 border-t pt-3">
                 <Label>Who can reach this project</Label>
                 <ProjectAccess project={project} assignable={assignable} />
@@ -540,6 +616,7 @@ function NewProjectForm({ capability }: { capability: ProjectCreate }) {
             <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="new-project-name">New project</Label>
                 <Input
+                    disabled={mutation.busy || mutation.unresolved}
                     id="new-project-name"
                     value={form.data.name}
                     onChange={(event) =>
@@ -561,9 +638,20 @@ function NewProjectForm({ capability }: { capability: ProjectCreate }) {
                     {mutation.failure}
                 </p>
             )}
+            {mutation.unresolved && (
+                <p
+                    role="status"
+                    className="text-sm wrap-anywhere text-muted-foreground"
+                >
+                    The result is unknown. Check the original creation before
+                    editing again.
+                </p>
+            )}
             <div>
                 <Button type="submit" disabled={mutation.busy}>
-                    Add project
+                    {mutation.unresolved
+                        ? 'Check project creation'
+                        : 'Add project'}
                 </Button>
             </div>
         </form>
