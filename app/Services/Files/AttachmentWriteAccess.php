@@ -16,7 +16,7 @@ final class AttachmentWriteAccess
         Workspace::query()->whereKey($workspace->id)->tap(Locks::forShare())->firstOrFail();
     }
 
-    public function assertCurrentManager(User $actor, Workspace $workspace): void
+    public function assertCurrentManager(User $actor, Workspace $workspace, AttachmentMutationOrigin $origin = AttachmentMutationOrigin::Agent): void
     {
         $membership = WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)
             ->tap(Locks::forShare())->first();
@@ -24,6 +24,6 @@ final class AttachmentWriteAccess
         // consistent-read snapshot and miss a newly introduced portal identity.
         $portal = ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)
             ->orderBy('id')->tap(Locks::forShare())->get();
-        abort_unless($membership !== null && in_array($membership->role, ['owner', 'admin'], true) && $portal->isEmpty(), 403);
+        abort_unless($membership !== null && in_array($membership->role, ['owner', 'admin'], true) && ($origin === AttachmentMutationOrigin::Native || $portal->isEmpty()), 403);
     }
 }
