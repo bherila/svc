@@ -20837,7 +20837,8 @@
                     "description",
                     "active",
                     "next_on",
-                    "version"
+                    "version",
+                    "amount_exact"
                 ],
                 "properties": {
                     "id": {
@@ -20889,6 +20890,12 @@
                     },
                     "version": {
                         "$ref": "#/components/schemas/Version"
+                    },
+                    "amount_exact": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]*$",
+                        "maxLength": 19,
+                        "description": "Exact minor-unit amount for clients whose numbers cannot represent every 64-bit integer."
                     }
                 }
             },
@@ -20933,8 +20940,18 @@
                         ]
                     },
                     "amount": {
-                        "type": "integer",
-                        "minimum": 1
+                        "oneOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]*$",
+                                "maxLength": 19
+                            }
+                        ],
+                        "description": "Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision."
                     },
                     "currency": {
                         "$ref": "#/components/schemas/Currency"
@@ -21038,8 +21055,18 @@
                         "type": "boolean"
                     },
                     "amount": {
-                        "type": "integer",
-                        "minimum": 1
+                        "oneOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]*$",
+                                "maxLength": 19
+                            }
+                        ],
+                        "description": "Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision."
                     },
                     "currency": {
                         "$ref": "#/components/schemas/Currency"

@@ -5,6 +5,7 @@ export type ExpenseProject = {
 
 export type ClientExpenseRow = {
     id: string;
+    version: string;
     spent_on: string;
     /** Minor units, as the column holds them. */
     amount: number;

@@ -265,13 +265,13 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string,mixed> */
-    public function expenseSchedulesCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(format: 'date')] string $starts_on, #[Schema(enum: ['monthly', 'quarterly', 'semi_annual', 'annual'])] string $cadence, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
+    public function expenseSchedulesCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(format: 'date')] string $starts_on, #[Schema(enum: ['monthly', 'quarterly', 'semi_annual', 'annual'])] string $cadence, #[Schema(minimum: 1)] int|string $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
     {
         return $this->rest->call('expense_schedules.create', ['workspace' => $workspace_id], compact('company_id', 'expected_version', 'starts_on', 'cadence', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
-    public function expenseSchedulesUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $active, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
+    public function expenseSchedulesUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $active, #[Schema(minimum: 1)] int|string $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
     {
         return $this->rest->call('expense_schedules.update', ['workspace' => $workspace_id, 'schedule' => $schedule_id], compact('expected_version', 'active', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
     }

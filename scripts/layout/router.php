@@ -31,6 +31,13 @@ $scheduleWrite = is_string($requestPath) && (
         && (($method === 'PATCH' && ! str_ends_with($requestPath, '/generate'))
             || ($method === 'POST' && str_ends_with($requestPath, '/generate'))))
 );
+$expenseWrite = is_string($requestPath) && (
+    ($method === 'POST' && $requestPath === ($fixture['expense_api_store'] ?? null))
+    || (is_string($fixture['expense_api_prefix'] ?? null)
+        && preg_match('#^'.preg_quote($fixture['expense_api_prefix'], '#').'[0-9a-f-]{36}(/approve|/unapprove)?$#D', $requestPath) === 1
+        && (($method === 'POST' && (str_ends_with($requestPath, '/approve') || str_ends_with($requestPath, '/unapprove')))
+            || (in_array($method, ['PATCH', 'DELETE'], true) && ! str_ends_with($requestPath, '/approve') && ! str_ends_with($requestPath, '/unapprove'))))
+);
 $draftWrite = in_array($requestPath, $fixture['draft_writes'][$method] ?? [], true);
 $buydownWrite = $method === 'POST' && is_string($fixture['buydown_create'] ?? null) && $requestPath === $fixture['buydown_create'];
 $taskWrite = ($method === 'POST' && $requestPath === ($fixture['task_create'] ?? null))
@@ -41,7 +48,7 @@ $clientWrite = getenv('SVC_LAYOUT_CLIENTS') === '1' && (
     ($method === 'POST' && $requestPath === ($fixture['contact_restore'] ?? null))
     || ($method === 'PATCH' && $requestPath === ($fixture['client_profile_update'] ?? null))
 );
-if ($method !== 'GET' && ! $projectWrite && ! $workspaceWrite && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
+if ($method !== 'GET' && ! $projectWrite && ! $workspaceWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }
