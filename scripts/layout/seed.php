@@ -444,6 +444,8 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'user_id' => $taskViewer->id, 'date' => $date,
     'expense_schedule_store' => route('agent-api.v1.expense-schedules.store', $workspace, absolute: false),
     'expense_schedule_prefix' => '/api/v1/workspaces/'.$workspace->public_id.'/expense-schedules/',
+    'expense_api_store' => route('agent-api.v1.expenses.store', $workspace, absolute: false),
+    'expense_api_prefix' => '/api/v1/workspaces/'.$workspace->public_id.'/expenses/',
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'invoice_review' => route('clients.invoice', [$workspace, $company, $reviewInvoice], absolute: false),

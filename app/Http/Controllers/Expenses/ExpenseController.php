@@ -2,9 +2,7 @@
 
 namespace App\Http\Controllers\Expenses;
 
-use App\Exceptions\ExpenseTransitionRefused;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Expenses\ExpenseFactsRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientProject;
@@ -12,39 +10,21 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Authorization\ProjectAccess;
-use App\Services\Expenses\ExpenseAction;
 use App\Services\WorkspaceAuthorization;
+use App\Support\AgentApi\Presenters\AgentExpensePresenter;
 use App\Support\Expenses\ExpenseStatus;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * The manager's expense surface for one client.
- *
- * Every read and write goes through {@see WorkspaceExpenses}, which is
- * constructed with the workspace and cannot be widened afterwards. That is
- * deliberate and it is why this controller is thin: the tenancy rule, the
- * lifecycle rules and the locking all live in the query object, so a second
- * surface - the invoicing hook, a recurrence - inherits them rather than
- * re-deriving them from whatever this controller happened to do.
- *
- * ## Why the writes refuse rather than validate first
- *
- * The lifecycle guards re-read the row under its own lock and decide from the
- * locked copy, so this controller cannot usefully pre-check a status: between
- * its check and the write, the other manager looking at the same list presses
- * approve. So the refusals arrive as exceptions and are rendered as validation
- * errors on the screen the operator is already looking at, carrying the status
- * the row is *now* - which is what tells them to re-read rather than retry.
+ * The client expense page decorates the canonical API presentation with scoped
+ * project names, billing links and browser capabilities. All writes use the
+ * authenticated /api/v1 operations and their version/idempotency guards.
  */
 class ExpenseController extends Controller
 {
-    public function __construct(private readonly ExpenseAction $writes) {}
-
     public function index(
         Request $request,
         Workspace $workspace,
@@ -93,6 +73,7 @@ class ExpenseController extends Controller
             ->with([
                 'project' => fn ($query) => $query->where('workspace_id', $workspace->id),
                 'approvedBy',
+                'clientCompany' => fn ($query) => $query->where('workspace_id', $workspace->id),
                 ...($isManager ? [
                     'invoiceLine' => fn ($query) => $query->where('workspace_id', $workspace->id)->with([
                         'invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)->where('client_company_id', $clientCompany->id),
@@ -122,7 +103,7 @@ class ExpenseController extends Controller
             // wrong one.
             'schedule_url' => $isManager ? route('clients.expense-schedules', [$workspace, $clientCompany], absolute: false) : null,
             'urls' => [
-                'store' => route('svc.expenses.store', [$workspace, $clientCompany], absolute: false),
+                'store' => route('agent-api.v1.expenses.store', $workspace, absolute: false),
             ],
             // The workspace's own calendar and currency. A new expense
             // defaulting to UTC's date records an evening in Los Angeles as
@@ -150,6 +131,7 @@ class ExpenseController extends Controller
                 ])
                 ->values(),
             'expenses' => $expenses->map(fn (ClientExpense $expense): array => [
+                ...app(AgentExpensePresenter::class)->present($expense, $isManager, $isManager),
                 'id' => $expense->public_id,
                 'spent_on' => $expense->spent_on->toDateString(),
                 'amount' => (int) $expense->amount,
@@ -178,10 +160,10 @@ class ExpenseController extends Controller
                 'can_discard' => $isManager && ExpenseStatus::isEditableValue($expense->status),
                 'urls' => [
                     'receipts' => $isManager ? route('svc.expenses.receipts', [$workspace, $clientCompany, $expense->public_id], absolute: false) : null,
-                    'update' => route('svc.expenses.update', [$workspace, $expense->public_id], absolute: false),
-                    'approve' => route('svc.expenses.approve', [$workspace, $expense->public_id], absolute: false),
-                    'unapprove' => route('svc.expenses.unapprove', [$workspace, $expense->public_id], absolute: false),
-                    'discard' => route('svc.expenses.destroy', [$workspace, $expense->public_id], absolute: false),
+                    'update' => route('agent-api.v1.expenses.update', [$workspace, $expense->public_id], absolute: false),
+                    'approve' => route('agent-api.v1.expenses.approve', [$workspace, $expense->public_id], absolute: false),
+                    'unapprove' => route('agent-api.v1.expenses.unapprove', [$workspace, $expense->public_id], absolute: false),
+                    'discard' => route('agent-api.v1.expenses.destroy', [$workspace, $expense->public_id], absolute: false),
                 ],
             ])->values(),
         ]);
@@ -207,168 +189,6 @@ class ExpenseController extends Controller
             'approved' => 'Awaiting an eligible '.$expense->currency.' invoice covering '.$expense->spent_on->toDateString().' or later.',
             default => 'The expense allocation needs review.',
         }];
-    }
-
-    public function store(
-        ExpenseFactsRequest $request,
-        Workspace $workspace,
-        ClientCompany $clientCompany,
-        WorkspaceAuthorization $authorization,
-    ): RedirectResponse {
-        Gate::authorize('manage', $workspace);
-        $authorization->assertOwnedBy($workspace, $clientCompany);
-
-        // The recorder is stamped on the row, so it has to be a person. An
-        // agent principal reaches its own API rather than this form, and
-        // writing null here instead would leave an expense nobody recorded.
-        $recordedBy = $request->user();
-        abort_unless($recordedBy instanceof User, 401);
-
-        $this->writes->record(
-            $workspace,
-            $clientCompany,
-            $this->project($request, $workspace, $clientCompany),
-            $request->facts(),
-            $recordedBy,
-        );
-
-        return redirect()->back()->with('status', 'Expense recorded.');
-    }
-
-    public function update(
-        ExpenseFactsRequest $request,
-        Workspace $workspace,
-        string $expense,
-    ): RedirectResponse {
-        Gate::authorize('manage', $workspace);
-
-        return $this->refusable(function () use ($request, $workspace, $expense): void {
-            $record = $this->find($workspace, $expense);
-            // Attribution travels separately from the facts and only when the
-            // form actually submitted it. Passing it unconditionally would
-            // clear the project of any caller that edited only the money.
-            $reattribute = $request->has('project_id');
-
-            $this->writes->update(
-                $workspace,
-                $expense,
-                $request->facts(),
-                $reattribute
-                    ? $this->project($request, $workspace, $record->clientCompany)?->public_id
-                    : null,
-                $reattribute,
-            );
-        });
-    }
-
-    public function approve(
-        Request $request,
-        Workspace $workspace,
-        string $expense,
-    ): RedirectResponse {
-        Gate::authorize('manage', $workspace);
-        $user = $request->user();
-        abort_unless($user instanceof User, 401);
-
-        return $this->refusable(function () use ($workspace, $expense, $user): void {
-            $this->writes->approve($workspace, $expense, $user);
-        }, 'Expense approved.');
-    }
-
-    public function unapprove(
-        Workspace $workspace,
-        string $expense,
-    ): RedirectResponse {
-        Gate::authorize('manage', $workspace);
-
-        return $this->refusable(function () use ($workspace, $expense): void {
-            $this->writes->unapprove($workspace, $expense);
-        }, 'Expense returned to draft.');
-    }
-
-    public function destroy(
-        Workspace $workspace,
-        string $expense,
-    ): RedirectResponse {
-        Gate::authorize('manage', $workspace);
-
-        return $this->refusable(function () use ($workspace, $expense): void {
-            $this->writes->discard($workspace, $expense);
-        }, 'Expense discarded.');
-    }
-
-    /**
-     * Run a lifecycle move, turning a refusal into a message on the screen.
-     *
-     * A refusal here is very often not a bug: two managers on the same list,
-     * both pressing approve, and the second one loses. A 500 tells that
-     * operator nothing; the exception's own message names the status the row
-     * holds now, which is what tells them to re-read rather than retry.
-     *
-     * @param  callable(): void  $move
-     */
-    private function refusable(callable $move, string $success = 'Expense updated.'): RedirectResponse
-    {
-        try {
-            $move();
-        } catch (ExpenseTransitionRefused $refusal) {
-            throw ValidationException::withMessages(['expense' => $refusal->getMessage()]);
-        }
-
-        return redirect()->back()->with('status', $success);
-    }
-
-    /**
-     * The expense this request names, or a 404.
-     *
-     * Resolved through the workspace-scoped finder rather than by route model
-     * binding, because binding resolves on the id alone and would hand this
-     * controller another tenant's row to then check. `find()` answers null for
-     * both "no such expense" and "another tenant's", which is the same answer a
-     * caller must get for both.
-     */
-    private function find(Workspace $workspace, string $publicId): ClientExpense
-    {
-        $expense = $this->expenses($workspace)->find($publicId);
-
-        abort_unless($expense instanceof ClientExpense, 404);
-
-        return $expense;
-    }
-
-    /**
-     * The project this request attributes the expense to, if any.
-     *
-     * Resolved against the company as well as the workspace. `WorkspaceExpenses`
-     * checks both again before writing - that is its job and it keeps the rule
-     * where every caller inherits it - but resolving a public id here means an
-     * unknown one is a validation message on the form rather than a refusal
-     * from two layers down.
-     */
-    private function project(
-        ExpenseFactsRequest $request,
-        Workspace $workspace,
-        ClientCompany $clientCompany,
-    ): ?ClientProject {
-        $publicId = $request->validated('project_id');
-
-        if (! is_string($publicId) || $publicId === '') {
-            return null;
-        }
-
-        $project = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->where('public_id', $publicId)
-            ->first();
-
-        if (! $project instanceof ClientProject) {
-            throw ValidationException::withMessages([
-                'project_id' => 'That project does not belong to this client.',
-            ]);
-        }
-
-        return $project;
     }
 
     private function expenses(Workspace $workspace): WorkspaceExpenses
