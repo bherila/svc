@@ -9,6 +9,15 @@ use App\Support\AgentApi\TimeEntryAllocation;
 
 final class AgentTimeEntryPresenter
 {
+    /** Pure summary preserves the caller's explicit internal/client description policy.
+     * @return array<string, mixed> */
+    public static function summary(ClientTimeEntry $entry, bool $useClientDescription = false, bool $compact = false): array
+    {
+        return ['id' => $entry->public_id, 'worked_on' => $entry->worked_on->toDateString(),
+            'minutes' => $entry->minutes, 'description' => $compact ? null : ($useClientDescription ? $entry->client_visible_description : $entry->description),
+            'status' => $entry->status, 'is_billable' => $entry->is_billable, 'is_deferred' => $entry->is_deferred];
+    }
+
     /** @return array<string, \Closure> */
     public static function authorRelations(Workspace $workspace): array
     {
@@ -40,20 +49,12 @@ final class AgentTimeEntryPresenter
         $payload = [
             'invoice_id' => $allocation->invoiceId,
             'allocation_state' => $allocation->state,
-            'id' => $entry->public_id,
+            ...self::summary($entry, $useClientDescription, $compact),
             'author_id' => $authorId,
             'project_id' => $entry->project->public_id,
             'task_id' => $taskId,
-            'worked_on' => $entry->worked_on->toDateString(),
-            'minutes' => $entry->minutes,
-            'description' => $compact ? null : ($useClientDescription
-                ? $entry->client_visible_description
-                : $entry->description),
-            'is_billable' => $entry->is_billable,
-            'is_deferred' => $entry->is_deferred,
             'is_visible_to_client' => $entry->is_visible_to_client,
             'client_visible_description' => $compact ? null : $entry->client_visible_description,
-            'status' => $entry->status,
             'version' => AgentApiVersion::for($entry),
             'web_url' => route('workspaces.operations', $workspace).'?time_entry='.$entry->public_id,
         ];
