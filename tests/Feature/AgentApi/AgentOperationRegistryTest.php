@@ -47,7 +47,7 @@ final class AgentOperationRegistryTest extends TestCase
             'clients.portal_access.grant', 'clients.portal_access.revoke', 'clients.portal_access.update',
             'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke',
             'collaboration.topics.delete', 'collaboration.comments.delete', 'collaboration.attachments.delete',
-            'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate',
+            'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate', 'expenses.receipts.delete',
             'finance.reconciliations.acknowledge',
             'invoices.correct', 'invoices.discard_draft', 'invoices.generate_period', 'invoices.issue',
             'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_cover', 'invoices.square_covered_payment_record', 'invoices.square_link', 'invoices.square_uncover', 'invoices.square_unlink', 'invoices.void',

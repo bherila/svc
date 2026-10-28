@@ -54,7 +54,7 @@ type Proposal = {
     total_amount: number;
     currency: string;
     attachments: Attachment[];
-    attachment_panel?: SharedFilePanel & { legacy_upload_href: string | null };
+    attachment_panel?: SharedFilePanel;
 };
 
 type Agreement = {
@@ -67,7 +67,7 @@ type Agreement = {
     status: string;
     billing_cadence: string;
     attachments: Attachment[];
-    attachment_panel?: SharedFilePanel & { legacy_upload_href: string | null };
+    attachment_panel?: SharedFilePanel;
 };
 
 type BillingSchedule = {
@@ -91,7 +91,7 @@ type Invoice = {
     issue_date: string | null;
     due_date: string | null;
     attachments: Attachment[];
-    attachment_panel?: SharedFilePanel & { legacy_upload_href: string | null };
+    attachment_panel?: SharedFilePanel;
 };
 
 type Client = {
@@ -162,7 +162,7 @@ function OperationFiles({
     panel,
     attachments,
 }: {
-    panel?: SharedFilePanel & { legacy_upload_href: string | null };
+    panel?: SharedFilePanel;
     attachments: Attachment[];
 }) {
     return (
@@ -183,11 +183,6 @@ function OperationFiles({
                         upload: null,
                         next_href: null,
                     }
-                }
-                legacyForms={
-                    panel
-                        ? { upload_href: panel.legacy_upload_href }
-                        : undefined
                 }
             />
         </div>

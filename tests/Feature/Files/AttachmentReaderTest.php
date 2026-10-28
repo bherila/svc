@@ -38,11 +38,13 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\BuildsSyntheticExpenses;
 use Tests\Concerns\CallsMcp;
+use Tests\Concerns\CallsNativeFileApi;
 use Tests\TestCase;
 
 final class AttachmentReaderTest extends TestCase
 {
     use BuildsSyntheticExpenses, CallsMcp, RefreshDatabase;
+    use CallsNativeFileApi;
 
     private string $privacyDirectory;
 
@@ -104,8 +106,8 @@ final class AttachmentReaderTest extends TestCase
             'invoice' => ClientInvoice::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'invoice_number' => 'SYNTHETIC-UPLOAD', 'currency' => 'USD']),
             'expense' => $this->recordSyntheticExpense($this->workspace, $this->company),
         };
-        $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, $type, $record->public_id]),
-            ['file' => UploadedFile::fake()->createWithContent('synthetic-legacy.txt', 'Synthetic legacy bytes')])->assertRedirect();
+        $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, $type, $record->public_id,
+            ['file' => UploadedFile::fake()->createWithContent('synthetic-legacy.txt', 'Synthetic legacy bytes')])->assertCreated();
         $file = ClientAttachment::query()->where('workspace_id', $this->workspace->id)->sole();
         $this->assertSame(! $privateDefault, $file->is_visible_to_client);
         $this->assertSame($type, $file->record_type);
@@ -131,11 +133,11 @@ final class AttachmentReaderTest extends TestCase
         $reader = app(AttachmentReader::class);
         $this->assertTrue($file->is_visible_to_client);
         $url = route('svc.files.download', [$this->workspace, $file->public_id]);
-        $this->actingAs($this->client)->get($url)->assertOk();
+        $this->actingAs($this->client, 'web')->get($url)->assertOk();
         DB::table('client_attachments')->where('workspace_id', $this->workspace->id)->where('id', $file->id)->update(['is_visible_to_client' => false]);
-        $this->actingAs($this->client)->get($url)->assertForbidden();
+        $this->actingAs($this->client, 'web')->get($url)->assertForbidden();
         $this->assertSame([], $reader->forParent($this->client, $this->workspace, 'project', $this->project->public_id, AttachmentAudience::Portal)->get()->all());
-        $this->actingAs($this->owner)->get($url)->assertOk()->assertStreamedContent('Synthetic reader bytes');
+        $this->actingAs($this->owner, 'web')->get($url)->assertOk()->assertStreamedContent('Synthetic reader bytes');
         $this->project->update(['is_visible_to_client' => false]);
         $this->project->update(['is_visible_to_client' => true]);
         $this->assertFalse($reader->canView($this->client, $this->workspace, $file, AttachmentAudience::Portal));
@@ -192,10 +194,10 @@ final class AttachmentReaderTest extends TestCase
             $files[] = app(AttachmentStorageService::class)->store($this->workspace, $agreement, UploadedFile::fake()->createWithContent($filename, 'Synthetic agreement bytes'), $this->owner);
         }
         DB::table('client_attachments')->where('workspace_id', $this->workspace->id)->where('id', $files[1]->id)->update(['is_visible_to_client' => false]);
-        $response = $this->actingAs($this->client)->get(route('portal.agreement', [$this->company, $agreement]))->assertOk()
+        $response = $this->actingAs($this->client, 'web')->get(route('portal.agreement', [$this->company, $agreement]))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.filename', 'synthetic-shared-agreement.txt')->where('files.0.delete_href', null));
         $this->assertStringNotContainsString('synthetic-private-only.txt', $response->getContent());
-        $this->actingAs($this->owner)->get(route('svc.files.download', [$this->workspace, $files[1]->public_id]))->assertOk();
+        $this->actingAs($this->owner, 'web')->get(route('svc.files.download', [$this->workspace, $files[1]->public_id]))->assertOk();
     }
 
     public function test_native_agreement_with_a_foreign_company_project_keeps_terms_but_no_file_authority(): void
@@ -209,14 +211,16 @@ final class AttachmentReaderTest extends TestCase
         $storage = app(AttachmentStorageService::class);
         $visible = $storage->store($this->workspace, $valid, UploadedFile::fake()->createWithContent('synthetic-valid-lineage.txt', 'Synthetic valid bytes'), $this->owner);
         $hidden = $storage->store($this->workspace, $malformed, UploadedFile::fake()->createWithContent('synthetic-malformed-lineage.txt', 'Synthetic malformed bytes'), $this->owner);
-        $this->actingAs($this->owner)->get(route('clients.agreement', [$this->workspace, $this->company, $valid]))->assertOk()
+        $this->actingAs($this->owner, 'web')->get(route('clients.agreement', [$this->workspace, $this->company, $valid]))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.id', $visible->public_id)
-                ->where('actions.upload_file', route('svc.files.store', [$this->workspace, 'agreement', $valid->public_id], absolute: false)));
+                ->where('attachment_upload.href', route('agent-api.v1.attachments.upload-url', [$this->workspace, 'agreement', $valid->public_id], absolute: false))
+                ->where('attachment_upload.parent_version', AgentApiVersion::for($valid))->missing('actions.upload_file'));
         $response = $this->get(route('clients.agreement', [$this->workspace, $this->company, $malformed]))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('agreement.project', null)->has('files', 0)
-                ->where('files_next_href', null)->where('files_previous_href', null)->where('actions.upload_file', null));
+                ->where('files_next_href', null)->where('files_previous_href', null)->where('attachment_upload', null)->missing('actions.upload_file'));
         $this->assertStringNotContainsString('synthetic-malformed-lineage.txt', $response->getContent());
         $this->get(route('svc.files.download', [$this->workspace, $hidden->public_id]))->assertNotFound();
+        $this->forgetNativeFileSession();
         $this->actingAsMcp($this->owner, ['files:read']);
         $this->getJson('/api/v1/workspaces/'.$this->workspace->public_id.'/attachments/'.$hidden->public_id)->assertNotFound();
     }
@@ -228,7 +232,7 @@ final class AttachmentReaderTest extends TestCase
             'currency' => 'USD', 'status' => 'active', 'is_visible_to_client' => true]);
         $url = route('portal.agreement', [$this->company, $agreement]);
         // Existing owner preview must also work when there are no attachments.
-        $this->actingAs($this->owner)->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 0));
+        $this->actingAs($this->owner, 'web')->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 0));
         $shared = app(AttachmentStorageService::class)->store($this->workspace, $agreement,
             UploadedFile::fake()->createWithContent('synthetic-preview-shared.txt', 'Synthetic preview bytes'), $this->owner);
         $private = app(AttachmentStorageService::class)->store($this->workspace, $agreement,
@@ -239,8 +243,8 @@ final class AttachmentReaderTest extends TestCase
                 ClientCompanyMembership::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
                     'user_id' => $this->owner->id, 'role' => 'client', 'access_scope' => 'projects']);
             }
-            $response = $this->actingAs($this->owner)->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 1)
-                ->where('files.0.id', $shared->public_id)->where('files.0.delete_href', null)->where('actions.upload_file', null));
+            $response = $this->actingAs($this->owner, 'web')->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 1)
+                ->where('files.0.id', $shared->public_id)->where('files.0.delete_href', null)->where('attachment_upload', null));
             $this->assertStringNotContainsString('synthetic-preview-private.txt', $response->getContent());
         }
         $reader = app(AttachmentReader::class);
@@ -289,7 +293,7 @@ final class AttachmentReaderTest extends TestCase
             app(AttachmentStorageService::class)->store($this->workspace, $agreement,
                 UploadedFile::fake()->createWithContent($index === 0 ? 'synthetic-allowed-operations.txt' : 'synthetic-denied-operations.txt', 'Synthetic operations bytes'), $this->owner);
         }
-        $response = $this->actingAs($member)->get(route('workspaces.operations', $this->workspace))->assertOk();
+        $response = $this->actingAs($member, 'web')->get(route('workspaces.operations', $this->workspace))->assertOk();
         $content = $response->getContent();
         $this->assertIsString($content);
         $this->assertStringContainsString('synthetic-allowed-operations.txt', $content);
@@ -326,7 +330,7 @@ final class AttachmentReaderTest extends TestCase
             $this->assertSame(403, $e->getStatusCode());
         }
         // Native operator access retains its existing independent staff policy.
-        $this->actingAs($this->owner)->get(route('svc.files.download', [$this->workspace, $denied->public_id]))->assertOk();
+        $this->actingAs($this->owner, 'web')->get(route('svc.files.download', [$this->workspace, $denied->public_id]))->assertOk();
     }
 
     public function test_dual_invoice_reader_requires_all_attributed_project_grants(): void
@@ -363,11 +367,11 @@ final class AttachmentReaderTest extends TestCase
         $file = $file->fresh();
         $reader = app(AttachmentReader::class);
         $this->assertTrue($reader->canView($this->client, $this->workspace, $file, AttachmentAudience::Portal));
-        $this->actingAs($this->client)->get(route('svc.files.download', [$this->workspace, $file->public_id]))->assertOk();
+        $this->actingAs($this->client, 'web')->get(route('svc.files.download', [$this->workspace, $file->public_id]))->assertOk();
         $topic->forceFill(['deleted_at' => now()])->save();
         $this->assertFalse($reader->canView($this->client, $this->workspace, $file, AttachmentAudience::Portal));
         $this->assertFalse($reader->canView($this->owner, $this->workspace, $file, AttachmentAudience::Internal));
-        $this->actingAs($this->owner)->get(route('svc.files.download', [$this->workspace, $file->public_id]))->assertForbidden();
+        $this->actingAs($this->owner, 'web')->get(route('svc.files.download', [$this->workspace, $file->public_id]))->assertForbidden();
         $topic->forceFill(['deleted_at' => null])->save();
         if ($parent instanceof ClientComment) {
             $parent->forceFill(['deleted_at' => now()])->save();
@@ -377,7 +381,7 @@ final class AttachmentReaderTest extends TestCase
         $otherCompany = $this->syntheticCompany($this->workspace, 'reader-wrong-company');
         DB::table('client_collaboration_topics')->where('workspace_id', $this->workspace->id)->where('id', $topic->id)->update(['client_company_id' => $otherCompany->id]);
         $this->assertFalse($reader->canView($this->owner, $this->workspace, $file, AttachmentAudience::Internal));
-        $this->actingAs($this->owner)->get(route('svc.files.download', [$this->workspace, $file->public_id]))->assertNotFound();
+        $this->actingAs($this->owner, 'web')->get(route('svc.files.download', [$this->workspace, $file->public_id]))->assertNotFound();
     }
 
     /** @return list<array{string}> */
@@ -390,7 +394,7 @@ final class AttachmentReaderTest extends TestCase
     #[DataProvider('unsupportedUploadPayloads')]
     public function test_native_upload_rejects_private_or_new_parent_before_staging(string $type, array $fields): void
     {
-        $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, $type, $this->project->public_id]),
+        $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, $type, $this->project->public_id,
             ['file' => UploadedFile::fake()->createWithContent('synthetic-rejected.txt', 'Synthetic rejected bytes'), ...$fields])->assertUnprocessable();
         $this->assertDatabaseCount('client_attachments', 0);
         $this->assertSame([], Storage::disk('svc_files')->allFiles());
@@ -485,7 +489,7 @@ final class AttachmentReaderTest extends TestCase
         }
         $this->assertDatabaseCount('client_attachments', 0);
         $this->assertSame([], Storage::disk('svc_files')->allFiles());
-        $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, 'project', $this->project->public_id]), ['file' => $file])->assertRedirect();
+        $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, 'project', $this->project->public_id, ['file' => $file])->assertCreated();
         $this->assertTrue(ClientAttachment::query()->where('workspace_id', $this->workspace->id)->sole()->is_visible_to_client);
     }
 
@@ -509,7 +513,7 @@ final class AttachmentReaderTest extends TestCase
         $this->assertFalse($published->is_visible_to_client);
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $published->lifecycle_state);
         $this->assertTrue($legacy->fresh()->is_visible_to_client);
-        $this->actingAs($this->client)->get(route('svc.files.download', [$this->workspace, $published->public_id]))->assertForbidden();
+        $this->actingAs($this->client, 'web')->get(route('svc.files.download', [$this->workspace, $published->public_id]))->assertForbidden();
         Storage::disk('svc_files')->delete($fallback->object_key);
         $storage->repair(true);
         $this->assertSame(ClientAttachment::STATE_CORRUPT, $fallback->fresh()->lifecycle_state);
@@ -539,7 +543,7 @@ final class AttachmentReaderTest extends TestCase
         $legacy = $this->attach();
         config(['svc.attachments.private_uploads_enabled' => true]);
         $before = Storage::disk('svc_files')->allFiles();
-        $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, 'project', $this->project->public_id]),
+        $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, 'project', $this->project->public_id,
             ['file' => UploadedFile::fake()->createWithContent('synthetic-unlatched.txt', 'Synthetic unlatched bytes')])->assertServiceUnavailable();
         foreach (['generic', 'expense'] as $kind) {
             try {
@@ -562,11 +566,11 @@ final class AttachmentReaderTest extends TestCase
     {
         $this->enablePrivateDefault();
         foreach ([true, false, null] as $visible) {
-            $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, 'project', $this->project->public_id]),
+            $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, 'project', $this->project->public_id,
                 ['file' => UploadedFile::fake()->createWithContent('synthetic-refused.txt', 'Synthetic refused bytes'), 'is_visible_to_client' => $visible])->assertUnprocessable();
         }
         foreach (['topic', 'comment'] as $type) {
-            $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, $type, (string) Str::uuid()]),
+            $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, $type, (string) Str::uuid(),
                 ['file' => UploadedFile::fake()->createWithContent('synthetic-refused.txt', 'Synthetic refused bytes')])->assertUnprocessable();
         }
         $this->assertDatabaseCount('client_attachments', 0);

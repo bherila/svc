@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+    act,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -865,4 +871,114 @@ describe('native collaboration pages', () => {
         expect(screen.queryByText('Upload a file')).not.toBeInTheDocument();
         expect(horizontalOverflowRisks(view.container)).toEqual([]);
     });
+});
+
+it('keeps an empty comment uploader mounted across loss and restoration of its write capability', async () => {
+    const originalPanel = {
+        files: [],
+        next_href: null,
+        parent_version: 'p'.repeat(64),
+        upload: {
+            href: '/synthetic/comment-preparation',
+            parent_version: 'p'.repeat(64),
+        },
+    };
+    const originalThread = {
+        ...thread,
+        comments: [{ ...comment, attachment_panel: originalPanel }],
+    };
+    mutations.request
+        .mockResolvedValueOnce({
+            ok: true,
+            data: { url: '/synthetic/signed-comment' },
+        })
+        .mockResolvedValueOnce({
+            ok: false,
+            status: 0,
+            message: 'Synthetic original upload response lost',
+        })
+        .mockResolvedValueOnce({
+            ok: true,
+            data: { url: '/synthetic/renewed-comment' },
+        })
+        .mockResolvedValueOnce({
+            ok: true,
+            data: { id: 'synthetic-comment-file' },
+        });
+    const view = render(<CommentThread thread={originalThread} />);
+    fireEvent.click(screen.getByText('Files', { selector: 'summary' }));
+    const input = screen.getByLabelText('Upload a file') as HTMLInputElement;
+    const file = new File(
+        ['Synthetic comment capability bytes'],
+        'synthetic-comment.txt',
+    );
+    await userEvent.upload(input, file);
+    fireEvent.submit(input.closest('form')!);
+    await screen.findByText('Synthetic original upload response lost');
+    const original = mutations.request.mock.calls[1];
+    view.rerender(
+        <CommentThread
+            thread={{
+                ...originalThread,
+                comments: [
+                    {
+                        ...comment,
+                        attachment_panel: {
+                            ...originalPanel,
+                            parent_version: 'q'.repeat(64),
+                            upload: null,
+                        },
+                    },
+                ],
+            }}
+        />,
+    );
+    expect(screen.getByLabelText('Upload a file')).toBe(input);
+    expect(input).toBeDisabled();
+    expect(input.files?.[0]).toBe(file);
+    view.rerender(
+        <CommentThread
+            thread={{
+                ...originalThread,
+                comments: [
+                    {
+                        ...comment,
+                        attachment_panel: {
+                            ...originalPanel,
+                            parent_version: 'q'.repeat(64),
+                            upload: {
+                                ...originalPanel.upload,
+                                parent_version: 'q'.repeat(64),
+                            },
+                        },
+                    },
+                ],
+            }}
+        />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+    await waitFor(() => expect(input).toBeEnabled());
+    const checked = mutations.request.mock.calls[3];
+    expect(checked[3]).toBe(original[3]);
+    expect((checked[2] as FormData).get('file')).toBe(file);
+    expect((checked[2] as FormData).get('expected_version')).toBe(
+        'p'.repeat(64),
+    );
+    view.rerender(
+        <CommentThread
+            thread={{
+                ...originalThread,
+                comments: [
+                    {
+                        ...comment,
+                        attachment_panel: { ...originalPanel, upload: null },
+                    },
+                ],
+            }}
+        />,
+    );
+    expect(screen.queryByLabelText('Upload a file')).not.toBeInTheDocument();
+    expect(
+        screen.queryByText('Files', { selector: 'summary' }),
+    ).not.toBeInTheDocument();
 });

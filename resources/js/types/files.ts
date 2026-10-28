@@ -16,11 +16,20 @@ export type SharedAttachment = {
     download_href: string;
     delete_href: string | null;
     sharing: AttachmentSharing | null;
+    deletion?: {
+        expected_version: string;
+        expected_parent_version?: string;
+    } | null;
 };
 
 export type AttachmentPanel = {
     files: SharedAttachment[];
-    upload: { href: string; parent_version: string } | null;
+    upload: {
+        href: string;
+        parent_version: string;
+        description?: string;
+        method?: 'GET' | 'POST';
+    } | null;
     next_href: string | null;
     parent_version?: string;
 };

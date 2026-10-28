@@ -1255,6 +1255,28 @@ success, replay, and refusal in the mutation audit.
 
 Receipt upload bytes are staged, promoted and verified before the expense lock. A durable staged recovery row records both object keys before promotion. The locked mutation only checks the current expense version, publishes the prepared row and advances the expense revision. A process termination or rollback leaves recoverable staged state; failed cleanup preserves that state for `svc:attachments:repair`. Replays return the original receipt and discard their unused preparation.
 
+`expenses.receipts.delete` uses `DELETE /workspaces/{workspace}/expenses/{expense}/receipts/{receipt}`
+with `expenses:read` and `expenses:write`, `Idempotency-Key`, `confirm: true`,
+`expected_version` for the receipt and `expected_parent_version` for the expense.
+Receipt metadata now includes its opaque `version` and `lifecycle_state`; list,
+upload and deletion responses also include `expense_version`. Deletion marks the
+receipt unavailable through the existing retention lifecycle and advances the
+expense revision once. It does not change expense money, approval or posting.
+A completed retry rechecks current manager authority and exact parent lineage.
+OAuth/MCP dual Portal identities remain refused. Trusted first-party sessions
+use native staff authority for all receipt routes, so current managers retain
+upload, list, download and deletion even if they also have portal access.
+
+Native CLI deletion previews by default, with no receipt, audit or storage writes:
+
+```sh
+php artisan svc:attachments:delete-expense-receipt WORKSPACE_UUID EXPENSE_UUID RECEIPT_UUID \
+  --actor=MANAGER_UUID --expected-version=RECEIPT_VERSION \
+  --expected-parent-version=EXPENSE_VERSION --format=json
+# Add --apply --confirm --key=STABLE_RETRY_KEY only after reviewing the preview.
+```
+
+
 ### Completing an invoice workflow
 
 All paths below start with `/api/v1/workspaces/{workspace}`. The four writes

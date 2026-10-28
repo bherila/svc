@@ -1,6 +1,5 @@
-import { router } from '@inertiajs/react';
 import { PencilIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -695,66 +694,3 @@ export function formatBytes(bytes: number): string {
  * file input that still names the file you just uploaded reads as one that has
  * not finished.
  */
-export function AgreementFileUpload({ uploadHref }: { uploadHref: string }) {
-    const input = useRef<HTMLInputElement>(null);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    return (
-        <div className="grid grid-cols-1 gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-                <Input
-                    ref={input}
-                    type="file"
-                    aria-label="File to attach"
-                    className="max-w-sm"
-                    onChange={() => setError(null)}
-                />
-                <Button
-                    type="button"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                        const file = input.current?.files?.[0];
-
-                        if (file === undefined) {
-                            setError('Choose a file first.');
-
-                            return;
-                        }
-
-                        setBusy(true);
-                        router.post(
-                            uploadHref,
-                            { file },
-                            {
-                                forceFormData: true,
-                                preserveScroll: true,
-                                onSuccess: () => {
-                                    setError(null);
-
-                                    if (input.current !== null) {
-                                        input.current.value = '';
-                                    }
-                                },
-                                onError: (errors) =>
-                                    setError(
-                                        Object.values(errors)[0] ??
-                                            'That file could not be uploaded.',
-                                    ),
-                                onFinish: () => setBusy(false),
-                            },
-                        );
-                    }}
-                >
-                    Upload
-                </Button>
-            </div>
-            {error !== null && (
-                <p role="alert" className="text-sm text-destructive">
-                    {error}
-                </p>
-            )}
-        </div>
-    );
-}

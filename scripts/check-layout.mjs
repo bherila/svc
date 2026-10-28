@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* global process */
 
+import { Buffer } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import {
@@ -45,6 +46,7 @@ const engagementOnly = process.argv.includes('--engagement');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
 const tasksOnly = process.argv.includes('--tasks');
+const receiptsOnly = process.argv.includes('--receipts');
 const schedulesOnly = process.argv.includes('--expense-schedules');
 const expensesOnly = process.argv.includes('--expenses');
 const projectsOnly = process.argv.includes('--projects');
@@ -159,6 +161,7 @@ try {
         SVC_LAYOUT_WORKSPACES: workspacesOnly ? '1' : '0',
         SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
+        SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -393,63 +396,65 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of projectsOnly
-            ? ['settings']
-            : schedulesOnly
-              ? ['expense_schedules']
-              : expensesOnly
-                ? ['expenses']
-                : workspacesOnly
-                  ? ['selector']
-                  : engagementOnly
-                    ? ['operations', 'agreement']
-                    : disputesOnly
-                      ? ['invoice', 'square_portal']
-                      : tasksOnly
-                        ? [
-                              'task_list',
-                              'task_project',
-                              'task_editor',
-                              'task_portal',
-                          ]
-                        : historyOnly
+        for (const screen of receiptsOnly
+            ? ['receipts']
+            : projectsOnly
+              ? ['settings']
+              : schedulesOnly
+                ? ['expense_schedules']
+                : expensesOnly
+                  ? ['expenses']
+                  : workspacesOnly
+                    ? ['selector']
+                    : engagementOnly
+                      ? ['operations', 'agreement']
+                      : disputesOnly
+                        ? ['invoice', 'square_portal']
+                        : tasksOnly
                           ? [
-                                'history_index',
-                                'history_discussion',
-                                'history_invoice',
+                                'task_list',
+                                'task_project',
+                                'task_editor',
+                                'task_portal',
                             ]
-                          : portalOnly
-                            ? ['settings']
-                            : correctionOnly
-                              ? ['invoice_review']
-                              : squareOnly
-                                ? [
-                                      'square_explore',
-                                      'square_invoice',
-                                      'square_portal',
-                                  ]
-                                : remindersOnly
-                                  ? ['reminder_invoice', 'settings']
-                                  : timeOnly
-                                    ? ['time', 'draft_time']
-                                    : backlogOnly
-                                      ? ['agreement']
-                                      : [
-                                            'mcp_setup',
-                                            'invoice',
-                                            'invoice_review',
-                                            'reminder_invoice',
-                                            'settings',
-                                            'draft_invoice',
-                                            'draft_time',
-                                            'proposal',
-                                            'proposal_acceptance',
-                                            'operations',
-                                            'time',
-                                            'expenses',
-                                            'receipts',
-                                            'expense_schedules',
-                                        ]) {
+                          : historyOnly
+                            ? [
+                                  'history_index',
+                                  'history_discussion',
+                                  'history_invoice',
+                              ]
+                            : portalOnly
+                              ? ['settings']
+                              : correctionOnly
+                                ? ['invoice_review']
+                                : squareOnly
+                                  ? [
+                                        'square_explore',
+                                        'square_invoice',
+                                        'square_portal',
+                                    ]
+                                  : remindersOnly
+                                    ? ['reminder_invoice', 'settings']
+                                    : timeOnly
+                                      ? ['time', 'draft_time']
+                                      : backlogOnly
+                                        ? ['agreement']
+                                        : [
+                                              'mcp_setup',
+                                              'invoice',
+                                              'invoice_review',
+                                              'reminder_invoice',
+                                              'settings',
+                                              'draft_invoice',
+                                              'draft_time',
+                                              'proposal',
+                                              'proposal_acceptance',
+                                              'operations',
+                                              'time',
+                                              'expenses',
+                                              'receipts',
+                                              'expense_schedules',
+                                          ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -1830,16 +1835,248 @@ try {
 
             if (screen === 'receipts') {
                 await page
-                    .getByRole('button', { name: 'Remove', exact: true })
+                    .getByRole('button', { name: 'Remove file', exact: true })
+                    .first()
                     .click();
-                await expect(page.getByRole('alertdialog')).toHaveCSS(
-                    'opacity',
-                    '1',
-                );
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Confirm removal',
+                        exact: true,
+                    }),
+                ).toBeVisible();
                 await capture(screen, 'remove-receipt', width);
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();
+
+                if (receiptsOnly) {
+                    await page.evaluate(() => {
+                        const current = window.location.href;
+                        const previous = new URL(current);
+                        previous.searchParams.set(
+                            'synthetic_history',
+                            'before',
+                        );
+                        window.history.replaceState(
+                            window.history.state,
+                            '',
+                            previous.href,
+                        );
+                        window.history.pushState(
+                            window.history.state,
+                            '',
+                            current,
+                        );
+                    });
+                    const filename = `synthetic-browser-receipt-${width}.txt`;
+                    const uploads = [];
+                    await page.route(
+                        origin + fixture.receipt_upload + '*',
+                        async (route) => {
+                            if (route.request().method() !== 'POST') {
+                                await route.continue();
+
+                                return;
+                            }
+
+                            uploads.push({
+                                key: route.request().headers()[
+                                    'idempotency-key'
+                                ],
+                                bytes: route
+                                    .request()
+                                    .postDataBuffer()
+                                    .toString()
+                                    .replace(
+                                        /------WebKitFormBoundary[^\r\n]+/g,
+                                        'SYNTHETIC_BOUNDARY',
+                                    ),
+                            });
+                            const result = await route.fetch();
+                            expect(result.status()).toBe(201);
+
+                            if (uploads.length === 1) {
+                                await route.abort('failed');
+                            } else {
+                                await route.fulfill({ response: result });
+                            }
+                        },
+                    );
+                    await page.getByLabel('Upload a file').setInputFiles({
+                        name: filename,
+                        mimeType: 'text/plain',
+                        buffer: Buffer.from(
+                            'Synthetic receipt browser acceptance bytes.',
+                        ),
+                    });
+                    await page.route(
+                        (url) =>
+                            url.pathname.startsWith(fixture.receipt_upload) &&
+                            url.pathname.endsWith('/upload-url'),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await page
+                        .getByRole('button', {
+                            name: 'Upload file',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(page.getByRole('alert')).toBeVisible();
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeEnabled();
+                    expect(uploads).toHaveLength(0);
+                    await capture(screen, 'preparation-failed', width);
+                    await page
+                        .getByRole('button', {
+                            name: 'Upload file',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeDisabled();
+                    await capture(screen, 'upload-unknown', width);
+                    const originalPage = page.url();
+                    await page.evaluate(() => window.history.back());
+                    await expect(
+                        page.getByText(
+                            'Check the original file change before leaving this page.',
+                            { exact: true },
+                        ),
+                    ).toBeVisible();
+                    expect(page.url()).toBe(originalPage);
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeDisabled();
+                    expect(uploads).toHaveLength(1);
+                    await capture(screen, 'upload-back-held', width);
+
+                    await page.route(
+                        page.url(),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await page
+                        .getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        page.getByText(
+                            'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
+                            { exact: true },
+                        ),
+                    ).toBeVisible();
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await capture(screen, 'upload-refresh-failed', width);
+                    await page
+                        .getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        })
+                        .click();
+                    const link = page.getByRole('link', {
+                        name: filename,
+                        exact: true,
+                    });
+                    await expect(link).toBeVisible();
+                    expect(uploads).toHaveLength(2);
+                    expect(uploads[1]).toEqual(uploads[0]);
+                    await page.unroute(origin + fixture.receipt_upload + '*');
+                    await capture(screen, 'uploaded', width);
+                    const row = page.locator('li').filter({ has: link });
+                    const removals = [];
+                    const deletionMatch = (url) =>
+                        url.pathname.startsWith(fixture.receipt_prefix);
+                    await page.route(deletionMatch, async (route) => {
+                        if (route.request().method() !== 'DELETE') {
+                            await route.continue();
+
+                            return;
+                        }
+
+                        removals.push({
+                            body: route.request().postData(),
+                            key: route.request().headers()['idempotency-key'],
+                        });
+                        const result = await route.fetch();
+                        expect(result.status()).toBe(200);
+
+                        if (removals.length === 1) {
+                            await route.abort('failed');
+                        } else {
+                            await route.fulfill({ response: result });
+                        }
+                    });
+                    await row
+                        .getByRole('button', {
+                            name: 'Remove file',
+                            exact: true,
+                        })
+                        .click();
+                    await row
+                        .getByRole('button', {
+                            name: 'Confirm removal',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Check removal',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Cancel',
+                            exact: true,
+                        }),
+                    ).toBeDisabled();
+                    await capture(screen, 'removal-unknown', width);
+                    await page.route(
+                        page.url(),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await row
+                        .getByRole('button', {
+                            name: 'Check removal',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Refresh removed file',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await capture(screen, 'removal-refresh-failed', width);
+                    await row
+                        .getByRole('button', {
+                            name: 'Refresh removed file',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(link).toHaveCount(0);
+                    expect(removals).toHaveLength(2);
+                    expect(removals[1]).toEqual(removals[0]);
+                    await page.unroute(deletionMatch);
+                    await capture(screen, 'removed', width);
+                }
             }
 
             if (screen === 'invoice') {
@@ -2161,27 +2398,29 @@ try {
         [
             '# Browser layout evidence',
             '',
-            projectsOnly
-                ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
-                : workspacesOnly
-                  ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
-                  : disputesOnly
-                    ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
-                    : clientsOnly
-                      ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
-                      : tasksOnly
-                        ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                        : portalOnly
-                          ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                          : squareOnly
-                            ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                            : remindersOnly
-                              ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                              : backlogOnly
-                                ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                                : engagementOnly
-                                  ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                  : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+            receiptsOnly
+                ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
+                : projectsOnly
+                  ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
+                  : workspacesOnly
+                    ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
+                    : disputesOnly
+                      ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                      : clientsOnly
+                        ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                        : tasksOnly
+                          ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                          : portalOnly
+                            ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                            : squareOnly
+                              ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                              : remindersOnly
+                                ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                                : backlogOnly
+                                  ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                                  : engagementOnly
+                                    ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                                    : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
 
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',

@@ -498,7 +498,6 @@ class ClientDirectoryController extends Controller
         // than booleans, so the browser is handed finished URLs it never has to
         // assemble - and every endpoint behind one authorizes again.
         $manages = Gate::forUser($user)->allows('manage', $workspace);
-        $attachmentBase = "/workspaces/{$workspace->public_id}/attachments";
         // Legacy malformed project references remain inspectable as terms,
         // without resolving another company's name or authorizing its files.
         $validFileParent = $clientAgreement->client_project_id === null || $projectNames->has((int) $clientAgreement->client_project_id)
@@ -524,10 +523,11 @@ class ClientDirectoryController extends Controller
                     'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
                     'create' => route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $clientAgreement], absolute: false),
                 ] : null,
-                'upload_file' => $manages && $validFileParent
-                    ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
-                    : null,
             ],
+            'attachment_upload' => $manages && $validFileParent ? [
+                'href' => route('agent-api.v1.attachments.upload-url', ['workspace' => $workspace, 'recordType' => 'agreement', 'recordPublicId' => $clientAgreement->public_id], absolute: false),
+                'parent_version' => AgentApiVersion::for($clientAgreement),
+            ] : null,
             'files' => $filePage->files,
             'files_next_href' => $filePage->nextHref,
             'files_previous_href' => $filePage->previousHref,

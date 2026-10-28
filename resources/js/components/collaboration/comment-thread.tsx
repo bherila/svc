@@ -84,6 +84,7 @@ function CommentEditor({
 
 function Comment({ comment }: { comment: CollaborationContent }) {
     const [editing, setEditing] = useState(false);
+    const [uploadPending, setUploadPending] = useState(false);
 
     return (
         <article
@@ -114,15 +115,17 @@ function Comment({ comment }: { comment: CollaborationContent }) {
             {!comment.deleted &&
                 comment.attachment_panel &&
                 (comment.attachment_panel.files.length > 0 ||
-                    comment.attachment_panel.upload !== null) && (
+                    comment.attachment_panel.upload !== null ||
+                    uploadPending) && (
                     <details className="min-w-0">
                         <summary className="cursor-pointer text-sm">
                             Files
                         </summary>
                         <div className="min-w-0 pt-3">
                             <AttachmentSharingPanel
-                                key={comment.attachment_panel.parent_version}
+                                key={comment.id}
                                 panel={comment.attachment_panel}
+                                onUploadPendingChange={setUploadPending}
                             />
                         </div>
                     </details>
