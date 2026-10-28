@@ -106,6 +106,8 @@ export function useCollaborationMutation() {
                 await new Promise<void>((resolve, reject) => {
                     let loaded = false;
                     router.visit(content.web_url, {
+                        onNetworkError: () => false,
+                        onHttpException: () => false,
                         onSuccess: () => {
                             loaded = true;
                             resolve();

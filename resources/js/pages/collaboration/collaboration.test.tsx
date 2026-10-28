@@ -486,9 +486,19 @@ describe('native collaboration pages', () => {
                 web_url: '/synthetic/finished-comment',
             },
         });
-        mutations.visit.mockImplementationOnce((_url, options) =>
-            options.onFinish(),
-        );
+        mutations.visit
+            .mockImplementationOnce((_url, options) => {
+                expect(
+                    options.onNetworkError(
+                        new Error('Synthetic network failure'),
+                    ),
+                ).toBe(false);
+                options.onFinish();
+            })
+            .mockImplementationOnce((_url, options) => {
+                expect(options.onHttpException({ status: 503 })).toBe(false);
+                options.onFinish();
+            });
         render(<CommentThread thread={thread} />);
         fireEvent.change(screen.getByLabelText('New comment'), {
             target: { value: 'Save this synthetic reply once' },
@@ -507,8 +517,14 @@ describe('native collaboration pages', () => {
                 screen.getByRole('button', { name: 'Check original change' }),
             );
         });
+        expect(screen.getByLabelText('New comment')).toBeDisabled();
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Check original change' }),
+            );
+        });
         expect(mutations.request).toHaveBeenCalledTimes(1);
-        expect(mutations.visit).toHaveBeenCalledTimes(2);
+        expect(mutations.visit).toHaveBeenCalledTimes(3);
         expect(mutations.request.mock.calls[0][3]).toBe(key);
         expect(mutations.visit.mock.calls[1][0]).toBe(
             '/synthetic/finished-comment',
