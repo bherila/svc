@@ -30,7 +30,6 @@ final readonly class TaskPlanningCommand
             'labels.create' => ['name' => []],
             'labels.update' => ['name' => [], 'expected_version' => $version],
             'labels.archive' => ['expected_version' => $version, 'confirm' => ['required', new ExplicitConfirmation]],
-            'labels.restore' => ['expected_version' => $version],
             default => ['expected_version' => $version],
         };
         if ($field !== null) {

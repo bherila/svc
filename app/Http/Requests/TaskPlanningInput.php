@@ -57,7 +57,8 @@ final class TaskPlanningInput
             default => abort(404),
         };
         if ($operation === 'labels.list') {
-            $rules['status'] = ['string', 'in:active,archived,all'];
+            // Exact enum membership rejects arrays and every other wire scalar.
+            $rules['status'] = ['in:active,archived,all'];
         }
         if (array_diff(array_keys($query), array_keys($rules)) !== []) {
             throw ValidationException::withMessages(['planning' => 'Unsupported task planning query.']);

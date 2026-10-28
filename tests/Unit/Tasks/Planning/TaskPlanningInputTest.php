@@ -91,6 +91,21 @@ final class TaskPlanningInputTest extends TestCase
         }
     }
 
+    public function test_catalog_status_accepts_only_the_three_exact_wire_values(): void
+    {
+        foreach (['active', 'archived', 'all'] as $status) {
+            $this->assertSame(['status' => $status], TaskPlanningInput::query('labels.list', ['status' => $status]));
+        }
+        foreach ([null, true, false, 0, 1, 1.5, [], ['active'], 'ACTIVE', 'deleted'] as $status) {
+            try {
+                TaskPlanningInput::query('labels.list', ['status' => $status]);
+                $this->fail('An unsupported catalog status was accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('status', $exception->errors());
+            }
+        }
+    }
+
     private function routeRequest(mixed $operation, mixed $target = '00000000-0000-4000-8000-000000000001'): Request
     {
         $request = Request::create('/synthetic', 'GET', ['task' => 'forged-body-target']);
