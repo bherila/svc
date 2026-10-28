@@ -16,7 +16,8 @@ import type {
     TaskPlanningNativeDetails,
 } from '@/types/task-planning';
 
-const refreshPlanning = () => refreshPageProps({ only: ['planning_details'] });
+const refreshPlanning = () =>
+    refreshPageProps({ only: ['planning_details'], requireSuccess: true });
 const labelName = (row: PlanningLabel) =>
     `${row.name}${row.is_archived ? ' (archived)' : ''}`;
 const contactName = (row: PlanningContact) =>
@@ -108,7 +109,7 @@ function SelectionForm<T extends { id: string }>({
                     variant="outline"
                     disabled={mutation.pending}
                     onClick={() =>
-                        void refresh().then(() => {
+                        void mutation.reload(() => {
                             setDraft(null);
                             mutation.clearError();
                         })
@@ -327,7 +328,7 @@ function Dependencies({
                                 variant="outline"
                                 disabled={mutation.pending}
                                 onClick={() =>
-                                    void refresh().then(() => {
+                                    void mutation.reload(() => {
                                         setDraft(null);
                                         setIncoming(null);
                                         mutation.clearError();

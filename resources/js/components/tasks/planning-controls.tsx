@@ -54,7 +54,29 @@ export function usePlanningMutation(refresh: () => Promise<void>) {
         }
     }
 
-    return { pending, error, run, clearError: () => setError(null) };
+    async function reload(discardDraft: () => void) {
+        if (inFlight.current) {
+return;
+}
+
+        inFlight.current = true;
+        setPending(true);
+
+        try {
+            await refresh();
+            discardDraft();
+            setError(null);
+        } catch {
+            setError(
+                'Planning could not be refreshed. Your choices are preserved. Try reloading again.',
+            );
+        } finally {
+            inFlight.current = false;
+            setPending(false);
+        }
+    }
+
+    return { pending, error, run, reload, clearError: () => setError(null) };
 }
 
 /** Seeded empty pages are authoritative; only typing or explicit continuation fetches. */

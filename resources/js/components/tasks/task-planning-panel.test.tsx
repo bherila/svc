@@ -210,6 +210,35 @@ describe('task planning panel', () => {
             ).not.toBeChecked(),
         );
     });
+    it('retains choices when a saved mutation or explicit reload cannot obtain fresh authorized props', async () => {
+        const refresh = vi
+            .fn()
+            .mockRejectedValue(new Error('Synthetic refresh unavailable'));
+        render(<TaskPlanningPanel details={fixture()} onRefresh={refresh} />);
+        fireEvent.click(screen.getByRole('checkbox', { name: label.name }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save labels' }));
+        await screen.findByText(
+            /change was saved, but current planning could not be refreshed/,
+        );
+        expect(
+            screen.getByRole('checkbox', { name: label.name }),
+        ).toBeChecked();
+        fireEvent.click(screen.getByRole('button', { name: 'Reload labels' }));
+        await screen.findByText(
+            /Planning could not be refreshed. Your choices are preserved/,
+        );
+        expect(
+            screen.getByRole('checkbox', { name: label.name }),
+        ).toBeChecked();
+        refresh.mockResolvedValue(undefined);
+        fireEvent.click(screen.getByRole('button', { name: 'Reload labels' }));
+        await waitFor(() =>
+            expect(
+                screen.getByRole('checkbox', { name: label.name }),
+            ).not.toBeChecked(),
+        );
+    });
+
     it('refreshes successful planning independently and preserves other dirty form tokens', async () => {
         const refresh = vi.fn().mockResolvedValue(undefined);
         const details = fixture();

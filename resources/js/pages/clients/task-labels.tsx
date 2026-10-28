@@ -25,7 +25,8 @@ const statuses = [
     { value: 'archived', label: 'Archived' },
     { value: 'all', label: 'All labels' },
 ];
-const refreshCatalog = () => refreshPageProps({ only: ['catalog'] });
+const refreshCatalog = () =>
+    refreshPageProps({ only: ['catalog'], requireSuccess: true });
 
 function LabelNameForm({
     label,
@@ -111,7 +112,7 @@ function LabelNameForm({
                         variant="outline"
                         disabled={mutation.pending}
                         onClick={() =>
-                            void refreshCatalog().then(() => {
+                            void mutation.reload(() => {
                                 setDraft(null);
                                 mutation.clearError();
                             })
@@ -215,7 +216,7 @@ function LabelRow({ label }: { label: PlanningCatalogLabel }) {
                                     variant="outline"
                                     disabled={mutation.pending}
                                     onClick={() =>
-                                        void refreshCatalog().then(() => {
+                                        void mutation.reload(() => {
                                             setConfirming(null);
                                             mutation.clearError();
                                         })

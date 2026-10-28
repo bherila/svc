@@ -101,7 +101,10 @@ describe('native task label catalog', () => {
                 'synthetic-catalog-key',
             ),
         );
-        expect(refresh).toHaveBeenCalledWith({ only: ['catalog'] });
+        expect(refresh).toHaveBeenCalledWith({
+            only: ['catalog'],
+            requireSuccess: true,
+        });
     });
     it('requires confirmation and captures the selected archive token rather than silently updating it', async () => {
         const props = fixture();

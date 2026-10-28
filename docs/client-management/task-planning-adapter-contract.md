@@ -448,3 +448,12 @@ MCP, SDK `CallToolResult` and JSON-RPC envelopes remain within their configured
 ceilings, decoded encrypted continuation boundaries agree, every task is returned
 once, and these reads create no GraphState or mutation receipts. These focused
 checks do not replace exact-head hosted full-suite/static/mutation gates.
+
+Planning refreshes opt into `refreshPageProps({requireSuccess: true})`: completion
+without Inertia's success callback rejects the refresh. A successful write cannot
+clear its form draft merely because a failed refresh finished. Explicit reloads
+use the same guarded mutation helper, retain choices on failure and offer retry.
+Existing refresh consumers keep their previous default completion behavior.
+Focused regression coverage includes write-success/read-failure and failed then
+successful explicit reload; the integrated draft/token browser flow also passes
+with confirmed-success refreshes.
