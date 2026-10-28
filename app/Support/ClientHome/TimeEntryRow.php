@@ -2,6 +2,9 @@
 
 namespace App\Support\ClientHome;
 
+use App\Models\ClientTimeEntry;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+
 /**
  * One line of recent work.
  *
@@ -20,6 +23,14 @@ final class TimeEntryRow
         public readonly ?string $description,
         public readonly int $minutes,
     ) {}
+
+    public static function fromEntry(ClientTimeEntry $entry, ?string $project, bool $useClientDescription): self
+    {
+        $facts = AgentTimeEntryPresenter::summary($entry, useClientDescription: $useClientDescription);
+
+        return new self(id: $facts['id'], workedOn: $facts['worked_on'], project: $project,
+            description: $facts['description'], minutes: $facts['minutes']);
+    }
 
     /**
      * @return array{id: string, worked_on: string, project: string|null, description: string|null, minutes: int}
