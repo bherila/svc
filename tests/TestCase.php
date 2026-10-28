@@ -9,11 +9,15 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Str;
 use Laravel\Passport\AccessToken;
 use Laravel\Passport\Token;
+use Tests\Support\OpenApiHttpContract;
 
 abstract class TestCase extends BaseTestCase
 {
     /** @var array{private: string, public: string}|null */
     private static ?array $oauthSigningKeys = null;
+
+    /** @var array{operation: string, schema: array<string, mixed>, reason: string}|null */
+    private ?array $historicalApiRequestContract = null;
 
     protected function setUp(): void
     {
@@ -39,6 +43,35 @@ abstract class TestCase extends BaseTestCase
             self::$oauthSigningKeys = ['private' => $privateKey, 'public' => $details['key']];
         }
         config(['passport.private_key' => self::$oauthSigningKeys['private'], 'passport.public_key' => self::$oauthSigningKeys['public']]);
+    }
+
+    /** Every feature HTTP request is checked against the published API contract. */
+    protected function createTestResponse($response, $request)
+    {
+        $result = parent::createTestResponse($response, $request);
+        OpenApiHttpContract::assertExchange($result, $this->historicalApiRequestContract);
+
+        return $result;
+    }
+
+    /**
+     * Pin a historical or intentionally ignored-input request schema for one
+     * named operation in a compatibility regression; responses stay checked.
+     * The schema must remain closed and the test must assert the preserved
+     * behavior. Ordinary operation tests always use the published contract.
+     *
+     * @param  array<string, mixed>  $schema
+     */
+    protected function withHistoricalApiRequestContract(string $operation, array $schema, string $reason, callable $request): mixed
+    {
+        $this->assertNotEmpty($reason);
+        $this->assertFalse($schema['additionalProperties'] ?? true, 'Compatibility request schemas must remain closed.');
+        $this->historicalApiRequestContract = compact('operation', 'schema', 'reason');
+        try {
+            return $request();
+        } finally {
+            $this->historicalApiRequestContract = null;
+        }
     }
 
     /**
