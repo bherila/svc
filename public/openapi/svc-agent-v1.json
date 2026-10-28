@@ -10324,7 +10324,7 @@
         "/workspaces/{workspace}/invoices/{invoice}/square-coverage": {
             "post": {
                 "operationId": "invoices.square_cover",
-                "description": "Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square.",
+                "description": "Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC never automatically collects or allocates payments through it; covered payments require a separate explicit review and recording. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square.",
                 "security": [
                     {
                         "oauth2": [
@@ -10449,6 +10449,306 @@
                     "AGENT_API_INVOICE_WRITES_ENABLED"
                 ],
                 "x-mcp-tool": "invoices.square_uncover"
+            }
+        },
+        "/workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments/{payment}": {
+            "post": {
+                "operationId": "invoices.square_covered_payment_record",
+                "description": "Workspace managers only. Review or explicitly record one payment received by an actively covered Square invoice. This never automatically allocates covered payments. Reads the current Square invoice, order, up to 100 payments and up to 10 dispute pages before any ledger transaction; incomplete or malformed facts are refused. Each review or confirmation consumes one of 20 requests per workspace per ten minutes. Refunded or disputed unrecorded payments, over-balance amounts, and invoices with in-flight payments remain manual review cases. Nothing is written to Square. Requires confirm: true, the reviewed invoice expected_version and the selected payment reviewed_version. Current facts and active coverage are checked again under the invoice lock; the full payment is recorded once using its canonical Square provider identity, with no splitting or overpayment credit. A completed idempotency receipt may replay after the coverage is removed or Square becomes unavailable.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read",
+                            "payments:record"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SquareCoveredPaymentRecordRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "name": "squareInvoice",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 191,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$"
+                        }
+                    },
+                    {
+                        "name": "payment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 191,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareCoveredPaymentRecordResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scopes or workspace manager role are insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, invoice or active coverage is unavailable, or payment writers are disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The invoice, coverage or reviewed payment facts changed, or an idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field or explicit confirmation is invalid, or current facts cannot be recorded safely.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "The request budget is exhausted; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Square returned malformed or incomplete current facts.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Square is unavailable or not connected to this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "invoices.square_covered_payment_record",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PAYMENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.square_covered_payment_record"
+            }
+        },
+        "/workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments": {
+            "get": {
+                "operationId": "invoices.square_covered_payments",
+                "description": "Workspace managers only. Review or explicitly record one payment received by an actively covered Square invoice. This never automatically allocates covered payments. Reads the current Square invoice, order, up to 100 payments and up to 10 dispute pages before any ledger transaction; incomplete or malformed facts are refused. Each review or confirmation consumes one of 20 requests per workspace per ten minutes. Refunded or disputed unrecorded payments, over-balance amounts, and invoices with in-flight payments remain manual review cases. Nothing is written to Square. Returns current amounts, captured dates, recorded identifiers, refusal reasons and finished record URLs; a null record_href means recording is unavailable.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "name": "squareInvoice",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 191,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareCoveredPaymentReviewResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Current scopes or workspace manager role are insufficient.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, invoice or active coverage is unavailable, or payment writers are disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The invoice, coverage or reviewed payment facts changed, or an idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field or explicit confirmation is invalid, or current facts cannot be recorded safely.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "The request budget is exhausted; retry after Retry-After.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Square returned malformed or incomplete current facts.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Square is unavailable or not connected to this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "invoices.square_covered_payments",
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.square_covered_payments"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/square-link": {
@@ -26098,6 +26398,166 @@
                     }
                 }
             },
+            "SquareCoveredPaymentRecordRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "reviewed_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "reviewed_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "SquareCoveredPaymentRecordResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "payment_id",
+                            "invoice_id"
+                        ],
+                        "properties": {
+                            "payment_id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "invoice_id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            }
+                        }
+                    }
+                }
+            },
+            "SquareCoveredPaymentReviewResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "invoice_id",
+                            "invoice_number",
+                            "invoice_version",
+                            "balance_amount",
+                            "currency",
+                            "square_invoice_id",
+                            "square_invoice_number",
+                            "payments"
+                        ],
+                        "properties": {
+                            "invoice_id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "invoice_number": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "invoice_version": {
+                                "$ref": "#/components/schemas/Version"
+                            },
+                            "balance_amount": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "square_invoice_id": {
+                                "$ref": "#/components/schemas/SquareInvoiceId"
+                            },
+                            "square_invoice_number": {
+                                "$ref": "#/components/schemas/SquareInvoiceNumber"
+                            },
+                            "payments": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "square_payment_id",
+                                        "amount",
+                                        "refunded_amount",
+                                        "currency",
+                                        "received_on",
+                                        "reviewed_version",
+                                        "recorded_payment_id",
+                                        "refusal",
+                                        "record_href"
+                                    ],
+                                    "properties": {
+                                        "square_payment_id": {
+                                            "type": "string",
+                                            "maxLength": 191
+                                        },
+                                        "amount": {
+                                            "type": "integer",
+                                            "minimum": 1
+                                        },
+                                        "refunded_amount": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "currency": {
+                                            "type": "string",
+                                            "pattern": "^[A-Z]{3}$"
+                                        },
+                                        "received_on": {
+                                            "type": "string",
+                                            "format": "date"
+                                        },
+                                        "reviewed_version": {
+                                            "$ref": "#/components/schemas/Version"
+                                        },
+                                        "recorded_payment_id": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "uuid"
+                                        },
+                                        "refusal": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "record_href": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             "SquareCustomer": {
                 "type": "object",
                 "additionalProperties": false,
@@ -26787,6 +27247,13 @@
                             "null"
                         ],
                         "description": "Who recorded it, when known."
+                    },
+                    "review_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Finished URL to review covered payments; null when Square does not serve this workspace."
                     }
                 }
             },

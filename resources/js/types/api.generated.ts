@@ -1513,10 +1513,44 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square. */
+        /** @description Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC never automatically collects or allocates payments through it; covered payments require a separate explicit review and recording. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square. */
         post: operations['invoices.square_cover'];
         /** @description Workspace managers only. Stop recording a Square invoice as covered by this invoice. The record is kept as history and the Square invoice may be covered or linked again. Requires the invoice's current expected_version and confirm: true; a Square invoice this invoice does not cover is refused with 409. */
         delete: operations['invoices.square_uncover'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments/{payment}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Review or explicitly record one payment received by an actively covered Square invoice. This never automatically allocates covered payments. Reads the current Square invoice, order, up to 100 payments and up to 10 dispute pages before any ledger transaction; incomplete or malformed facts are refused. Each review or confirmation consumes one of 20 requests per workspace per ten minutes. Refunded or disputed unrecorded payments, over-balance amounts, and invoices with in-flight payments remain manual review cases. Nothing is written to Square. Requires confirm: true, the reviewed invoice expected_version and the selected payment reviewed_version. Current facts and active coverage are checked again under the invoice lock; the full payment is recorded once using its canonical Square provider identity, with no splitting or overpayment credit. A completed idempotency receipt may replay after the coverage is removed or Square becomes unavailable. */
+        post: operations['invoices.square_covered_payment_record'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Review or explicitly record one payment received by an actively covered Square invoice. This never automatically allocates covered payments. Reads the current Square invoice, order, up to 100 payments and up to 10 dispute pages before any ledger transaction; incomplete or malformed facts are refused. Each review or confirmation consumes one of 20 requests per workspace per ten minutes. Refunded or disputed unrecorded payments, over-balance amounts, and invoices with in-flight payments remain manual review cases. Nothing is written to Square. Returns current amounts, captured dates, recorded identifiers, refusal reasons and finished record URLs; a null record_href means recording is unavailable. */
+        get: operations['invoices.square_covered_payments'];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4868,6 +4902,42 @@ export interface components {
                 pool_truncated: boolean;
             };
         };
+        SquareCoveredPaymentRecordRequest: {
+            expected_version: components['schemas']['Version'];
+            reviewed_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        SquareCoveredPaymentRecordResponse: {
+            data: {
+                payment_id: components['schemas']['Uuid'];
+                invoice_id: components['schemas']['Uuid'];
+            };
+        };
+        SquareCoveredPaymentReviewResponse: {
+            data: {
+                invoice_id: components['schemas']['Uuid'];
+                invoice_number: string | null;
+                invoice_version: components['schemas']['Version'];
+                balance_amount: number;
+                currency: string;
+                square_invoice_id: components['schemas']['SquareInvoiceId'];
+                square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+                payments: {
+                    square_payment_id: string;
+                    amount: number;
+                    refunded_amount: number;
+                    currency: string;
+                    /** Format: date */
+                    received_on: string;
+                    reviewed_version: components['schemas']['Version'];
+                    /** Format: uuid */
+                    recorded_payment_id: string | null;
+                    refusal: string | null;
+                    record_href: string | null;
+                }[];
+            };
+        };
         SquareCustomer: {
             id: string | null;
             version: number | null;
@@ -4990,6 +5060,8 @@ export interface components {
             covered_at: string;
             /** @description Who recorded it, when known. */
             covered_by: string | null;
+            /** @description Finished URL to review covered payments; null when Square does not serve this workspace. */
+            review_href?: string | null;
         };
         /** @description A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square. */
         SquareInvoiceId: string;
@@ -11825,6 +11897,207 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_covered_payment_record': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+                squareInvoice: string;
+                payment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SquareCoveredPaymentRecordRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCoveredPaymentRecordResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scopes or workspace manager role are insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, invoice or active coverage is unavailable, or payment writers are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The invoice, coverage or reviewed payment facts changed, or an idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field or explicit confirmation is invalid, or current facts cannot be recorded safely. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The request budget is exhausted; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square returned malformed or incomplete current facts. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square is unavailable or not connected to this workspace. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_covered_payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+                squareInvoice: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCoveredPaymentReviewResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scopes or workspace manager role are insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, invoice or active coverage is unavailable, or payment writers are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The invoice, coverage or reviewed payment facts changed, or an idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field or explicit confirmation is invalid, or current facts cannot be recorded safely. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The request budget is exhausted; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square returned malformed or incomplete current facts. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square is unavailable or not connected to this workspace. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
