@@ -2,47 +2,56 @@
 
 Planning baseline: `fa6d72a8f34af60386dfc876abc190b0404cb74a`.
 
-## Implementation checkpoint (2026-10-28)
+## Delivered implementation (2026-10-28)
 
-The permission prerequisite, company/contact profiles, task dates/assignment and
-native collaboration foundation are deployed. Imported history has been reviewed
-and accepted; ActiveCollab retirement is complete. Its recovery material remains
-private and preserved. Retirement is not a remaining feature-delivery gate.
-
-The combined task/file reader floor (PR533) is deployed, and its retained runtime
-privacy marker forces new ordinary uploads private across configuration caches
-and compatible application rollback. Organization writers (PR534) are deployed
-but their independent product switch remains disabled at the latest readback.
-Do not remove that marker or roll back below the documented reader floor.
+The permission prerequisite, company/contact profiles, task dates/assignment,
+native collaboration, shared task/file readers and organization controls are
+merged (PR527–534). Imported history remains immutable. Its owner review and
+ActiveCollab retirement are complete; private recovery material is preserved.
 
 PR535 embeds authorized initial assignee choices and narrows safe page refreshes.
-It and dependency updates537/539 are merged with exact-head CI. Its deployment
-refused before migration after a MariaDB server upgrade changed Laravel's UUID
-schema type; automatic recovery restored the prior serving release. PR542 now
-preserves existing character UUID columns across MariaDB upgrades and tests the
-11.4 family in CI. Its exact-head checks and actual12/12mutation artifact passed;
-normal main deployment and independent serving verification are being completed.
-A merged PR alone is not evidence of a serving production release.
+Dependency updates537/539 are merged. PR542 preserves character UUID schema
+columns across MariaDB upgrades, with database CI covering the 11.4 family.
+Deployment refusal restores the prior serving release; it does not leave the
+application in maintenance mode.
 
-Two feature delivery candidates remain in parallel:
+The remaining implementation is merged:
 
 - **PR543 / R2:** explicit per-file sharing, private-first topic/comment uploads,
-  shared native file panels, bounded seeded comment previews, scoped REST/MCP
-  operations and preview-first CLI. Existing generic attachment schemas/parents
-  remain compatible. New writers need their strict product switch and retained
-  privacy marker; readers remain available with writers disabled.
+  reusable native file panels, bounded seeded comment previews, nine scoped REST
+  operations, seven MCP tools and preview-first CLI. Existing generic attachment
+  schemas and upload parents remain compatible. Portal project/task/commercial
+  views use the same current parent/grant/file authorization. Company and expense
+  files retain their existing internal-only policy.
 - **PR544 / R3:** task labels, prerequisites/dependents, client-contact
-  responsibilities, native planning panel/catalog and all15registered
-  native/REST/MCP operations plus CLI. Ordinary task read enrichment is bounded
-  and Internal-only; contacts remain separate owner/admin-only reads. The shared
-  completion advisory is optional and never changes task status or billing.
+  responsibilities, native planning panel/catalog, 15 registered native/REST/MCP
+  operations and CLI. Ordinary task enrichment is bounded and Internal-only;
+  contacts remain separate owner/admin-only reads. The shared completion advisory
+  is optional and never blocks completion or changes another task or billing.
 
-Focused security/parity and browser checks have passed on implementation
-checkpoints. Both candidates still require final exact-head CI, actual mutation
-artifact review, normal deployment and independent production verification.
-Product activation and protected/history fingerprints remain pending. Existing
-Agent write cutovers remain independent; native product activation must not
-silently enable financial or global Agent writes.
+Exact candidate CI passed for both feature releases, including all SQLite and
+MariaDB shards, PHPStan/frontend checks and the actual MCP SDK. The actual
+Unit-selected diff mutation artifacts killed **195/195** (R2) and **507/507** (R3),
+with zero escapes, errors, timeouts or skips. Those measurements do not claim
+whole-feature mutation coverage. Synthetic browser review covered all four
+required widths, including the combined task editor, retained drafts and no
+initial picker/file fetches. The checked MCP visibility snapshot was generated
+in CI and reviewed for only the intended tools and optional response fields.
+
+Deployment and activation remain installation-specific operations recorded in
+private infrastructure notes. The three independent product gates default off:
+`TASK_ORGANIZATION_WRITES_ENABLED`, `SVC_ATTACHMENT_SHARING_WRITES_ENABLED` and
+`TASK_PLANNING_DETAILS_ENABLED`. Sharing also requires the retained privacy marker.
+Existing global/module Agent cutovers remain separate. Enabling a product must
+not silently enable unrelated Agent writes or grant Portal access.
+
+Before activation, verify the selected code/schema and compatible rollback
+artifact, preserve canonical environment recovery and protected data fingerprints,
+and use the normal guarded deployment workflow to install configuration. After
+activation, independently verify serving/runtime, current permissions, private
+upload defaults, unchanged protected records and historical search/files. Retain
+the privacy marker and new schema across application rollback. On MariaDB 10.7+
+the rollback code must also preserve the character UUID schema grammar.
 
 Use CI for full suites, PHPStan and mutation/coverage. Local validation stays
 focused on relevant small tests, formatting/lint and targeted browser checks.
@@ -73,9 +82,9 @@ For CLI continuation, `svc:collaboration comments.list` takes the parent UUID in
 private JSON `id`, its `parent_type`, and optional `payload.limit` and
 `payload.cursor`. It returns the same opaque `meta.next_cursor` as REST/MCP.
 
-The later task-planning and attachment-sharing slices below remain delivery
-candidates until their deployment/activation verification is complete. Their
-shared readers and parent guards precede writers. Existing file disclosure and
+The sections below retain the approved implementation and rollout requirements.
+Shared readers and parent guards precede writers; deployment/activation proof
+belongs to the installation record. Existing file disclosure and
 grants remain intact. Portal write
 opt-in remains a separate unanswered product decision, and no new client write
 grant or collaboration email delivery is inferred.
