@@ -34,7 +34,8 @@ const artifacts = path.join(
     path.basename(runtime),
 );
 const widths = [390, 820, 1440, 1920];
-const portalOnly = process.argv.includes('--portal-access');
+const clientsOnly = process.argv.includes('--clients');
+const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
@@ -149,6 +150,7 @@ try {
         SVC_LAYOUT_ENGAGEMENT: engagementOnly ? '1' : '0',
         SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
         SVC_LAYOUT_TASKS: tasksOnly ? '1' : '0',
+        SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -593,6 +595,73 @@ try {
                         name: 'Automatically remind this client about unpaid invoices',
                     }),
                 ).toBeChecked();
+            }
+
+            if (clientsOnly && screen === 'settings') {
+                const restore = page.getByRole('button', {
+                    name: 'Restore contact',
+                    exact: true,
+                });
+
+                if (await restore.count()) {
+                    await restore.click();
+                    const summary = page
+                        .locator('summary')
+                        .filter({ hasText: 'SyntheticContact'.repeat(6) });
+                    await expect(summary).not.toContainText('Archived');
+
+                    if (
+                        !(await summary.evaluate(
+                            (element) => element.parentElement.open,
+                        ))
+                    ) {
+                        await summary.click();
+                    }
+
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Archive contact',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                }
+
+                await capture(screen, 'client-contact-form', width);
+                await page
+                    .getByRole('button', {
+                        name: 'Archive contact',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'contact-archive-confirmation', width);
+                await page
+                    .getByRole('alertdialog')
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
+                    .getByRole('button', {
+                        name: 'Current client',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'Add client', exact: true })
+                    .click();
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await page
+                    .getByRole('dialog')
+                    .getByLabel('Name', { exact: true })
+                    .fill('SyntheticNewClient'.repeat(8));
+                await page
+                    .getByRole('dialog')
+                    .getByLabel('Billing email', { exact: true })
+                    .fill('billing@example.test');
+                await capture(screen, 'create-client-dialog', width);
+                await page
+                    .getByRole('dialog')
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
             }
 
             if (screen === 'history_index') {
@@ -1277,19 +1346,21 @@ try {
         [
             '# Browser layout evidence',
             '',
-            tasksOnly
-                ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                : portalOnly
-                  ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                  : squareOnly
-                    ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                    : remindersOnly
-                      ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                      : backlogOnly
-                        ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                        : engagementOnly
-                          ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                          : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+            clientsOnly
+                ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                : tasksOnly
+                  ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                  : portalOnly
+                    ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                    : squareOnly
+                      ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                      : remindersOnly
+                        ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                        : backlogOnly
+                          ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                          : engagementOnly
+                            ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

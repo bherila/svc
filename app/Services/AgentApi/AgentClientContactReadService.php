@@ -50,7 +50,7 @@ final class AgentClientContactReadService
     }
 
     /** @return array<string, mixed> */
-    private function present(ClientCompany $company, ClientContact $contact): array
+    public function present(ClientCompany $company, ClientContact $contact): array
     {
         return ['id' => $contact->public_id, 'company_id' => $company->public_id,
             'version' => AgentApiVersion::for($contact), 'first_name' => $contact->first_name,
