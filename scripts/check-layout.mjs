@@ -272,9 +272,11 @@ try {
                     body: request.postData(),
                     key: request.headers()['idempotency-key'],
                 });
+
                 if (requests.length === 2) {
                     expect(requests[1]).toEqual(requests[0]);
                 }
+
                 await route.fulfill({
                     status: requests.length === 1 ? 408 : 201,
                     contentType: 'application/json',
@@ -1249,6 +1251,7 @@ try {
                     .getByLabel('Description', { exact: true })
                     .fill('SyntheticUnbrokenRecurringExpense'.repeat(8));
                 await capture(screen, 'create', width);
+
                 if (schedulesOnly) {
                     await page
                         .getByLabel('Amount in minor units', { exact: true })
@@ -1291,6 +1294,7 @@ try {
                     .getByLabel('Description', { exact: true })
                     .fill('SyntheticUnbrokenExpense'.repeat(10));
                 await capture(screen, 'record-dialog', width);
+
                 if (expensesOnly) {
                     await page
                         .getByLabel('Amount', { exact: true })
