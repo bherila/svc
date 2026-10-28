@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import type {
@@ -43,58 +44,90 @@ function SharingControl({
     file: SharedAttachment;
     onChanged: (sharing: AttachmentSharing) => void;
 }) {
-    const [sharing, setSharing] = useState(file.sharing);
+    const [state, setState] = useState({
+        source: file.sharing,
+        sharing: file.sharing,
+    });
     const [busy, setBusy] = useState(false);
+    const running = useRef(false);
     const [error, setError] = useState<string | null>(null);
     const [stale, setStale] = useState(false);
-    const attempt = useRef<{ visible: boolean; key: string } | null>(null);
+    const [unresolved, setUnresolved] = useState(false);
+    const attempt = useRef<{
+        href: string;
+        body: {
+            is_visible_to_client: boolean;
+            expected_version: string;
+            expected_parent_version: string;
+        };
+        key: string;
+        uncertain: boolean;
+    } | null>(null);
+    useUnknownWriteGuard(
+        () => attempt.current !== null,
+        () =>
+            setError(
+                'Check the original sharing change before leaving this page.',
+            ),
+    );
+
+    if (state.source !== file.sharing && !busy && !unresolved) {
+        setState({ source: file.sharing, sharing: file.sharing });
+        setStale(false);
+    }
+
+    const sharing = state.sharing;
 
     if (!sharing) {
         return null;
     }
 
     async function change(visible: boolean) {
-        if (!sharing) {
+        if (running.current || !sharing) {
             return;
         }
 
-        const current =
-            attempt.current?.visible === visible
-                ? attempt.current
-                : { visible, key: newIdempotencyKey() };
-        attempt.current = current;
-        setBusy(true);
-        const result = await apiRequest<
-            Omit<AttachmentSharing, 'update_href'> & { id: string }
-        >(
-            'PATCH',
-            sharing.update_href,
-            {
+        running.current = true;
+        attempt.current ??= {
+            href: sharing.update_href,
+            body: {
                 is_visible_to_client: visible,
                 expected_version: sharing.version,
                 expected_parent_version: sharing.parent_version,
             },
-            current.key,
-        );
-        setBusy(false);
+            key: newIdempotencyKey(),
+            uncertain: false,
+        };
+        const original = attempt.current;
+        setBusy(true);
+        setError(null);
+        const result = await apiRequest<
+            Omit<AttachmentSharing, 'update_href'> & { id: string }
+        >('PATCH', original.href, original.body, original.key);
 
         if (result.ok) {
-            const updated = {
-                ...result.data,
-                update_href: sharing.update_href,
-            };
-            setSharing(updated);
-            onChanged(updated);
+            const updated = { ...result.data, update_href: original.href };
             attempt.current = null;
-            setError(null);
+            setUnresolved(false);
+            setStale(false);
+            setState({ source: file.sharing, sharing: updated });
+            onChanged(updated);
         } else {
+            original.uncertain ||=
+                result.status === 0 ||
+                result.status === 408 ||
+                result.status >= 500;
             setError(result.message);
-            setStale(result.status === 409);
+            setUnresolved(original.uncertain);
+            setStale(!original.uncertain && result.status === 409);
 
-            if (result.status !== 0 && result.status < 500) {
+            if (!original.uncertain) {
                 attempt.current = null;
             }
         }
+
+        running.current = false;
+        setBusy(false);
     }
 
     return (
@@ -103,7 +136,7 @@ function SharingControl({
                 <input
                     type="checkbox"
                     checked={sharing.is_visible_to_client}
-                    disabled={busy || stale}
+                    disabled={busy || stale || unresolved}
                     onChange={(event) => void change(event.target.checked)}
                 />
                 Visible to client
@@ -114,6 +147,20 @@ function SharingControl({
                         {sharing.sharing_note}
                     </p>
                 )}
+            {unresolved && (
+                <div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() =>
+                            void change(sharing.is_visible_to_client)
+                        }
+                    >
+                        Check sharing
+                    </Button>
+                </div>
+            )}
             {error && <MutationError message={error} stale={stale} />}
         </div>
     );
@@ -122,45 +169,106 @@ function SharingControl({
 function RemoveAttachment({ file }: { file: SharedAttachment }) {
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
+    const running = useRef(false);
     const [error, setError] = useState<string | null>(null);
-    const [stale, setStale] = useState(false);
-    const attempt = useRef<string | null>(null);
+    const [staleVersion, setStaleVersion] = useState<string | null>(null);
+    const [unresolved, setUnresolved] = useState(false);
+    const [accepted, setAccepted] = useState(false);
+    const attempt = useRef<{
+        href: string;
+        body: {
+            confirm: true;
+            expected_version: string;
+            expected_parent_version?: string;
+        };
+        key: string;
+        accepted: boolean;
+        uncertain: boolean;
+    } | null>(null);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.accepted,
+        () =>
+            setError(
+                'Check the original file change before leaving this page.',
+            ),
+    );
+    const stale =
+        staleVersion !== null &&
+        staleVersion === file.deletion?.expected_version;
 
-    if (!file.delete_href || !file.deletion) {
+    if ((!file.delete_href || !file.deletion) && !busy && !unresolved) {
         return null;
     }
 
     async function remove() {
-        if (!file.delete_href) {
+        if (
+            running.current ||
+            (!attempt.current && (!file.delete_href || !file.deletion))
+        ) {
             return;
         }
 
-        if (!file.deletion) {
-            return;
-        }
-
-        attempt.current ??= newIdempotencyKey();
+        running.current = true;
+        attempt.current ??= {
+            href: file.delete_href!,
+            body: { confirm: true, ...file.deletion! },
+            key: newIdempotencyKey(),
+            accepted: false,
+            uncertain: false,
+        };
+        const original = attempt.current;
         setBusy(true);
-        const result = await apiRequest(
-            'DELETE',
-            file.delete_href,
-            {
-                confirm: true,
-                ...file.deletion,
-            },
-            attempt.current,
-        );
-        setBusy(false);
+        setError(null);
 
-        if (result.ok) {
-            router.reload();
-        } else {
-            setError(result.message);
-            setStale(result.status === 409);
+        if (!original.accepted) {
+            const result = await apiRequest(
+                'DELETE',
+                original.href,
+                original.body,
+                original.key,
+            );
 
-            if (result.status !== 0 && result.status < 500) {
-                attempt.current = null;
+            if (!result.ok) {
+                original.uncertain ||=
+                    result.status === 0 ||
+                    result.status === 408 ||
+                    result.status >= 500;
+                setError(result.message);
+                setUnresolved(original.uncertain);
+                setStaleVersion(
+                    !original.uncertain && result.status === 409
+                        ? original.body.expected_version
+                        : null,
+                );
+
+                if (!original.uncertain) {
+                    attempt.current = null;
+                }
+
+                running.current = false;
+                setBusy(false);
+
+                return;
             }
+
+            original.accepted = true;
+            setAccepted(true);
+            setUnresolved(true);
+        }
+
+        try {
+            await refreshPageProps({ requireSuccess: true });
+            attempt.current = null;
+            setUnresolved(false);
+            setAccepted(false);
+            setConfirming(false);
+        } catch {
+            setError(
+                'The file was removed, but this page could not refresh. Refresh the removed file before another removal.',
+            );
+        } finally {
+            running.current = false;
+            setBusy(false);
         }
     }
 
@@ -175,12 +283,16 @@ function RemoveAttachment({ file }: { file: SharedAttachment }) {
                         disabled={busy || stale}
                         onClick={() => void remove()}
                     >
-                        Confirm removal
+                        {accepted
+                            ? 'Refresh removed file'
+                            : unresolved
+                              ? 'Check removal'
+                              : 'Confirm removal'}
                     </Button>
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={busy || stale}
+                        disabled={busy || stale || unresolved}
                         onClick={() => setConfirming(false)}
                     >
                         Cancel
@@ -218,10 +330,41 @@ export function UploadAttachment({
         method: 'GET' | 'POST';
         href: string;
         key: string;
+        accepted: boolean;
+        uncertain: boolean;
     } | null>(null);
 
+    const running = useRef(false);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.accepted,
+        () =>
+            setError(
+                'Check the original file change before leaving this page.',
+            ),
+    );
+
+    async function refreshRecorded(original: { uncertain: boolean }) {
+        try {
+            await refreshPageProps({ requireSuccess: true });
+            attempt.current = null;
+            setFile(null);
+
+            if (input.current) {
+                input.current.value = '';
+            }
+
+            setUnresolved(false);
+        } catch {
+            original.uncertain = true;
+            setUnresolved(true);
+            setError(
+                'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
+            );
+        }
+    }
+
     async function send() {
-        if (busy || !file) {
+        if (running.current || !file) {
             return;
         }
 
@@ -237,10 +380,22 @@ export function UploadAttachment({
             method: upload.method ?? 'POST',
             href: upload.href,
             key: newIdempotencyKey(),
+            accepted: false,
+            uncertain: false,
         };
         const original = attempt.current;
+        running.current = true;
         setBusy(true);
         setError(null);
+
+        if (original.accepted) {
+            await refreshRecorded(original);
+            running.current = false;
+            setBusy(false);
+
+            return;
+        }
+
         const prepared = await apiRequest<{
             url?: string;
             upload_url?: string;
@@ -273,31 +428,21 @@ export function UploadAttachment({
         }
 
         if (result.ok) {
-            try {
-                await refreshPageProps({ requireSuccess: true });
-                attempt.current = null;
-                setFile(null);
-
-                if (input.current) {
-                    input.current.value = '';
-                }
-
-                setUnresolved(false);
-            } catch {
-                setUnresolved(true);
-                setError(
-                    'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
-                );
-            }
+            original.accepted = true;
+            await refreshRecorded(original);
         } else {
             setError(result.message);
-            setStaleVersion(
-                result.status === 409 ? original.parentVersion : null,
-            );
             const uncertain =
+                original.uncertain ||
                 result.status === 0 ||
                 result.status === 408 ||
                 result.status >= 500;
+            original.uncertain = uncertain;
+            setStaleVersion(
+                !uncertain && result.status === 409
+                    ? original.parentVersion
+                    : null,
+            );
             setUnresolved(uncertain);
 
             if (!uncertain) {
@@ -305,6 +450,7 @@ export function UploadAttachment({
             }
         }
 
+        running.current = false;
         setBusy(false);
     }
 
@@ -398,7 +544,7 @@ export default function AttachmentSharingPanel({
                             {file.bytes.toLocaleString()} bytes
                         </p>
                         <SharingControl
-                            key={`sharing:${JSON.stringify(file.sharing)}`}
+                            key={`sharing:${file.id}`}
                             file={file}
                             onChanged={(sharing) => {
                                 setPages((current) =>
@@ -436,7 +582,7 @@ export default function AttachmentSharingPanel({
                             }}
                         />
                         <RemoveAttachment
-                            key={`remove:${JSON.stringify(file.deletion)}`}
+                            key={`remove:${file.id}`}
                             file={file}
                         />
                     </li>

@@ -418,20 +418,10 @@ describe('attachment sharing panel', () => {
                 screen.getByRole('button', { name: 'Upload file' }),
             ).toBeDisabled(),
         );
-        expect(vi.mocked(fetch).mock.calls[2]).toEqual([
-            expect.stringMatching(/\/synthetic\/receipt-preparation$/),
-            expect.objectContaining({ method: 'GET', body: undefined }),
-        ]);
-        const replayed = vi.mocked(fetch).mock.calls[3][1]!;
-        expect(Array.from((replayed.body as FormData).entries())).toEqual(
-            Array.from((original.body as FormData).entries()),
-        );
+        expect(fetch).toHaveBeenCalledTimes(2);
         const originalKey = (original.headers as Record<string, string>)[
             'Idempotency-Key'
         ];
-        expect(
-            (replayed.headers as Record<string, string>)['Idempotency-Key'],
-        ).toBe(originalKey);
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         expect(screen.getByLabelText('Upload a file')).toBeEnabled();
         const nextFile = new File(
@@ -445,12 +435,12 @@ describe('attachment sharing panel', () => {
         fireEvent.submit(
             screen.getByLabelText('Upload a file').closest('form')!,
         );
-        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
-        expect(vi.mocked(fetch).mock.calls[4]).toEqual([
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+        expect(vi.mocked(fetch).mock.calls[2]).toEqual([
             '/synthetic/current-preparation',
             expect.objectContaining({ method: 'POST' }),
         ]);
-        const next = vi.mocked(fetch).mock.calls[5][1]!;
+        const next = vi.mocked(fetch).mock.calls[3][1]!;
         expect((next.body as FormData).get('file')).toBe(nextFile);
         expect((next.body as FormData).get('expected_version')).toBe(
             'q'.repeat(64),
@@ -458,6 +448,98 @@ describe('attachment sharing panel', () => {
         expect(
             (next.headers as Record<string, string>)['Idempotency-Key'],
         ).not.toBe(originalKey);
+    });
+
+    it('keeps a timeout upload frozen after a later refusal and checks the same original bytes and key', async () => {
+        let uploads = 0;
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (_href: string, options: RequestInit) => {
+                if (options.method === 'GET') {
+                    return new Response(
+                        JSON.stringify({
+                            data: { upload_url: '/synthetic/signed-latched' },
+                        }),
+                    );
+                }
+
+                uploads++;
+
+                if (uploads === 1) {
+                    return new Response(
+                        JSON.stringify({ message: 'Synthetic timeout' }),
+                        { status: 408 },
+                    );
+                }
+
+                if (uploads === 2) {
+                    return new Response(
+                        JSON.stringify({
+                            message: 'Synthetic current permission refusal',
+                        }),
+                        { status: 403 },
+                    );
+                }
+
+                return new Response(
+                    JSON.stringify({
+                        data: { id: 'synthetic-original-upload' },
+                    }),
+                    { status: 201 },
+                );
+            }),
+        );
+        const upload = {
+            href: '/synthetic/original-preparation',
+            method: 'GET' as const,
+            parent_version: 'p'.repeat(64),
+        };
+        const view = render(
+            <AttachmentSharingPanel panel={{ ...panel, upload }} />,
+        );
+        const file = new File(
+            ['Synthetic immutable bytes'],
+            'synthetic-immutable.txt',
+        );
+        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await screen.findByText('Synthetic timeout');
+        expect(screen.getByLabelText('Upload a file')).toBeDisabled();
+        view.rerender(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    upload: {
+                        ...upload,
+                        href: '/synthetic/changed-preparation',
+                        parent_version: 'q'.repeat(64),
+                    },
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+        await screen.findByText('Synthetic current permission refusal');
+        expect(screen.getByLabelText('Upload a file')).toBeDisabled();
+        const original = vi.mocked(fetch).mock.calls[1][1]!;
+        expect(vi.mocked(fetch).mock.calls[3][1]!.headers).toEqual(
+            original.headers,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+        await waitFor(() =>
+            expect(screen.getByLabelText('Upload a file')).toBeEnabled(),
+        );
+        expect(fetch).toHaveBeenCalledTimes(6);
+
+        for (const index of [3, 5]) {
+            const checked = vi.mocked(fetch).mock.calls[index][1]!;
+            expect((checked.body as FormData).get('file')).toBe(file);
+            expect((checked.body as FormData).get('expected_version')).toBe(
+                'p'.repeat(64),
+            );
+            expect(checked.headers).toEqual(original.headers);
+        }
     });
 
     it('recovers a stale upload after refreshed expense props without discarding uncertain attempts', async () => {
@@ -573,7 +655,7 @@ describe('attachment sharing panel', () => {
             JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)),
         ).toEqual({ expected_version: 'v'.repeat(64), confirm: true });
     });
-    it('keeps the same idempotency key for a lost-answer retry and closes stale controls until reload', async () => {
+    it('keeps a lost-answer sharing retry latched after a later conflict', async () => {
         vi.stubGlobal(
             'fetch',
             vi.fn().mockRejectedValue(new Error('Synthetic lost answer')),
@@ -590,7 +672,7 @@ describe('attachment sharing panel', () => {
                 { status: 409 },
             ),
         );
-        fireEvent.click(screen.getByLabelText('Visible to client'));
+        fireEvent.click(screen.getByRole('button', { name: 'Check sharing' }));
         await screen.findByText('Synthetic version conflict');
         expect(
             (
@@ -601,10 +683,211 @@ describe('attachment sharing panel', () => {
             )['Idempotency-Key'],
         ).toBe(firstKey);
         expect(screen.getByLabelText('Visible to client')).toBeDisabled();
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Reload current files' }),
+        expect(
+            screen.queryByRole('button', { name: 'Reload current files' }),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.getByRole('button', { name: 'Check sharing' }),
+        ).toBeEnabled();
+    });
+
+    it('replays the original sharing body after props change and a later permission refusal', async () => {
+        const responses = [
+            new Response(JSON.stringify({ message: 'Synthetic timeout' }), {
+                status: 408,
+            }),
+            new Response(
+                JSON.stringify({ message: 'Synthetic permission refusal' }),
+                { status: 403 },
+            ),
+            new Response(
+                JSON.stringify({
+                    data: {
+                        ...panel.files[0].sharing,
+                        is_visible_to_client: true,
+                        version: 'n'.repeat(64),
+                    },
+                }),
+            ),
+        ];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => responses.shift()!),
         );
-        expect(reload).toHaveBeenCalledWith();
+        const view = render(<AttachmentSharingPanel panel={panel} />);
+        fireEvent.click(screen.getByLabelText('Visible to client'));
+        await screen.findByText('Synthetic timeout');
+        const original = vi.mocked(fetch).mock.calls[0];
+        view.rerender(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    files: panel.files.map((file) => ({
+                        ...file,
+                        sharing: {
+                            ...file.sharing!,
+                            update_href: '/synthetic/changed-sharing',
+                            parent_version: 'q'.repeat(64),
+                        },
+                    })),
+                }}
+            />,
+        );
+        expect(screen.getByLabelText('Visible to client')).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Check sharing' }));
+        await screen.findByText('Synthetic permission refusal');
+        expect(screen.getByLabelText('Visible to client')).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Check sharing' }));
+        await waitFor(() =>
+            expect(screen.getByLabelText('Visible to client')).toBeEnabled(),
+        );
+        expect(fetch).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(fetch).mock.calls[1]).toEqual(original);
+        expect(vi.mocked(fetch).mock.calls[2]).toEqual(original);
+    });
+
+    it('keeps removal immutable across timeout, changed versions and later conflict, then retries only the accepted refresh', async () => {
+        const responses = [
+            new Response(
+                JSON.stringify({ message: 'Synthetic delete timeout' }),
+                { status: 408 },
+            ),
+            new Response(
+                JSON.stringify({ message: 'Synthetic delete refusal' }),
+                { status: 409 },
+            ),
+            new Response(JSON.stringify({ data: { status: 'deleted' } })),
+        ];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => responses.shift()!),
+        );
+        const view = render(<AttachmentSharingPanel panel={panel} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Remove file' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Confirm removal' }),
+        );
+        await screen.findByText('Synthetic delete timeout');
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        const original = vi.mocked(fetch).mock.calls[0];
+        const before = new CustomEvent('inertia:before', {
+            cancelable: true,
+            detail: {
+                visit: { method: 'get', url: '/synthetic/elsewhere', only: [] },
+            },
+        });
+        document.dispatchEvent(before);
+        expect(before.defaultPrevented).toBe(true);
+        view.rerender(
+            <AttachmentSharingPanel
+                panel={{
+                    ...panel,
+                    files: panel.files.map((file) => ({
+                        ...file,
+                        delete_href: '/synthetic/changed-delete',
+                        deletion: { expected_version: 'q'.repeat(64) },
+                    })),
+                }}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Check removal' }));
+        await screen.findByText('Synthetic delete refusal');
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        reload.mockImplementationOnce((options) => {
+            options?.onFinish?.();
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Check removal' }));
+        await screen.findByText(
+            'The file was removed, but this page could not refresh. Refresh the removed file before another removal.',
+        );
+        expect(vi.mocked(fetch).mock.calls[1]).toEqual(original);
+        expect(vi.mocked(fetch).mock.calls[2]).toEqual(original);
+        const after = new CustomEvent('inertia:before', {
+            cancelable: true,
+            detail: {
+                visit: { method: 'get', url: '/synthetic/elsewhere', only: [] },
+            },
+        });
+        document.dispatchEvent(after);
+        expect(after.defaultPrevented).toBe(false);
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(false);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Refresh removed file' }),
+        );
+        await waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Remove file' }),
+            ).toBeEnabled(),
+        );
+        expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('blocks navigation and unload while upload is in flight, then permits navigation after acceptance despite failed refresh', async () => {
+        let finish: (response: Response) => void = () => {};
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { url: '/synthetic/signed-upload' },
+                        }),
+                    ),
+                )
+                .mockImplementationOnce(
+                    () =>
+                        new Promise<Response>((resolve) => {
+                            finish = resolve;
+                        }),
+                ),
+        );
+        reload.mockImplementationOnce((options) => {
+            options?.onFinish?.();
+        });
+        render(<AttachmentSharingPanel panel={panel} />);
+        await userEvent.upload(
+            screen.getByLabelText('Upload a file'),
+            new File(['Synthetic guard bytes'], 'synthetic-guard.txt'),
+        );
+        fireEvent.submit(
+            screen.getByLabelText('Upload a file').closest('form')!,
+        );
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+        const before = new CustomEvent('inertia:before', {
+            cancelable: true,
+            detail: {
+                visit: { method: 'get', url: '/synthetic/elsewhere', only: [] },
+            },
+        });
+        document.dispatchEvent(before);
+        expect(before.defaultPrevented).toBe(true);
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(true);
+        finish(
+            new Response(JSON.stringify({ data: { id: 'synthetic-upload' } }), {
+                status: 201,
+            }),
+        );
+        await screen.findByText(
+            'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
+        );
+        const after = new CustomEvent('inertia:before', {
+            cancelable: true,
+            detail: {
+                visit: { method: 'get', url: '/synthetic/elsewhere', only: [] },
+            },
+        });
+        document.dispatchEvent(after);
+        expect(after.defaultPrevented).toBe(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Check upload' }));
+        await waitFor(() =>
+            expect(screen.getByLabelText('Upload a file')).toBeEnabled(),
+        );
+        expect(fetch).toHaveBeenCalledTimes(2);
     });
 
     it('replaces parent-derived sharing state and captured versions when the authorized seed changes', async () => {
