@@ -139,6 +139,31 @@ JS;
         $this->assertDirectoryDoesNotExist($home.'/.deployments/sample-app/prepared-root');
     }
 
+    /** @return array<string, array{string}> */
+    public static function databaseUrlOverrides(): array
+    {
+        return [
+            'remote URL overrides localhost' => ['mysql://synthetic:synthetic@database.example.test/app'],
+            'local URL overrides isolated credentials' => ['mysql://synthetic:synthetic@127.0.0.1/another_app'],
+        ];
+    }
+
+    #[DataProvider('databaseUrlOverrides')]
+    public function test_database_url_cannot_override_the_isolated_local_configuration(string $url): void
+    {
+        $home = $this->scaffold();
+        file_put_contents($home.'/.config/sample/deployment.env', 'DB_URL='.$url."\n", FILE_APPEND);
+        $this->assertFalse($this->prepare($home)->isSuccessful());
+        $this->assertDirectoryExists($home.'/sample-app');
+    }
+
+    public function test_empty_database_url_preserves_the_isolated_local_configuration(): void
+    {
+        $home = $this->scaffold();
+        file_put_contents($home.'/.config/sample/deployment.env', "DB_URL=\n", FILE_APPEND);
+        $this->assertTrue($this->prepare($home)->isSuccessful());
+    }
+
     public function test_pilot_opt_in_cannot_be_written_by_the_bootstrap_to_admit_a_wrong_target(): void
     {
         $home = $this->scaffold();
@@ -259,6 +284,16 @@ JS;
             $this->assertStringContainsString('set-php-handler: false', $text);
             $this->assertStringContainsString('install-cron: false', $text);
             $this->assertStringContainsString('php-binary: /usr/bin/php', $text);
+        }
+    }
+
+    public function test_workflows_clear_and_assert_the_database_url_before_migration(): void
+    {
+        foreach (glob($this->root.'/.github/workflows/pilot*.yml') as $file) {
+            $text = file_get_contents($file);
+            $this->assertMatchesRegularExpression('/^          env-values: DB_URL=$/m', $text);
+            $this->assertMatchesRegularExpression('/^          env-assert: \|\R            DB_URL=$/m', $text);
+            $this->assertStringContainsString('            DB_HOST=127.0.0.1', $text);
         }
     }
 }

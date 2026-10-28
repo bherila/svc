@@ -17,7 +17,8 @@ try {
     $env = parse_ini_file($argv[1], false, INI_SCANNER_RAW);
     if (!is_array($env) || ($env["PILOT_DEPLOYMENT"] ?? "") !== "1"
         || ($env["APP_DEBUG"] ?? "") !== "false" || ($env["MAIL_MAILER"] ?? "") !== "log"
-        || ($env["DB_HOST"] ?? "") !== "127.0.0.1") { exit(1); }
+        || ($env["DB_HOST"] ?? "") !== "127.0.0.1"
+        || ($env["DB_URL"] ?? "") !== "") { exit(1); }
 } catch (Throwable $error) { exit(1); }
 ' "$HOME/$env_source" || { echo 'Private target does not have the required pilot-only configuration.' >&2; exit 1; }
 stable="$HOME/$app"
