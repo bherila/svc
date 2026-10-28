@@ -36,6 +36,9 @@ final class TaskAssigneeApiTest extends TestCase
         $this->getJson($this->href($workspace, $project).'?q='.str_repeat('x', 101))->assertUnprocessable();
         $this->getJson($this->href($workspace, $project).'?q[]=x')->assertUnprocessable();
         $this->assertFalse(Route::has('tasks.assignees'));
+        foreach (['labels.options', 'dependencies.get', 'dependencies.options', 'contacts.options'] as $operation) {
+            $this->assertFalse(Route::has('tasks.planning.'.$operation));
+        }
         $this->getJson('/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/task-assignees')->assertNotFound();
     }
 

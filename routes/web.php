@@ -138,7 +138,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
 
     foreach (TaskPlanningOperations::DEFINITIONS as $suffix => [$verb]) {
-        if ($verb !== 'GET') {
+        if ($verb !== 'GET' || in_array($suffix, ['labels.options', 'dependencies.get', 'dependencies.options', 'contacts.options'], true)) {
             continue;
         }
         $path = TaskPlanningOperations::ROUTES['task_planning.'.$suffix][1];

@@ -47,16 +47,17 @@ final class TasksCommand extends MutationCommand
         $operation = (string) $this->argument('operation');
         try {
             $options = validator(['project' => $this->option('project'), 'task' => $this->option('task'),
-                'key' => $this->option('key'), 'limit' => $this->option('limit'), 'cursor' => $this->option('cursor')], [
+                'q' => $this->option('q'), 'key' => $this->option('key'), 'limit' => $this->option('limit'), 'cursor' => $this->option('cursor')], [
                     'project' => [in_array($operation, ['create', 'assignees'], true) ? 'required' : 'nullable', 'uuid'],
                     'task' => [in_array($operation, ['get', 'update'], true) ? 'required' : 'nullable', 'uuid'],
                     'key' => [in_array($operation, ['create', 'update'], true) ? 'required' : 'nullable', 'string', 'max:255'],
+                    'q' => ['nullable', 'string', 'max:100'],
                     'limit' => ['required', 'integer', 'min:1', 'max:100'], 'cursor' => ['nullable', 'string', 'max:2048'],
                 ])->validate();
             if ($operation === 'list') {
                 $result = $reads->tasks($actor, $workspace, $options['project'], (int) $options['limit'], $options['cursor'], TaskMutationOrigin::Internal);
             } elseif ($operation === 'assignees') {
-                $result = app(TaskAssigneeReadService::class)->list($actor, $workspace, $options['project'], $this->option('q'), TaskMutationOrigin::Internal);
+                $result = app(TaskAssigneeReadService::class)->list($actor, $workspace, $options['project'], $options['q'], TaskMutationOrigin::Internal);
             } elseif ($operation === 'get') {
                 $result = ['data' => $reads->task($actor, $workspace, $options['task'], TaskMutationOrigin::Internal)];
             } elseif (in_array($operation, ['create', 'update'], true)) {

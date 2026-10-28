@@ -13,7 +13,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use LogicException;
 
 /** Native policies and receipt identity are selected only by this trusted adapter. */
 final class ClientTaskPlanningController extends Controller
@@ -34,26 +33,6 @@ final class ClientTaskPlanningController extends Controller
         abort_unless($actor instanceof User, 401);
         $operation = TaskPlanningInput::operation($request);
 
-        $response = $transport->read($actor, $workspace, TaskMutationOrigin::Internal, $operation, TaskPlanningInput::target($request, $operation), $request->query());
-        if (str_ends_with($operation, '.options') || $operation === 'dependencies.get') {
-            $meta = $response['meta'] ?? null;
-            if (! is_array($meta) || ! array_key_exists('next_cursor', $meta)) {
-                throw new LogicException('Native planning pages must return explicit continuation metadata.');
-            }
-            $cursor = $meta['next_cursor'];
-            if ($cursor !== null && ! is_string($cursor)) {
-                throw new LogicException('Native planning continuation must be an opaque string.');
-            }
-            $response = ['data' => $response['data'],
-                'next_href' => $cursor === null ? null : $request->fullUrlWithQuery(['cursor' => $cursor]),
-                'previous_href' => null];
-        }
-
-        return response()->json($response);
-    }
-
-    public function options(Request $request, Workspace $workspace, TaskPlanningTransport $transport): JsonResponse
-    {
-        return $this->show($request, $workspace, $transport);
+        return response()->json($transport->read($actor, $workspace, TaskMutationOrigin::Internal, $operation, TaskPlanningInput::target($request, $operation), $request->query()));
     }
 }

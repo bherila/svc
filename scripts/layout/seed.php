@@ -433,7 +433,7 @@ $historyInvoice = app(HistoricalLibraryRepository::class)->publish($workspace, $
     ]), $company);
 
 $taskViewer = $owner;
-if ($planningTask !== null) {
+if ($planningTask !== null && getenv('SVC_LAYOUT_TASK_LOOKUPS') !== '1') {
     $taskViewer = User::factory()->create(['name' => 'Synthetic Project Manager', 'email' => 'layout-project-manager@example.test']);
     $workspace->memberships()->create(['user_id' => $taskViewer->id, 'role' => 'member']);
     ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);

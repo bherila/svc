@@ -10,6 +10,7 @@ use App\Models\ClientContact;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
+use App\Models\ClientTaskDependency;
 use App\Models\ClientTaskLabel;
 use App\Models\User;
 use App\Models\Workspace;
@@ -131,6 +132,10 @@ final class TaskPlanningAdaptersTest extends TestCase
         [$workspace, $project, $owner, $task] = $this->fixture();
         for ($i = 0; $i < 27; $i++) {
             ClientTaskLabel::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic label '.$i, 'name_key' => hash('sha256', 'synthetic label '.$i)]);
+            ClientContact::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'first_name' => 'Synthetic contact '.$i]);
+            ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'Synthetic candidate '.$i]);
+            $dependent = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'Synthetic dependent '.$i]);
+            ClientTaskDependency::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'client_task_id' => $dependent->id, 'prerequisite_task_id' => $task->id]);
         }
         $this->actingAsMcp($owner, ['tasks:read', 'clients:read']);
         $base = '/api/v1/workspaces/'.$workspace->public_id;
@@ -143,9 +148,17 @@ final class TaskPlanningAdaptersTest extends TestCase
         $this->assertStringContainsString('limit=25', $next);
         $this->assertStringContainsString('cursor='.urlencode($page->json('meta.next_cursor')), $next);
         $this->getJson($next)->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('next_href', null)->assertJsonPath('meta.next_cursor', null);
-        $this->getJson($base.'/tasks/'.$task->public_id.'/dependencies')->assertOk()->assertJsonPath('next_href', null)->assertJsonPath('meta.next_cursor', null);
-        foreach (['dependency-options', 'contact-responsibility-options'] as $suffix) {
-            $this->getJson($base.'/tasks/'.$task->public_id.'/'.$suffix)->assertOk()->assertJsonPath('next_href', null)->assertJsonPath('previous_href', null)->assertJsonPath('meta.next_cursor', null);
+        foreach (['dependencies' => 'data.dependents', 'dependency-options' => 'data', 'contact-responsibility-options' => 'data'] as $suffix => $rows) {
+            $page = $this->getJson($base.'/tasks/'.$task->public_id.'/'.$suffix.'?limit=25')->assertOk()->assertJsonCount(25, $rows)->assertJsonPath('previous_href', null);
+            $next = $page->json('next_href');
+            $this->assertIsString($next);
+            $this->assertStringContainsString('/api/v1/', $next);
+            $this->assertStringContainsString('limit=25', $next);
+            $this->assertStringContainsString('cursor='.urlencode($page->json('meta.next_cursor')), $next);
+            $this->getJson($next)->assertOk()->assertJsonCount(2, $rows)->assertJsonPath('next_href', null)->assertJsonPath('meta.next_cursor', null);
+        }
+        foreach (['/projects/'.$project->public_id.'/task-label-options', '/tasks/'.$task->public_id.'/dependencies', '/tasks/'.$task->public_id.'/dependency-options', '/tasks/'.$task->public_id.'/contact-responsibility-options'] as $path) {
+            $this->getJson('/workspaces/'.$workspace->public_id.$path)->assertNotFound();
         }
     }
 
