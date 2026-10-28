@@ -21,6 +21,12 @@ use App\Services\Files\AttachmentSharingGate;
 use App\Services\Files\AttachmentSharingPresenter;
 use App\Services\Files\AttachmentSharingView;
 use App\Support\Access\StaffRole;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentProposalPresenter;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -203,44 +209,27 @@ class WorkspaceOperationsController extends Controller
 
             foreach ($company->projects as $project) {
                 $projects[] = [
-                    'id' => $project->public_id,
-                    'name' => $project->name,
+                    ...AgentProjectPresenter::identity($project),
                     'time_url' => route('clients.time', [$workspace, $company, 'log_project' => $project->public_id], absolute: false),
                     'time_entries' => ($timeEntriesByProject->get($project->id) ?? collect())
-                        ->map(fn (ClientTimeEntry $entry): array => [
-                            'id' => $entry->public_id,
-                            'worked_on' => $entry->worked_on->toDateString(),
-                            'minutes' => $entry->minutes,
-                            'description' => $entry->description,
-                            'status' => $entry->status,
-                            'is_billable' => $entry->is_billable,
-                            'is_deferred' => $entry->is_deferred,
-                        ])
+                        ->map(fn (ClientTimeEntry $entry): array => AgentTimeEntryPresenter::summary($entry))
                         ->all(),
                 ];
             }
 
             $clients[] = [
-                'id' => $company->public_id,
-                'name' => $company->name,
+                ...AgentClientPresenter::identity($company),
                 'projects' => $projects,
                 'proposals' => ($proposalsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientProposal $proposal): array => [
-                        'id' => $proposal->public_id,
-                        'title' => $proposal->title,
-                        'status' => $proposal->status,
-                        'total_amount' => $proposal->totalAmount(),
-                        'currency' => $proposal->currency,
+                        ...AgentProposalPresenter::summary($proposal),
                         'attachments' => $attachmentPayload('proposal', $proposal->public_id),
                         'attachment_panel' => $filePanel('proposal', $proposal->public_id),
                     ])
                     ->all(),
                 'agreements' => ($agreementsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientAgreement $agreement): array => [
-                        'id' => $agreement->public_id,
-                        'title' => $agreement->title,
-                        'status' => $agreement->status,
-                        'billing_cadence' => $agreement->billing_cadence,
+                        ...AgreementReadPresenter::summary($agreement),
                         'attachments' => $attachmentPayload('agreement', $agreement->public_id),
                         'attachment_panel' => $filePanel('agreement', $agreement->public_id),
                     ])
@@ -250,20 +239,7 @@ class WorkspaceOperationsController extends Controller
                     ->all(),
                 'invoices' => ($invoicesByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientInvoice $invoice): array => [
-                        'id' => $invoice->public_id,
-                        'invoice_number' => $invoice->invoice_number,
-                        'status' => $invoice->status,
-                        'total_amount' => $invoice->total_amount,
-                        'paid_amount' => $invoice->paid_amount,
-                        'balance_amount' => $invoice->balance_amount,
-                        'currency' => $invoice->currency,
-                        // What the record-payment form measures a payment date
-                        // against: a payment dated before the invoice existed
-                        // is legitimate and is warned about rather than
-                        // refused, and the screen cannot warn about a date it
-                        // was never told.
-                        'issue_date' => $invoice->issue_date?->toDateString(),
-                        'due_date' => $invoice->due_date?->toDateString(),
+                        ...AgentInvoicePresenter::summary($invoice),
                         'attachments' => $attachmentPayload('invoice', $invoice->public_id),
                         'attachment_panel' => $filePanel('invoice', $invoice->public_id),
                     ])

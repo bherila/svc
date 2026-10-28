@@ -15,7 +15,6 @@ use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
-use App\Models\ClientProposalItem;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -47,8 +46,10 @@ use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
+use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -129,10 +130,7 @@ class ClientDirectoryController extends Controller
                 'name' => $workspace->name,
             ],
             'companies' => $companies->map(fn (ClientCompany $company): array => [
-                'id' => $company->public_id,
-                'name' => $company->name,
-                'billing_email' => $company->billing_email,
-                'is_active' => $company->is_active,
+                ...AgentClientPresenter::summary($company),
                 'project_count' => (int) $company->getAttribute('project_count'),
                 'draft_invoice_count' => (int) $company->getAttribute('draft_invoice_count'),
                 'open_invoice_count' => (int) $company->getAttribute('open_invoice_count'),
@@ -1244,28 +1242,8 @@ class ClientDirectoryController extends Controller
         $proposal->setRelation('items', $items);
 
         return [
-            'proposal' => [
-                'id' => $proposal->public_id,
-                'title' => $proposal->title,
-                'summary' => $proposal->summary,
-                'terms' => $proposal->terms,
-                'status' => $proposal->status,
-                'currency' => $proposal->currency,
-                'valid_until' => $proposal->valid_until?->toDateString(),
-                'sent_at' => $proposal->sent_at?->toISOString(),
-                'accepted_at' => $proposal->accepted_at?->toISOString(),
-                'total_amount' => $proposal->totalAmount(),
-            ],
-            'items' => array_values($items->map(fn (ClientProposalItem $item): array => [
-                'id' => $item->public_id,
-                'description' => $item->description,
-                // A string rather than a float: quantities are decimals in the
-                // column, and rendering 1.5 through a float is how 0.1 + 0.2
-                // reaches an invoice.
-                'quantity' => (string) $item->quantity,
-                'unit_amount' => (int) $item->unit_amount,
-                'cadence' => $item->cadence,
-            ])->all()),
+            'proposal' => AgentProposalPresenter::details($proposal),
+            'items' => $items->map(AgentProposalPresenter::item(...))->values()->all(),
         ];
     }
 
@@ -1281,20 +1259,12 @@ class ClientDirectoryController extends Controller
     private function invoicePayload(ClientInvoice $invoice): array
     {
         return [
-            'id' => $invoice->public_id,
-            'invoice_number' => $invoice->invoice_number,
-            'status' => $invoice->status,
+            ...AgentInvoicePresenter::summary($invoice),
             'document_revision' => (int) $invoice->document_revision,
             'automatic_delivery_status' => $invoice->automatic_delivery_status,
             'automatic_delivery_due_at' => $invoice->automatic_delivery_due_at?->toISOString(),
             'automatic_delivery_note' => $invoice->automatic_delivery_note,
-            'currency' => $invoice->currency,
-            'issue_date' => $invoice->issue_date?->toDateString(),
-            'due_date' => $invoice->due_date?->toDateString(),
             'scheduled_issue_date' => $invoice->scheduled_issue_date?->toDateString(),
-            'total_amount' => (int) $invoice->total_amount,
-            'paid_amount' => (int) $invoice->paid_amount,
-            'balance_amount' => (int) $invoice->balance_amount,
         ];
     }
 
