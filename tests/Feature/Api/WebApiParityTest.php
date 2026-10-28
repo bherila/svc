@@ -51,13 +51,6 @@ final class WebApiParityTest extends TestCase
         'svc.billing.square.webhook' => 'web-only:inbound webhook',
         'svc.engagement.agreements.sign' => 'deliberate:a signature is an interactive act by the signer',
         'svc.engagement.proposals.accept' => 'operation:proposals.accept',
-
-        'svc.files.destroy' => 'operation:attachments.delete',
-        'svc.files.store' => 'operation:attachments.upload',
-        'svc.files.visibility.update' => 'operation:attachments.visibility.update',
-        'svc.files.collaboration.upload' => 'operation:collaboration.attachments.upload',
-        'svc.files.collaboration.visibility.update' => 'operation:collaboration.attachments.visibility.update',
-        'svc.files.collaboration.destroy' => 'operation:collaboration.attachments.delete',
     ];
 
     public function test_every_state_changing_web_route_is_classified(): void

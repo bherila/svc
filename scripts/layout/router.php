@@ -48,7 +48,11 @@ $clientWrite = getenv('SVC_LAYOUT_CLIENTS') === '1' && (
     ($method === 'POST' && $requestPath === ($fixture['contact_restore'] ?? null))
     || ($method === 'PATCH' && $requestPath === ($fixture['client_profile_update'] ?? null))
 );
-if ($method !== 'GET' && ! $projectWrite && ! $workspaceWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
+$receiptWrite = getenv('SVC_LAYOUT_RECEIPTS') === '1' && is_string($requestPath) && (
+    ($method === 'POST' && $requestPath === ($fixture['receipt_upload'] ?? null))
+    || ($method === 'DELETE' && isset($fixture['receipt_prefix']) && preg_match('#^'.preg_quote($fixture['receipt_prefix'], '#').'[0-9a-f-]{36}$#D', $requestPath) === 1)
+);
+if ($method !== 'GET' && ! $projectWrite && ! $workspaceWrite && ! $receiptWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }

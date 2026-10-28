@@ -32,6 +32,7 @@ import type {
     AgreementFile,
     AgreementTerms,
 } from '@/types/agreement';
+import type { AttachmentPanel } from '@/types/files';
 
 type RecurringItem = {
     id: string;
@@ -81,6 +82,7 @@ export default function ClientAgreementDetail({
     audience,
     actions,
     files,
+    attachment_upload: attachmentUpload = null,
     files_next_href: nextFilesHref = null,
     files_previous_href: previousFilesHref = null,
     agreement,
@@ -93,6 +95,7 @@ export default function ClientAgreementDetail({
     audience: 'operator' | 'client';
     actions: AgreementActions;
     files: AgreementFile[];
+    attachment_upload?: AttachmentPanel['upload'];
     files_next_href?: string | null;
     files_previous_href?: string | null;
     agreement: AgreementTerms;
@@ -375,10 +378,9 @@ export default function ClientAgreementDetail({
                                     ...file,
                                     sharing: file.sharing ?? null,
                                 })),
-                                upload: null,
+                                upload: attachmentUpload,
                                 next_href: null,
                             }}
-                            legacyForms={{ upload_href: actions.upload_file }}
                             title="Attached files"
                         />
 

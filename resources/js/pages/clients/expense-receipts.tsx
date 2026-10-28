@@ -1,21 +1,6 @@
-import { Head, router } from '@inertiajs/react';
-import { useState } from 'react';
-import {
-    AgreementFileUpload,
-    formatBytes,
-} from '@/components/agreements/agreement-editor';
+import { Head } from '@inertiajs/react';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatDay } from '@/lib/datetime';
@@ -23,7 +8,7 @@ import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { cn } from '@/lib/utils';
-import type { AgreementFile } from '@/types/agreement';
+import type { AttachmentPanel, SharedAttachment } from '@/types/files';
 
 type Props = {
     expense: {
@@ -33,10 +18,10 @@ type Props = {
         currency: string;
         status: string;
     };
-    files: AgreementFile[];
+    files: SharedAttachment[];
     files_next_href?: string | null;
     files_previous_href?: string | null;
-    upload_href: string;
+    upload: NonNullable<AttachmentPanel['upload']>;
 };
 
 export default function ExpenseReceipts({
@@ -44,12 +29,8 @@ export default function ExpenseReceipts({
     files,
     files_next_href: nextFilesHref = null,
     files_previous_href: previousFilesHref = null,
-    upload_href,
+    upload,
 }: Props) {
-    const [removing, setRemoving] = useState<AgreementFile | null>(null);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
     return (
         <WorkspaceShell activeModule="expenses">
             <Head title="Expense receipts" />
@@ -70,107 +51,17 @@ export default function ExpenseReceipts({
                         <p className="text-sm text-muted-foreground">
                             Receipts are available to workspace managers only.
                         </p>
-                        {error && (
-                            <p
-                                role="alert"
-                                className="wrap-anywhere text-destructive"
-                            >
-                                {error}
-                            </p>
-                        )}
-                        {files.length === 0 ? (
-                            <p>
-                                {previousFilesHref
-                                    ? 'No receipts on this page.'
-                                    : 'No receipts attached.'}
-                            </p>
-                        ) : (
-                            <ul className="grid grid-cols-1 gap-3">
-                                {files.map((file) => (
-                                    <li
-                                        key={file.id}
-                                        className="flex min-w-0 flex-wrap items-center gap-3"
-                                    >
-                                        <a
-                                            href={file.download_href}
-                                            className="min-w-0 wrap-anywhere underline"
-                                        >
-                                            {file.filename}
-                                        </a>
-                                        <span className="text-sm text-muted-foreground">
-                                            {formatBytes(file.bytes)}
-                                        </span>
-                                        {file.delete_href && (
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() =>
-                                                    setRemoving(file)
-                                                }
-                                            >
-                                                Remove
-                                            </Button>
-                                        )}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
+                        <AttachmentSharingPanel
+                            panel={{ files, upload, next_href: null }}
+                            title="Receipts"
+                        />
                         <AttachmentPageLinks
                             nextHref={nextFilesHref}
                             previousHref={previousFilesHref}
                         />
-                        <AgreementFileUpload uploadHref={upload_href} />
                     </CardContent>
                 </Card>
             </main>
-            <AlertDialog
-                open={removing !== null}
-                onOpenChange={(open) => {
-                    if (!open && !busy) {
-                        setRemoving(null);
-                    }
-                }}
-            >
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Remove receipt?</AlertDialogTitle>
-                        <AlertDialogDescription className="wrap-anywhere">
-                            {removing?.filename} will no longer be available to
-                            download.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel disabled={busy}>
-                            Cancel
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                            disabled={busy}
-                            onClick={(event) => {
-                                event.preventDefault();
-
-                                if (!removing?.delete_href) {
-                                    return;
-                                }
-
-                                setBusy(true);
-                                setError(null);
-                                router.delete(removing.delete_href, {
-                                    preserveScroll: true,
-                                    onSuccess: () => setRemoving(null),
-                                    onError: (errors) =>
-                                        setError(
-                                            Object.values(errors)[0] ??
-                                                'Receipt could not be removed.',
-                                        ),
-                                    onFinish: () => setBusy(false),
-                                });
-                            }}
-                        >
-                            Remove receipt
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </WorkspaceShell>
     );
 }
