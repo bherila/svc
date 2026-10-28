@@ -38,7 +38,7 @@ final class AttachmentSharingController extends Controller
     {
         $panel = $this->legacyPanel($request, $workspace, $recordType, $recordPublicId);
 
-        return Inertia::render('files/parent', ['attachment_panel' => $panel, 'legacy_upload_href' => $panel['legacy_upload_href']]);
+        return Inertia::render('files/parent', ['attachment_panel' => $panel]);
     }
 
     public function legacyParentIndex(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse

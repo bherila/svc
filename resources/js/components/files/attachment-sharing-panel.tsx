@@ -1,7 +1,8 @@
-import { router, useForm } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import type {
     AttachmentPanel,
     AttachmentSharing,
@@ -118,20 +119,14 @@ function SharingControl({
     );
 }
 
-function RemoveAttachment({
-    file,
-    nativeForm,
-}: {
-    file: SharedAttachment;
-    nativeForm: boolean;
-}) {
+function RemoveAttachment({ file }: { file: SharedAttachment }) {
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [stale, setStale] = useState(false);
     const attempt = useRef<string | null>(null);
 
-    if (!file.delete_href || (!nativeForm && !file.sharing)) {
+    if (!file.delete_href || !file.deletion) {
         return null;
     }
 
@@ -140,21 +135,7 @@ function RemoveAttachment({
             return;
         }
 
-        if (nativeForm) {
-            setBusy(true);
-            router.delete(file.delete_href, {
-                preserveScroll: true,
-                onError: () =>
-                    setError(
-                        'The file could not be removed. Reload the page and try again.',
-                    ),
-                onFinish: () => setBusy(false),
-            });
-
-            return;
-        }
-
-        if (!file.sharing) {
+        if (!file.deletion) {
             return;
         }
 
@@ -165,8 +146,7 @@ function RemoveAttachment({
             file.delete_href,
             {
                 confirm: true,
-                expected_version: file.sharing.version,
-                expected_parent_version: file.sharing.parent_version,
+                ...file.deletion,
             },
             attempt.current,
         );
@@ -220,114 +200,124 @@ function RemoveAttachment({
     );
 }
 
-function LegacyUploadAttachment({ href }: { href: string }) {
-    const form = useForm<{ file: File | null }>({ file: null });
+export function UploadAttachment({
+    upload,
+}: {
+    upload: NonNullable<AttachmentPanel['upload']>;
+}) {
+    const input = useRef<HTMLInputElement>(null);
+    const [file, setFile] = useState<File | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [stale, setStale] = useState(false);
+    const [unresolved, setUnresolved] = useState(false);
+    const attempt = useRef<{
+        file: File;
+        parentVersion: string;
+        href: string;
+        key: string;
+    } | null>(null);
+
+    async function send() {
+        if (busy || !file) {
+            return;
+        }
+
+        if (file.size > 52428800) {
+            setError('Choose a file up to 50 MiB.');
+
+            return;
+        }
+
+        attempt.current ??= {
+            file,
+            parentVersion: upload.parent_version,
+            href: upload.href,
+            key: newIdempotencyKey(),
+        };
+        const original = attempt.current;
+        setBusy(true);
+        setError(null);
+        const prepared = await apiRequest<{
+            url?: string;
+            upload_url?: string;
+        }>('POST', original.href, {});
+        let result;
+
+        if (!prepared.ok) {
+            result = prepared;
+        } else {
+            const destination = prepared.data?.url ?? prepared.data?.upload_url;
+
+            if (typeof destination !== 'string' || destination === '') {
+                result = {
+                    ok: false as const,
+                    status: 0,
+                    message:
+                        'The upload destination could not be read. Retry the original upload.',
+                };
+            } else {
+                const body = new FormData();
+                body.set('file', original.file);
+                body.set('expected_version', original.parentVersion);
+                result = await apiRequest(
+                    'POST',
+                    destination,
+                    body,
+                    original.key,
+                );
+            }
+        }
+
+        if (result.ok) {
+            try {
+                await refreshPageProps({ requireSuccess: true });
+                attempt.current = null;
+                setFile(null);
+
+                if (input.current) {
+                    input.current.value = '';
+                }
+
+                setUnresolved(false);
+            } catch {
+                setUnresolved(true);
+                setError(
+                    'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
+                );
+            }
+        } else {
+            setError(result.message);
+            setStale(result.status === 409);
+            const uncertain =
+                result.status === 0 ||
+                result.status === 408 ||
+                result.status >= 500;
+            setUnresolved(uncertain);
+
+            if (!uncertain) {
+                attempt.current = null;
+            }
+        }
+
+        setBusy(false);
+    }
 
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-2"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.post(href, {
-                    forceFormData: true,
-                    preserveScroll: true,
-                    onSuccess: () => form.reset(),
-                });
+                void send();
             }}
         >
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Upload a file
                 <input
+                    ref={input}
                     type="file"
                     className="w-full min-w-0 rounded-md border p-2 text-sm"
-                    disabled={form.processing}
-                    required
-                    onChange={(event) =>
-                        form.setData('file', event.target.files?.[0] ?? null)
-                    }
-                />
-            </label>
-            <p className="text-sm text-muted-foreground">
-                New files are private.
-            </p>
-            <div>
-                <Button
-                    type="submit"
-                    disabled={form.processing || form.data.file === null}
-                >
-                    Upload file
-                </Button>
-            </div>
-            {form.errors.file && (
-                <p
-                    role="alert"
-                    className="text-sm wrap-anywhere text-destructive"
-                >
-                    {form.errors.file}
-                </p>
-            )}
-        </form>
-    );
-}
-
-function UploadAttachment({
-    upload,
-}: {
-    upload: NonNullable<AttachmentPanel['upload']>;
-}) {
-    const [file, setFile] = useState<File | null>(null);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [stale, setStale] = useState(false);
-    const attempt = useRef<string | null>(null);
-
-    return (
-        <form
-            className="grid min-w-0 grid-cols-1 gap-2"
-            onSubmit={async (event) => {
-                event.preventDefault();
-
-                if (!file) {
-                    return;
-                }
-
-                if (file.size > 52428800) {
-                    setError('Choose a file up to 50 MiB.');
-
-                    return;
-                }
-
-                attempt.current ??= newIdempotencyKey();
-                const body = new FormData();
-                body.set('file', file);
-                body.set('expected_version', upload.parent_version);
-                setBusy(true);
-                const result = await apiRequest(
-                    'POST',
-                    upload.href,
-                    body,
-                    attempt.current,
-                );
-                setBusy(false);
-
-                if (result.ok) {
-                    router.reload();
-                } else {
-                    setError(result.message);
-                    setStale(result.status === 409);
-
-                    if (result.status !== 0 && result.status < 500) {
-                        attempt.current = null;
-                    }
-                }
-            }}
-        >
-            <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                Upload a file
-                <input
-                    type="file"
-                    className="w-full min-w-0 rounded-md border p-2 text-sm"
-                    disabled={busy || stale}
+                    disabled={busy || stale || unresolved}
                     required
                     onChange={(event) => {
                         setFile(event.target.files?.[0] ?? null);
@@ -342,7 +332,7 @@ function UploadAttachment({
             </p>
             <div>
                 <Button type="submit" disabled={busy || stale || file === null}>
-                    Upload file
+                    {unresolved ? 'Check upload' : 'Upload file'}
                 </Button>
             </div>
             {error && <MutationError message={error} stale={stale} />}
@@ -354,11 +344,9 @@ function UploadAttachment({
 export default function AttachmentSharingPanel({
     panel,
     title = 'Files',
-    legacyForms,
 }: {
     panel: AttachmentPanel;
     title?: string;
-    legacyForms?: { upload_href: string | null };
 }) {
     const [pages, setPages] = useState({
         source: panel,
@@ -413,7 +401,27 @@ export default function AttachmentSharingPanel({
                                               ...current,
                                               files: current.files.map((row) =>
                                                   row.id === file.id
-                                                      ? { ...row, sharing }
+                                                      ? {
+                                                            ...row,
+                                                            sharing,
+                                                            deletion:
+                                                                row.deletion
+                                                                    ? {
+                                                                          ...row.deletion,
+                                                                          expected_version:
+                                                                              sharing.version,
+                                                                          ...(row
+                                                                              .deletion
+                                                                              .expected_parent_version ===
+                                                                          undefined
+                                                                              ? {}
+                                                                              : {
+                                                                                    expected_parent_version:
+                                                                                        sharing.parent_version,
+                                                                                }),
+                                                                      }
+                                                                    : null,
+                                                        }
                                                       : row,
                                               ),
                                           },
@@ -421,17 +429,13 @@ export default function AttachmentSharingPanel({
                             }}
                         />
                         <RemoveAttachment
-                            key={`remove:${JSON.stringify(file.sharing)}`}
+                            key={`remove:${JSON.stringify(file.deletion)}`}
                             file={file}
-                            nativeForm={legacyForms !== undefined}
                         />
                     </li>
                 ))}
             </ul>
             {panel.upload && <UploadAttachment upload={panel.upload} />}
-            {legacyForms?.upload_href && (
-                <LegacyUploadAttachment href={legacyForms.upload_href} />
-            )}
             {next && (
                 <div>
                     <Button

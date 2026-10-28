@@ -386,7 +386,6 @@ export default function ClientAgreementDetail({
                                 upload: null,
                                 next_href: null,
                             }}
-                            legacyForms={{ upload_href: actions.upload_file }}
                             title="Attached files"
                         />
 

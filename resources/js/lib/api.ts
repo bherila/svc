@@ -84,7 +84,20 @@ export async function apiRequest<T = unknown>(
         };
     }
 
-    const payload: unknown = await response.json().catch(() => null);
+    let payload: unknown = null;
+
+    try {
+        payload = await response.json();
+    } catch {
+        if (response.ok && response.status !== 204 && response.status !== 205) {
+            return {
+                ok: false,
+                status: 0,
+                message:
+                    'SVC’s response could not be read. Retry to check the original change.',
+            };
+        }
+    }
 
     if (response.ok) {
         const data =

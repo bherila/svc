@@ -16,6 +16,7 @@ export type SharedAttachment = {
     download_href: string;
     delete_href: string | null;
     sharing: AttachmentSharing | null;
+    deletion?: { expected_version: string; expected_parent_version?: string } | null;
 };
 
 export type AttachmentPanel = {

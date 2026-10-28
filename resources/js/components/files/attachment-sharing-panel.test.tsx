@@ -5,29 +5,13 @@ import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel'
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import type { AttachmentPanel } from '@/types/files';
 
-const reload = vi.hoisted(() => vi.fn());
-const legacy = vi.hoisted(() => ({ post: vi.fn(), delete: vi.fn() }));
-vi.mock('@inertiajs/react', async () => {
-    const { useState } = await import('react');
-
-    return {
-        router: { reload, delete: legacy.delete },
-        useForm(initial: { file: File | null }) {
-            const [data, setData] = useState(initial);
-
-            return {
-                data,
-                errors: {},
-                processing: false,
-                setData: (field: string, value: unknown) =>
-                    setData((prior) => ({ ...prior, [field]: value })),
-                post: (href: string, options: object) =>
-                    legacy.post(href, data, options),
-                reset: () => setData(initial),
-            };
-        },
-    };
-});
+const reload = vi.hoisted(() =>
+    vi.fn((options?: { onSuccess?: () => void; onFinish?: () => void }) => {
+        options?.onSuccess?.();
+        options?.onFinish?.();
+    }),
+);
+vi.mock('@inertiajs/react', () => ({ router: { reload } }));
 
 const panel: AttachmentPanel = {
     files: [
@@ -41,6 +25,10 @@ const panel: AttachmentPanel = {
             uploaded_at: null,
             download_href: '/synthetic/download',
             delete_href: '/synthetic/delete',
+            deletion: {
+                expected_version: 'v'.repeat(64),
+                expected_parent_version: 'p'.repeat(64),
+            },
             sharing: {
                 is_visible_to_client: false,
                 effective_visible_to_client: false,
@@ -135,7 +123,23 @@ describe('attachment sharing panel', () => {
     });
 
     it('uploads private-first multipart bytes and only fetches continuation on request', async () => {
-        respond({ data: { id: 'synthetic-new' } });
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({
+                            data: { url: '/synthetic/signed-upload' },
+                        }),
+                    ),
+                )
+                .mockResolvedValueOnce(
+                    new Response(
+                        JSON.stringify({ data: { id: 'synthetic-new' } }),
+                    ),
+                ),
+        );
         render(<AttachmentSharingPanel panel={panel} />);
         const file = new File(['Synthetic bytes'], 'synthetic-new.txt');
         await userEvent.upload(screen.getByLabelText('Upload a file'), file);
@@ -150,8 +154,11 @@ describe('attachment sharing panel', () => {
         fireEvent.submit(
             screen.getByLabelText('Upload a file').closest('form')!,
         );
-        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-        const body = vi.mocked(fetch).mock.calls[0][1]?.body as FormData;
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+        expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe(
+            '/synthetic/upload',
+        );
+        const body = vi.mocked(fetch).mock.calls[1][1]?.body as FormData;
         expect(body.get('file')).toBe(file);
         expect(body.get('expected_version')).toBe('p'.repeat(64));
         expect(body.has('is_visible_to_client')).toBe(false);
@@ -180,8 +187,8 @@ describe('attachment sharing panel', () => {
         ).not.toBeInTheDocument();
     });
 
-    it('retains legacy native form upload and confirmed deletion when sharing controls are unavailable', async () => {
-        vi.stubGlobal('fetch', vi.fn());
+    it('deletes through the canonical API when sharing controls are unavailable', async () => {
+        respond({ data: { status: 'deleting' } });
         render(
             <AttachmentSharingPanel
                 panel={{
@@ -189,33 +196,22 @@ describe('attachment sharing panel', () => {
                     files: panel.files.map((file) => ({
                         ...file,
                         sharing: null,
+                        deletion: { expected_version: 'v'.repeat(64) },
                     })),
                     upload: null,
                     next_href: null,
                 }}
-                legacyForms={{ upload_href: '/synthetic/legacy-upload' }}
             />,
         );
-        const file = new File(['Synthetic bytes'], 'synthetic-legacy.txt');
-        await userEvent.upload(screen.getByLabelText('Upload a file'), file);
-        fireEvent.submit(
-            screen.getByLabelText('Upload a file').closest('form')!,
-        );
-        expect(legacy.post).toHaveBeenCalledWith(
-            '/synthetic/legacy-upload',
-            { file },
-            expect.objectContaining({ forceFormData: true }),
-        );
         fireEvent.click(screen.getByRole('button', { name: 'Remove file' }));
-        expect(legacy.delete).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
         fireEvent.click(
             screen.getByRole('button', { name: 'Confirm removal' }),
         );
-        expect(legacy.delete).toHaveBeenCalledWith(
-            '/synthetic/delete',
-            expect.objectContaining({ preserveScroll: true }),
-        );
-        expect(fetch).not.toHaveBeenCalled();
+        await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+        expect(
+            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)),
+        ).toEqual({ expected_version: 'v'.repeat(64), confirm: true });
     });
     it('keeps the same idempotency key for a lost-answer retry and closes stale controls until reload', async () => {
         vi.stubGlobal(

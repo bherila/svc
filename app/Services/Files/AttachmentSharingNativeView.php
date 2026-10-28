@@ -46,17 +46,17 @@ final class AttachmentSharingNativeView
                 continue;
             }
             $sharing = $portal ? null : $this->presenter->nativeControl($file, $view,
-                route('svc.files.collaboration.visibility.update', [...$parameters, 'attachment' => $id], absolute: false), $audience);
+                route('agent-api.v1.collaboration.attachments.visibility.update', ['workspace' => $workspace, 'client' => $reference->companyId, 'recordType' => $reference->type, 'recordPublicId' => $reference->publicId, 'attachment' => $id], absolute: false), $audience);
             $files[] = AttachmentMetadata::native($file,
                 $portal ? route('portal.files.collaboration.download', [...$readParameters, 'attachment' => $id], absolute: false)
                     : route('svc.files.download', [$workspace, $id], absolute: false),
-                $sharing === null ? null : route('svc.files.collaboration.destroy', [...$parameters, 'attachment' => $id], absolute: false), $sharing);
+                $sharing === null ? null : route('agent-api.v1.collaboration.attachments.destroy', ['workspace' => $workspace, 'client' => $reference->companyId, 'recordType' => $reference->type, 'recordPublicId' => $reference->publicId, 'attachment' => $id], absolute: false), $sharing);
         }
         $canWrite = $audience === AttachmentAudience::Internal && $view->canPublish && AttachmentSharingGate::available();
         $cursor = $result['meta']['next_cursor'];
 
         return ['files' => $files, 'parent_version' => AgentApiVersion::for($view->parent),
-            'upload' => $canWrite ? ['href' => route('svc.files.collaboration.upload', $parameters, absolute: false),
+            'upload' => $canWrite ? ['href' => route('agent-api.v1.collaboration.attachments.upload-url', ['workspace' => $workspace, 'client' => $reference->companyId, 'recordType' => $reference->type, 'recordPublicId' => $reference->publicId], absolute: false),
                 'parent_version' => AgentApiVersion::for($view->parent)] : null,
             'next_href' => $cursor === null ? null : route($portal ? 'portal.files.collaboration.index' : 'svc.files.collaboration.index', [...$readParameters,
                 'limit' => $page->limit, 'cursor' => $cursor], absolute: false)];
@@ -132,7 +132,7 @@ final class AttachmentSharingNativeView
         }
     }
 
-    /** Legacy native forms retain their existing upload/deletion contracts.
+    /** Native pages use canonical API write capabilities.
      * @return array<string,mixed> */
     public function legacy(User $actor, Workspace $workspace, AttachmentParentReference $reference, int $page = 1): array
     {
@@ -143,14 +143,14 @@ final class AttachmentSharingNativeView
         $files = [];
         foreach ($rows->items() as $file) {
             $files[] = AttachmentMetadata::native($file, route('svc.files.download', [$workspace, $file->public_id], absolute: false),
-                $view->canPublish ? route('svc.files.destroy', [$workspace, $file->public_id], absolute: false) : null,
-                $this->presenter->nativeControl($file, $view, route('svc.files.visibility.update', [
+                $view->canPublish ? route('agent-api.v1.attachments.destroy', [$workspace, $file->public_id], absolute: false) : null,
+                $this->presenter->nativeControl($file, $view, route('agent-api.v1.attachments.visibility.update', [
                     'workspace' => $workspace, 'attachment' => $file->public_id], absolute: false), AttachmentAudience::Internal));
         }
         $parameters = ['workspace' => $workspace, 'recordType' => $reference->type, 'recordPublicId' => $reference->publicId];
 
-        return ['files' => $files, 'upload' => null, 'parent_version' => AgentApiVersion::for($view->parent),
-            'next_href' => $rows->hasMorePages() ? route('svc.files.parent.index', [...$parameters, 'page' => $page + 1], absolute: false) : null,
-            'legacy_upload_href' => $view->canPublish ? route('svc.files.store', $parameters, absolute: false) : null];
+        return ['files' => $files, 'upload' => $view->canPublish ? ['href' => route('agent-api.v1.attachments.upload-url', $parameters, absolute: false),
+            'parent_version' => AgentApiVersion::for($view->parent)] : null, 'parent_version' => AgentApiVersion::for($view->parent),
+            'next_href' => $rows->hasMorePages() ? route('svc.files.parent.index', [...$parameters, 'page' => $page + 1], absolute: false) : null];
     }
 }

@@ -7,11 +7,13 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentFilePage;
+use App\Services\Files\AttachmentMetadata;
 use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentSharingGate;
 use App\Services\Files\AttachmentSharingPresenter;
 use App\Services\Files\AttachmentSharingView;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Eloquent\Collection;
 
 /** Authorized, bounded metadata; every held download URL rechecks the same policy. */
@@ -45,18 +47,17 @@ final class AttachmentListing
      */
     private static function present(Workspace $workspace, Collection $attachments, ?AttachmentSharingView $sharing, bool $manages): array
     {
-        $base = "/workspaces/{$workspace->public_id}/attachments";
-
-        return array_values($attachments->map(fn ($attachment): array => [
+        return array_values($attachments->map(fn ($attachment): array => [...AttachmentMetadata::for($attachment),
             'id' => $attachment->public_id,
             'filename' => $attachment->original_filename,
             'media_type' => $attachment->media_type,
             'bytes' => $attachment->bytes,
             'uploaded_at' => $attachment->available_at?->toISOString(),
-            'download_href' => "{$base}/{$attachment->public_id}",
-            'delete_href' => $manages ? "{$base}/{$attachment->public_id}" : null,
+            'download_href' => route('svc.files.download', [$workspace, $attachment->public_id], absolute: false),
+            'delete_href' => $manages && $attachment->record_type !== 'expense' ? route('agent-api.v1.attachments.destroy', [$workspace, $attachment->public_id], absolute: false) : null,
+            'deletion' => $manages && $attachment->record_type !== 'expense' ? ['expected_version' => AgentApiVersion::for($attachment)] : null,
             'sharing' => $sharing === null ? null : app(AttachmentSharingPresenter::class)->nativeControl($attachment, $sharing,
-                route('svc.files.visibility.update', [$workspace, $attachment->public_id], absolute: false), AttachmentAudience::Internal),
+                route('agent-api.v1.attachments.visibility.update', [$workspace, $attachment->public_id], absolute: false), AttachmentAudience::Internal),
         ])->all());
     }
 }

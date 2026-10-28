@@ -51,8 +51,7 @@ export default function ClientProposalDetail({
     items,
     accept_href: acceptHref,
 }: {
-    attachment_panel?:
-        (AttachmentPanel & { legacy_upload_href?: string | null }) | null;
+    attachment_panel?: AttachmentPanel | null;
     company: { id: string; name: string };
     home_href: string;
     proposal: {
@@ -241,10 +240,6 @@ export default function ClientProposalDetail({
                     <AttachmentSharingPanel
                         key={attachment_panel.parent_version}
                         panel={attachment_panel}
-                        legacyForms={{
-                            upload_href:
-                                attachment_panel.legacy_upload_href ?? null,
-                        }}
                     />
                 )}
             </main>

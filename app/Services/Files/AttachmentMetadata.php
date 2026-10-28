@@ -22,8 +22,10 @@ final class AttachmentMetadata
      * @return array<string,mixed> */
     public static function native(ClientAttachment $file, string $downloadHref, ?string $deleteHref, ?array $sharing): array
     {
-        return ['id' => $file->public_id, 'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
+        return [...self::for($file), 'id' => $file->public_id, 'filename' => $file->original_filename, 'media_type' => $file->media_type, 'bytes' => $file->bytes,
             'uploaded_at' => $file->created_at?->toIso8601String(), 'download_href' => $downloadHref,
-            'delete_href' => $deleteHref, 'sharing' => $sharing];
+            'delete_href' => $deleteHref, 'sharing' => $sharing,
+            'deletion' => $deleteHref === null ? null : ['expected_version' => AgentApiVersion::for($file),
+                ...(in_array($file->record_type, ['topic', 'comment'], true) && $sharing !== null ? ['expected_parent_version' => $sharing['parent_version']] : [])]];
     }
 }
