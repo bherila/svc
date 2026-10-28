@@ -11,8 +11,8 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
@@ -21,15 +21,6 @@ class ClientPortalOperationsTest extends TestCase
 {
     use AssertsSurfaceIsolation;
     use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (! Route::has('svc.engagement.proposals.store')) {
-            require base_path('routes/engagement.php');
-        }
-    }
 
     public function test_portal_scopes_visible_engagement_billing_and_project_records_to_the_company(): void
     {
@@ -105,7 +96,7 @@ class ClientPortalOperationsTest extends TestCase
 
         // Home is a glance: the latest invoice the client may see, the
         // agreement in force, and the one proposal waiting on them.
-        $this->actingAs($clientUser)
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
             ->get("/portal/{$company->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -122,14 +113,14 @@ class ClientPortalOperationsTest extends TestCase
 
         // And the modules hold the full lists, under the same three refusals:
         // another company's, a draft, and one the operator did not disclose.
-        $this->actingAs($clientUser)
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
             ->get("/portal/{$company->public_id}/invoices")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('clients/invoices')
                 ->has('invoices', 3));
 
-        $this->actingAs($clientUser)
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
             ->get("/portal/{$company->public_id}/tasks")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -139,8 +130,8 @@ class ClientPortalOperationsTest extends TestCase
                 ->where('projects.0.name', 'Visible synthetic project')
                 ->has('tasks', 1));
 
-        $this->actingAs($admin)->get("/portal/{$company->public_id}")->assertOk();
-        $this->actingAs($outsider)->get("/portal/{$company->public_id}")->assertNotFound();
+        $this->actingAs($admin)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->get("/portal/{$company->public_id}")->assertOk();
+        $this->actingAs($outsider)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->get("/portal/{$company->public_id}")->assertNotFound();
     }
 
     public function test_visible_sent_proposal_acceptance_is_idempotent_for_a_client_user(): void
@@ -148,20 +139,20 @@ class ClientPortalOperationsTest extends TestCase
         [$admin, $clientUser, , $workspace, $company] = $this->tenant();
         $proposal = $this->proposal($workspace, $company, 'Acceptance proposal', 'draft', true);
 
-        $this->actingAs($admin)
-            ->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
-            ->assertRedirect();
+        $this->actingAs($admin)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send", ['expected_version' => AgentApiVersion::for($proposal), 'confirm' => true])
+            ->assertOk();
 
         $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
-        $this->actingAs($clientUser)->postJson($acceptPath, [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Synthetic Portal Signer',
             'signer_title' => 'Synthetic Buyer',
         ])->assertRedirect();
-        $this->actingAs($clientUser)->postJson($acceptPath, [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Synthetic Portal Signer',
             'signer_title' => 'Synthetic Buyer',
         ])->assertRedirect();
-        $this->actingAs($clientUser)->postJson($acceptPath, [
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($acceptPath, [
             'signer_name' => 'Replay Signer',
             'signer_title' => 'Replay Title',
         ])->assertUnprocessable()->assertJsonPath('message', 'This proposal was already accepted with different signer details.');
@@ -186,7 +177,7 @@ class ClientPortalOperationsTest extends TestCase
             'retainer_minutes' => 600,
         ]);
 
-        $this->actingAs($clientUser)
+        $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
             ->get("/portal/{$company->public_id}/agreements/{$agreement->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -306,7 +297,7 @@ class ClientPortalOperationsTest extends TestCase
         ];
 
         foreach ($surfaces as $suffix => $control) {
-            $response = $this->actingAs($clientUser)
+            $response = $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
                 ->get("/portal/{$company->public_id}{$suffix}")
                 ->assertOk();
 
@@ -374,7 +365,7 @@ class ClientPortalOperationsTest extends TestCase
         ]);
 
         $this->assertQueriesNameOnlyRealIdentifiers(
-            fn () => $this->actingAs($clientUser)
+            fn () => $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
                 ->get("/portal/{$company->public_id}")
                 ->assertOk(),
         );
@@ -424,7 +415,7 @@ class ClientPortalOperationsTest extends TestCase
         $addRows(2);
 
         $this->assertQueryCountIndependentOfRows(
-            fn () => $this->actingAs($clientUser)
+            fn () => $this->actingAs($clientUser)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
                 ->get("/portal/{$company->public_id}")
                 ->assertOk(),
             fn () => $addRows(8),

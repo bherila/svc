@@ -1,12 +1,16 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
-import { AppearanceSelector } from '@/components/appearance-selector';
-import { CommandPaletteTrigger } from '@/components/command-palette';
+import {
+    EngagementAction,
+    ProposalDraftForm,
+    ScheduleDraftForm,
+} from '@/components/agreements/engagement-actions';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
+import WorkspaceShell from '@/layouts/workspace-shell';
+import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import {
     predatesInvoiceIssue,
@@ -43,6 +47,8 @@ type Project = {
 
 type Proposal = {
     id: string;
+    version: string;
+    send_href: string | null;
     title: string;
     status: string;
     total_amount: number;
@@ -53,6 +59,10 @@ type Proposal = {
 
 type Agreement = {
     id: string;
+    version: string;
+    activate_href: string | null;
+    create_schedule_href: string | null;
+    currency: string;
     title: string;
     status: string;
     billing_cadence: string;
@@ -62,6 +72,8 @@ type Agreement = {
 
 type BillingSchedule = {
     id: string;
+    version: string;
+    generate_href: string | null;
     agreement_id: string;
     cadence: string;
     next_run_on: string;
@@ -84,6 +96,8 @@ type Invoice = {
 
 type Client = {
     id: string;
+    version: string;
+    create_proposal_href: string | null;
     name: string;
     projects: Project[];
     proposals: Proposal[];
@@ -110,32 +124,20 @@ const buttonClass =
 const secondaryButtonClass =
     'rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-card-foreground hover:bg-muted disabled:opacity-50';
 
-export function AgreementActivationButton({ href }: { href: string }) {
-    const [error, setError] = useState<string | null>(null);
-
+export function AgreementActivationButton({
+    href,
+    version,
+}: {
+    href: string;
+    version: string;
+}) {
     return (
-        <>
-            <button
-                className="ml-3 font-semibold text-cyan-700"
-                onClick={() => {
-                    setError(null);
-                    router.post(href, undefined, {
-                        onError: (errors) =>
-                            setError(
-                                errors.engagement ??
-                                    'Agreement activation failed.',
-                            ),
-                    });
-                }}
-            >
-                Activate
-            </button>
-            {error !== null && (
-                <p role="alert" className="mt-2 text-sm text-red-700">
-                    {error}
-                </p>
-            )}
-        </>
+        <EngagementAction
+            href={href}
+            version={version}
+            label="Activate"
+            description="Activate this agreement using its current terms. This enables its billing workflow."
+        />
     );
 }
 
@@ -200,87 +202,6 @@ function TimeEntryForm({ project }: { project: Project }) {
     );
 }
 
-function ProposalForm({
-    workspaceId,
-    clientId,
-}: {
-    workspaceId: string;
-    clientId: string;
-}) {
-    const form = useForm({
-        title: '',
-        summary: '',
-        terms: '',
-        valid_until: '',
-        currency: 'USD',
-        is_visible_to_client: false,
-        item_description: '',
-        item_quantity: '1',
-        item_price: '',
-        cadence: 'one_time',
-    });
-
-    const submit = (event: FormEvent) => {
-        event.preventDefault();
-        form.transform((data) => ({
-            title: data.title,
-            summary: data.summary,
-            terms: data.terms,
-            valid_until: data.valid_until || null,
-            currency: data.currency,
-            is_visible_to_client: data.is_visible_to_client,
-            items: [
-                {
-                    description: data.item_description,
-                    quantity: data.item_quantity,
-                    unit_amount: toMinorUnits(data.item_price),
-                    cadence: data.cadence,
-                    sort_order: 0,
-                },
-            ],
-        }));
-        form.post(`/workspaces/${workspaceId}/clients/${clientId}/proposals`, {
-            onSuccess: () => form.reset(),
-        });
-    };
-
-    return (
-        <form onSubmit={submit} className="mt-4 grid gap-2 md:grid-cols-6">
-            <input
-                className={`${inputClass} md:col-span-2`}
-                placeholder="Proposal title"
-                value={form.data.title}
-                onChange={(event) => form.setData('title', event.target.value)}
-                required
-            />
-            <input
-                className={`${inputClass} md:col-span-2`}
-                placeholder="Line description"
-                value={form.data.item_description}
-                onChange={(event) =>
-                    form.setData('item_description', event.target.value)
-                }
-                required
-            />
-            <input
-                className={inputClass}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Price"
-                value={form.data.item_price}
-                onChange={(event) =>
-                    form.setData('item_price', event.target.value)
-                }
-                required
-            />
-            <button className={buttonClass} disabled={form.processing}>
-                Draft proposal
-            </button>
-        </form>
-    );
-}
-
 function InvoiceForm({
     workspaceId,
     clientId,
@@ -320,7 +241,10 @@ function InvoiceForm({
     };
 
     return (
-        <form onSubmit={submit} className="mt-4 grid gap-2 md:grid-cols-6">
+        <form
+            onSubmit={submit}
+            className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-6"
+        >
             <input
                 className={inputClass}
                 placeholder="Invoice number"
@@ -497,153 +421,11 @@ export function PaymentForm({
     );
 }
 
-function BillingScheduleForm({
-    workspaceId,
-    clientId,
-    agreement,
-    timezone,
-}: {
-    workspaceId: string;
-    clientId: string;
-    agreement: Agreement;
-    timezone: string;
-}) {
-    const supportedCadences = ['monthly', 'quarterly', 'semi_annual', 'annual'];
-    const form = useForm({
-        client_agreement: agreement.id,
-        cadence: supportedCadences.includes(agreement.billing_cadence)
-            ? agreement.billing_cadence
-            : 'monthly',
-        next_run_on: todayIn(timezone),
-        due_days: '30',
-        currency: 'USD',
-        description: '',
-        amount: '',
-        is_active: true,
-    });
-
-    const submit = (event: FormEvent) => {
-        event.preventDefault();
-        form.transform((data) => ({
-            client_agreement: data.client_agreement,
-            cadence: data.cadence,
-            next_run_on: data.next_run_on,
-            due_days: Number(data.due_days),
-            currency: data.currency,
-            is_active: data.is_active,
-            line_template: [
-                {
-                    type: 'service',
-                    description: data.description,
-                    quantity: '1',
-                    unit_amount: toMinorUnits(data.amount),
-                    tax_amount: 0,
-                    sort_order: 0,
-                },
-            ],
-        }));
-        form.post(
-            `/workspaces/${workspaceId}/clients/${clientId}/billing-schedules`,
-            { onSuccess: () => form.reset('description', 'amount') },
-        );
-    };
-
-    return (
-        <form onSubmit={submit} className="mt-3 grid gap-2 md:grid-cols-5">
-            <select
-                className={inputClass}
-                value={form.data.cadence}
-                onChange={(event) =>
-                    form.setData('cadence', event.target.value)
-                }
-            >
-                {supportedCadences.map((cadence) => (
-                    <option key={cadence} value={cadence}>
-                        {cadence.replace('_', ' ')}
-                    </option>
-                ))}
-            </select>
-            <input
-                className={inputClass}
-                type="date"
-                value={form.data.next_run_on}
-                onChange={(event) =>
-                    form.setData('next_run_on', event.target.value)
-                }
-                required
-            />
-            <input
-                className={inputClass}
-                placeholder="Recurring line"
-                value={form.data.description}
-                onChange={(event) =>
-                    form.setData('description', event.target.value)
-                }
-                required
-            />
-            <input
-                className={inputClass}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Amount"
-                value={form.data.amount}
-                onChange={(event) => form.setData('amount', event.target.value)}
-                required
-            />
-            <button className={secondaryButtonClass} disabled={form.processing}>
-                Add schedule
-            </button>
-        </form>
-    );
-}
-
 export default function Operations({ workspace }: { workspace: Workspace }) {
     return (
         <>
             <Head title={`${workspace.name} operations`} />
-            <div
-                className="min-h-screen bg-slate-100 text-slate-950"
-                data-appearance-bridge
-            >
-                <header className="border-b border-slate-200 bg-white">
-                    <div
-                        className={cn(
-                            SHELL_CONTAINER,
-                            'flex h-12 items-center gap-2',
-                        )}
-                    >
-                        <Link
-                            href="/app"
-                            className="shrink-0 text-sm whitespace-nowrap text-cyan-700"
-                        >
-                            ← Workspaces
-                        </Link>
-                        <nav
-                            aria-label="Workspace operations"
-                            className="ms-auto flex shrink-0 items-center gap-2 whitespace-nowrap"
-                        >
-                            <CommandPaletteTrigger />
-                            <AppearanceSelector />
-                            <Link
-                                href={`/workspaces/${workspace.id}/clients`}
-                                className="text-sm font-semibold text-cyan-700"
-                            >
-                                Clients
-                            </Link>
-                            <Link
-                                href={`/workspaces/${workspace.id}/time`}
-                                className="text-sm font-semibold text-cyan-700"
-                            >
-                                Time sheet
-                            </Link>
-                            <span className="hidden text-sm font-semibold tracking-[0.2em] sm:block">
-                                SVC
-                            </span>
-                        </nav>
-                    </div>
-                </header>
-
+            <WorkspaceShell>
                 <main
                     className={cn(
                         SHELL_CONTAINER,
@@ -699,10 +481,13 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
 
                                 <div className="border-t border-slate-200 pt-5">
                                     <h3 className="font-semibold">Proposals</h3>
-                                    <ProposalForm
-                                        workspaceId={workspace.id}
-                                        clientId={client.id}
-                                    />
+                                    {client.create_proposal_href !== null && (
+                                        <ProposalDraftForm
+                                            href={client.create_proposal_href}
+                                            companyId={client.id}
+                                            version={client.version}
+                                        />
+                                    )}
                                     <div className="mt-3 flex flex-wrap gap-2">
                                         {client.proposals.map((proposal) => (
                                             <div
@@ -717,19 +502,19 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                     proposal.total_amount,
                                                     proposal.currency,
                                                 )}{' '}
-                                                · {proposal.status}
-                                                {proposal.status ===
-                                                    'draft' && (
-                                                    <button
-                                                        className="ml-3 font-semibold text-cyan-700"
-                                                        onClick={() =>
-                                                            router.post(
-                                                                `/workspaces/${workspace.id}/proposals/${proposal.id}/send`,
-                                                            )
+                                                · {statusLabel(proposal.status)}
+                                                {proposal.send_href !==
+                                                    null && (
+                                                    <EngagementAction
+                                                        href={
+                                                            proposal.send_href
                                                         }
-                                                    >
-                                                        Send
-                                                    </button>
+                                                        version={
+                                                            proposal.version
+                                                        }
+                                                        label="Send"
+                                                        description="Make this proposal available for client review and acceptance."
+                                                    />
                                                 )}
                                                 <OperationFiles
                                                     panel={
@@ -757,12 +542,21 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                 <span className="font-medium">
                                                     {agreement.title}
                                                 </span>{' '}
-                                                · {agreement.billing_cadence} ·{' '}
-                                                {agreement.status}
-                                                {agreement.status ===
-                                                    'draft' && (
+                                                ·{' '}
+                                                {statusLabel(
+                                                    agreement.billing_cadence,
+                                                )}{' '}
+                                                ·{' '}
+                                                {statusLabel(agreement.status)}
+                                                {agreement.activate_href !==
+                                                    null && (
                                                     <AgreementActivationButton
-                                                        href={`/workspaces/${workspace.id}/agreements/${agreement.id}/activate`}
+                                                        href={
+                                                            agreement.activate_href
+                                                        }
+                                                        version={
+                                                            agreement.version
+                                                        }
                                                     />
                                                 )}
                                                 <OperationFiles
@@ -773,13 +567,13 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                         agreement.attachments
                                                     }
                                                 />
-                                                {agreement.status ===
-                                                    'active' && (
-                                                    <BillingScheduleForm
-                                                        workspaceId={
-                                                            workspace.id
+                                                {agreement.create_schedule_href !==
+                                                    null && (
+                                                    <ScheduleDraftForm
+                                                        href={
+                                                            agreement.create_schedule_href
                                                         }
-                                                        clientId={client.id}
+                                                        companyId={client.id}
                                                         timezone={
                                                             workspace.timezone
                                                         }
@@ -802,17 +596,18 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                     )}{' '}
                                                     · next{' '}
                                                     {schedule.next_run_on}
-                                                    {schedule.is_active && (
-                                                        <button
-                                                            className="ml-3 font-semibold text-cyan-700"
-                                                            onClick={() =>
-                                                                router.post(
-                                                                    `/workspaces/${workspace.id}/billing-schedules/${schedule.id}/generate`,
-                                                                )
+                                                    {schedule.generate_href !==
+                                                        null && (
+                                                        <EngagementAction
+                                                            href={
+                                                                schedule.generate_href
                                                             }
-                                                        >
-                                                            Generate due
-                                                        </button>
+                                                            version={
+                                                                schedule.version
+                                                            }
+                                                            label="Generate due"
+                                                            description="Generate invoices for this billing schedule through today. Review its next run and terms before confirming."
+                                                        />
                                                     )}
                                                 </div>
                                             ),
@@ -826,14 +621,14 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                         workspaceId={workspace.id}
                                         clientId={client.id}
                                     />
-                                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                                    <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
                                         {client.invoices.map((invoice) => (
                                             <article
                                                 key={invoice.id}
                                                 className="rounded-2xl border border-slate-200 p-4"
                                             >
-                                                <div className="flex justify-between gap-3">
-                                                    <div>
+                                                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1 wrap-anywhere">
                                                         <h4 className="font-semibold">
                                                             {
                                                                 invoice.invoice_number
@@ -848,7 +643,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                             {invoice.status}
                                                         </p>
                                                     </div>
-                                                    <div className="flex gap-3 text-sm font-semibold text-cyan-700">
+                                                    <div className="flex shrink-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
                                                         <a
                                                             href={`/workspaces/${workspace.id}/invoices/${invoice.id}/pdf`}
                                                         >
@@ -910,7 +705,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                         </section>
                     ))}
                 </main>
-            </div>
+            </WorkspaceShell>
         </>
     );
 }
