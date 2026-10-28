@@ -39,8 +39,8 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { useInvoiceMutation } from '@/hooks/use-invoice-mutation';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
@@ -53,7 +53,6 @@ import {
     predatesInvoiceIssue,
     predatesInvoiceIssueWarning,
 } from '@/lib/payments';
-import { refreshPageProps } from '@/lib/refresh-page-props';
 import { todayIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
@@ -298,35 +297,78 @@ export default function ClientInvoiceDetail({
     // Why the invoice is being voided, required as invoices.void requires it
     // and kept on the invoice.
     const [voidReason, setVoidReason] = useState('');
-    const [busy, setBusy] = useState(false);
+    const mutation = useInvoiceMutation();
+    const busy = mutation.busy;
     const [notice, setNotice] = useState<string | null>(null);
     const [editingDates, setEditingDates] = useState(false);
     const [dueDate, setDueDate] = useState('');
     const [scheduledIssueDate, setScheduledIssueDate] = useState('');
-    const mutationAttempt = useRef<{ fingerprint: string; key: string } | null>(
+    const datesBaseline = useRef<{
+        href: string;
+        version: string;
+        dueDate: string | null;
+        scheduledIssueDate: string | null;
+    } | null>(null);
+    const correctionBaseline = useRef<{ href: string; version: string } | null>(
         null,
     );
+    const paymentBaseline = useRef<{
+        href: string;
+        version: string;
+        invoiceId: string;
+        currency: string | null;
+    } | null>(null);
+    const paymentDateBaseline = useRef<{
+        href: string;
+        version: string;
+    } | null>(null);
+    const voidBaseline = useRef<{ href: string; version: string } | null>(null);
 
-    const saveDates = async (href: string) => {
-        if (busy) {
+    const mutate = async (
+        method: 'POST' | 'PATCH',
+        href: string,
+        data: Record<string, unknown> = {},
+        expectedVersion: string = version,
+    ) => {
+        await mutation.submit(
+            method,
+            href,
+            { expected_version: expectedVersion, ...data },
+            () => {
+                setNotice(null);
+                setPaying(false);
+                setVoiding(false);
+                setCorrectingInvoice(false);
+                setCorrecting(null);
+                setEditingDates(false);
+            },
+        );
+    };
+    const saveDates = async () => {
+        if (mutation.isLocked()) {
+            await mutation.retry();
+
             return;
         }
 
-        // Only what was changed is sent. A date left as it was is not
-        // restated, so it cannot trip a check on a value nobody touched, and
-        // a form saved unchanged has nothing to ask the server.
+        const baseline = datesBaseline.current;
+
+        if (baseline === null) {
+            return;
+        }
+
         const body: ApiSchema<'InvoiceDetailsUpdateRequest'> = {
-            expected_version: version,
+            expected_version: baseline.version,
         };
         const nextDue = dueDate === '' ? null : dueDate;
         const nextScheduled =
             scheduledIssueDate === '' ? null : scheduledIssueDate;
 
-        if (nextDue !== invoice.due_date) {
+        if (nextDue !== baseline.dueDate) {
             body.due_date = nextDue;
         }
 
-        if (nextScheduled !== (invoice.scheduled_issue_date ?? null)) {
+        if (nextScheduled !== baseline.scheduledIssueDate) {
             body.scheduled_issue_date = nextScheduled;
         }
 
@@ -339,66 +381,14 @@ export default function ClientInvoiceDetail({
             return;
         }
 
-        setBusy(true);
-        const result = await apiRequest('PATCH', href, body);
-
-        if (result.ok) {
-            setNotice(null);
-            setEditingDates(false);
-            void refreshPageProps({ onFinish: () => setBusy(false) });
-
-            return;
-        }
-
-        setNotice(result.message);
-        setBusy(false);
+        await mutate('PATCH', baseline.href, body, baseline.version);
     };
-
-    const mutate = async (
-        method: 'POST' | 'PATCH',
+    const post = (
         href: string,
         data: Record<string, unknown> = {},
         expectedVersion: string = version,
     ) => {
-        if (busy) {
-            return;
-        }
-
-        setBusy(true);
-        const body = { expected_version: expectedVersion, ...data };
-        const fingerprint = JSON.stringify([method, href, body]);
-
-        if (mutationAttempt.current?.fingerprint !== fingerprint) {
-            mutationAttempt.current = { fingerprint, key: newIdempotencyKey() };
-        }
-
-        // A lost response is still the same logical attempt on retry. The
-        // version also prevents a different request against an outdated page.
-        const result = await apiRequest(
-            method,
-            href,
-            body,
-            mutationAttempt.current.key,
-        );
-
-        if (result.ok) {
-            mutationAttempt.current = null;
-            setNotice(null);
-            setPaying(false);
-            setVoiding(false);
-            setCorrectingInvoice(false);
-            setCorrecting(null);
-            void refreshPageProps({ onFinish: () => setBusy(false) });
-
-            return;
-        }
-
-        setNotice(result.message);
-        setBusy(false);
-    };
-
-    const post = (href: string, data: Record<string, unknown> = {}) => {
-        void mutate('POST', href, data);
+        void mutate('POST', href, data, expectedVersion);
     };
 
     const backHref = invoicesHref;
@@ -461,7 +451,7 @@ export default function ClientInvoiceDetail({
                         {actions.issue !== null && (
                             <Button
                                 size="sm"
-                                disabled={busy}
+                                disabled={mutation.locked}
                                 onClick={() =>
                                     post(actions.issue ?? '', { confirm: true })
                                 }
@@ -471,9 +461,18 @@ export default function ClientInvoiceDetail({
                         )}
                         {(actions.update_details ?? null) !== null && (
                             <Button
+                                disabled={mutation.locked}
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
+                                    datesBaseline.current = {
+                                        href: actions.update_details ?? '',
+                                        version,
+                                        dueDate: invoice.due_date,
+                                        scheduledIssueDate:
+                                            invoice.scheduled_issue_date ??
+                                            null,
+                                    };
                                     setDueDate(invoice.due_date ?? '');
                                     setScheduledIssueDate(
                                         invoice.scheduled_issue_date ?? '',
@@ -486,6 +485,7 @@ export default function ClientInvoiceDetail({
                         )}
                         {actions.send !== null && email !== null && (
                             <Button
+                                disabled={mutation.locked}
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setSending(true)}
@@ -495,6 +495,7 @@ export default function ClientInvoiceDetail({
                         )}
                         {(actions.correct ?? null) !== null && (
                             <Button
+                                disabled={mutation.locked}
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
@@ -502,6 +503,10 @@ export default function ClientInvoiceDetail({
                                     // correction refreshes its props. Start
                                     // every edit from that newest revision,
                                     // not from the state captured at mount.
+                                    correctionBaseline.current = {
+                                        href: actions.correct ?? '',
+                                        version,
+                                    };
                                     setCorrectionReason('');
                                     setCorrectionDueDate(
                                         invoice.due_date ?? '',
@@ -517,7 +522,7 @@ export default function ClientInvoiceDetail({
                             <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={busy}
+                                disabled={mutation.locked}
                                 onClick={() =>
                                     post(actions.hold_automatic ?? '')
                                 }
@@ -529,7 +534,7 @@ export default function ClientInvoiceDetail({
                             <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={busy}
+                                disabled={mutation.locked}
                                 onClick={() =>
                                     post(actions.release_automatic ?? '', {
                                         confirm: true,
@@ -541,6 +546,7 @@ export default function ClientInvoiceDetail({
                         )}
                         {actions.payment !== null && (
                             <Button
+                                disabled={mutation.locked}
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
@@ -549,6 +555,12 @@ export default function ClientInvoiceDetail({
                                     // recorded almost every time - and typing
                                     // a total again is how a digit goes
                                     // missing.
+                                    paymentBaseline.current = {
+                                        href: actions.payment ?? '',
+                                        version,
+                                        invoiceId: invoice.id,
+                                        currency: invoice.currency,
+                                    };
                                     setAmount(
                                         (invoice.balance_amount / 100).toFixed(
                                             2,
@@ -573,9 +585,14 @@ export default function ClientInvoiceDetail({
                         )}
                         {actions.void !== null && (
                             <Button
+                                disabled={mutation.locked}
                                 variant="destructive"
                                 size="sm"
                                 onClick={() => {
+                                    voidBaseline.current = {
+                                        href: actions.void ?? '',
+                                        version,
+                                    };
                                     setVoidReason('');
                                     setVoiding(true);
                                 }}
@@ -585,26 +602,37 @@ export default function ClientInvoiceDetail({
                         )}
                     </div>
 
-                    {notice !== null && (
+                    {(mutation.error ?? notice) !== null && !voiding && (
                         <p
                             role="alert"
                             className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                         >
-                            {notice}
+                            {mutation.error ?? notice}
                         </p>
                     )}
+                    {mutation.locked && !voiding && (
+                        <Button
+                            disabled={busy}
+                            onClick={() => void mutation.retry()}
+                        >
+                            {mutation.saved
+                                ? 'Refresh saved result'
+                                : 'Check original request'}
+                        </Button>
+                    )}
 
-                    {editingDates && actions.update_details && (
+                    {editingDates && (
                         <form
                             className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-4 sm:grid-cols-[minmax(0,16rem)_minmax(0,16rem)_auto] sm:items-end"
                             onSubmit={(event) => {
                                 event.preventDefault();
-                                void saveDates(actions.update_details ?? '');
+                                void saveDates();
                             }}
                         >
                             <div className="grid grid-cols-1 gap-1.5">
                                 <Label htmlFor="draft-due-date">Due date</Label>
                                 <Input
+                                    disabled={mutation.locked}
                                     id="draft-due-date"
                                     type="date"
                                     value={dueDate}
@@ -618,6 +646,7 @@ export default function ClientInvoiceDetail({
                                     Scheduled issue date
                                 </Label>
                                 <Input
+                                    disabled={mutation.locked}
                                     id="draft-scheduled-issue-date"
                                     type="date"
                                     value={scheduledIssueDate}
@@ -630,10 +659,15 @@ export default function ClientInvoiceDetail({
                                 />
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <Button type="submit" size="sm" disabled={busy}>
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={mutation.locked}
+                                >
                                     Save dates
                                 </Button>
                                 <Button
+                                    disabled={mutation.locked}
                                     type="button"
                                     variant="ghost"
                                     size="sm"
@@ -676,33 +710,43 @@ export default function ClientInvoiceDetail({
                                     return;
                                 }
 
-                                post(actions.payment ?? '', {
-                                    invoice_id: invoice.id,
-                                    confirm: true,
-                                    // Minor units, the way every amount in this
-                                    // system travels. Rounded rather than
-                                    // truncated: 12.34 is not exactly
-                                    // representable, and truncating it records
-                                    // a cent less than the client paid.
-                                    amount: Math.round(
-                                        Number.parseFloat(amount || '0') * 100,
-                                    ),
-                                    currency: invoice.currency,
-                                    method: chosenMethod,
-                                    reference:
-                                        reference === '' ? null : reference,
-                                    // The day the money arrived, which is not
-                                    // the day it was typed in. Sent as the
-                                    // same `YYYY-MM-DD` the operations screen
-                                    // sends, so both doors write the column
-                                    // the same shape.
-                                    received_on: receivedOn,
-                                });
+                                post(
+                                    paymentBaseline.current?.href ?? '',
+                                    {
+                                        invoice_id:
+                                            paymentBaseline.current
+                                                ?.invoiceId ?? '',
+                                        confirm: true,
+                                        // Minor units, the way every amount in this
+                                        // system travels. Rounded rather than
+                                        // truncated: 12.34 is not exactly
+                                        // representable, and truncating it records
+                                        // a cent less than the client paid.
+                                        amount: Math.round(
+                                            Number.parseFloat(amount || '0') *
+                                                100,
+                                        ),
+                                        currency:
+                                            paymentBaseline.current?.currency ??
+                                            '',
+                                        method: chosenMethod,
+                                        reference:
+                                            reference === '' ? null : reference,
+                                        // The day the money arrived, which is not
+                                        // the day it was typed in. Sent as the
+                                        // same `YYYY-MM-DD` the operations screen
+                                        // sends, so both doors write the column
+                                        // the same shape.
+                                        received_on: receivedOn,
+                                    },
+                                    paymentBaseline.current?.version ?? '',
+                                );
                             }}
                         >
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-amount">Amount</Label>
                                 <Input
+                                    disabled={mutation.locked}
                                     id="payment-amount"
                                     inputMode="decimal"
                                     value={amount}
@@ -714,6 +758,7 @@ export default function ClientInvoiceDetail({
                             <div className="grid grid-cols-1 gap-2">
                                 <Label htmlFor="payment-method">Method</Label>
                                 <Select
+                                    disabled={mutation.locked}
                                     // Without `items` the trigger renders the
                                     // stored value, so this field read
                                     // "bank_transfer" back at the operator who
@@ -750,6 +795,7 @@ export default function ClientInvoiceDetail({
                                 </Select>
                                 {method === PAYMENT_METHOD_OTHER && (
                                     <Input
+                                        disabled={mutation.locked}
                                         aria-label="Name of the payment method"
                                         placeholder="Name the method"
                                         maxLength={PAYMENT_METHOD_MAX_LENGTH}
@@ -765,6 +811,7 @@ export default function ClientInvoiceDetail({
                                     Received
                                 </Label>
                                 <Input
+                                    disabled={mutation.locked}
                                     id="payment-received-on"
                                     type="date"
                                     // Today on the workspace's calendar, not
@@ -800,6 +847,7 @@ export default function ClientInvoiceDetail({
                                     Reference
                                 </Label>
                                 <Input
+                                    disabled={mutation.locked}
                                     id="payment-reference"
                                     value={reference}
                                     onChange={(event) =>
@@ -807,7 +855,7 @@ export default function ClientInvoiceDetail({
                                     }
                                 />
                             </div>
-                            <Button type="submit" disabled={busy}>
+                            <Button type="submit" disabled={mutation.locked}>
                                 Record
                             </Button>
                         </form>
@@ -818,29 +866,33 @@ export default function ClientInvoiceDetail({
                             className="mt-3 grid grid-cols-1 gap-4 rounded-lg border border-amber-500/40 p-4"
                             onSubmit={(event) => {
                                 event.preventDefault();
-                                post(actions.correct ?? '', {
-                                    confirm: true,
-                                    reason: correctionReason,
-                                    due_date:
-                                        correctionDueDate === ''
-                                            ? null
-                                            : correctionDueDate,
-                                    lines: correctionLines.map((line) => ({
-                                        id: line.id,
-                                        description: line.description,
-                                        quantity: line.quantity,
-                                        unit_amount: Math.round(
-                                            Number.parseFloat(
-                                                line.unit_amount || '0',
-                                            ) * 100,
-                                        ),
-                                        tax_amount: Math.round(
-                                            Number.parseFloat(
-                                                line.tax_amount || '0',
-                                            ) * 100,
-                                        ),
-                                    })),
-                                });
+                                post(
+                                    correctionBaseline.current?.href ?? '',
+                                    {
+                                        confirm: true,
+                                        reason: correctionReason,
+                                        due_date:
+                                            correctionDueDate === ''
+                                                ? null
+                                                : correctionDueDate,
+                                        lines: correctionLines.map((line) => ({
+                                            id: line.id,
+                                            description: line.description,
+                                            quantity: line.quantity,
+                                            unit_amount: Math.round(
+                                                Number.parseFloat(
+                                                    line.unit_amount || '0',
+                                                ) * 100,
+                                            ),
+                                            tax_amount: Math.round(
+                                                Number.parseFloat(
+                                                    line.tax_amount || '0',
+                                                ) * 100,
+                                            ),
+                                        })),
+                                    },
+                                    correctionBaseline.current?.version ?? '',
+                                );
                             }}
                         >
                             <p className="text-sm wrap-anywhere text-muted-foreground">
@@ -856,6 +908,7 @@ export default function ClientInvoiceDetail({
                                     Due date
                                 </Label>
                                 <Input
+                                    disabled={mutation.locked}
                                     id="correction-due-date"
                                     type="date"
                                     value={correctionDueDate}
@@ -876,6 +929,7 @@ export default function ClientInvoiceDetail({
                                             Description
                                         </Label>
                                         <Textarea
+                                            disabled={mutation.locked}
                                             id={`correction-description-${line.id}`}
                                             value={line.description}
                                             onChange={(event) =>
@@ -920,6 +974,7 @@ export default function ClientInvoiceDetail({
                                                 id={`${field}-${line.id}`}
                                                 inputMode="decimal"
                                                 disabled={
+                                                    mutation.locked ||
                                                     !line.money_correctable
                                                 }
                                                 value={line[field]}
@@ -954,6 +1009,7 @@ export default function ClientInvoiceDetail({
                                     Reason for correction
                                 </Label>
                                 <Textarea
+                                    disabled={mutation.locked}
                                     id="correction-reason"
                                     required
                                     maxLength={500}
@@ -964,10 +1020,14 @@ export default function ClientInvoiceDetail({
                                 />
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <Button type="submit" disabled={busy}>
+                                <Button
+                                    type="submit"
+                                    disabled={mutation.locked}
+                                >
                                     Save audited correction
                                 </Button>
                                 <Button
+                                    disabled={mutation.locked}
                                     type="button"
                                     variant="outline"
                                     onClick={() => setCorrectingInvoice(false)}
@@ -1236,6 +1296,9 @@ export default function ClientInvoiceDetail({
                                                     payment.id ? (
                                                         <span className="flex flex-wrap items-center gap-2">
                                                             <Input
+                                                                disabled={
+                                                                    mutation.locked
+                                                                }
                                                                 aria-label={`Corrected date for the ${formatMoney(payment.amount, payment.currency)} payment`}
                                                                 type="date"
                                                                 className="w-40"
@@ -1256,6 +1319,9 @@ export default function ClientInvoiceDetail({
                                                                 }
                                                             />
                                                             <Input
+                                                                disabled={
+                                                                    mutation.locked
+                                                                }
                                                                 aria-label="Reason for the correction"
                                                                 placeholder="Reason"
                                                                 className="w-48"
@@ -1276,14 +1342,16 @@ export default function ClientInvoiceDetail({
                                                             <Button
                                                                 size="sm"
                                                                 disabled={
-                                                                    busy ||
+                                                                    mutation.locked ||
                                                                     correctedDateReason.trim() ===
                                                                         ''
                                                                 }
                                                                 onClick={() =>
                                                                     void mutate(
                                                                         'PATCH',
-                                                                        payment.correct_date_href ??
+                                                                        paymentDateBaseline
+                                                                            .current
+                                                                            ?.href ??
                                                                             '',
                                                                         {
                                                                             confirm: true,
@@ -1291,7 +1359,9 @@ export default function ClientInvoiceDetail({
                                                                                 correctedDate,
                                                                             reason: correctedDateReason.trim(),
                                                                         },
-                                                                        payment.version ??
+                                                                        paymentDateBaseline
+                                                                            .current
+                                                                            ?.version ??
                                                                             '',
                                                                     )
                                                                 }
@@ -1299,6 +1369,9 @@ export default function ClientInvoiceDetail({
                                                                 Save
                                                             </Button>
                                                             <Button
+                                                                disabled={
+                                                                    mutation.locked
+                                                                }
                                                                 size="sm"
                                                                 variant="outline"
                                                                 onClick={() =>
@@ -1327,10 +1400,22 @@ export default function ClientInvoiceDetail({
                                                             {payment.correct_date_href !==
                                                                 null && (
                                                                 <Button
+                                                                    disabled={
+                                                                        mutation.locked
+                                                                    }
                                                                     variant="ghost"
                                                                     size="sm"
                                                                     className="ml-2"
                                                                     onClick={() => {
+                                                                        paymentDateBaseline.current =
+                                                                            {
+                                                                                href:
+                                                                                    payment.correct_date_href ??
+                                                                                    '',
+                                                                                version:
+                                                                                    payment.version ??
+                                                                                    '',
+                                                                            };
                                                                         setCorrectedDate(
                                                                             payment.received_on ??
                                                                                 todayIn(
@@ -1553,7 +1638,11 @@ export default function ClientInvoiceDetail({
 
             <AlertDialog
                 open={voiding}
-                onOpenChange={(open: boolean) => setVoiding(open)}
+                onOpenChange={(open: boolean) => {
+                    if (!mutation.isLocked()) {
+                        setVoiding(open);
+                    }
+                }}
             >
                 <AlertDialogContent className="grid-cols-1">
                     <AlertDialogHeader>
@@ -1567,6 +1656,7 @@ export default function ClientInvoiceDetail({
                     <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="void-reason">Reason</Label>
                         <Textarea
+                            disabled={mutation.locked}
                             id="void-reason"
                             className="max-h-48 wrap-anywhere"
                             maxLength={1000}
@@ -1585,19 +1675,52 @@ export default function ClientInvoiceDetail({
                         </p>
                     </div>
                     <AlertDialogFooter>
+                        {mutation.error !== null && (
+                            <p
+                                role="alert"
+                                className="wrap-anywhere text-destructive"
+                            >
+                                {mutation.error}
+                            </p>
+                        )}
+                        {mutation.locked && (
+                            <Button
+                                disabled={busy}
+                                onClick={() => void mutation.retry()}
+                            >
+                                {mutation.saved
+                                    ? 'Refresh saved result'
+                                    : 'Check original request'}
+                            </Button>
+                        )}
                         <AlertDialogCancel
-                            render={<Button variant="outline">Cancel</Button>}
+                            disabled={mutation.locked}
+                            render={
+                                <Button
+                                    disabled={mutation.locked}
+                                    variant="outline"
+                                >
+                                    Cancel
+                                </Button>
+                            }
                         />
                         <AlertDialogAction
                             render={
                                 <Button
                                     variant="destructive"
-                                    disabled={busy || voidReason.trim() === ''}
+                                    disabled={
+                                        mutation.locked ||
+                                        voidReason.trim() === ''
+                                    }
                                     onClick={() =>
-                                        post(actions.void ?? '', {
-                                            confirm: true,
-                                            reason: voidReason.trim(),
-                                        })
+                                        post(
+                                            voidBaseline.current?.href ?? '',
+                                            {
+                                                confirm: true,
+                                                reason: voidReason.trim(),
+                                            },
+                                            voidBaseline.current?.version ?? '',
+                                        )
                                     }
                                 >
                                     Void

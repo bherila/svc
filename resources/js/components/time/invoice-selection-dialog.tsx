@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -11,24 +11,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import { useInvoiceMutation } from '@/hooks/use-invoice-mutation';
 import type { ApiSchema } from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
 import { formatMoney } from '@/lib/money';
-import { refreshPageProps } from '@/lib/refresh-page-props';
 import { formatHours, todayIn } from '@/lib/time';
 import type { DraftTimeTarget, TimeEntry } from '@/types/time-sheet';
 
 /** A quote from server-priced rows; the write rechecks availability under lock. */
-export function InvoiceSelectionDialog({
-    entries,
-    url,
-    companyId,
-    timezone,
-    target,
-    onClose,
-    onSuccess,
-}: {
+export function InvoiceSelectionDialog(props: {
     entries: TimeEntry[];
     url: string;
     companyId: string;
@@ -37,13 +28,22 @@ export function InvoiceSelectionDialog({
     onClose: () => void;
     onSuccess: () => void;
 }) {
+    const [baseline] = useState(() =>
+        structuredClone({
+            entries: props.entries,
+            url: props.url,
+            companyId: props.companyId,
+            timezone: props.timezone,
+            target: props.target,
+        }),
+    );
+    const { entries, url, companyId, timezone, target } = baseline;
+    const { onClose, onSuccess } = props;
+    const mutation = useInvoiceMutation();
     const [number, setNumber] = useState('');
     const [issueDate, setIssueDate] = useState(() => todayIn(timezone));
     const [dueDate, setDueDate] = useState('');
     const [notes, setNotes] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
     const currency = target?.currency ?? entries[0]?.invoice_terms?.currency;
     const valid =
         entries.length > 0 &&
@@ -59,14 +59,14 @@ export function InvoiceSelectionDialog({
         <Dialog
             open
             onOpenChange={(open) => {
-                if (!open && !saving) {
+                if (!open && !mutation.isLocked()) {
                     onClose();
                 }
             }}
         >
             <DialogContent
                 className="max-h-[90dvh] grid-cols-1 overflow-y-auto sm:max-w-2xl"
-                showCloseButton={!saving}
+                showCloseButton={!mutation.locked}
             >
                 <DialogHeader>
                     <DialogTitle className="min-w-0 pr-6 wrap-anywhere">
@@ -85,16 +85,19 @@ export function InvoiceSelectionDialog({
                     onSubmit={async (event) => {
                         event.preventDefault();
 
+                        if (mutation.isLocked()) {
+                            await mutation.retry();
+
+                            return;
+                        }
+
                         if (
-                            saving ||
+                            mutation.busy ||
                             !valid ||
                             (!target && number.trim() === '')
                         ) {
                             return;
                         }
-
-                        setSaving(true);
-                        setError(null);
 
                         const body = target
                             ? ({
@@ -115,36 +118,7 @@ export function InvoiceSelectionDialog({
                                       (entry) => entry.id,
                                   ),
                               } satisfies ApiSchema<'InvoiceCreateRequest'>);
-                        const fingerprint = JSON.stringify({ url, body });
-
-                        if (attempt.current?.fingerprint !== fingerprint) {
-                            attempt.current = {
-                                fingerprint,
-                                key: newIdempotencyKey(),
-                            };
-                        }
-
-                        const result = await apiRequest(
-                            'POST',
-                            url,
-                            body,
-                            attempt.current.key,
-                        );
-
-                        if (!result.ok) {
-                            setError(result.message);
-                            setSaving(false);
-
-                            return;
-                        }
-
-                        attempt.current = null;
-                        void refreshPageProps({
-                            onFinish: () => {
-                                setSaving(false);
-                                onSuccess();
-                            },
-                        });
+                        await mutation.submit('POST', url, body, onSuccess);
                     }}
                 >
                     <ul
@@ -218,7 +192,7 @@ export function InvoiceSelectionDialog({
                                         }
                                         required
                                         maxLength={80}
-                                        disabled={saving}
+                                        disabled={mutation.locked}
                                     />
                                 </div>
                                 <div className="grid min-w-0 grid-cols-1 gap-2">
@@ -232,7 +206,7 @@ export function InvoiceSelectionDialog({
                                         onChange={(event) =>
                                             setIssueDate(event.target.value)
                                         }
-                                        disabled={saving}
+                                        disabled={mutation.locked}
                                     />
                                 </div>
                                 <div className="grid min-w-0 grid-cols-1 gap-2">
@@ -246,7 +220,7 @@ export function InvoiceSelectionDialog({
                                         onChange={(event) =>
                                             setDueDate(event.target.value)
                                         }
-                                        disabled={saving}
+                                        disabled={mutation.locked}
                                     />
                                 </div>
                             </div>
@@ -261,7 +235,7 @@ export function InvoiceSelectionDialog({
                                         setNotes(event.target.value)
                                     }
                                     maxLength={10000}
-                                    disabled={saving}
+                                    disabled={mutation.locked}
                                 />
                             </div>
                         </>
@@ -269,31 +243,38 @@ export function InvoiceSelectionDialog({
                     <p className="text-xs text-muted-foreground">
                         Availability and rates are checked again when you save.
                     </p>
-                    {error !== null && (
+                    {mutation.error !== null && (
                         <p
                             role="alert"
                             className="text-sm wrap-anywhere text-destructive"
                         >
-                            {error}
+                            {mutation.error}
                         </p>
                     )}
                     <DialogFooter>
                         <Button
                             type="button"
                             variant="outline"
-                            disabled={saving}
+                            disabled={mutation.locked}
                             onClick={onClose}
                         >
                             Cancel
                         </Button>
-                        <Button type="submit" disabled={saving || !valid}>
-                            {saving
-                                ? target
-                                    ? 'Saving…'
-                                    : 'Creating draft…'
-                                : target
-                                  ? 'Add time to draft'
-                                  : 'Create draft invoice'}
+                        <Button
+                            type="submit"
+                            disabled={mutation.busy || !valid}
+                        >
+                            {mutation.saved
+                                ? 'Refresh saved result'
+                                : mutation.locked && !mutation.busy
+                                  ? 'Check original request'
+                                  : mutation.busy
+                                    ? target
+                                        ? 'Saving…'
+                                        : 'Creating draft…'
+                                    : target
+                                      ? 'Add time to draft'
+                                      : 'Create draft invoice'}
                         </Button>
                     </DialogFooter>
                 </form>

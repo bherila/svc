@@ -1,5 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
@@ -10,8 +10,8 @@ import {
 } from '@/components/agreements/engagement-actions';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
+import { useInvoiceMutation } from '@/hooks/use-invoice-mutation';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
@@ -19,7 +19,6 @@ import {
     predatesInvoiceIssue,
     predatesInvoiceIssueWarning,
 } from '@/lib/payments';
-import { refreshPageProps } from '@/lib/refresh-page-props';
 import { todayIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { AttachmentPanel as SharedFilePanel } from '@/types/files';
@@ -215,12 +214,45 @@ export function InvoiceForm({
     href,
     clientId,
 }: {
-    href: string;
+    href: string | null;
     clientId: string;
 }) {
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
+    const [generation, setGeneration] = useState(0);
+    const [available, setAvailable] = useState(href !== null);
+
+    if (!available && href !== null) {
+        setAvailable(true);
+    }
+
+    if (!available) {
+        return null;
+    }
+
+    return (
+        <InvoiceDraft
+            key={generation}
+            href={href}
+            clientId={clientId}
+            onDone={() => {
+                setAvailable(false);
+                setGeneration((current) => current + 1);
+            }}
+        />
+    );
+}
+
+function InvoiceDraft({
+    href,
+    clientId,
+    onDone,
+}: {
+    href: string | null;
+    clientId: string;
+    onDone: () => void;
+}) {
+    const mutation = useInvoiceMutation();
+    const [baseline] = useState({ href, clientId });
+    const [validationError, setValidationError] = useState<string | null>(null);
     const form = useForm({
         invoice_number: '',
         due_date: '',
@@ -233,20 +265,26 @@ export function InvoiceForm({
     const submit = async (event: FormEvent) => {
         event.preventDefault();
 
-        if (busy) {
+        if (mutation.isLocked()) {
+            await mutation.retry();
+
+            return;
+        }
+
+        if (baseline.href === null) {
             return;
         }
 
         const amount = toMinorUnits(form.data.unit_price);
 
         if (amount === null) {
-            setError('Enter a valid unit price.');
+            setValidationError('Enter a valid unit price.');
 
             return;
         }
 
         const body = {
-            company_id: clientId,
+            company_id: baseline.clientId,
             invoice_number: form.data.invoice_number,
             due_date: form.data.due_date || null,
             currency: form.data.currency,
@@ -261,32 +299,15 @@ export function InvoiceForm({
                 },
             ],
         } satisfies ApiSchema<'InvoiceCreateRequest'>;
-        const fingerprint = JSON.stringify(body);
-
-        if (attempt.current?.fingerprint !== fingerprint) {
-            attempt.current = { fingerprint, key: newIdempotencyKey() };
-        }
-
-        setBusy(true);
-        const result = await apiRequest(
-            'POST',
-            href,
-            body,
-            attempt.current.key,
-        );
-
-        if (!result.ok) {
-            setError(result.message);
-            setBusy(false);
-
-            return;
-        }
-
-        attempt.current = null;
-        setError(null);
-        form.reset();
-        void refreshPageProps({ onFinish: () => setBusy(false) });
+        setValidationError(null);
+        await mutation.submit('POST', baseline.href, body, onDone);
     };
+
+    if (href === null && !mutation.locked) {
+        return null;
+    }
+
+    const error = mutation.error ?? validationError;
 
     return (
         <form
@@ -295,6 +316,7 @@ export function InvoiceForm({
             className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-6"
         >
             <input
+                disabled={mutation.locked}
                 className={inputClass}
                 placeholder="Invoice number"
                 value={form.data.invoice_number}
@@ -304,6 +326,7 @@ export function InvoiceForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={inputClass}
                 type="date"
                 value={form.data.due_date}
@@ -312,6 +335,7 @@ export function InvoiceForm({
                 }
             />
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} md:col-span-2`}
                 placeholder="Line description"
                 value={form.data.description}
@@ -321,6 +345,7 @@ export function InvoiceForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={inputClass}
                 type="number"
                 min="0"
@@ -340,8 +365,20 @@ export function InvoiceForm({
                     {error}
                 </p>
             )}
-            <button className={buttonClass} disabled={busy}>
-                Draft invoice
+            <button className={buttonClass} disabled={mutation.busy}>
+                {mutation.saved
+                    ? 'Refresh saved result'
+                    : mutation.locked
+                      ? 'Check original request'
+                      : 'Draft invoice'}
+            </button>
+            <button
+                type="button"
+                className={secondaryButtonClass}
+                disabled={mutation.locked}
+                onClick={onDone}
+            >
+                Reset draft form
             </button>
         </form>
     );
@@ -361,8 +398,41 @@ export function PaymentForm({
     invoice: Invoice;
     timezone: string;
 }) {
-    const [busy, setBusy] = useState(false);
-    const [apiError, setApiError] = useState<string | null>(null);
+    const [generation, setGeneration] = useState(0);
+    const [available, setAvailable] = useState(invoice.payment_href !== null);
+
+    if (!available && invoice.payment_href !== null) {
+        setAvailable(true);
+    }
+
+    if (!available) {
+        return null;
+    }
+
+    return (
+        <PaymentDraft
+            key={generation}
+            invoice={invoice}
+            timezone={timezone}
+            onDone={() => {
+                setAvailable(false);
+                setGeneration((current) => current + 1);
+            }}
+        />
+    );
+}
+
+function PaymentDraft({
+    invoice,
+    timezone,
+    onDone,
+}: {
+    invoice: Invoice;
+    timezone: string;
+    onDone: () => void;
+}) {
+    const mutation = useInvoiceMutation();
+    const [baseline] = useState(() => ({ ...invoice }));
     const form = useForm({
         amount: (invoice.balance_amount / 100).toFixed(2),
         // Same calendar as the time form, and now rendered as well as sent:
@@ -375,29 +445,33 @@ export function PaymentForm({
         notes: '',
         currency: invoice.currency,
         status: 'succeeded',
-        idempotency_key: newIdempotencyKey(),
     });
 
     // A service refusal arrives under `billing` rather than under a field, so
     // it is not one of this form's own keys; the bag itself carries whatever
     // the server put in it.
     const errors: Record<string, string | undefined> = form.errors;
-    const refusal = apiError ?? errors.billing ?? errors.received_on;
+    const refusal = mutation.error ?? errors.billing ?? errors.received_on;
 
     const submit = async (event: FormEvent) => {
         event.preventDefault();
 
-        if (busy || invoice.payment_href === null) {
+        if (mutation.isLocked()) {
+            await mutation.retry();
+
             return;
         }
 
-        setBusy(true);
-        const result = await apiRequest(
+        if (baseline.payment_href === null) {
+            return;
+        }
+
+        await mutation.submit(
             'POST',
-            invoice.payment_href,
+            baseline.payment_href,
             {
-                invoice_id: invoice.id,
-                expected_version: invoice.version,
+                invoice_id: baseline.id,
+                expected_version: baseline.version,
                 confirm: true,
                 amount: toMinorUnits(form.data.amount),
                 currency: form.data.currency,
@@ -407,36 +481,18 @@ export function PaymentForm({
                 received_on: form.data.received_on,
                 status: form.data.status,
             },
-            form.data.idempotency_key,
+            onDone,
         );
-
-        if (result.ok) {
-            setApiError(null);
-            form.setData('idempotency_key', newIdempotencyKey());
-            form.reset('reference', 'notes');
-            // Back to today, and read from the clock rather than
-            // `form.reset('received_on')`. Inertia keeps this form
-            // mounted across the redirect, so a date typed to record a
-            // backdated payment stayed in the field and the *next*
-            // payment recorded here silently carried it - the same
-            // wrong-period defect this field exists to fix, arrived at
-            // from the other side and quieter, because a stale date
-            // reads exactly like the default it replaced. `reset()`
-            // would restore the value captured when the page loaded,
-            // which is yesterday's on a screen left open overnight.
-            form.setData('received_on', todayIn(timezone));
-            void refreshPageProps({ onFinish: () => setBusy(false) });
-
-            return;
-        }
-
-        setApiError(result.message);
-        setBusy(false);
     };
+
+    if (invoice.payment_href === null && !mutation.locked) {
+        return null;
+    }
 
     return (
         <form onSubmit={submit} className="mt-3 flex flex-wrap gap-2">
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} max-w-32`}
                 type="number"
                 min="0.01"
@@ -447,6 +503,7 @@ export function PaymentForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} max-w-44`}
                 type="date"
                 // Today on the workspace's calendar. No floor here: how far
@@ -462,6 +519,7 @@ export function PaymentForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} max-w-52`}
                 placeholder="Payment reference"
                 value={form.data.reference}
@@ -469,8 +527,20 @@ export function PaymentForm({
                     form.setData('reference', event.target.value)
                 }
             />
-            <button className={secondaryButtonClass} disabled={busy}>
-                Record payment
+            <button className={secondaryButtonClass} disabled={mutation.busy}>
+                {mutation.saved
+                    ? 'Refresh saved result'
+                    : mutation.locked
+                      ? 'Check original request'
+                      : 'Record payment'}
+            </button>
+            <button
+                type="button"
+                className={secondaryButtonClass}
+                disabled={mutation.locked}
+                onClick={onDone}
+            >
+                Reset payment form
             </button>
             {predatesInvoiceIssue(
                 form.data.received_on,
@@ -501,39 +571,34 @@ export function PaymentForm({
 }
 
 export function InvoiceIssueButton({ invoice }: { invoice: Invoice }) {
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [key] = useState(newIdempotencyKey);
-    const issue = async () => {
-        if (busy || invoice.issue_href === null) {
-            return;
-        }
+    const mutation = useInvoiceMutation();
 
-        setBusy(true);
-        const result = await apiRequest(
-            'POST',
-            invoice.issue_href,
-            { expected_version: invoice.version, confirm: true },
-            key,
-        );
-
-        if (result.ok) {
-            setError(null);
-            void refreshPageProps({ onFinish: () => setBusy(false) });
-
-            return;
-        }
-
-        setError(result.message);
-        setBusy(false);
-    };
+    if (invoice.issue_href === null && !mutation.locked) {
+        return null;
+    }
 
     return (
         <div>
-            <button disabled={busy} onClick={() => void issue()}>
-                Issue
+            <button
+                disabled={mutation.busy}
+                onClick={() => {
+                    if (mutation.isLocked()) {
+                        void mutation.retry();
+                    } else if (invoice.issue_href !== null) {
+                        void mutation.submit('POST', invoice.issue_href, {
+                            expected_version: invoice.version,
+                            confirm: true,
+                        });
+                    }
+                }}
+            >
+                {mutation.saved
+                    ? 'Refresh saved result'
+                    : mutation.locked
+                      ? 'Check original request'
+                      : 'Issue'}
             </button>
-            {error !== null && <p role="alert">{error}</p>}
+            {mutation.error !== null && <p role="alert">{mutation.error}</p>}
         </div>
     );
 }
@@ -734,12 +799,10 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
 
                                 <div className="border-t border-slate-200 pt-5">
                                     <h3 className="font-semibold">Invoices</h3>
-                                    {client.invoice_create_href !== null && (
-                                        <InvoiceForm
-                                            href={client.invoice_create_href}
-                                            clientId={client.id}
-                                        />
-                                    )}
+                                    <InvoiceForm
+                                        href={client.invoice_create_href}
+                                        clientId={client.id}
+                                    />
                                     <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
                                         {client.invoices.map((invoice) => (
                                             <article
@@ -772,25 +835,17 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                         >
                                                             PDF
                                                         </a>
-                                                        {invoice.issue_href !==
-                                                            null && (
-                                                            <InvoiceIssueButton
-                                                                invoice={
-                                                                    invoice
-                                                                }
-                                                            />
-                                                        )}
+                                                        <InvoiceIssueButton
+                                                            invoice={invoice}
+                                                        />
                                                     </div>
                                                 </div>
-                                                {invoice.payment_href !==
-                                                    null && (
-                                                    <PaymentForm
-                                                        invoice={invoice}
-                                                        timezone={
-                                                            workspace.timezone
-                                                        }
-                                                    />
-                                                )}
+                                                <PaymentForm
+                                                    invoice={invoice}
+                                                    timezone={
+                                                        workspace.timezone
+                                                    }
+                                                />
                                                 <OperationFiles
                                                     panel={
                                                         invoice.attachment_panel

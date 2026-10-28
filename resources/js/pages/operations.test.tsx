@@ -9,7 +9,12 @@ import {
 
 const inertia = vi.hoisted(() => ({
     post: vi.fn(),
-    reload: vi.fn((options: { onFinish?: () => void }) => options.onFinish?.()),
+    reload: vi.fn(
+        (options: { onSuccess?: () => void; onFinish?: () => void }) => {
+            options.onSuccess?.();
+            options.onFinish?.();
+        },
+    ),
 }));
 const requestFetch = vi.fn();
 
@@ -115,19 +120,26 @@ describe('drafting an invoice from operations', () => {
     });
 });
 
-vi.mock('@inertiajs/react', () => ({
-    router: inertia,
-    useForm: (initial: Record<string, unknown>) => {
-        // Captured once, like the real hook: the initial values are the ones
-        // the page loaded with, not the ones the clock says on a later render.
-        if (form.initial === null) {
-            form.initial = { ...initial };
-            form.data = { ...initial };
-        }
+vi.mock('@inertiajs/react', async () => {
+    const { useRef } = await import('react');
 
-        return form;
-    },
-}));
+    return {
+        router: inertia,
+        useForm: (initial: Record<string, unknown>) => {
+            // Captured once, like the real hook: the initial values are the ones
+            // the page loaded with, not the ones the clock says on a later render.
+            const initialized = useRef(false);
+
+            if (!initialized.current) {
+                initialized.current = true;
+                form.initial = { ...initial };
+                form.data = { ...initial };
+            }
+
+            return form;
+        },
+    };
+});
 
 function invoice(overrides: Record<string, unknown> = {}) {
     return {
@@ -201,7 +213,9 @@ describe('issuing an invoice from operations', () => {
                 'SVC could not be reached',
             ),
         );
-        fireEvent.click(screen.getByRole('button', { name: 'Issue' }));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
         await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
         const [url, first] = requestFetch.mock.calls[0] as [
             string,
@@ -332,9 +346,11 @@ describe('recording a payment from the operations screen', () => {
         // The reference is cleared and the retry key replaced, as before: this
         // adds the date to that set rather than replacing it.
         expect(form.data.reference).toBe('');
-        expect(form.data.idempotency_key).not.toBe(
-            form.initial?.idempotency_key,
-        );
+        fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(
+            requestFetch.mock.calls[1][1].headers['Idempotency-Key'],
+        ).not.toBe(requestFetch.mock.calls[0][1].headers['Idempotency-Key']);
     });
 
     /**
@@ -354,5 +370,214 @@ describe('recording a payment from the operations screen', () => {
         expect(screen.getByRole('alert')).toHaveTextContent(
             'A payment cannot be dated before 2024-08-29.',
         );
+    });
+});
+
+describe('invoice operations recovery and edit baselines', () => {
+    beforeEach(() => {
+        form.data = {};
+        form.initial = null;
+        form.errors = {};
+        inertia.reload.mockImplementation(
+            (options: { onSuccess?: () => void; onFinish?: () => void }) => {
+                options.onSuccess?.();
+                options.onFinish?.();
+            },
+        );
+    });
+    function failure(status: number) {
+        return new Response(JSON.stringify({ message: 'Synthetic refusal' }), {
+            status,
+        });
+    }
+    function request(index: number) {
+        const [url, init] = requestFetch.mock.calls[index];
+
+        return {
+            url,
+            method: init.method,
+            body: init.body,
+            key: init.headers['Idempotency-Key'],
+        };
+    }
+    it('keeps an unknown draft intact across editing/context changes and only refreshes after known save', async () => {
+        requestFetch.mockResolvedValueOnce(failure(408));
+        const { rerender } = render(
+            <InvoiceForm href="/original-drafts" clientId="original-company" />,
+        );
+        fireEvent.change(screen.getByPlaceholderText('Invoice number'), {
+            target: { value: 'SYN-ORIGINAL' },
+        });
+        fireEvent.change(screen.getByPlaceholderText('Line description'), {
+            target: { value: 'Original work' },
+        });
+        fireEvent.change(screen.getByPlaceholderText('Unit price'), {
+            target: { value: '25.00' },
+        });
+        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
+        await screen.findByRole('button', { name: 'Check original request' });
+        expect(
+            screen.getByRole('button', { name: 'Reset draft form' }),
+        ).toBeDisabled();
+        expect(screen.getByPlaceholderText('Invoice number')).toBeDisabled();
+        rerender(<InvoiceForm href={null} clientId="different-company" />);
+        form.data.invoice_number = 'Edited after unknown';
+        requestFetch.mockResolvedValueOnce(failure(422));
+        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+        await vi.waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Check original request' }),
+            ).toBeEnabled(),
+        );
+        inertia.reload.mockImplementation(
+            (options: { onFinish?: () => void }) => options.onFinish?.(),
+        );
+        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
+        await screen.findByText(
+            /The change was saved, but the page could not refresh/,
+        );
+        expect(requestFetch).toHaveBeenCalledTimes(3);
+        expect(request(2)).toEqual(request(0));
+        expect(form.data.invoice_number).toBe('Edited after unknown');
+        inertia.reload.mockImplementation(
+            (options: { onSuccess?: () => void; onFinish?: () => void }) => {
+                options.onSuccess?.();
+                options.onFinish?.();
+            },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Refresh saved result' }),
+        );
+        await vi.waitFor(() =>
+            expect(
+                screen.queryByRole('form', { name: 'Draft invoice' }),
+            ).toBeNull(),
+        );
+        expect(requestFetch).toHaveBeenCalledTimes(3);
+    });
+    it('keeps an old payment edit and uncertain request on their observed version, then starts fresh after verified refresh', async () => {
+        requestFetch.mockResolvedValueOnce(failure(408));
+        const { container, rerender } = render(
+            <PaymentForm invoice={invoice()} timezone="UTC" />,
+        );
+        fireEvent.change(screen.getByLabelText('Payment amount'), {
+            target: { value: '25.00' },
+        });
+        rerender(
+            <PaymentForm
+                invoice={invoice({
+                    version: '2'.repeat(64),
+                    payment_href: '/new-payments',
+                })}
+                timezone="UTC"
+            />,
+        );
+        fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+        await screen.findByRole('button', { name: 'Check original request' });
+        expect(JSON.parse(request(0).body)).toMatchObject({
+            expected_version: '1'.repeat(64),
+            amount: 2500,
+        });
+        expect(request(0).url).toBe('/api/v1/workspaces/workspace-1/payments');
+        expect(screen.getByLabelText('Payment amount')).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Reset payment form' }),
+        ).toBeDisabled();
+        rerender(
+            <PaymentForm
+                invoice={invoice({
+                    version: '3'.repeat(64),
+                    payment_href: null,
+                })}
+                timezone="UTC"
+            />,
+        );
+        form.data.amount = '99.00';
+        requestFetch.mockResolvedValueOnce(failure(403));
+        fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+        await vi.waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Check original request' }),
+            ).toBeEnabled(),
+        );
+        rerender(
+            <PaymentForm
+                invoice={invoice({
+                    version: '4'.repeat(64),
+                    payment_href: '/current-payments',
+                    balance_amount: 5000,
+                })}
+                timezone="UTC"
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await vi.waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Record payment' }),
+            ).toBeEnabled(),
+        );
+        expect(request(2)).toEqual(request(0));
+        expect(screen.getByLabelText('Payment amount')).toHaveValue(50);
+        fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(4));
+        expect(request(3).key).not.toBe(request(0).key);
+        expect(request(3).url).toBe('/current-payments');
+        expect(JSON.parse(request(3).body)).toMatchObject({
+            expected_version: '4'.repeat(64),
+            amount: 5000,
+        });
+    });
+    it('keeps an unknown issue request available when refreshed props remove its capability', async () => {
+        requestFetch.mockResolvedValueOnce(failure(408));
+        const { rerender } = render(
+            <InvoiceIssueButton
+                invoice={invoice({ issue_href: '/original-issue' })}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Issue' }));
+        await screen.findByRole('button', { name: 'Check original request' });
+        rerender(
+            <InvoiceIssueButton
+                invoice={invoice({ issue_href: null, version: '8'.repeat(64) })}
+            />,
+        );
+        requestFetch.mockResolvedValueOnce(failure(409));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+    });
+    it('opens a newly available payment form with current defaults rather than an earlier hidden draft', async () => {
+        const { rerender } = render(
+            <PaymentForm
+                invoice={invoice({ payment_href: null })}
+                timezone="UTC"
+            />,
+        );
+        expect(screen.queryByLabelText('Payment amount')).toBeNull();
+        rerender(
+            <PaymentForm
+                invoice={invoice({
+                    payment_href: '/available-payment',
+                    version: '9'.repeat(64),
+                    balance_amount: 2500,
+                })}
+                timezone="UTC"
+            />,
+        );
+        expect(screen.getByLabelText('Payment amount')).toHaveValue(25);
+        fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(request(0).body)).toMatchObject({
+            expected_version: '9'.repeat(64),
+            amount: 2500,
+        });
     });
 });

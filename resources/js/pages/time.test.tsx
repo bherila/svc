@@ -857,7 +857,10 @@ describe('drafting an invoice from selected time', () => {
         vi.clearAllMocks();
         vi.mocked(apiRequest).mockImplementation(() => new Promise(() => {}));
         inertia.reload.mockImplementation(
-            (options: { onFinish?: () => void }) => options.onFinish?.(),
+            (options: { onSuccess?: () => void; onFinish?: () => void }) => {
+                options.onSuccess?.();
+                options.onFinish?.();
+            },
         );
     });
 
@@ -1141,4 +1144,166 @@ describe('drafting an invoice from selected time', () => {
             within(screen.getByRole('dialog')).getByText(long),
         ).not.toHaveClass('truncate');
     });
+    it.each([false, true])(
+        'retains the selected-time request and modal across refreshed capabilities (existing draft=%s)',
+        async (existing) => {
+            const values = invoiceProps();
+
+            if (existing) {
+                values.invoice_draft = {
+                    company_id: 'synthetic-company',
+                    url: '/original-draft-time',
+                    target: {
+                        number: 'SYN-ORIGINAL',
+                        currency: 'USD',
+                        total_amount: 500,
+                        version: 'original-draft-version',
+                        href: '/synthetic/draft',
+                    },
+                };
+            }
+
+            const { rerender } = render(<TimeSheet {...values} />);
+            const user = userEvent.setup();
+
+            if (!existing) {
+                await user.click(
+                    screen.getByRole('button', {
+                        name: 'Select time to invoice',
+                    }),
+                );
+            }
+
+            await user.click(
+                screen.getByRole('checkbox', {
+                    name: 'Select Review implementation for invoice',
+                }),
+            );
+            await user.click(
+                screen.getByRole('button', { name: 'Review draft invoice' }),
+            );
+
+            if (!existing) {
+                await user.type(
+                    screen.getByLabelText('Invoice number'),
+                    'SYN-ORIGINAL',
+                );
+            }
+
+            const dialog = screen.getByRole('dialog');
+            const changed = structuredClone(values);
+            changed.invoice_draft = {
+                company_id: 'different-company',
+                url: '/changed-time-draft',
+                target: {
+                    number: 'SYN-CONCURRENT',
+                    currency: 'EUR',
+                    total_amount: 900,
+                    version: 'new-draft-version',
+                    href: '/changed-draft',
+                },
+            };
+            changed.months[0].entries = [];
+            rerender(<TimeSheet {...changed} />);
+            expect(
+                within(dialog).getByText('Review implementation'),
+            ).toBeVisible();
+            vi.mocked(apiRequest).mockResolvedValueOnce({
+                ok: false,
+                status: 408,
+                message: 'Synthetic timeout',
+            });
+            await user.click(
+                within(dialog).getByRole('button', {
+                    name: existing
+                        ? 'Add time to draft'
+                        : 'Create draft invoice',
+                }),
+            );
+            await within(dialog).findByRole('button', {
+                name: 'Check original request',
+            });
+            const original = vi.mocked(apiRequest).mock.calls[0];
+            expect(original[1]).toBe(
+                existing
+                    ? '/original-draft-time'
+                    : '/synthetic/authorized-invoice-draft',
+            );
+            expect(original[2]).toMatchObject(
+                existing
+                    ? {
+                          expected_version: 'original-draft-version',
+                          time_entry_ids: ['entry-1'],
+                      }
+                    : {
+                          company_id: 'synthetic-company',
+                          invoice_number: 'SYN-ORIGINAL',
+                          currency: 'USD',
+                          time_entry_ids: ['entry-1'],
+                      },
+            );
+            expect(
+                within(dialog).getByRole('button', { name: 'Cancel' }),
+            ).toBeDisabled();
+
+            if (!existing) {
+                expect(
+                    within(dialog).getByLabelText('Invoice number'),
+                ).toBeDisabled();
+            }
+
+            rerender(<TimeSheet {...changed} invoice_draft={null} />);
+            expect(dialog).toBeInTheDocument();
+            vi.mocked(apiRequest).mockResolvedValueOnce({
+                ok: false,
+                status: 422,
+                message: 'Synthetic later refusal',
+            });
+            await user.click(
+                within(dialog).getByRole('button', {
+                    name: 'Check original request',
+                }),
+            );
+            expect(vi.mocked(apiRequest).mock.calls[1]).toEqual(original);
+            expect(
+                within(dialog).getByRole('button', { name: 'Cancel' }),
+            ).toBeDisabled();
+            inertia.reload.mockImplementation(
+                (options: { onFinish?: () => void }) => options.onFinish?.(),
+            );
+            vi.mocked(apiRequest).mockResolvedValueOnce({
+                ok: true,
+                status: 201,
+                data: {},
+            });
+            await user.click(
+                within(dialog).getByRole('button', {
+                    name: 'Check original request',
+                }),
+            );
+            await within(dialog).findByText(
+                /The change was saved, but the page could not refresh/,
+            );
+            expect(vi.mocked(apiRequest).mock.calls[2]).toEqual(original);
+            expect(dialog).toBeInTheDocument();
+            inertia.reload.mockImplementation(
+                (options: {
+                    onSuccess?: () => void;
+                    onFinish?: () => void;
+                }) => {
+                    options.onSuccess?.();
+                    options.onFinish?.();
+                },
+            );
+            await user.click(
+                within(dialog).getByRole('button', {
+                    name: 'Refresh saved result',
+                }),
+            );
+            await waitFor(() =>
+                expect(screen.queryByRole('dialog')).toBeNull(),
+            );
+            expect(apiRequest).toHaveBeenCalledTimes(3);
+        },
+    );
 });
