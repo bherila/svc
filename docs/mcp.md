@@ -355,6 +355,19 @@ default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
 migration plus the approved confirmation design before general availability.
 
+`invoices.send` adds `data.delivery` beside the existing invoice result. It is
+the exact delivery registered by that idempotency receipt: `{id, status,
+error_summary}`, or `null` when an older receipt did not retain its delivery
+identity. `sent` means the mailer accepted the message, not that the recipient
+received it. `pending` and `sending` are unresolved; `sending` also covers a
+lost transport response or accepted mail whose local result could not be saved.
+Only a preparation failure before handoff is `failed`, with a sanitized error.
+The send still runs explicitly after commit in the request and needs no worker.
+Repeat an uncertain request with the same key and unchanged body to read its
+recorded outcome without another handoff. Do not automatically resend a `null`,
+`pending` or `sending` result. A proven `failed` result allows an operator to
+make a new confirmed attempt with a new key and current invoice version.
+
 `time_entries.log` accepts `approve: true` to approve the logged entries in
 the same transaction and under the same idempotency receipt, so a batch is
 either logged and approved or not written at all. It carries every gate
@@ -740,7 +753,7 @@ receipt, as `finance.reconciliations.upsert` would. It needs the
 audited under both operations. Null means none. See
 [the finance API](finance-api.md#recording-a-deposit-and-its-allocation-in-one-call).
 
-Whatever it carries, `payments.record` refuses a new payment, under the
+For OAuth and MCP callers, `payments.record` refuses a new payment, under the
 invoice lock, while another payment on the invoice is `pending`, is a Stripe
 payment stored as `failed` (whose intent can still be confirmed), or carries a
 status SVC cannot read exactly, and while Square collects the invoice. Recording
@@ -748,9 +761,15 @@ any payment, even a pending one, advances the invoice's version. `invoices.get`
 shows owners and admins `pending_payments` and `collection_owner` (`svc` or
 `square`) for exactly these two checks; both are null for other readers. A
 completed receipt replays before either check, so a retry of a payment already
-recorded still answers with it. The website's payment form, a payment folded
-into `invoices.issue`, the console and the processors' webhooks are not
-affected.
+recorded still answers with it.
+
+The website calls the same operation with a server-selected operator
+bookkeeping policy: an owner/admin may explicitly record money already
+received on an invoice Square collects, preserving that website capability.
+Only the trusted authenticated session adapter can select this policy; it is
+not a request field and OAuth/MCP callers cannot select it. The invoice version,
+agreement/snapshot checks and in-flight payment refusal still apply. Recording
+this money initiates no processor charge and does not remove the Square link.
 
 An invoice with any disputed payment is `disputed`, even when only part of the
 payment is contested or replacement payments already cover its balance.

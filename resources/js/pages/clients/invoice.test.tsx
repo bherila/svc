@@ -11,6 +11,34 @@ const inertia = vi.hoisted(() => ({
     reload: vi.fn(),
 }));
 
+const requestFetch =
+    vi.fn<(url: string, init: RequestInit) => Promise<Response>>();
+
+beforeEach(() => {
+    requestFetch.mockReset();
+    requestFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ data: {} }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', requestFetch);
+    inertia.reload.mockReset();
+    inertia.reload.mockImplementation(
+        (options: { onSuccess?: () => void; onFinish?: () => void }) => {
+            options.onSuccess?.();
+            options.onFinish?.();
+        },
+    );
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+function apiRequests() {
+    return requestFetch.mock.calls.map(([url, init]) => ({
+        url,
+        method: init.method,
+        body: JSON.parse(String(init.body)),
+    }));
+}
+
 vi.mock('@inertiajs/react', () => ({
     Head: () => null,
     Link: ({ href, children }: { href: string; children: ReactNode }) => (
@@ -33,7 +61,7 @@ function props(overrides: Partial<Props> = {}): Props {
         actions: {
             issue: null,
             send: null,
-            payment: '/workspaces/w-1/invoices/invoice-1/payments',
+            payment: '/api/v1/workspaces/w-1/payments',
             void: null,
         },
         email: null,
@@ -77,7 +105,7 @@ describe('recording a payment against an invoice', () => {
      * payment recorded here was dated the day it was typed in - a cheque that
      * cleared last Tuesday could only be entered as having arrived today.
      */
-    it('offers a date defaulted to today on the workspace calendar and sends it', () => {
+    it('offers a date defaulted to today on the workspace calendar and sends it', async () => {
         render(<ClientInvoiceDetail {...props()} />);
         fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
 
@@ -87,11 +115,17 @@ describe('recording a payment against an invoice', () => {
         fireEvent.change(received, { target: { value: '2026-08-24' } });
         fireEvent.click(screen.getByRole('button', { name: 'Record' }));
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/payments',
-            expect.objectContaining({ received_on: '2026-08-24' }),
-            expect.anything(),
-        );
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/payments',
+            method: 'POST',
+            body: expect.objectContaining({
+                expected_version: '0'.repeat(64),
+                invoice_id: 'invoice-1',
+                confirm: true,
+                received_on: '2026-08-24',
+            }),
+        });
     });
 
     /**
@@ -130,15 +164,7 @@ describe('recording a payment against an invoice', () => {
      * including across a change of day, because reasoning is what a second
      * `setPaying(true)` added later would quietly invalidate.
      */
-    it('re-seeds the form every time it is opened, not once at mount', () => {
-        inertia.post.mockImplementation(
-            (
-                _href: string,
-                _data: Record<string, unknown>,
-                options: { onSuccess: () => void },
-            ) => options.onSuccess(),
-        );
-
+    it('re-seeds the form every time it is opened, not once at mount', async () => {
         render(<ClientInvoiceDetail {...props()} />);
         fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
         fireEvent.change(screen.getByLabelText('Received'), {
@@ -150,6 +176,7 @@ describe('recording a payment against an invoice', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Record' }));
 
         // The dialog closed on success, and the day has since turned over.
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
         expect(screen.queryByLabelText('Received')).toBeNull();
         vi.setSystemTime(new Date('2026-09-02T12:00:00Z'));
 
@@ -173,7 +200,7 @@ describe('recording a payment against an invoice', () => {
                             reference: null,
                             received_on: '2026-07-01',
                             correct_date_href:
-                                '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
+                                '/api/v1/workspaces/w-1/payments/payment-1',
                             amount: 4000,
                             refunded_amount: 0,
                             currency: 'USD',
@@ -185,7 +212,7 @@ describe('recording a payment against an invoice', () => {
                             reference: null,
                             received_on: '2026-08-20',
                             correct_date_href:
-                                '/workspaces/w-1/invoices/invoice-1/payments/payment-2/received-on',
+                                '/api/v1/workspaces/w-1/payments/payment-2',
                             amount: 1000,
                             refunded_amount: 0,
                             currency: 'USD',
@@ -221,12 +248,12 @@ describe('correcting a recorded payment date', () => {
     function payment(overrides: Record<string, unknown> = {}) {
         return {
             id: 'payment-1',
+            version: '1'.repeat(64),
             status: 'succeeded',
             method: 'check',
             reference: null,
             received_on: '2026-08-20',
-            correct_date_href:
-                '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
+            correct_date_href: '/api/v1/workspaces/w-1/payments/payment-1',
             amount: 4000,
             refunded_amount: 0,
             currency: 'USD',
@@ -234,7 +261,7 @@ describe('correcting a recorded payment date', () => {
         };
     }
 
-    it('sends the corrected date to the URL the server supplied', () => {
+    it('sends the corrected date to the URL the server supplied', async () => {
         render(<ClientInvoiceDetail {...props({ payments: [payment()] })} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Correct date' }));
@@ -262,14 +289,17 @@ describe('correcting a recorded payment date', () => {
         expect(save).toBeEnabled();
         fireEvent.click(save);
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
-            {
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/payments/payment-1',
+            method: 'PATCH',
+            body: {
+                expected_version: '1'.repeat(64),
+                confirm: true,
                 received_on: '2026-08-18',
                 reason: 'Bank statement shows the 18th',
             },
-            expect.anything(),
-        );
+        });
     });
 
     /**
@@ -280,15 +310,7 @@ describe('correcting a recorded payment date', () => {
      * typed against one row appear under another. It does not, because opening
      * any row seeds the date from that row before it becomes the open one.
      */
-    it('seeds each row from its own recorded date, after a save and after a cancel', () => {
-        inertia.post.mockImplementation(
-            (
-                _href: string,
-                _data: Record<string, unknown>,
-                options: { onSuccess: () => void },
-            ) => options.onSuccess(),
-        );
-
+    it('seeds each row from its own recorded date, after a save and after a cancel', async () => {
         render(
             <ClientInvoiceDetail
                 {...props({
@@ -299,7 +321,7 @@ describe('correcting a recorded payment date', () => {
                             amount: 2500,
                             received_on: '2026-08-05',
                             correct_date_href:
-                                '/workspaces/w-1/invoices/invoice-1/payments/payment-2/received-on',
+                                '/api/v1/workspaces/w-1/payments/payment-2',
                         }),
                     ],
                 })}
@@ -321,6 +343,8 @@ describe('correcting a recorded payment date', () => {
             target: { value: 'Synthetic statement' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
 
         open(1);
         expect(
@@ -484,13 +508,13 @@ describe('a payment reconciled in finance', () => {
 });
 
 describe('voiding an invoice', () => {
-    it('requires a reason and sends it with the void', () => {
+    it('requires a reason and sends it with the void', async () => {
         render(
             <ClientInvoiceDetail
                 {...props({
                     actions: {
                         ...props().actions,
-                        void: '/workspaces/w-1/invoices/invoice-1/void',
+                        void: '/api/v1/workspaces/w-1/invoices/invoice-1/void',
                     },
                 })}
             />,
@@ -509,16 +533,21 @@ describe('voiding an invoice', () => {
         expect(confirm).toBeEnabled();
         fireEvent.click(confirm);
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/void',
-            { reason: 'Issued to the wrong client' },
-            expect.anything(),
-        );
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/invoices/invoice-1/void',
+            method: 'POST',
+            body: {
+                expected_version: '0'.repeat(64),
+                confirm: true,
+                reason: 'Issued to the wrong client',
+            },
+        });
     });
 });
 
 describe('reviewing and correcting an issued invoice', () => {
-    it('uses server-supplied correction capabilities and posts a revisioned audit request', () => {
+    it('uses server-supplied correction capabilities and posts a revisioned audit request', async () => {
         render(
             <ClientInvoiceDetail
                 {...props({
@@ -527,7 +556,8 @@ describe('reviewing and correcting an issued invoice', () => {
                         send: null,
                         payment: null,
                         void: null,
-                        correct: '/workspaces/w-1/invoices/invoice-1/correct',
+                        correct:
+                            '/api/v1/workspaces/w-1/invoices/invoice-1/correct',
                     },
                     invoice: {
                         ...props().invoice,
@@ -566,10 +596,13 @@ describe('reviewing and correcting an issued invoice', () => {
             screen.getByRole('button', { name: 'Save audited correction' }),
         );
 
-        expect(inertia.post).toHaveBeenCalledWith(
-            '/workspaces/w-1/invoices/invoice-1/correct',
-            expect.objectContaining({
-                expected_revision: 3,
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toContainEqual({
+            url: '/api/v1/workspaces/w-1/invoices/invoice-1/correct',
+            method: 'POST',
+            body: expect.objectContaining({
+                expected_version: '0'.repeat(64),
+                confirm: true,
                 reason: 'Fix the issued description.',
                 lines: [
                     expect.objectContaining({
@@ -580,8 +613,7 @@ describe('reviewing and correcting an issued invoice', () => {
                     }),
                 ],
             }),
-            expect.anything(),
-        );
+        });
     });
 
     it('starts a later correction from the refreshed invoice props', () => {
@@ -590,7 +622,7 @@ describe('reviewing and correcting an issued invoice', () => {
             send: null,
             payment: null,
             void: null,
-            correct: '/workspaces/w-1/invoices/invoice-1/correct',
+            correct: '/api/v1/workspaces/w-1/invoices/invoice-1/correct',
         };
         const { rerender } = render(
             <ClientInvoiceDetail
@@ -715,7 +747,7 @@ describe('changing a draft due date through the API', () => {
     const detailsUrl = '/api/v1/workspaces/w-1/invoices/invoice-1/details';
     const draft = (): Partial<Props> => ({
         actions: {
-            issue: '/workspaces/w-1/invoices/invoice-1/issue',
+            issue: '/api/v1/workspaces/w-1/invoices/invoice-1/issue',
             send: null,
             payment: null,
             void: null,
@@ -1061,5 +1093,399 @@ describe('the Square link on an invoice', () => {
         render(<ClientInvoiceDetail {...props()} />);
 
         expect(screen.queryByText('Square')).toBeNull();
+    });
+});
+
+describe('retaining invoice writes until their outcome and refresh are known', () => {
+    function response(status: number) {
+        return new Response(
+            JSON.stringify({ message: 'Synthetic refusal', data: {} }),
+            { status },
+        );
+    }
+    function request(index: number) {
+        const [url, init] = requestFetch.mock.calls[index];
+
+        return {
+            url,
+            method: init.method,
+            body: init.body,
+            key: (init.headers as Record<string, string>)['Idempotency-Key'],
+        };
+    }
+
+    it('keeps a payment edit on its observed version before the first write', async () => {
+        const initial = props();
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+        fireEvent.change(screen.getByLabelText('Amount'), {
+            target: { value: '40.00' },
+        });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                version={'2'.repeat(64)}
+                actions={{
+                    ...initial.actions,
+                    payment: '/changed-payment-url',
+                }}
+                invoice={{ ...initial.invoice, currency: 'EUR' }}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(1));
+        expect(request(0).url).toBe(initial.actions.payment);
+        expect(JSON.parse(String(request(0).body))).toMatchObject({
+            expected_version: initial.version,
+            currency: 'USD',
+            amount: 4000,
+            invoice_id: initial.invoice.id,
+        });
+    });
+
+    it('retains an uncertain payment through later refusal and retries a known saved result only by refreshing', async () => {
+        requestFetch.mockResolvedValueOnce(response(408));
+        const initial = props();
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+        fireEvent.change(screen.getByLabelText('Reference'), {
+            target: { value: 'Synthetic original cheque' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+        await screen.findByRole('button', { name: 'Check original request' });
+        expect(screen.getByLabelText('Reference')).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Record payment' }),
+        ).toBeDisabled();
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                version={'3'.repeat(64)}
+                actions={{ ...initial.actions, payment: null }}
+            />,
+        );
+        fireEvent.change(screen.getByLabelText('Reference'), {
+            target: { value: 'Edited after timeout' },
+        });
+        requestFetch.mockResolvedValueOnce(response(422));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+        await vi.waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Check original request' }),
+            ).toBeEnabled(),
+        );
+        expect(screen.getByLabelText('Reference')).toBeDisabled();
+        inertia.reload.mockImplementation(
+            (options: { onFinish?: () => void }) => options.onFinish?.(),
+        );
+        requestFetch.mockResolvedValueOnce(response(200));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await screen.findByText(
+            /The change was saved, but the page could not refresh/,
+        );
+        expect(screen.getByLabelText('Reference')).toBeDisabled();
+        expect(requestFetch).toHaveBeenCalledTimes(3);
+        expect(request(2)).toEqual(request(0));
+        inertia.reload.mockImplementation(
+            (options: { onSuccess?: () => void; onFinish?: () => void }) => {
+                options.onSuccess?.();
+                options.onFinish?.();
+            },
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Refresh saved result' }),
+        );
+        await vi.waitFor(() =>
+            expect(screen.queryByLabelText('Reference')).toBeNull(),
+        );
+        expect(requestFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('uses the date edit baseline and retains its key even when capabilities disappear after a timeout', async () => {
+        requestFetch.mockResolvedValueOnce(response(408));
+        const initial = props({
+            actions: {
+                issue: null,
+                send: null,
+                payment: null,
+                void: null,
+                update_details: '/original-date-url',
+            },
+            invoice: { ...props().invoice, status: 'draft' },
+        });
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
+        fireEvent.change(screen.getByLabelText('Due date'), {
+            target: { value: '2026-11-30' },
+        });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                version={'4'.repeat(64)}
+                invoice={{ ...initial.invoice, due_date: '2026-12-31' }}
+                actions={{ ...initial.actions, update_details: null }}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
+        await screen.findByRole('button', { name: 'Check original request' });
+        expect(request(0).url).toBe('/original-date-url');
+        expect(JSON.parse(String(request(0).body))).toEqual({
+            expected_version: initial.version,
+            due_date: '2026-11-30',
+        });
+        expect(screen.getByLabelText('Due date')).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        requestFetch.mockResolvedValueOnce(response(403));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    });
+
+    it('does not pair an existing correction draft with a refreshed invoice version', async () => {
+        const initial = props({
+            actions: { ...props().actions, correct: '/original-correction' },
+            lines: [
+                {
+                    id: 'synthetic-line',
+                    type: 'service',
+                    description: 'Original work',
+                    quantity: '1.0000',
+                    hours: null,
+                    line_date: null,
+                    unit_amount: 100,
+                    total_amount: 100,
+                },
+            ],
+        });
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Correct invoice' }),
+        );
+        fireEvent.change(screen.getByLabelText('Reason for correction'), {
+            target: { value: 'Synthetic correction reason' },
+        });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                version={'5'.repeat(64)}
+                actions={{
+                    ...initial.actions,
+                    correct: '/refreshed-correction',
+                }}
+                lines={[
+                    { ...initial.lines[0], description: 'Concurrent work' },
+                ]}
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Save audited correction' }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(1));
+        expect(request(0).url).toBe('/original-correction');
+        expect(JSON.parse(String(request(0).body))).toMatchObject({
+            expected_version: initial.version,
+            lines: [{ id: 'synthetic-line', description: 'Original work' }],
+        });
+    });
+
+    it('keeps a payment-date edit on the payment version and URL observed when opened', async () => {
+        requestFetch.mockResolvedValueOnce(response(408));
+        const payment = {
+            id: 'synthetic-payment',
+            version: 'original-payment-version',
+            status: 'succeeded',
+            method: 'check',
+            reference: null,
+            received_on: '2026-08-20',
+            correct_date_href: '/original-payment-date',
+            amount: 4000,
+            refunded_amount: 0,
+            currency: 'USD',
+        };
+        const initial = props({ payments: [payment] });
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Correct date' }));
+        fireEvent.change(screen.getByLabelText('Reason for the correction'), {
+            target: { value: 'Synthetic bank date' },
+        });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                payments={[
+                    {
+                        ...payment,
+                        version: 'refreshed-payment-version',
+                        correct_date_href: '/changed-payment-date',
+                    },
+                ]}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        await screen.findByRole('button', { name: 'Check original request' });
+        expect(request(0).url).toBe('/original-payment-date');
+        expect(JSON.parse(String(request(0).body))).toMatchObject({
+            expected_version: 'original-payment-version',
+            received_on: '2026-08-20',
+            reason: 'Synthetic bank date',
+        });
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        requestFetch.mockResolvedValueOnce(response(422));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+    });
+
+    it('keeps a void confirmation mounted and non-cancellable after an uncertain handoff', async () => {
+        requestFetch.mockRejectedValueOnce(
+            new TypeError('Synthetic lost response'),
+        );
+        const initial = props({
+            actions: { ...props().actions, void: '/original-void' },
+        });
+        render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Void' }));
+        const dialog = await screen.findByRole('alertdialog');
+        fireEvent.change(within(dialog).getByLabelText('Reason'), {
+            target: { value: 'Synthetic void reason' },
+        });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Void' }));
+        await within(dialog).findByRole('button', {
+            name: 'Check original request',
+        });
+        expect(dialog).toBeInTheDocument();
+        expect(
+            within(dialog).getByRole('button', { name: 'Cancel' }),
+        ).toBeDisabled();
+        expect(within(dialog).getByLabelText('Reason')).toBeDisabled();
+        requestFetch.mockResolvedValueOnce(response(404));
+        fireEvent.click(
+            within(dialog).getByRole('button', {
+                name: 'Check original request',
+            }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+        expect(dialog).toBeInTheDocument();
+    });
+    it('keeps unknown compose mounted after a same-invoice capability refresh', async () => {
+        requestFetch.mockResolvedValueOnce(response(408));
+        const email = {
+            from: 'SVC <invoices@example.test>',
+            self: 'operator@example.test',
+            default_subject: 'Original invoice',
+            suggested_recipients: [
+                { email: 'billing@example.test', label: 'Billing' },
+            ],
+        };
+        const initial = props({
+            actions: { ...props().actions, send: '/original-send' },
+            email,
+        });
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Send to client' }));
+        fireEvent.change(screen.getByLabelText('Subject'), {
+            target: { value: 'Original compose body' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
+        await screen.findByRole('button', { name: 'Check delivery' });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                actions={{ ...initial.actions, send: null }}
+                email={null}
+                version={'8'.repeat(64)}
+            />,
+        );
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(screen.getByLabelText('Subject')).toHaveValue(
+            'Original compose body',
+        );
+        expect(screen.getByLabelText('Subject')).toBeDisabled();
+        requestFetch.mockResolvedValueOnce(response(409));
+        fireEvent.click(screen.getByRole('button', { name: 'Check delivery' }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+    });
+
+    it('initializes a different invoice composer with its own defaults after a known result', async () => {
+        requestFetch.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    data: {
+                        id: 'invoice-1',
+                        version: '2'.repeat(64),
+                        delivery: { status: 'sent', error_summary: null },
+                    },
+                }),
+                { status: 200 },
+            ),
+        );
+        inertia.reload.mockImplementation(
+            (options: { onFinish?: () => void }) => options.onFinish?.(),
+        );
+        const email = {
+            from: 'SVC <invoices@example.test>',
+            self: 'operator@example.test',
+            default_subject: 'First invoice',
+            suggested_recipients: [
+                { email: 'first@example.test', label: 'First' },
+            ],
+        };
+        const initial = props({
+            actions: { ...props().actions, send: '/first-send' },
+            email,
+        });
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Send to client' }));
+        fireEvent.change(screen.getByLabelText('Subject'), {
+            target: { value: 'First private compose draft' },
+        });
+        fireEvent.change(screen.getByLabelText('Covering note (optional)'), {
+            target: { value: 'First private note' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
+        await screen.findByRole('button', { name: 'Refresh invoice' });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                invoice={{ ...initial.invoice, id: 'invoice-2' }}
+                actions={{ ...initial.actions, send: '/second-send' }}
+                email={{
+                    ...email,
+                    default_subject: 'Second invoice',
+                    suggested_recipients: [
+                        { email: 'second@example.test', label: 'Second' },
+                    ],
+                }}
+                version={'9'.repeat(64)}
+            />,
+        );
+        expect(screen.getByLabelText('Subject')).toHaveValue('Second invoice');
+        expect(screen.getByLabelText('Covering note (optional)')).toHaveValue(
+            '',
+        );
+        expect(screen.getByText('second@example.test')).toBeVisible();
+        expect(screen.queryByText('first@example.test')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1).url).toBe('/second-send');
+        expect(JSON.parse(String(request(1).body))).toMatchObject({
+            expected_version: '9'.repeat(64),
+            recipients: ['second@example.test'],
+            subject: 'Second invoice',
+            message: null,
+        });
+        expect(request(1).key).not.toBe(request(0).key);
     });
 });

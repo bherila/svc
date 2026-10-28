@@ -8,10 +8,12 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\Workspace;
+use App\Services\Billing\Mail\InvoiceMailSender;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\InvoiceLineDetail;
+use App\Support\Billing\InvoiceMailSendResult;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -21,7 +23,6 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 /**
@@ -67,6 +68,7 @@ final class InvoiceEmailService
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly InvoiceDocumentService $documents,
+        private readonly InvoiceMailSender $mail,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ?SquareCollectionGuard $squareCollection = null,
     ) {}
@@ -109,9 +111,9 @@ final class InvoiceEmailService
      * `pending`, which is the truth at that moment: nothing has been sent, and
      * nothing will be if the transaction rolls back.
      *
-     * A failure after commit has nowhere to be reported - the request that
-     * asked for this has been answered - so it lands on the delivery row and in
-     * the log rather than as an exception nobody is waiting for.
+     * The callback records its outcome on the delivery row and in the log;
+     * it cannot roll back the receipt that already committed. A caller may
+     * read that row after its transaction returns to project the outcome.
      *
      * @throws DomainException when the invoice cannot be emailed at all
      */
@@ -702,22 +704,40 @@ final class InvoiceEmailService
             // keeping a second email-only renderer would let their disclosure
             // rules drift apart.
             $pdf = $this->documents->pdf($invoice, InvoiceLineDetail::CLIENT);
-            $mailer = Mail::to($draft->recipients);
-
-            if ($draft->bcc !== []) {
-                $mailer->bcc($draft->bcc);
-            }
-
-            $sent = $mailer->send(new InvoiceMail(
+            $message = new InvoiceMail(
                 $invoice,
                 $draft->subject,
                 $draft->body,
                 $pdf,
                 $this->documents->filename($invoice),
-            ));
+            );
 
         } catch (Throwable $exception) {
             return $this->recordFailure($invoice, $delivery, $exception);
+        }
+
+        try {
+            $sent = $this->mail->send($message, $draft);
+        } catch (Throwable $exception) {
+            // A replacement adapter that throws without a phase observation
+            // cannot prove the message stayed local.
+            $sent = InvoiceMailSendResult::failed($exception, true);
+        }
+
+        if ($sent->failure !== null) {
+            if (! $sent->handoffStarted) {
+                return $this->recordFailure($invoice, $delivery, $sent->failure);
+            }
+            // A transport can accept a message and lose its response. Once
+            // handoff starts, an exception proves neither acceptance nor
+            // rejection. Keep the durable sending claim so neither a manual
+            // retry nor the scheduler can duplicate this delivery.
+            Log::error('An invoice email handoff has an unknown outcome.', [
+                'delivery' => $delivery->public_id,
+                'exception_class' => $sent->failure::class,
+            ]);
+
+            throw new DomainException('The mail handoff outcome is unknown. Delivery remains in progress for reconciliation.');
         }
 
         try {
@@ -741,7 +761,7 @@ final class InvoiceEmailService
                 $lockedDelivery->forceFill([
                     'status' => 'sent',
                     'sent_at' => $this->clock->now($lockedInvoice->workspace)->utc(),
-                    'provider_message_reference' => $sent?->getMessageId(),
+                    'provider_message_reference' => $sent->providerMessageId,
                 ])->save();
                 if ($lockedInvoice->automatic_delivery_status !== null) {
                     $lockedInvoice->forceFill([
@@ -773,7 +793,7 @@ final class InvoiceEmailService
             // submit the same invoice again.
             Log::critical('An accepted invoice email could not be persisted.', [
                 'delivery' => $delivery->public_id,
-                'exception' => $exception,
+                'exception_class' => $exception::class,
             ]);
 
             throw new DomainException(
@@ -865,7 +885,7 @@ final class InvoiceEmailService
 
         Log::error('An invoice email could not be sent.', [
             'delivery' => $delivery->public_id,
-            'exception' => $exception,
+            'exception_class' => $exception::class,
         ]);
 
         throw new DomainException(

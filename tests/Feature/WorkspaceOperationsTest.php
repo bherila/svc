@@ -19,12 +19,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 class WorkspaceOperationsTest extends TestCase
 {
     use AssertsSurfaceIsolation;
+    use CallsInvoiceApi;
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
@@ -101,21 +103,19 @@ class WorkspaceOperationsTest extends TestCase
                 ->where('workspace.clients.0.billing_schedules.0.agreement_id', $agreement->public_id)
                 ->has('workspace.clients.0.invoices', 1));
 
-        $this->actingAs($manager)->from($operationsPath)->post(
-            "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices",
+        $this->createInvoiceApi($manager, $workspace, $company,
             [
                 'invoice_number' => 'SYN-002',
                 'currency' => 'USD',
-                'lines' => [[
+                'manual_lines' => [[
                     'type' => 'service',
                     'description' => 'Synthetic service',
                     'quantity' => '1',
                     'unit_amount' => 2500,
                     'tax_amount' => 0,
-                    'sort_order' => 0,
                 ]],
             ],
-        )->assertRedirect($operationsPath);
+        )->assertCreated();
         $this->assertDatabaseHas('client_invoices', [
             'workspace_id' => $workspace->id,
             'invoice_number' => 'SYN-002',

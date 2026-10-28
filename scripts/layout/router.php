@@ -39,6 +39,10 @@ $expenseWrite = is_string($requestPath) && (
             || (in_array($method, ['PATCH', 'DELETE'], true) && ! str_ends_with($requestPath, '/approve') && ! str_ends_with($requestPath, '/unapprove'))))
 );
 $draftWrite = in_array($requestPath, $fixture['draft_writes'][$method] ?? [], true);
+if ($draftWrite && $method === 'POST' && $requestPath === '/api/v1/workspaces/'.($fixture['workspace_public_id'] ?? '').'/payments') {
+    $body = json_decode((string) file_get_contents('php://input'), true);
+    $draftWrite = is_array($body) && ($body['invoice_id'] ?? null) === $fixture['draft_public_id'];
+}
 $buydownWrite = $method === 'POST' && is_string($fixture['buydown_create'] ?? null) && $requestPath === $fixture['buydown_create'];
 $taskWrite = ($method === 'POST' && $requestPath === ($fixture['task_create'] ?? null))
     || ($method === 'PATCH' && $requestPath === ($fixture['task_update'] ?? null));

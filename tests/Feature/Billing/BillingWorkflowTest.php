@@ -27,10 +27,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 class BillingWorkflowTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -1823,19 +1825,20 @@ class BillingWorkflowTest extends TestCase
     public function test_the_screens_writes_accept_the_exact_primary_payload_names(): void
     {
         [$owner, $workspace, $company] = $this->tenant();
-        $this->actingAs($owner)->post(
-            "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices",
-            ['invoice_number' => 'INV-SYNTH-001', 'currency' => 'USD', 'issue_date' => '2026-08-15', 'due_date' => '2026-09-14', 'lines' => [$this->line()]],
-        )->assertRedirect()->assertSessionHasNoErrors();
+        $manualLine = $this->line();
+        unset($manualLine['sort_order']);
+        $this->createInvoiceApi($owner, $workspace, $company,
+            ['invoice_number' => 'INV-SYNTH-001', 'currency' => 'USD', 'issue_date' => '2026-08-15', 'due_date' => '2026-09-14', 'manual_lines' => [$manualLine]],
+        )->assertCreated();
         $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->sole();
         $this->assertSame('INV-SYNTH-001', $invoice->invoice_number);
-        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertRedirect()->assertSessionHasNoErrors();
-        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
+        $this->invoiceApi($owner, $workspace, $invoice, 'issue')->assertOk();
+        $this->recordPaymentApi($owner, $workspace, $invoice->fresh(), [
             'amount' => 1000, 'currency' => 'USD', 'received_on' => '2026-08-15', 'method' => 'wire', 'reference' => 'SYNTH-REF', 'notes' => 'Synthetic', 'status' => 'succeeded',
-        ])->assertRedirect()->assertSessionHasNoErrors();
-        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
+        ])->assertCreated();
+        $this->recordPaymentApi($owner, $workspace, $invoice->fresh(), [
             'amount' => 500, 'currency' => 'USD', 'received_on' => '2026-08-15', 'method' => 'wire', 'status' => 'pending',
-        ])->assertRedirect()->assertSessionHasNoErrors();
+        ])->assertCreated();
         $payments = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->orderBy('id')->get();
         $this->assertSame([['succeeded', 'USD', 'Synthetic'], ['pending', 'USD', null]], $payments->map(fn (ClientInvoicePayment $payment): array => [$payment->status, $payment->currency, $payment->notes])->all());
         $this->assertSame('partially_paid', $invoice->fresh()->status);
@@ -1858,10 +1861,8 @@ class BillingWorkflowTest extends TestCase
                 'Content-Disposition',
                 'inline; filename=invoice-'.Str::slug($invoice->invoice_number).'.pdf',
             );
-        // 200 rather than 202: the send happens in the request now, so the
-        // answer is what happened rather than what was promised.
-        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send")
-            ->assertRedirect()->assertSessionHas('status', 'Invoice sent to billing@synthetic.test.');
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice->fresh())
+            ->assertOk()->assertJsonPath('data.delivery.status', 'sent');
         $this->assertDatabaseHas('client_invoice_email_deliveries', ['status' => 'sent']);
     }
 
@@ -1930,10 +1931,9 @@ class BillingWorkflowTest extends TestCase
         $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
         $service->issue($invoice, $workspace);
 
-        $this->actingAs($owner)
-            ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
-                'amount' => 99999, 'currency' => 'USD', 'method' => 'ach', 'status' => 'succeeded',
-            ])
+        $this->recordPaymentApi($owner, $workspace, $invoice->fresh(), [
+            'amount' => 99999, 'currency' => 'USD', 'method' => 'ach', 'status' => 'succeeded',
+        ])
             ->assertStatus(422)
             ->assertJsonPath('message', 'Payment cannot exceed the invoice balance.');
     }

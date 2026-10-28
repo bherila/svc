@@ -1480,7 +1480,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits; repeating the same idempotency key sends nothing more. */
+        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome. */
         post: operations['invoices.send'];
         delete?: never;
         options?: never;
@@ -1686,7 +1686,7 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending. OAuth/MCP callers also refuse invoices Square collects (invoices.get reports pending_payments and collection_owner). The trusted first-party website session may explicitly record money already received on a Square-collected invoice as operator bookkeeping; this server-selected policy is not a request field. A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
         delete?: never;
         options?: never;
@@ -4160,6 +4160,29 @@ export interface components {
         InvoiceRemindersResponse: {
             data: components['schemas']['InvoiceReminders'];
         };
+        InvoiceSendMutation: {
+            id: components['schemas']['Uuid'];
+            status: components['schemas']['InvoiceStatus'];
+            linked_time_state: components['schemas']['LinkedTimeState'];
+            invoice_number: string;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+            correction?: {
+                /** Format: uuid */
+                id: string;
+                from_revision: number;
+                to_revision: number;
+                reason: string;
+                href: string;
+            } | null;
+            delivery: {
+                id: components['schemas']['Uuid'];
+                /** @enum {string} */
+                status: 'pending' | 'sending' | 'sent' | 'failed';
+                error_summary: string | null;
+            } | null;
+        };
         InvoiceSendRequest: {
             expected_version: components['schemas']['Version'];
             /** @constant */
@@ -4174,6 +4197,9 @@ export interface components {
              * @default false
              */
             bcc_self: boolean;
+        };
+        InvoiceSendResponse: {
+            data: components['schemas']['InvoiceSendMutation'];
         };
         InvoiceSquare: {
             invoice_id: components['schemas']['Uuid'];
@@ -11854,13 +11880,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Invoice delivery queued */
+            /** @description Invoice and recorded delivery outcome */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                    'application/json': components['schemas']['InvoiceSendResponse'];
                 };
             };
             default: components['responses']['Error'];

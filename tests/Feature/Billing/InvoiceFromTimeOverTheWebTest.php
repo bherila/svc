@@ -17,16 +17,18 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
- * Building an invoice from tracked time existed only on the agent API: the web
- * controller drafted straight from posted lines and never called the service
- * that owns allocation. These cover the browser path doing the same work.
+ * The browser builds invoices through canonical session-authenticated operations.
+ * These cover the same allocation service, manual-line shape and tenant scope
+ * the time-selection dialog uses.
  */
 final class InvoiceFromTimeOverTheWebTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
@@ -60,13 +62,13 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $first = $this->entry(90, 'Design review');
         $second = $this->entry(30, 'Follow-up');
 
-        $response = $this->actingAs($this->owner, 'web')->postJson($this->url(), [
+        $response = $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
             'invoice_number' => 'SVC-00001',
             'currency' => 'USD',
             'time_entry_ids' => [$first->public_id, $second->public_id],
         ]);
 
-        $response->assertRedirect()->assertSessionHasNoErrors();
+        $response->assertCreated();
 
         $invoice = ClientInvoice::query()->firstOrFail();
         $this->assertCount(2, $invoice->lines);
@@ -82,17 +84,17 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
     {
         $entry = $this->entry(60, 'Consulting');
 
-        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
             'invoice_number' => 'SVC-00002',
             'currency' => 'USD',
             'time_entry_ids' => [$entry->public_id],
             // A hand-typed charge is an adjustment: an `expense` line is the
             // expense-claim code's, and a manual door refuses it (#349).
-            'lines' => [[
+            'manual_lines' => [[
                 'type' => 'adjustment', 'description' => 'Travel',
-                'quantity' => '1', 'unit_amount' => 5000, 'tax_amount' => 0, 'sort_order' => 0,
+                'quantity' => '1', 'unit_amount' => 5000, 'tax_amount' => 0,
             ]],
-        ])->assertRedirect()->assertSessionHasNoErrors();
+        ])->assertCreated();
 
         $invoice = ClientInvoice::query()->firstOrFail();
         $this->assertCount(2, $invoice->lines);
@@ -103,11 +105,11 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
     {
         $entry = $this->entry(60, 'Consulting');
 
-        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
             'invoice_number' => 'SVC-00003', 'currency' => 'USD', 'time_entry_ids' => [$entry->public_id],
-        ])->assertRedirect()->assertSessionHasNoErrors();
+        ])->assertCreated();
 
-        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
             'invoice_number' => 'SVC-00004', 'currency' => 'USD', 'time_entry_ids' => [$entry->public_id],
         ])->assertStatus(422);
 
@@ -116,21 +118,22 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
 
     public function test_an_invoice_still_needs_time_or_a_line(): void
     {
-        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
             'invoice_number' => 'SVC-00005', 'currency' => 'USD',
-        ])->assertStatus(422)->assertJsonValidationErrors('lines');
+        ])->assertStatus(422)->assertJsonPath('message', 'Select time or provide a manual line.');
+        $this->assertDatabaseCount('client_invoices', 0);
     }
 
     public function test_manual_only_invoices_still_work(): void
     {
-        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
+        $this->createInvoiceApi($this->owner, $this->workspace, $this->company, [
             'invoice_number' => 'SVC-00006',
             'currency' => 'USD',
-            'lines' => [[
+            'manual_lines' => [[
                 'type' => 'service', 'description' => 'Advisory',
-                'quantity' => '1', 'unit_amount' => 25000, 'tax_amount' => 0, 'sort_order' => 0,
+                'quantity' => '1', 'unit_amount' => 25000, 'tax_amount' => 0,
             ]],
-        ])->assertRedirect()->assertSessionHasNoErrors();
+        ])->assertCreated();
 
         $this->assertSame(25000, (int) ClientInvoice::query()->firstOrFail()->total_amount);
     }
@@ -266,11 +269,6 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
     private function addUrl(ClientInvoice $invoice): string
     {
         return "/api/v1/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}/time";
-    }
-
-    private function url(): string
-    {
-        return "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/invoices";
     }
 
     private function entry(int $minutes, string $description): ClientTimeEntry

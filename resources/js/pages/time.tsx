@@ -391,7 +391,10 @@ export default function TimeSheet({
     const [selectionMode, setSelectionMode] = useState<'approve' | 'invoice'>(
         invoiceDraft?.target ? 'invoice' : 'approve',
     );
-    const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+    const [invoiceSelection, setInvoiceSelection] = useState<Omit<
+        Parameters<typeof InvoiceSelectionDialog>[0],
+        'onClose' | 'onSuccess'
+    > | null>(null);
     // Approval can fail for a reason the row cannot show - most often a
     // billable entry with no agreement rate to stamp. Without this the row
     // simply stays a draft and the click looks like it did nothing.
@@ -509,15 +512,12 @@ export default function TimeSheet({
     return (
         <WorkspaceShell activeModule="time">
             <Head title="Time" />
-            {invoiceDialogOpen && invoiceDraft !== null && (
+            {invoiceSelection !== null && (
                 <InvoiceSelectionDialog
-                    entries={selectedEntries}
-                    url={invoiceDraft.url}
-                    target={invoiceDraft.target}
-                    timezone={workspace.timezone}
-                    onClose={() => setInvoiceDialogOpen(false)}
+                    {...invoiceSelection}
+                    onClose={() => setInvoiceSelection(null)}
                     onSuccess={() => {
-                        setInvoiceDialogOpen(false);
+                        setInvoiceSelection(null);
                         setSelected([]);
                         setSelectionMode('approve');
                         setNotice(null);
@@ -622,7 +622,21 @@ export default function TimeSheet({
                             {selectionMode === 'invoice' ? (
                                 <Button
                                     size="sm"
-                                    onClick={() => setInvoiceDialogOpen(true)}
+                                    onClick={() => {
+                                        if (invoiceDraft !== null) {
+                                            setInvoiceSelection(
+                                                structuredClone({
+                                                    entries: selectedEntries,
+                                                    url: invoiceDraft.url,
+                                                    companyId:
+                                                        invoiceDraft.company_id,
+                                                    target: invoiceDraft.target,
+                                                    timezone:
+                                                        workspace.timezone,
+                                                }),
+                                            );
+                                        }
+                                    }}
                                 >
                                     Review draft invoice
                                 </Button>

@@ -87,7 +87,13 @@ final class SharedReadProjectionParityTest extends TestCase
         $this->assertSame(['id' => $workspace->public_id, 'name' => $workspace->name], Arr::only($operationsWorkspace, ['id', 'name']));
         $operations = $operationsWorkspace['clients'][0];
         $this->assertSame(Arr::only($canonicalProposal, ['id', 'title', 'status', 'total_amount', 'currency']) + ['version' => $canonicalProposal['version'], 'send_href' => null], Arr::except($operations['proposals'][0], ['attachments', 'attachment_panel']));
-        $this->assertSame(Arr::only($canonicalInvoice, ['id', 'invoice_number', 'status', 'total_amount', 'paid_amount', 'balance_amount', 'currency', 'issue_date', 'due_date']), Arr::except($operations['invoices'][0], ['attachments', 'attachment_panel']));
+        $this->assertSame(Arr::only($canonicalInvoice, ['id', 'invoice_number', 'status', 'total_amount', 'paid_amount', 'balance_amount', 'currency', 'issue_date', 'due_date']) + [
+            'version' => $canonicalInvoice['version'],
+            'pdf_href' => "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/pdf",
+            'issue_href' => null,
+            'payment_href' => "/api/v1/workspaces/{$workspace->public_id}/payments",
+        ], Arr::except($operations['invoices'][0], ['attachments', 'attachment_panel']));
+        $this->assertSame("/api/v1/workspaces/{$workspace->public_id}/invoices", $operations['invoice_create_href']);
         $this->assertSame(['Synthetic internal second', 'Synthetic internal first'], array_column($operations['projects'][0]['time_entries'], 'description'));
         $this->assertArrayNotHasKey('notes', $operations['invoices'][0]);
         $this->assertSame([['id' => $attachment->public_id, 'name' => 'synthetic-shared-file.txt', 'media_type' => 'text/plain', 'bytes' => 32,

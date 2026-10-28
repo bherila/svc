@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 /**
@@ -19,19 +20,19 @@ use Tests\TestCase;
  */
 final class WebCorrectionReasonTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     public function test_voiding_on_the_screen_requires_a_reason_and_keeps_it(): void
     {
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
-        $url = '/workspaces/'.$workspace->public_id.'/invoices/'.$invoice->public_id.'/void';
 
         foreach ([[], ['reason' => '   '], ['reason' => str_repeat('r', ClientInvoice::VOID_REASON_MAX_LENGTH + 1)]] as $body) {
-            $this->actingAs($owner)->from('/synthetic-back')->post($url, $body)->assertRedirect('/synthetic-back')->assertSessionHasErrors('reason');
+            $this->invoiceApi($owner, $workspace, $invoice, 'void', $body)->assertUnprocessable()->assertJsonValidationErrors('reason');
             $this->assertSame('issued', $invoice->fresh()?->status);
         }
 
-        $this->actingAs($owner)->from('/synthetic-back')->post($url, ['reason' => ' Issued to the wrong synthetic client '])->assertRedirect('/synthetic-back')->assertSessionHasNoErrors();
+        $this->invoiceApi($owner, $workspace, $invoice, 'void', ['reason' => ' Issued to the wrong synthetic client '])->assertOk();
         $fresh = $invoice->fresh();
         $this->assertSame('void', $fresh?->status);
         $this->assertSame('Issued to the wrong synthetic client', $fresh?->void_reason);
@@ -42,13 +43,12 @@ final class WebCorrectionReasonTest extends TestCase
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
         $service = app(InvoiceLifecycleService::class);
         $payment = $service->applyPayment($invoice, ['amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => now()->toDateString()], $workspace);
-        $url = '/workspaces/'.$workspace->public_id.'/invoices/'.$invoice->public_id.'/payments/'.$payment->public_id.'/received-on';
         $day = now()->subDays(3)->toDateString();
 
-        $this->actingAs($owner)->from('/synthetic-back')->post($url, ['received_on' => $day])->assertSessionHasErrors('reason');
+        $this->correctPaymentApi($owner, $workspace, $payment, ['received_on' => $day])->assertUnprocessable()->assertJsonValidationErrors('body.reason');
         $this->assertSame(now()->toDateString(), $payment->fresh()?->received_on?->toDateString());
 
-        $this->actingAs($owner)->from('/synthetic-back')->post($url, ['received_on' => $day, 'reason' => 'Synthetic bank statement'])->assertRedirect('/synthetic-back')->assertSessionHasNoErrors();
+        $this->correctPaymentApi($owner, $workspace, $payment, ['received_on' => $day, 'reason' => 'Synthetic bank statement'])->assertOk();
         $this->assertSame($day, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole()->received_on?->toDateString());
 
         // The same audited correction the API and the console command record.

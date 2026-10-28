@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Billing;
 
-use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
@@ -460,7 +459,8 @@ final class UndatedPeriodIssueRefusalTest extends TestCase
     public function test_each_refusal_names_a_repair_that_exists(): void
     {
         $lifecycle = app(InvoiceLifecycleService::class);
-        $rules = (new StoreInvoiceRequest)->rules();
+        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true);
+        $rules = $document['components']['schemas']['InvoiceCreateRequest']['properties'];
 
         // The only shape the manual endpoint can actually reproduce: ad hoc,
         // naming neither a schedule nor an agreement. It is told to recreate,

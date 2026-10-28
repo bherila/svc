@@ -1,4 +1,5 @@
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
@@ -9,7 +10,9 @@ import {
 } from '@/components/agreements/engagement-actions';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
+import { useInvoiceMutation } from '@/hooks/use-invoice-mutation';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import type { ApiSchema } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import {
@@ -82,6 +85,10 @@ type BillingSchedule = {
 
 type Invoice = {
     id: string;
+    version: string;
+    issue_href: string | null;
+    payment_href: string | null;
+    pdf_href: string;
     invoice_number: string;
     status: string;
     total_amount: number;
@@ -99,6 +106,7 @@ type Client = {
     version: string;
     create_proposal_href: string | null;
     name: string;
+    invoice_create_href: string | null;
     projects: Project[];
     proposals: Proposal[];
     agreements: Agreement[];
@@ -197,13 +205,49 @@ function TimeEntryForm({ project }: { project: Project }) {
     );
 }
 
-function InvoiceForm({
-    workspaceId,
+export function InvoiceForm({
+    href,
     clientId,
 }: {
-    workspaceId: string;
+    href: string | null;
     clientId: string;
 }) {
+    const [generation, setGeneration] = useState(0);
+    const [available, setAvailable] = useState(href !== null);
+
+    if (!available && href !== null) {
+        setAvailable(true);
+    }
+
+    if (!available) {
+        return null;
+    }
+
+    return (
+        <InvoiceDraft
+            key={generation}
+            href={href}
+            clientId={clientId}
+            onDone={() => {
+                setAvailable(false);
+                setGeneration((current) => current + 1);
+            }}
+        />
+    );
+}
+
+function InvoiceDraft({
+    href,
+    clientId,
+    onDone,
+}: {
+    href: string | null;
+    clientId: string;
+    onDone: () => void;
+}) {
+    const mutation = useInvoiceMutation();
+    const [baseline] = useState({ href, clientId });
+    const [validationError, setValidationError] = useState<string | null>(null);
     const form = useForm({
         invoice_number: '',
         due_date: '',
@@ -213,34 +257,61 @@ function InvoiceForm({
         unit_price: '',
     });
 
-    const submit = (event: FormEvent) => {
+    const submit = async (event: FormEvent) => {
         event.preventDefault();
-        form.transform((data) => ({
-            invoice_number: data.invoice_number,
-            due_date: data.due_date || null,
-            currency: data.currency,
-            lines: [
+
+        if (mutation.isLocked()) {
+            await mutation.retry();
+
+            return;
+        }
+
+        if (baseline.href === null) {
+            return;
+        }
+
+        const amount = toMinorUnits(form.data.unit_price);
+
+        if (amount === null) {
+            setValidationError('Enter a valid unit price.');
+
+            return;
+        }
+
+        const body = {
+            company_id: baseline.clientId,
+            invoice_number: form.data.invoice_number,
+            due_date: form.data.due_date || null,
+            currency: form.data.currency,
+            is_visible_to_client: false,
+            manual_lines: [
                 {
                     type: 'service',
-                    description: data.description,
-                    quantity: data.quantity,
-                    unit_amount: toMinorUnits(data.unit_price),
+                    description: form.data.description,
+                    quantity: form.data.quantity,
+                    unit_amount: amount,
                     tax_amount: 0,
-                    sort_order: 0,
                 },
             ],
-        }));
-        form.post(`/workspaces/${workspaceId}/clients/${clientId}/invoices`, {
-            onSuccess: () => form.reset(),
-        });
+        } satisfies ApiSchema<'InvoiceCreateRequest'>;
+        setValidationError(null);
+        await mutation.submit('POST', baseline.href, body, onDone);
     };
+
+    if (href === null && !mutation.locked) {
+        return null;
+    }
+
+    const error = mutation.error ?? validationError;
 
     return (
         <form
+            aria-label="Draft invoice"
             onSubmit={submit}
             className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-6"
         >
             <input
+                disabled={mutation.locked}
                 className={inputClass}
                 placeholder="Invoice number"
                 value={form.data.invoice_number}
@@ -250,6 +321,7 @@ function InvoiceForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={inputClass}
                 type="date"
                 value={form.data.due_date}
@@ -258,6 +330,7 @@ function InvoiceForm({
                 }
             />
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} md:col-span-2`}
                 placeholder="Line description"
                 value={form.data.description}
@@ -267,6 +340,7 @@ function InvoiceForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={inputClass}
                 type="number"
                 min="0"
@@ -278,8 +352,28 @@ function InvoiceForm({
                 }
                 required
             />
-            <button className={buttonClass} disabled={form.processing}>
-                Draft invoice
+            {error !== null && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-red-700 md:col-span-6"
+                >
+                    {error}
+                </p>
+            )}
+            <button className={buttonClass} disabled={mutation.busy}>
+                {mutation.saved
+                    ? 'Refresh saved result'
+                    : mutation.locked
+                      ? 'Check original request'
+                      : 'Draft invoice'}
+            </button>
+            <button
+                type="button"
+                className={secondaryButtonClass}
+                disabled={mutation.locked}
+                onClick={onDone}
+            >
+                Reset draft form
             </button>
         </form>
     );
@@ -293,14 +387,47 @@ function InvoiceForm({
  * payment recorded here was dated the day it was typed in, silently.
  */
 export function PaymentForm({
-    workspaceId,
     invoice,
     timezone,
 }: {
-    workspaceId: string;
     invoice: Invoice;
     timezone: string;
 }) {
+    const [generation, setGeneration] = useState(0);
+    const [available, setAvailable] = useState(invoice.payment_href !== null);
+
+    if (!available && invoice.payment_href !== null) {
+        setAvailable(true);
+    }
+
+    if (!available) {
+        return null;
+    }
+
+    return (
+        <PaymentDraft
+            key={generation}
+            invoice={invoice}
+            timezone={timezone}
+            onDone={() => {
+                setAvailable(false);
+                setGeneration((current) => current + 1);
+            }}
+        />
+    );
+}
+
+function PaymentDraft({
+    invoice,
+    timezone,
+    onDone,
+}: {
+    invoice: Invoice;
+    timezone: string;
+    onDone: () => void;
+}) {
+    const mutation = useInvoiceMutation();
+    const [baseline] = useState(() => ({ ...invoice }));
     const form = useForm({
         amount: (invoice.balance_amount / 100).toFixed(2),
         // Same calendar as the time form, and now rendered as well as sent:
@@ -313,46 +440,54 @@ export function PaymentForm({
         notes: '',
         currency: invoice.currency,
         status: 'succeeded',
-        idempotency_key: crypto.randomUUID(),
     });
 
     // A service refusal arrives under `billing` rather than under a field, so
     // it is not one of this form's own keys; the bag itself carries whatever
     // the server put in it.
     const errors: Record<string, string | undefined> = form.errors;
-    const refusal = errors.billing ?? errors.received_on;
+    const refusal = mutation.error ?? errors.billing ?? errors.received_on;
 
-    const submit = (event: FormEvent) => {
+    const submit = async (event: FormEvent) => {
         event.preventDefault();
-        form.transform((data) => ({
-            ...data,
-            amount: toMinorUnits(data.amount),
-        }));
-        form.post(
-            `/workspaces/${workspaceId}/invoices/${invoice.id}/payments`,
+
+        if (mutation.isLocked()) {
+            await mutation.retry();
+
+            return;
+        }
+
+        if (baseline.payment_href === null) {
+            return;
+        }
+
+        await mutation.submit(
+            'POST',
+            baseline.payment_href,
             {
-                onSuccess: () => {
-                    form.setData('idempotency_key', crypto.randomUUID());
-                    form.reset('reference', 'notes');
-                    // Back to today, and read from the clock rather than
-                    // `form.reset('received_on')`. Inertia keeps this form
-                    // mounted across the redirect, so a date typed to record a
-                    // backdated payment stayed in the field and the *next*
-                    // payment recorded here silently carried it - the same
-                    // wrong-period defect this field exists to fix, arrived at
-                    // from the other side and quieter, because a stale date
-                    // reads exactly like the default it replaced. `reset()`
-                    // would restore the value captured when the page loaded,
-                    // which is yesterday's on a screen left open overnight.
-                    form.setData('received_on', todayIn(timezone));
-                },
+                invoice_id: baseline.id,
+                expected_version: baseline.version,
+                confirm: true,
+                amount: toMinorUnits(form.data.amount),
+                currency: form.data.currency,
+                method: form.data.method,
+                reference: form.data.reference,
+                notes: form.data.notes,
+                received_on: form.data.received_on,
+                status: form.data.status,
             },
+            onDone,
         );
     };
+
+    if (invoice.payment_href === null && !mutation.locked) {
+        return null;
+    }
 
     return (
         <form onSubmit={submit} className="mt-3 flex flex-wrap gap-2">
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} max-w-32`}
                 type="number"
                 min="0.01"
@@ -363,6 +498,7 @@ export function PaymentForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} max-w-44`}
                 type="date"
                 // Today on the workspace's calendar. No floor here: how far
@@ -378,6 +514,7 @@ export function PaymentForm({
                 required
             />
             <input
+                disabled={mutation.locked}
                 className={`${inputClass} max-w-52`}
                 placeholder="Payment reference"
                 value={form.data.reference}
@@ -385,8 +522,20 @@ export function PaymentForm({
                     form.setData('reference', event.target.value)
                 }
             />
-            <button className={secondaryButtonClass} disabled={form.processing}>
-                Record payment
+            <button className={secondaryButtonClass} disabled={mutation.busy}>
+                {mutation.saved
+                    ? 'Refresh saved result'
+                    : mutation.locked
+                      ? 'Check original request'
+                      : 'Record payment'}
+            </button>
+            <button
+                type="button"
+                className={secondaryButtonClass}
+                disabled={mutation.locked}
+                onClick={onDone}
+            >
+                Reset payment form
             </button>
             {predatesInvoiceIssue(
                 form.data.received_on,
@@ -413,6 +562,46 @@ export function PaymentForm({
                 </p>
             )}
         </form>
+    );
+}
+
+export function InvoiceIssueButton({ invoice }: { invoice: Invoice }) {
+    const mutation = useInvoiceMutation();
+
+    if (invoice.issue_href === null && !mutation.locked) {
+        return null;
+    }
+
+    return (
+        <div className="grid min-w-0 flex-1 basis-40 grid-cols-1 gap-1">
+            <button
+                disabled={mutation.busy}
+                onClick={() => {
+                    if (mutation.isLocked()) {
+                        void mutation.retry();
+                    } else if (invoice.issue_href !== null) {
+                        void mutation.submit('POST', invoice.issue_href, {
+                            expected_version: invoice.version,
+                            confirm: true,
+                        });
+                    }
+                }}
+            >
+                {mutation.saved
+                    ? 'Refresh saved result'
+                    : mutation.locked
+                      ? 'Check original request'
+                      : 'Issue'}
+            </button>
+            {mutation.error !== null && (
+                <p
+                    role="alert"
+                    className="text-sm font-normal wrap-anywhere text-red-700"
+                >
+                    {mutation.error}
+                </p>
+            )}
+        </div>
     );
 }
 
@@ -613,7 +802,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                 <div className="border-t border-slate-200 pt-5">
                                     <h3 className="font-semibold">Invoices</h3>
                                     <InvoiceForm
-                                        workspaceId={workspace.id}
+                                        href={client.invoice_create_href}
                                         clientId={client.id}
                                     />
                                     <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -622,7 +811,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                 key={invoice.id}
                                                 className="rounded-2xl border border-slate-200 p-4"
                                             >
-                                                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                                                <div className="grid min-w-0 grid-cols-1 gap-3">
                                                     <div className="min-w-0 flex-1 wrap-anywhere">
                                                         <h4 className="font-semibold">
                                                             {
@@ -635,44 +824,30 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                                                 invoice.currency,
                                                             )}{' '}
                                                             due ·{' '}
-                                                            {invoice.status}
+                                                            {statusLabel(
+                                                                invoice.status,
+                                                            )}
                                                         </p>
                                                     </div>
-                                                    <div className="flex shrink-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
+                                                    <div className="flex max-w-full min-w-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
                                                         <a
-                                                            href={`/workspaces/${workspace.id}/invoices/${invoice.id}/pdf`}
+                                                            href={
+                                                                invoice.pdf_href
+                                                            }
                                                         >
                                                             PDF
                                                         </a>
-                                                        {invoice.status ===
-                                                            'draft' && (
-                                                            <button
-                                                                onClick={() =>
-                                                                    router.post(
-                                                                        `/workspaces/${workspace.id}/invoices/${invoice.id}/issue`,
-                                                                    )
-                                                                }
-                                                            >
-                                                                Issue
-                                                            </button>
-                                                        )}
+                                                        <InvoiceIssueButton
+                                                            invoice={invoice}
+                                                        />
                                                     </div>
                                                 </div>
-                                                {invoice.balance_amount > 0 &&
-                                                    invoice.status !==
-                                                        'draft' &&
-                                                    invoice.status !==
-                                                        'void' && (
-                                                        <PaymentForm
-                                                            workspaceId={
-                                                                workspace.id
-                                                            }
-                                                            invoice={invoice}
-                                                            timezone={
-                                                                workspace.timezone
-                                                            }
-                                                        />
-                                                    )}
+                                                <PaymentForm
+                                                    invoice={invoice}
+                                                    timezone={
+                                                        workspace.timezone
+                                                    }
+                                                />
                                                 <OperationFiles
                                                     panel={
                                                         invoice.attachment_panel
