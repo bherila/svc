@@ -114,6 +114,7 @@ export function AgreementTitle({
 }) {
     const [editing, setEditing] = useState(false);
     const [title, setTitle] = useState(agreement.title);
+    const [expectedVersion, setExpectedVersion] = useState(agreement.version);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -130,6 +131,7 @@ export function AgreementTitle({
                         aria-label="Rename this agreement"
                         onClick={() => {
                             setTitle(agreement.title);
+                            setExpectedVersion(agreement.version);
                             setError(null);
                             setEditing(true);
                         }}
@@ -149,7 +151,7 @@ export function AgreementTitle({
         setBusy(true);
         const result = await apiRequest('PATCH', updateHref, {
             title,
-            expected_version: agreement.version,
+            expected_version: expectedVersion,
         });
 
         if (result.ok) {
@@ -160,7 +162,11 @@ export function AgreementTitle({
             return;
         }
 
-        setError(result.message);
+        setError(
+            result.status === 409
+                ? `${result.message} Cancel and reopen the editor to use the latest agreement.`
+                : result.message,
+        );
 
         if (result.status === 409) {
             await refreshPageProps();
@@ -247,6 +253,7 @@ export function AgreementTermsForm({
     updateHref: string;
     onDone: () => void;
 }) {
+    const [expectedVersion] = useState(agreement.version);
     const [form, setForm] = useState({
         starts_on: agreement.starts_on,
         ends_on: agreement.ends_on ?? '',
@@ -312,7 +319,7 @@ export function AgreementTermsForm({
 
         setBusy(true);
         const result = await apiRequest('PATCH', updateHref, {
-            expected_version: agreement.version,
+            expected_version: expectedVersion,
             ...(numbers as Record<string, number | null>),
             starts_on: form.starts_on,
             ends_on: form.ends_on === '' ? null : form.ends_on,
@@ -345,7 +352,11 @@ export function AgreementTermsForm({
             return;
         }
 
-        setError(result.message);
+        setError(
+            result.status === 409
+                ? `${result.message} Cancel and reopen the editor to use the latest agreement.`
+                : result.message,
+        );
 
         if (result.status === 409) {
             await refreshPageProps();

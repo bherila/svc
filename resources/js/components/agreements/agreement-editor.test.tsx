@@ -118,3 +118,129 @@ it('preserves blank terms as null and converts a stated price to minor units', a
     );
     expect(done).not.toHaveBeenCalled();
 });
+
+it('keeps the terms version attached to the form snapshot after refreshed props', async () => {
+    api.request.mockResolvedValue({
+        ok: false,
+        status: 409,
+        message: 'Synthetic terms changed.',
+    });
+    const done = vi.fn();
+    const { rerender, unmount } = render(
+        <AgreementTermsForm
+            agreement={agreement}
+            updateHref="/api/synthetic/agreement"
+            onDone={done}
+        />,
+    );
+    fireEvent.change(screen.getByLabelText('Hourly rate'), {
+        target: { value: '125.50' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save terms' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Cancel and reopen',
+    );
+    await waitFor(() =>
+        expect(
+            screen.getByRole('button', { name: 'Save terms' }),
+        ).toBeEnabled(),
+    );
+
+    const refreshed = {
+        ...agreement,
+        version: 'b'.repeat(64),
+        hourly_rate_amount: 20000,
+    };
+    rerender(
+        <AgreementTermsForm
+            agreement={refreshed}
+            updateHref="/api/synthetic/agreement"
+            onDone={done}
+        />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save terms' }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    expect(api.request.mock.calls[1][2]).toEqual(
+        expect.objectContaining({
+            expected_version: agreement.version,
+            hourly_rate_amount: 12550,
+        }),
+    );
+    expect(done).not.toHaveBeenCalled();
+    unmount();
+
+    render(
+        <AgreementTermsForm
+            agreement={refreshed}
+            updateHref="/api/synthetic/agreement"
+            onDone={done}
+        />,
+    );
+    expect(screen.getByLabelText('Hourly rate')).toHaveValue(200);
+    fireEvent.click(screen.getByRole('button', { name: 'Save terms' }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(3));
+    expect(api.request.mock.calls[2][2]).toEqual(
+        expect.objectContaining({
+            expected_version: refreshed.version,
+            hourly_rate_amount: 20000,
+        }),
+    );
+});
+
+it('keeps a rename version until the editor is reopened against refreshed props', async () => {
+    api.request.mockResolvedValue({
+        ok: false,
+        status: 409,
+        message: 'Synthetic terms changed.',
+    });
+    const { rerender } = render(
+        <AgreementTitle
+            agreement={agreement}
+            updateHref="/api/synthetic/agreement"
+        />,
+    );
+    fireEvent.click(
+        screen.getByRole('button', { name: 'Rename this agreement' }),
+    );
+    fireEvent.change(screen.getByLabelText('Agreement name'), {
+        target: { value: 'Synthetic old snapshot' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('alert');
+    await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled(),
+    );
+    const refreshed = {
+        ...agreement,
+        title: 'Synthetic latest title',
+        version: 'b'.repeat(64),
+    };
+    rerender(
+        <AgreementTitle
+            agreement={refreshed}
+            updateHref="/api/synthetic/agreement"
+        />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    expect(api.request.mock.calls[1][2]).toEqual({
+        title: 'Synthetic old snapshot',
+        expected_version: agreement.version,
+    });
+    await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(
+        screen.getByRole('button', { name: 'Rename this agreement' }),
+    );
+    expect(screen.getByLabelText('Agreement name')).toHaveValue(
+        refreshed.title,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(3));
+    expect(api.request.mock.calls[2][2]).toEqual({
+        title: refreshed.title,
+        expected_version: refreshed.version,
+    });
+});
