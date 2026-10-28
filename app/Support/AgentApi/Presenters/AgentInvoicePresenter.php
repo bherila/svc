@@ -17,8 +17,8 @@ final class AgentInvoicePresenter
     public static function summary(ClientInvoice $invoice): array
     {
         return ['id' => $invoice->public_id, 'invoice_number' => $invoice->invoice_number,
-            'status' => $invoice->status, 'total_amount' => (int) $invoice->total_amount,
-            'paid_amount' => (int) $invoice->paid_amount, 'balance_amount' => (int) $invoice->balance_amount,
+            'status' => $invoice->status, 'total_amount' => $invoice->total_amount,
+            'paid_amount' => $invoice->paid_amount, 'balance_amount' => $invoice->balance_amount,
             'currency' => $invoice->currency, 'issue_date' => $invoice->issue_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString()];
     }

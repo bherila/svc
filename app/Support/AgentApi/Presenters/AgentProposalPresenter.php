@@ -33,6 +33,6 @@ final class AgentProposalPresenter
     public static function item(ClientProposalItem $item): array
     {
         return ['id' => $item->public_id, 'description' => $item->description,
-            'quantity' => (string) $item->quantity, 'unit_amount' => (int) $item->unit_amount, 'cadence' => $item->cadence];
+            'quantity' => $item->quantity, 'unit_amount' => $item->unit_amount, 'cadence' => $item->cadence];
     }
 }

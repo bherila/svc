@@ -49,8 +49,11 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
+use App\Support\AgentApi\Presenters\AgentPortalInvitationPresenter;
+use App\Support\AgentApi\Presenters\AgentProjectMemberPresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentProposalPresenter;
+use App\Support\AgentApi\Presenters\AgentUserPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -871,20 +874,16 @@ class ClientDirectoryController extends Controller
                 // list and would never render it.
                 'members' => $memberships->get($project->id, collect())
                     ->filter(fn (ClientProjectMembership $membership): bool => isset($userIds[$membership->user_id]))
-                    ->map(fn (ClientProjectMembership $membership): array => [
-                        'user' => (string) ($userIds[$membership->user_id] ?? ''),
-                        // The column is cast to the enum, so this is its value
-                        // rather than a cast of the object.
-                        'role' => $membership->role->value,
-                    ])->values()->all(),
+                    ->map(function (ClientProjectMembership $membership) use ($userIds): array {
+                        $grant = AgentProjectMemberPresenter::grant((string) $userIds[$membership->user_id], $membership);
+
+                        return ['user' => $grant['user_id'], 'role' => $grant['role']];
+                    })->values()->all(),
             ])->values()->all(),
             // Workspace members who can be given project access. Owners and
             // admins are excluded: they already reach every project, so
             // offering to grant them one would imply the grant does something.
-            'assignable' => $assignable->map(fn (User $member): array => [
-                'id' => $member->public_id,
-                'name' => $member->name,
-            ])->values()->all(),
+            'assignable' => $assignable->map(AgentUserPresenter::identity(...))->values()->all(),
             'portal' => $this->portalAccess($workspace, $clientCompany),
             // The automatic payment reminder cadence (#438), switched through
             // the API the website shares with agents.
@@ -952,24 +951,26 @@ class ClientDirectoryController extends Controller
             ->withPath('/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/settings');
         $projects = ClientProject::query()
             ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
             ->whereIn('id', $invitations->flatMap(static fn (ClientPortalInvitation $invitation): array => $invitation->projectIds())->unique()->values()->all())
             ->pluck('public_id', 'id');
 
         $rows = array_values($invitations->getCollection()->map(static function (ClientPortalInvitation $invitation) use ($workspace, $clientCompany, $projects): array {
-            $status = $invitation->currentStatus();
+            $summary = AgentPortalInvitationPresenter::summary($invitation);
+            $status = PortalInvitationStatus::from($summary['status']);
             $route = [$workspace, $clientCompany->public_id, $invitation->public_id];
 
             return [
-                'id' => $invitation->public_id,
-                'email' => $invitation->email,
-                'scope' => $invitation->scope()->value,
+                'id' => $summary['id'],
+                'email' => $summary['email'],
+                'scope' => $summary['scope'],
                 'projects' => array_values(array_filter(array_map(static fn (int $id): ?string => $projects->get($id), $invitation->projectIds()))),
-                'status' => $status->value,
+                'status' => $summary['status'],
                 'reason' => $invitation->provider_revocation_pending
                     ? 'Portal access is withdrawn. The identity provider withdrawal has not finished; try again.'
                     : $invitation->notAppliedReason()?->message(),
-                'expires_at' => $invitation->expires_at?->toIso8601String(),
-                'email_sent' => $invitation->email_sent,
+                'expires_at' => $summary['expires_at'],
+                'email_sent' => $summary['email_sent'],
                 'link' => $status === PortalInvitationStatus::Pending ? $invitation->link : null,
                 'resend_url' => $status->isOpen() ? route('agent-api.v1.clients.portal-invitations.resend', $route, absolute: false) : null,
                 'revoke_url' => route('agent-api.v1.clients.portal-invitations.destroy', $route, absolute: false),
@@ -1243,7 +1244,7 @@ class ClientDirectoryController extends Controller
 
         return [
             'proposal' => AgentProposalPresenter::details($proposal),
-            'items' => $items->map(AgentProposalPresenter::item(...))->values()->all(),
+            'items' => array_values($items->map(AgentProposalPresenter::item(...))->all()),
         ];
     }
 

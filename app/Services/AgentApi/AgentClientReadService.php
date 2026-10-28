@@ -88,9 +88,12 @@ final class AgentClientReadService
     /** @return array<string, mixed> */
     public function present(ClientCompany $company): array
     {
+        $summary = AgentClientPresenter::summary($company);
+
         return [
-            ...AgentClientPresenter::summary($company),
+            'id' => $summary['id'],
             'version' => AgentApiVersion::for($company),
+            ...$summary,
             'automatic_invoice_email_enabled' => $company->automatic_invoice_email_enabled,
             'automatic_invoice_email_delay_days' => $company->automatic_invoice_email_delay_days,
             ...app(CompanyProfile::class)->read($company),
