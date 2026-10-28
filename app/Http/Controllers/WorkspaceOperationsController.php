@@ -172,13 +172,13 @@ class WorkspaceOperationsController extends Controller
             $filesPreviousHref = $fileRows->previousPageUrl();
         }
         $attachmentPayload = fn (string $type, string $recordPublicId): array => ($attachments->get($type.':'.$recordPublicId) ?? collect())
-            ->map(fn (ClientAttachment $attachment): array => [
-                'id' => $attachment->public_id,
-                'name' => $attachment->original_filename,
-                'media_type' => $attachment->media_type,
-                'bytes' => $attachment->bytes,
-                'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}",
-            ])->values()->all();
+            ->map(function (ClientAttachment $attachment) use ($workspace): array {
+                $metadata = AttachmentMetadata::for($attachment);
+
+                return ['id' => $metadata['id'], 'name' => $metadata['filename'],
+                    'media_type' => $metadata['media_type'], 'bytes' => $metadata['bytes'],
+                    'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}"];
+            })->values()->all();
 
         $parents = ['proposal' => $proposals->keyBy('public_id'), 'agreement' => $agreements->keyBy('public_id'), 'invoice' => $invoices->keyBy('public_id')];
         $visible = [];

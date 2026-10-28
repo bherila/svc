@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
@@ -41,6 +42,11 @@ final class SharedReadProjectionParityTest extends TestCase
             'currency' => 'USD', 'status' => 'sent', 'sent_at' => '2026-10-28 09:10:11']);
         $proposal->items()->create(['workspace_id' => $workspace->id, 'description' => 'Synthetic fractional item',
             'quantity' => '1.125', 'unit_amount' => 2500, 'cadence' => 'one_time', 'sort_order' => 3]);
+        $attachment = ClientAttachment::query()->create(['workspace_id' => $workspace->id, 'record_type' => 'proposal',
+            'record_public_id' => $proposal->public_id, 'object_key' => 'synthetic/shared-read/private-key.txt',
+            'original_filename' => 'synthetic-shared-file.txt', 'media_type' => 'text/plain', 'bytes' => 32,
+            'sha256' => hash('sha256', 'synthetic-shared-file'), 'uploader_id' => $owner->id,
+            'lifecycle_state' => ClientAttachment::STATE_AVAILABLE, 'available_at' => now()]);
         $foreignWorkspace = Workspace::query()->create(['name' => 'Synthetic Other Tenant', 'slug' => 'synthetic-other-tenant']);
         $this->writingLegacyCrossTenantRows(fn () => $proposal->items()->create([
             'workspace_id' => $foreignWorkspace->id, 'description' => 'Synthetic foreign item must not affect totals',
@@ -71,6 +77,10 @@ final class SharedReadProjectionParityTest extends TestCase
         $this->assertSame(Arr::only($canonicalInvoice, ['id', 'invoice_number', 'status', 'total_amount', 'paid_amount', 'balance_amount', 'currency', 'issue_date', 'due_date']), Arr::except($operations['invoices'][0], ['attachments', 'attachment_panel']));
         $this->assertSame(['Synthetic internal second', 'Synthetic internal first'], array_column($operations['projects'][0]['time_entries'], 'description'));
         $this->assertArrayNotHasKey('notes', $operations['invoices'][0]);
+        $this->assertSame([['id' => $attachment->public_id, 'name' => 'synthetic-shared-file.txt', 'media_type' => 'text/plain', 'bytes' => 32,
+            'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}"]], $operations['proposals'][0]['attachments']);
+        $this->assertArrayNotHasKey('sha256', $operations['proposals'][0]['attachments'][0]);
+        $this->assertArrayNotHasKey('object_key', $operations['proposals'][0]['attachments'][0]);
         $this->assertArrayNotHasKey('billing_email', $operations);
 
         DB::enableQueryLog();
