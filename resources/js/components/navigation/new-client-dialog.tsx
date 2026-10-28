@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/react';
 import { useState } from 'react';
+import { useClientChange } from '@/components/clients/use-client-change';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -23,44 +24,34 @@ import { Label } from '@/components/ui/label';
  * thing they just made is the thing they are looking at.
  */
 export function NewClientDialog({
-    workspaceId,
+    action,
     open,
     onOpenChange,
 }: {
-    workspaceId: string;
+    action: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
     const [name, setName] = useState('');
     const [billingEmail, setBillingEmail] = useState('');
-    const [error, setError] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
+    const change = useClientChange();
 
     const submit = () => {
-        if (saving) {
-            return;
-        }
-
-        setSaving(true);
-        router.post(
-            `/workspaces/${workspaceId}/clients`,
+        void change.run(
+            'POST',
+            action,
             {
                 name,
                 billing_email: billingEmail === '' ? null : billingEmail,
             },
-            {
-                onSuccess: () => {
-                    setName('');
-                    setBillingEmail('');
-                    setError(null);
-                    onOpenChange(false);
-                },
-                onError: (errors) =>
-                    setError(
-                        Object.values(errors)[0] ??
-                            'That client could not be created.',
-                    ),
-                onFinish: () => setSaving(false),
+            (result) => {
+                setName('');
+                setBillingEmail('');
+                onOpenChange(false);
+
+                if (result.location) {
+                    router.visit(result.location);
+                }
             },
         );
     };
@@ -107,9 +98,9 @@ export function NewClientDialog({
                         />
                     </div>
 
-                    {error !== null && (
+                    {change.error !== null && (
                         <p role="alert" className="text-sm text-destructive">
-                            {error}
+                            {change.error}
                         </p>
                     )}
 
@@ -121,7 +112,10 @@ export function NewClientDialog({
                                 </Button>
                             }
                         />
-                        <Button type="submit" disabled={saving || name === ''}>
+                        <Button
+                            type="submit"
+                            disabled={change.busy || name === ''}
+                        >
                             Add client
                         </Button>
                     </DialogFooter>
