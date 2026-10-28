@@ -413,6 +413,42 @@ describe('native collaboration pages', () => {
         );
     });
 
+    it('replays a saved reply when its server focus destination cannot load', async () => {
+        mutations.request.mockResolvedValue({
+            ok: true,
+            status: 201,
+            data: {
+                version: 'saved-version',
+                web_url: '/synthetic/finished-comment',
+            },
+        });
+        mutations.visit.mockImplementationOnce((_url, options) =>
+            options.onFinish(),
+        );
+        render(<CommentThread thread={thread} />);
+        fireEvent.change(screen.getByLabelText('New comment'), {
+            target: { value: 'Save this synthetic reply once' },
+        });
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Add comment' }),
+            );
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'saved, but current content could not be loaded',
+        );
+        const key = mutations.request.mock.calls[0][3];
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Add comment' }),
+            );
+        });
+        expect(mutations.request.mock.calls[1][3]).toBe(key);
+        expect(mutations.request.mock.calls[1][2]).toEqual(
+            mutations.request.mock.calls[0][2],
+        );
+    });
+
     it('embeds authorized comment files without requesting them on mount', () => {
         const filename = 'SyntheticCommentFile'.repeat(35) + '.txt';
         const view = render(

@@ -374,6 +374,21 @@ class CollaborationWorkflowTest extends TestCase
         $this->assertDatabaseCount('users', 1);
     }
 
+    public function test_portal_only_session_keeps_canonical_reads_scoped_and_read_only(): void
+    {
+        [$manager, $workspace, $company, $project] = $this->tenant('portal-api-session');
+        $visible = $this->topic($manager, $workspace, $company, $project, true);
+        $private = $this->topic($manager, $workspace, $company, $project);
+        $portal = $this->portalUser($company, 'portal-api-session', $project);
+        $this->browser($portal)->getJson(route('agent-api.v1.collaboration.topics.show', [$workspace, $company, $visible->public_id]))
+            ->assertOk()->assertJsonPath('data.body', 'Synthetic body')->assertJsonPath('data.is_visible_to_client', null);
+        $this->getJson(route('agent-api.v1.collaboration.topics.show', [$workspace, $company, $private->public_id]))->assertNotFound();
+        $this->native()->postJson(route('agent-api.v1.collaboration.topics.store', [$workspace, $company]),
+            ['kind' => 'note', 'title' => 'Synthetic refused portal note', 'body' => 'Synthetic refused portal body', 'project_id' => $project->public_id])->assertForbidden();
+        $this->assertDatabaseCount('client_collaboration_topics', 2);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
     private function browser(User $actor): static
     {
         return $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))

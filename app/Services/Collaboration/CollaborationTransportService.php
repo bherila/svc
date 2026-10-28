@@ -31,6 +31,13 @@ final class CollaborationTransportService
         return CollaborationAudience::Internal;
     }
 
+    /** The website uses internal membership when present and preserves portal-only reads. */
+    public function sessionAudience(User|AgentPrincipal $actor, Workspace $workspace): CollaborationAudience
+    {
+        return $this->projects->workspaceRole($actor, $workspace) !== null
+            ? CollaborationAudience::Internal : $this->agentAudience($actor, $workspace);
+    }
+
     /** @param array<string, mixed> $query
      * @return array<string, mixed>
      */

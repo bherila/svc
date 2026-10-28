@@ -1700,7 +1700,15 @@ They never activate imported history. Both topic kinds accept comments.
 versioned writes also need `collaboration:read`. Agent writes require both
 `AGENT_API_WRITES_ENABLED` and `AGENT_API_COLLABORATION_WRITES_ENABLED` (the latter
 defaults false). Signed-in first-party web sessions bypass these deployment
-switches. Native web and CLI use their current staff permissions independently.
+switches. The website's create, edit, sharing and removal forms use these
+session-authenticated API operations; the six parallel browser writers are
+retired. New topics and comments follow the server's finished `web_url`,
+including the comment focus and page. Drafts survive refused or uncertain
+requests, and retries retain their receipt key until authoritative content
+loads. Native web and CLI use their current staff permissions independently.
+A website session with internal membership, including a dual staff identity,
+retains Internal authority; a portal-only session keeps scoped Portal reads
+and cannot write.
 
 The server chooses the audience: an agent actor with any current portal
 membership in the workspace, including a dual staff identity, receives the
