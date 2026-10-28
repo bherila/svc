@@ -259,6 +259,81 @@ try {
         failures.push(`Browser error: ${error.message}`),
     );
 
+    async function checkExpenseRecovery(screen, width, pattern, submitLabel) {
+        // Exercise browser recovery without adding rows to the width fixtures.
+        // Real canonical writes are checked separately after these captures.
+        const requests = [];
+        await page.route(
+            pattern,
+            async (route) => {
+                const request = route.request();
+                requests.push({
+                    url: request.url(),
+                    body: request.postData(),
+                    key: request.headers()['idempotency-key'],
+                });
+                if (requests.length === 2) {
+                    expect(requests[1]).toEqual(requests[0]);
+                }
+                await route.fulfill({
+                    status: requests.length === 1 ? 408 : 201,
+                    contentType: 'application/json',
+                    body: JSON.stringify(
+                        requests.length === 1
+                            ? {
+                                  message:
+                                      'Synthetic uncertain result. Check the original request before starting another change.',
+                              }
+                            : { data: {} },
+                    ),
+                });
+            },
+            { times: 2 },
+        );
+        await page
+            .getByRole('button', { name: submitLabel, exact: true })
+            .click();
+        await expect(
+            page.getByRole('button', {
+                name: 'Check original request',
+                exact: true,
+            }),
+        ).toBeEnabled();
+        await expect(
+            page.getByLabel('Description', { exact: true }),
+        ).toBeDisabled();
+        await expect(
+            page.getByRole('button', { name: 'Cancel', exact: true }),
+        ).toBeDisabled();
+        await capture(screen, 'uncertain-request', width);
+        await page.route(page.url(), (route) => route.abort('failed'), {
+            times: 1,
+        });
+        await page
+            .getByRole('button', {
+                name: 'Check original request',
+                exact: true,
+            })
+            .click();
+        await expect(
+            page.getByRole('button', {
+                name: 'Refresh saved result',
+                exact: true,
+            }),
+        ).toBeEnabled();
+        await expect(
+            page.getByRole('button', { name: 'Cancel', exact: true }),
+        ).toBeDisabled();
+        await capture(screen, 'saved-refresh-failure', width);
+        await page
+            .getByRole('button', { name: 'Refresh saved result', exact: true })
+            .click();
+        await expect(
+            page.getByLabel('Description', { exact: true }),
+        ).toHaveCount(0);
+        expect(requests).toHaveLength(2);
+    }
+
     async function capture(screen, state, width, measuredOnly = false) {
         await page.evaluate(() => document.fonts.ready);
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -1174,6 +1249,17 @@ try {
                     .getByLabel('Description', { exact: true })
                     .fill('SyntheticUnbrokenRecurringExpense'.repeat(8));
                 await capture(screen, 'create', width);
+                if (schedulesOnly) {
+                    await page
+                        .getByLabel('Amount in minor units', { exact: true })
+                        .fill('9007199254740993');
+                    await checkExpenseRecovery(
+                        screen,
+                        width,
+                        '**/api/v1/workspaces/*/expense-schedules',
+                        'Save schedule',
+                    );
+                }
             }
 
             if (screen === 'expenses') {
@@ -1205,9 +1291,21 @@ try {
                     .getByLabel('Description', { exact: true })
                     .fill('SyntheticUnbrokenExpense'.repeat(10));
                 await capture(screen, 'record-dialog', width);
-                await page
-                    .getByRole('button', { name: 'Cancel', exact: true })
-                    .click();
+                if (expensesOnly) {
+                    await page
+                        .getByLabel('Amount', { exact: true })
+                        .fill('12.50');
+                    await checkExpenseRecovery(
+                        screen,
+                        width,
+                        '**/api/v1/workspaces/*/expenses',
+                        'Record',
+                    );
+                } else {
+                    await page
+                        .getByRole('button', { name: 'Cancel', exact: true })
+                        .click();
+                }
             }
 
             if (screen === 'draft_time') {

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,7 +38,10 @@ beforeEach(() => {
     inertia.delete.mockReset();
     inertia.patch.mockReset();
     inertia.post.mockReset();
-    inertia.reload.mockReset();
+    inertia.reload.mockReset().mockImplementation((options) => {
+        options?.onSuccess?.({});
+        options?.onFinish?.({});
+    });
     vi.mocked(apiRequest)
         .mockReset()
         .mockResolvedValue({ ok: true, status: 200, data: {} });
@@ -295,10 +298,12 @@ describe('the expense list', () => {
         expect(
             screen.getByText('The expense changed; reload it.'),
         ).toBeInTheDocument();
-        expect(inertia.reload).not.toHaveBeenCalled();
+        expect(inertia.reload).toHaveBeenCalledWith(
+            expect.objectContaining({ only: ['expenses'] }),
+        );
         const firstKey = vi.mocked(apiRequest).mock.calls[0][3];
         await user.click(screen.getByRole('button', { name: 'Save' }));
-        expect(vi.mocked(apiRequest).mock.calls[1][3]).toBe(firstKey);
+        expect(vi.mocked(apiRequest).mock.calls[1][3]).not.toBe(firstKey);
     });
 
     it('shows a discard conflict after closing its confirmation', async () => {
@@ -432,4 +437,132 @@ describe('reading a typed amount', () => {
         expect(parseAmount('1,250.05')).toBe(125005);
         expect(parseAmount('1,234,567')).toBe(123456700);
     });
+});
+
+it.each([0, 408, 503])(
+    'locks an unknown expense after status %s and keeps its original request after a later refusal',
+    async (status) => {
+        const user = userEvent.setup();
+        vi.mocked(apiRequest)
+            .mockResolvedValueOnce({
+                ok: false,
+                status,
+                message: 'Synthetic uncertain expense.',
+            })
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 409,
+                message: 'Synthetic pending expense.',
+            })
+            .mockResolvedValue({ ok: true, status: 201, data: {} });
+        const { rerender } = render(<ClientExpenses {...props()} />);
+        await user.click(
+            screen.getByRole('button', { name: 'Record expense' }),
+        );
+        await user.type(screen.getByLabelText('Amount'), '12.50');
+        await user.type(
+            screen.getByLabelText('Description'),
+            'Synthetic original expense',
+        );
+        await user.click(screen.getByRole('button', { name: 'Record' }));
+        await screen.findByRole('button', { name: 'Check original request' });
+        expect(screen.getByLabelText('Amount')).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        expect(
+            screen.queryByRole('button', { name: 'Close' }),
+        ).not.toBeInTheDocument();
+        await user.keyboard('{Escape}');
+        expect(screen.getByRole('dialog')).toBeVisible();
+        const original = vi.mocked(apiRequest).mock.calls[0];
+        const refreshed = props();
+        rerender(
+            <ClientExpenses
+                {...refreshed}
+                company={{ ...refreshed.company, id: 'new-company-id' }}
+                urls={{
+                    ...refreshed.urls,
+                    store: '/synthetic/new-expense-store',
+                }}
+            />,
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await screen.findByText('Synthetic pending expense.');
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        expect(screen.getByLabelText('Description')).toBeDisabled();
+        expect(vi.mocked(apiRequest).mock.calls[1]).toEqual(original);
+        await user.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await waitFor(() =>
+            expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+        );
+        expect(vi.mocked(apiRequest).mock.calls[2]).toEqual(original);
+    },
+);
+
+it('retains an accepted expense until a failed page refresh is recovered without another create', async () => {
+    const user = userEvent.setup();
+    inertia.reload.mockImplementationOnce((options) => options.onFinish?.({}));
+    render(<ClientExpenses {...props()} />);
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+    await user.type(screen.getByLabelText('Amount'), '12.50');
+    await user.type(
+        screen.getByLabelText('Description'),
+        'Synthetic saved expense',
+    );
+    await user.click(screen.getByRole('button', { name: 'Record' }));
+    await screen.findByRole('button', { name: 'Refresh saved result' });
+    expect(screen.getByLabelText('Description')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeVisible();
+    await user.click(
+        screen.getByRole('button', { name: 'Refresh saved result' }),
+    );
+    await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+    expect(apiRequest).toHaveBeenCalledOnce();
+    expect(inertia.reload).toHaveBeenCalledTimes(2);
+});
+
+it('gives a corrected definitively refused expense a fresh request key', async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiRequest)
+        .mockResolvedValueOnce({
+            ok: false,
+            status: 422,
+            message: 'Synthetic validation refusal.',
+        })
+        .mockResolvedValue({ ok: true, status: 201, data: {} });
+    render(<ClientExpenses {...props()} />);
+    await user.click(screen.getByRole('button', { name: 'Record expense' }));
+    await user.type(screen.getByLabelText('Amount'), '12.50');
+    await user.type(
+        screen.getByLabelText('Description'),
+        'Synthetic first expense',
+    );
+    await user.click(screen.getByRole('button', { name: 'Record' }));
+    await screen.findByText('Synthetic validation refusal.');
+    expect(screen.getByLabelText('Description')).toBeEnabled();
+    await user.clear(screen.getByLabelText('Description'));
+    await user.type(
+        screen.getByLabelText('Description'),
+        'Synthetic corrected expense',
+    );
+    await user.click(screen.getByRole('button', { name: 'Record' }));
+    await vi.waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2));
+    const calls = vi.mocked(apiRequest).mock.calls;
+    expect(calls[1][3]).not.toBe(calls[0][3]);
+    expect(calls[1][2]).toEqual(
+        expect.objectContaining({
+            entries: [
+                expect.objectContaining({
+                    description: 'Synthetic corrected expense',
+                }),
+            ],
+        }),
+    );
 });

@@ -1,9 +1,7 @@
-import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
-    DialogClose,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -20,7 +18,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import { useExpenseMutation } from '@/hooks/use-expense-mutation';
 import { todayIn } from '@/lib/time';
 import type { ClientExpenseRow, ExpenseProject } from '@/types/expenses';
 
@@ -144,27 +142,38 @@ export function ExpenseDialog({
     const [draft, setDraft] = useState<Draft>(() =>
         draftFrom(expense, workspace),
     );
-    const [error, setError] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
-    // One opening is one logical attempt: retrying a lost response must not
-    // record the same reimbursable cost twice.
-    const [attemptKey] = useState(newIdempotencyKey);
+    const [validationError, setValidationError] = useState<string | null>(null);
+    const [baseline] = useState(() => ({
+        method: expense === null ? ('POST' as const) : ('PATCH' as const),
+        url: expense?.urls.update ?? storeUrl,
+        version: expense?.version,
+        companyId,
+    }));
+    const mutation = useExpenseMutation(['expenses']);
+    const error = mutation.error ?? validationError;
+    const close = (next: boolean) => {
+        if (!mutation.isLocked()) {
+            onOpenChange(next);
+        }
+    };
 
     const submit = async () => {
-        if (saving) {
+        if (mutation.busy) {
             return;
         }
 
         const amount = parseAmount(draft.amount);
 
         if (amount === null) {
-            setError('Enter an amount greater than zero, like 12.50.');
+            setValidationError(
+                'Enter an amount greater than zero, like 12.50.',
+            );
 
             return;
         }
 
         if (draft.description.trim() === '') {
-            setError('Describe what the expense was for.');
+            setValidationError('Describe what the expense was for.');
 
             return;
         }
@@ -178,41 +187,20 @@ export function ExpenseDialog({
                 draft.project_id === NO_PROJECT ? null : draft.project_id,
         };
 
-        setSaving(true);
-
-        setError(null);
-        const result =
-            expense === null
-                ? await apiRequest(
-                      'POST',
-                      storeUrl,
-                      {
-                          entries: [{ ...payload, company_id: companyId }],
-                      },
-                      attemptKey,
-                  )
-                : await apiRequest(
-                      'PATCH',
-                      expense.urls.update,
-                      {
-                          ...payload,
-                          expected_version: expense.version,
-                      },
-                      attemptKey,
-                  );
-        setSaving(false);
-
-        if (result.ok) {
-            onOpenChange(false);
-            router.reload({ only: ['expenses'] });
-        } else {
-            setError(result.message);
-        }
+        setValidationError(null);
+        await mutation.submit(
+            baseline.method,
+            baseline.url,
+            baseline.method === 'POST'
+                ? { entries: [{ ...payload, company_id: baseline.companyId }] }
+                : { ...payload, expected_version: baseline.version },
+            () => onOpenChange(false),
+        );
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+        <Dialog open={open} onOpenChange={close}>
+            <DialogContent showCloseButton={!mutation.locked}>
                 <DialogHeader>
                     <DialogTitle>
                         {expense === null ? 'Record expense' : 'Edit expense'}
@@ -223,7 +211,10 @@ export function ExpenseDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid grid-cols-1 gap-4">
+                <fieldset
+                    disabled={mutation.locked}
+                    className="grid min-w-0 grid-cols-1 gap-4"
+                >
                     <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="expense-spent-on">Date</Label>
                         <Input
@@ -347,18 +338,25 @@ export function ExpenseDialog({
                             {error}
                         </p>
                     )}
-                </div>
+                </fieldset>
 
                 <DialogFooter>
-                    <DialogClose
-                        render={
-                            <Button variant="outline" type="button">
-                                Cancel
-                            </Button>
-                        }
-                    />
-                    <Button onClick={submit} disabled={saving}>
-                        {expense === null ? 'Record' : 'Save'}
+                    <Button
+                        variant="outline"
+                        type="button"
+                        disabled={mutation.locked}
+                        onClick={() => close(false)}
+                    >
+                        Cancel
+                    </Button>
+                    <Button onClick={submit} disabled={mutation.busy}>
+                        {mutation.saved
+                            ? 'Refresh saved result'
+                            : mutation.locked
+                              ? 'Check original request'
+                              : expense === null
+                                ? 'Record'
+                                : 'Save'}
                     </Button>
                 </DialogFooter>
             </DialogContent>
