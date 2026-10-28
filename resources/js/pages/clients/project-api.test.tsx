@@ -45,6 +45,8 @@ const props = {
     workspace: { id: 'workspace-1' },
     company: {
         id: 'client-1',
+        version,
+        update_url: '/synthetic/company-update',
         name: 'Synthetic Client',
         billing_email: null,
         is_active: true,

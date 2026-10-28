@@ -8,6 +8,8 @@ import { CompanyProfile } from '@/components/clients/company-profile';
 import type { CompanyProfileData } from '@/components/clients/company-profile';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
+import { useClientChange } from '@/components/clients/use-client-change';
+import { useClientDraft } from '@/components/clients/use-client-draft';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,10 +23,13 @@ import type { ApiSchema } from '@/lib/api';
 import { formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { cn } from '@/lib/utils';
 
 type ManagedCompany = {
     id: string;
+    version: string;
+    update_url: string;
     name: string;
     billing_email: string | null;
     automatic_invoice_email_enabled?: boolean;
@@ -277,31 +282,50 @@ function AccessRow({
  * what the engagement *is*; this tab is the record around it - who the client
  * is, and what projects exist.
  */
-function CompanyForm({
-    workspaceId,
-    company,
-}: {
-    workspaceId: string;
-    company: ManagedCompany;
-}) {
-    const form = useForm({
-        name: company.name,
-        billing_email: company.billing_email ?? '',
-        automatic_invoice_email_enabled:
-            company.automatic_invoice_email_enabled ?? false,
-        automatic_invoice_email_delay_days:
-            company.automatic_invoice_email_delay_days ?? 0,
-        is_active: company.is_active,
-    });
+function CompanyForm({ company }: { company: ManagedCompany }) {
+    const form = useClientDraft(
+        {
+            name: company.name,
+            billing_email: company.billing_email ?? '',
+            automatic_invoice_email_enabled:
+                company.automatic_invoice_email_enabled ?? false,
+            automatic_invoice_email_delay_days:
+                company.automatic_invoice_email_delay_days ?? 0,
+            is_active: company.is_active,
+        },
+        company.version,
+    );
+
+    const change = useClientChange();
 
     return (
         <form
             className="grid grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.patch(`/workspaces/${workspaceId}/clients/${company.id}`, {
-                    preserveScroll: true,
-                });
+                const submitted = { ...form.data };
+                void change.run<{ version: string }>(
+                    'PATCH',
+                    company.update_url,
+                    {
+                        ...submitted,
+                        billing_email:
+                            submitted.billing_email === ''
+                                ? null
+                                : submitted.billing_email,
+                        expected_version: form.version,
+                    },
+                    async (result) => {
+                        form.saved(submitted, result.data.version);
+                        await refreshPageProps({
+                            only: [
+                                'company',
+                                'company_profile',
+                                'workspaceNavigation',
+                            ],
+                        });
+                    },
+                );
             }}
         >
             {/*
@@ -319,9 +343,9 @@ function CompanyForm({
                         form.setData('name', event.target.value)
                     }
                 />
-                {form.errors.name !== undefined && (
+                {change.errors.name !== undefined && (
                     <p className="text-sm text-destructive">
-                        {form.errors.name}
+                        {change.errors.name?.[0]}
                     </p>
                 )}
             </div>
@@ -337,9 +361,9 @@ function CompanyForm({
                     }
                     placeholder="Not set"
                 />
-                {form.errors.billing_email !== undefined && (
+                {change.errors.billing_email !== undefined && (
                     <p className="text-sm text-destructive">
-                        {form.errors.billing_email}
+                        {change.errors.billing_email?.[0]}
                     </p>
                 )}
             </div>
@@ -425,21 +449,27 @@ function CompanyForm({
                     )}
                 </div>
 
-                {form.errors.automatic_invoice_email_enabled !== undefined && (
-                    <p className="text-sm wrap-anywhere text-destructive">
-                        {form.errors.automatic_invoice_email_enabled}
-                    </p>
-                )}
-                {form.errors.automatic_invoice_email_delay_days !==
+                {change.errors.automatic_invoice_email_enabled !==
                     undefined && (
                     <p className="text-sm wrap-anywhere text-destructive">
-                        {form.errors.automatic_invoice_email_delay_days}
+                        {change.errors.automatic_invoice_email_enabled?.[0]}
+                    </p>
+                )}
+                {change.errors.automatic_invoice_email_delay_days !==
+                    undefined && (
+                    <p className="text-sm wrap-anywhere text-destructive">
+                        {change.errors.automatic_invoice_email_delay_days?.[0]}
                     </p>
                 )}
             </div>
 
             <div>
-                <Button type="submit" disabled={form.processing}>
+                {change.error && (
+                    <p role="alert" className="text-sm text-destructive">
+                        {change.error}
+                    </p>
+                )}
+                <Button type="submit" disabled={change.busy}>
                     Save client
                 </Button>
             </div>
@@ -676,7 +706,6 @@ function NewProjectForm({ capability }: { capability: ProjectCreate }) {
 }
 
 export default function ClientManage({
-    workspace,
     company,
     projects,
     project_create: projectCreate,
@@ -720,10 +749,7 @@ export default function ClientManage({
                         <CardTitle>Client</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <CompanyForm
-                            workspaceId={workspace.id}
-                            company={company}
-                        />
+                        <CompanyForm key={company.id} company={company} />
                     </CardContent>
                 </Card>
 
@@ -734,8 +760,10 @@ export default function ClientManage({
                         </CardHeader>
                         <CardContent>
                             <CompanyProfile
+                                key={company.id}
                                 profile={companyProfile}
                                 action={profileAction}
+                                version={company.version}
                             />
                         </CardContent>
                     </Card>

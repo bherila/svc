@@ -1,13 +1,10 @@
 <?php
 
-use App\Http\Controllers\ClientCompanyController;
-use App\Http\Controllers\ClientContactController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\ClientTaskOrganizationController;
 use App\Http\Controllers\ClientTaskPlanningController;
-use App\Http\Controllers\CompanyProfileController;
 use App\Http\Controllers\Finance\FinancePaymentLinkController;
 use App\Http\Controllers\HistoricalLibraryController;
 use App\Http\Controllers\McpSetupController;
@@ -143,14 +140,8 @@ Route::middleware('auth')->group(function (): void {
             ->name('portal.proposal');
     });
 
-    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/profile', [CompanyProfileController::class, 'update'])->name('clients.profile.update');
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/contacts', [ClientContactController::class, 'store'])->name('contacts.store');
-    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/contacts/{clientContact}', [ClientContactController::class, 'update'])->name('contacts.update');
 
-    Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])
-        ->name('clients.update');
-    Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     foreach (TaskPlanningOperations::DEFINITIONS as $suffix => [$verb]) {
         $path = TaskPlanningOperations::ROUTES['task_planning.'.$suffix][1];
         if ($suffix === 'labels.list') {
