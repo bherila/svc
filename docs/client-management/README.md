@@ -467,7 +467,7 @@ alone - so an update or delete names the workspace in its own SQL. See
   Inertia mutation stays disabled until `onFinish`, and its component test must
   prove a second activation cannot dispatch another request. `composer
   ci:check` runs both suites. In Actions, `composer ci:checks` runs the static
-  and frontend checks independently of PHPUnit. SQLite and MariaDB 10.6 each
+  and frontend checks independently of PHPUnit. SQLite and MariaDB 11.4 each
   use four shards with four ParaTest workers per runner. The shard planner
   (`scripts/ci/phpunit-shard.php`) balances files by test count and verifies
   that each file PHPUnit lists belongs to exactly one nonempty shard. Each

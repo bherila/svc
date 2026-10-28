@@ -78,7 +78,7 @@ already caused a defect.
 ## The engine gap, and how it is closed
 
 Everything above is only findable if the tests run on the engine that ships.
-They did not. The suite ran on in-memory SQLite; production is **MariaDB 10.6**,
+They did not. The suite ran on in-memory SQLite; production uses **MariaDB 11.4**,
 reached through Laravel's `mariadb` driver with `strict => true`. SQLite hides
 schema drift in three distinct ways, and all have now cost real defects.
 
@@ -111,7 +111,7 @@ strings, not Carbon values, which bind as `Y-m-d H:i:s` and would drop the
 moved to `DateOnly` must bound its queries the same way.
 
 A second CI job (`mariadb` in `.github/workflows/tests.yml`) now runs the whole
-suite against MariaDB 10.6, and `deploy` waits on it. SQLite stays the default
+suite against MariaDB 11.4, and `deploy` waits on it. SQLite stays the default
 so the local loop remains fast — the MariaDB run is the one that has to be true.
 
 To run it locally against any MySQL-compatible server:
@@ -135,20 +135,24 @@ truncates rather than refuses and is no more informative than SQLite. The
 production server's own `sql_mode` does **not** include it; Laravel's `strict`
 connection flag sets it per session, which is what the assertion checks.
 
-The driver now names the server honestly: both production and the hosted job use
-Laravel's `mariadb` connection. At MariaDB 10.6 this is schema-equivalent to the
-old `mysql` connection for this application. The equivalence ends at 10.7,
-where Laravel starts compiling `uuid()` columns as native `uuid` instead of
-`char(36)`. The current migration inventory has 31 logical UUID columns: 29
-declared with `uuid()` (discounting the repeated alteration of
-`identity_memberships.public_id`) and two Passport `foreignUuid()` client IDs.
-`svc:database:status` runs before every deployment migration and refuses 10.7+
-until a fresh inventory and one deliberate migration cover every UUID and
-foreign-UUID column. The hosted MariaDB job runs the same guard; a driver typo
-or a premature image upgrade is therefore a test failure rather than silent
-schema drift. That job also creates a JSON column through Laravel's MariaDB
-grammar and proves malformed JSON is rejected, preserving the validation
-behavior of the existing production schema.
+Both production and the hosted job use Laravel's `mariadb` connection. The
+original driver switch on MariaDB 10.6 preserved the existing `char(36)` UUID
+storage. Laravel's stock schema grammar starts compiling `uuid()` and
+`foreignUuid()` as native UUID at 10.7, which would make new foreign keys
+incompatible with those retained columns. The deployment guard correctly
+refused the first deployment after the server upgraded to MariaDB 11.4.
+
+SVC now registers `CharacterUuidMariaDbConnection` and its
+`CharacterUuidMariaDbGrammar` to retain `char(36)` UUID storage on every server
+version. Other MariaDB schema and query behavior is inherited unchanged.
+`svc:database:status` runs before deployment migrations and accepts a modern
+MariaDB server only while this explicit grammar is installed. The hosted
+MariaDB 11.4 lane runs the same guard, creates a child foreign key against a
+retained character-UUID parent, and verifies its column types and enforcement.
+It also creates a JSON column through Laravel's MariaDB grammar and proves
+malformed JSON is rejected. Pure SQL-generation tests cover both sides of the
+10.7 boundary without needing older servers. No existing UUID column is
+converted by this compatibility change.
 
 ### What the first MariaDB run found
 
@@ -172,8 +176,9 @@ passed unchanged:
 
 An earlier version of this document left production on `DB_CONNECTION=mysql`
 and made the CI job mirror it. #78 closes that mismatch in both places at once.
-The switch is a no-op at the current MariaDB 10.6 version for this schema, and
-the pre-migration deployment guard above makes the 10.7 UUID boundary explicit.
+That switch was a no-op on the then-current MariaDB 10.6 schema. The explicit
+character-UUID grammar above now preserves the same storage contract on newer
+MariaDB servers.
 
 ## Verifying a source that moved
 
