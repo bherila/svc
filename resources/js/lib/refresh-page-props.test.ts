@@ -68,3 +68,27 @@ describe('authoritative page refresh', () => {
         await refusal;
     });
 });
+
+it('keeps required refresh failures in the caller recovery flow without Inertia default throws or error overlays', async () => {
+    const refresh = refreshPageProps({
+        only: ['expenses'],
+        requireSuccess: true,
+    });
+    const refusal = expect(refresh).rejects.toThrow(
+        'Current page props could not be refreshed.',
+    );
+    const options = reload.mock.calls[0][0];
+    expect(options.onNetworkError(new Error('Synthetic network outage'))).toBe(
+        false,
+    );
+    expect(options.onHttpException({ status: 503 })).toBe(false);
+    options.onFinish();
+    await refusal;
+
+    const ordinary = refreshPageProps();
+    const ordinaryOptions = reload.mock.calls[1][0];
+    expect(ordinaryOptions).not.toHaveProperty('onNetworkError');
+    expect(ordinaryOptions).not.toHaveProperty('onHttpException');
+    ordinaryOptions.onFinish();
+    await ordinary;
+});
