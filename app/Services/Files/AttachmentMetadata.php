@@ -8,7 +8,7 @@ use App\Support\AgentApi\AgentApiVersion;
 /** The stable legacy scalar contract, extended explicitly by new file surfaces. */
 final class AttachmentMetadata
 {
-    /** @return array<string,mixed> */
+    /** @return array{id:string,record_type:string,record_id:string,filename:string,media_type:string,bytes:int,sha256:string,status:string,version:string} */
     public static function for(ClientAttachment $attachment): array
     {
         return ['id' => $attachment->public_id, 'record_type' => $attachment->record_type,

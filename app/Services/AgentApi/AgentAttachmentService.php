@@ -198,12 +198,12 @@ final class AgentAttachmentService
         return $attachment;
     }
 
-    /** @return array<string,mixed> */
     private function audience(User|AgentPrincipal $user, Workspace $workspace, AttachmentMutationOrigin $origin): AttachmentAudience
     {
         return $origin === AttachmentMutationOrigin::Native ? AttachmentAudience::Internal : $this->reader->agentAudience($user, $workspace);
     }
 
+    /** @return array<string,mixed> */
     private function present(ClientAttachment $attachment): array
     {
         return AttachmentMetadata::for($attachment);
