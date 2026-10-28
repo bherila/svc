@@ -295,6 +295,16 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string,mixed> */
+    public function expenseReceiptsDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id,
+        #[Schema(format: 'uuid')] string $receipt_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_parent_version, bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->rest->call('expenses.receipts.delete', ['workspace' => $workspace_id, 'expense' => $expense_id, 'receipt' => $receipt_id],
+            compact('expected_version', 'expected_parent_version', 'confirm'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
     public function expenseReceiptsUploadUrl(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id): array
     {
         return $this->rest->call('expenses.receipts.upload_url', ['workspace' => $workspace_id, 'expense' => $expense_id], null);

@@ -872,7 +872,7 @@
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload": {
             "post": {
                 "operationId": "attachments.upload",
-                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
+                "description": "Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
                 "security": [
                     {
                         "oauth2": [
@@ -944,7 +944,7 @@
                 ],
                 "responses": {
                     "201": {
-                        "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
+                        "description": "Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -7763,6 +7763,89 @@
             }
         },
         "/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}": {
+            "delete": {
+                "operationId": "expenses.receipts.delete",
+                "description": "Workspace-manager-only logical deletion of one receipt on this expense. Requires confirm true, current receipt expected_version, current expense expected_parent_version and Idempotency-Key. Checks tenant ownership and current role under the expense and receipt locks, advances expense revision once, and retains existing purge policy. No expense amount or posting changes. Completed receipt replay rechecks current authority and parent lineage. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "expenses:read",
+                            "expenses:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ExpenseReceiptDeleteRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ExpenseId"
+                    },
+                    {
+                        "name": "receipt",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted expense receipt and current expense version",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReceiptUploadResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The receipt or expense revision changed, or the retry key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "expenses.receipts.delete",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.receipts.delete"
+            },
             "get": {
                 "operationId": "expenses.receipts.download",
                 "description": "Manager-only ten-minute download URL for an available receipt on this expense. Signed URL still requires expenses:read and current manager access.",
@@ -7818,7 +7901,7 @@
         "/workspaces/{workspace}/expenses/{expense}/receipts": {
             "get": {
                 "operationId": "expenses.receipts.list",
-                "description": "Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied.",
+                "description": "Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access.",
                 "security": [
                     {
                         "oauth2": [
@@ -7880,7 +7963,7 @@
             },
             "post": {
                 "operationId": "expenses.receipts.upload",
-                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.",
+                "description": "Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.",
                 "security": [
                     {
                         "oauth2": [
@@ -20279,7 +20362,9 @@
                     "media_type",
                     "bytes",
                     "sha256",
-                    "uploaded_at"
+                    "uploaded_at",
+                    "version",
+                    "lifecycle_state"
                 ],
                 "properties": {
                     "id": {
@@ -20307,6 +20392,40 @@
                             "null"
                         ],
                         "format": "date-time"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "lifecycle_state": {
+                        "type": "string",
+                        "enum": [
+                            "staged",
+                            "available",
+                            "corrupt",
+                            "deleting",
+                            "deleted"
+                        ]
+                    }
+                }
+            },
+            "ExpenseReceiptDeleteRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "expected_parent_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "expected_parent_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
                     }
                 }
             },
