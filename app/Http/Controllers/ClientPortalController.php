@@ -23,6 +23,13 @@ use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Tasks\TaskVisibility;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentProposalPresenter;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\AgreementTermsPayload;
@@ -103,25 +110,9 @@ class ClientPortalController extends Controller
 
         return Inertia::render('portal/invoice', [
             'attachment_panel' => app(AttachmentSharingNativeView::class)->portalLegacyIfReadable($this->fileViewer($request), $clientCompany, 'invoice', $invoice->public_id),
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             'home_href' => route('portal.show', $clientCompany, absolute: false),
-            'invoice' => [
-                'id' => $invoice->public_id,
-                'invoice_number' => $invoice->invoice_number,
-                'status' => $invoice->status,
-                'currency' => $invoice->currency,
-                'issue_date' => $invoice->issue_date?->toDateString(),
-                'due_date' => $invoice->due_date?->toDateString(),
-                'service_period_start' => $invoice->service_period_start?->toDateString(),
-                'service_period_end' => $invoice->service_period_end?->toDateString(),
-                'subtotal_amount' => (int) $invoice->subtotal_amount,
-                'tax_amount' => (int) $invoice->tax_amount,
-                'total_amount' => (int) $invoice->total_amount,
-                'paid_amount' => (int) $invoice->paid_amount,
-                'balance_amount' => (int) $invoice->balance_amount,
+            'invoice' => AgentInvoicePresenter::portalDetails($invoice) + [
                 'pdf_url' => "/workspaces/{$clientCompany->workspace->public_id}/invoices/{$invoice->public_id}/pdf",
             ],
             // A linked invoice is collected in Square (#438): the client views
@@ -136,15 +127,7 @@ class ClientPortalController extends Controller
             // blanked, so there is no row announcing work the client is not
             // being told about.
             'line_detail' => InvoiceLineDetail::forInvoice($invoice, InvoiceLineDetail::CLIENT),
-            'lines' => $lines->map(fn (ClientInvoiceLine $line): array => [
-                'id' => $line->public_id,
-                'description' => $line->description,
-                'quantity' => (float) $line->quantity,
-                'hours' => $line->hours === null ? null : (float) $line->hours,
-                'line_date' => $line->line_date?->toDateString(),
-                'unit_amount' => (int) $line->unit_amount,
-                'total_amount' => (int) $line->total_amount,
-            ])->values()->all(),
+            'lines' => $lines->map(fn (ClientInvoiceLine $line): array => AgentInvoicePresenter::portalLine($line))->values()->all(),
         ]);
     }
 
@@ -187,10 +170,7 @@ class ClientPortalController extends Controller
 
         return Inertia::render('clients/agreement', [
             'attachment_upload' => null,
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             'home_href' => route('portal.show', $clientCompany, absolute: false),
             'audience' => 'client',
             // Nothing to act on: correcting the terms and managing the files is
@@ -240,17 +220,7 @@ class ClientPortalController extends Controller
                 'is_visible_to_client' => null,
                 'show_deferred_backlog_to_client' => null,
             ],
-            'recurring_items' => $items->map(fn ($item): array => [
-                'id' => $item->public_id,
-                'description' => $item->description,
-                'cadence' => $item->cadence,
-                'quantity' => $item->quantity === null ? null : (float) $item->quantity,
-                'amount' => $item->amount === null ? null : (int) $item->amount,
-                'currency' => $item->currency,
-                'effective_on' => $item->effective_on?->toDateString(),
-                'expires_on' => $item->expires_on?->toDateString(),
-                'is_active' => (bool) $item->is_active,
-            ])->values()->all(),
+            'recurring_items' => $items->map(fn ($item): array => AgreementReadPresenter::recurringItem($item))->values()->all(),
             // Not shown to a client until the agreement opts in (#366, a
             // later slice). Null rather than omitted: one payload shape.
             'deferred_backlog' => $clientAgreement->show_deferred_backlog_to_client
@@ -292,33 +262,10 @@ class ClientPortalController extends Controller
 
         return Inertia::render('clients/proposal', [
             'attachment_panel' => app(AttachmentSharingNativeView::class)->portalLegacyIfReadable($this->fileViewer($request), $clientCompany, 'proposal', $clientProposal->public_id),
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             'home_href' => route('portal.show', $clientCompany, absolute: false),
-            'proposal' => [
-                'id' => $clientProposal->public_id,
-                'title' => $clientProposal->title,
-                'summary' => $clientProposal->summary,
-                'terms' => $clientProposal->terms,
-                'status' => $clientProposal->status,
-                'currency' => $clientProposal->currency,
-                'valid_until' => $clientProposal->valid_until?->toDateString(),
-                'sent_at' => $clientProposal->sent_at?->toISOString(),
-                'accepted_at' => $clientProposal->accepted_at?->toISOString(),
-                'total_amount' => $clientProposal->totalAmount(),
-            ],
-            'items' => $items->map(fn (ClientProposalItem $item): array => [
-                'id' => $item->public_id,
-                'description' => $item->description,
-                // A string rather than a float: quantities are decimals in the
-                // column, and rendering one through a float is how rounding
-                // reaches a signature.
-                'quantity' => (string) $item->quantity,
-                'unit_amount' => (int) $item->unit_amount,
-                'cadence' => $item->cadence,
-            ])->values()->all(),
+            'proposal' => AgentProposalPresenter::details($clientProposal),
+            'items' => $items->map(fn (ClientProposalItem $item): array => AgentProposalPresenter::item($item))->values()->all(),
             // Offered only for a proposal still awaiting an answer. The action
             // behind it authorizes independently, because a form nobody
             // rendered is not an authorization check.
@@ -345,22 +292,9 @@ class ClientPortalController extends Controller
             ->get();
 
         return Inertia::render('clients/invoices', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             'invoice_base_href' => route('portal.invoices', $clientCompany, absolute: false),
-            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => [
-                'id' => $invoice->public_id,
-                'invoice_number' => $invoice->invoice_number,
-                'status' => $invoice->status,
-                'currency' => $invoice->currency,
-                'issue_date' => $invoice->issue_date?->toDateString(),
-                'due_date' => $invoice->due_date?->toDateString(),
-                'total_amount' => (int) $invoice->total_amount,
-                'paid_amount' => (int) $invoice->paid_amount,
-                'balance_amount' => (int) $invoice->balance_amount,
-            ])->values()->all(),
+            'invoices' => $invoices->map(fn (ClientInvoice $invoice): array => AgentInvoicePresenter::summary($invoice))->values()->all(),
         ]);
     }
 
@@ -400,19 +334,10 @@ class ClientPortalController extends Controller
             ->get();
 
         return Inertia::render('portal/time', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
-            'entries' => $entries->map(fn (ClientTimeEntry $entry): array => [
-                'id' => $entry->public_id,
-                'worked_on' => $entry->worked_on->toDateString(),
-                'project' => $projectNames[$entry->client_project_id] ?? null,
-                // Read-only. Rates, costs and internal descriptions never cross
-                // this line; no client-reachable route writes time.
-                'description' => $entry->client_visible_description,
-                'minutes' => (int) $entry->minutes,
-            ])->values()->all(),
+            'company' => AgentClientPresenter::identity($clientCompany),
+            'entries' => $entries->map(fn (ClientTimeEntry $entry): array => AgentTimeEntryPresenter::clientRow(
+                $entry, $projectNames[$entry->client_project_id] ?? null,
+            ))->values()->all(),
         ]);
     }
 
@@ -449,26 +374,20 @@ class ClientPortalController extends Controller
         $commentProjects = array_fill_keys(app(CollaborationAccess::class)->visibleProjects($viewer, $clientCompany->workspace, $clientCompany, CollaborationAudience::Portal)->pluck('id')->all(), true);
 
         return Inertia::render('clients/tasks', [
-            'company' => [
-                'id' => $clientCompany->public_id,
-                'name' => $clientCompany->name,
-            ],
+            'company' => AgentClientPresenter::identity($clientCompany),
             // The "client sees" column is a statement about disclosure, which
             // is meaningless on the copy of this screen the client is reading.
             'audience' => 'client',
             'filters' => ['project_id' => $selected?->public_id],
             'projects' => $projects->map(fn (ClientProject $project): array => [
-                'id' => $project->public_id,
-                'name' => $project->name,
+                ...AgentProjectPresenter::identity($project),
                 'files_href' => route('portal.files.parent.show', [$clientCompany, 'project', $project->public_id], absolute: false),
             ])->values()->all(),
             'tasks' => $tasks->map(fn (ClientTask $task): array => [
-                'id' => $task->public_id,
-                'title' => $task->title,
-                'status' => $task->status,
+                ...array_intersect_key(AgentTaskPresenter::summary($task), array_flip(['id', 'title', 'status'])),
                 'project' => $projectNames[$task->client_project_id] ?? null,
                 'is_visible_to_client' => true,
-                'completed_at' => $task->completed_at?->toDateString(),
+                'completed_at' => AgentTaskPresenter::completedAt($task, dateOnly: true),
                 'files_href' => route('portal.files.parent.show', [$clientCompany, 'task', $task->public_id], absolute: false),
                 'comment_thread_url' => isset($commentProjects[$task->client_project_id])
                     ? route('portal.collaboration.comments.index', [$clientCompany, 'task', $task->public_id], absolute: false) : null,

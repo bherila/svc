@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Services\Files\AttachmentAudience;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentExpensePresenter;
 use App\Support\Files\AttachmentListing;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -33,13 +34,7 @@ class ExpenseReceiptController extends Controller
             $request->integer('files_page', 1), route('svc.expenses.receipts', [$workspace, $clientCompany, $record->public_id], absolute: false), AgentApiVersion::for($record));
 
         return Inertia::render('clients/expense-receipts', [
-            'expense' => [
-                'description' => $record->description,
-                'spent_on' => $record->spent_on->toDateString(),
-                'amount' => $record->amount,
-                'currency' => $record->currency,
-                'status' => $record->status,
-            ],
+            'expense' => AgentExpensePresenter::summary($record),
             'files' => $filePage->files,
             'files_next_href' => $filePage->nextHref,
             'files_previous_href' => $filePage->previousHref,

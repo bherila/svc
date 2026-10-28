@@ -11,6 +11,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Engagement\ProposalAccess;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use Illuminate\Database\Eloquent\Builder;
 
 final class AgentProposalReadService
@@ -65,14 +66,11 @@ final class AgentProposalReadService
     private function present(bool $manager, Workspace $workspace, ClientProposal $proposal): array
     {
         return [
-            'id' => $proposal->public_id, 'workspace_id' => $workspace->public_id,
+            ...AgentProposalPresenter::details($proposal, iso8601Timestamps: true),
+            'workspace_id' => $workspace->public_id,
             'company_id' => $proposal->clientCompany->public_id, 'project_id' => $proposal->project?->public_id,
-            'title' => $proposal->title, 'summary' => $proposal->summary, 'terms' => $proposal->terms,
-            'currency' => $proposal->currency, 'status' => $proposal->status, 'is_visible_to_client' => $proposal->is_visible_to_client,
-            'valid_until' => $proposal->valid_until?->toDateString(), 'sent_at' => $proposal->sent_at?->toIso8601String(),
-            'accepted_at' => $proposal->accepted_at?->toIso8601String(), 'version' => AgentApiVersion::for($proposal),
-            'total_amount' => $proposal->totalAmount(),
-            'items' => $proposal->items->map(fn (ClientProposalItem $item): array => ['id' => $item->public_id, 'description' => $item->description, 'quantity' => (string) $item->quantity, 'unit_amount' => $item->unit_amount, 'cadence' => $item->cadence, 'sort_order' => $item->sort_order])->values()->all(),
+            'is_visible_to_client' => $proposal->is_visible_to_client, 'version' => AgentApiVersion::for($proposal),
+            'items' => $proposal->items->map(fn (ClientProposalItem $item): array => AgentProposalPresenter::item($item) + ['sort_order' => $item->sort_order])->values()->all(),
             'url' => rtrim((string) config('app.url'), '/').($manager
                 ? route('clients.proposal', ['workspace' => $workspace, 'clientCompany' => $proposal->clientCompany, 'clientProposal' => $proposal], false)
                 : route('portal.proposal', ['clientCompany' => $proposal->clientCompany, 'clientProposal' => $proposal], false)),

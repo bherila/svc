@@ -14,6 +14,7 @@ use App\Support\AgentApi\AgentPageBudget;
 use App\Support\AgentApi\ChangeFeedPage;
 use App\Support\AgentApi\ChangeWindow;
 use App\Support\AgentApi\CursorPage;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -87,12 +88,12 @@ final class AgentClientReadService
     /** @return array<string, mixed> */
     public function present(ClientCompany $company): array
     {
+        $summary = AgentClientPresenter::summary($company);
+
         return [
-            'id' => $company->public_id,
+            'id' => $summary['id'],
             'version' => AgentApiVersion::for($company),
-            'name' => $company->name,
-            'billing_email' => $company->billing_email,
-            'is_active' => $company->is_active,
+            ...$summary,
             'automatic_invoice_email_enabled' => $company->automatic_invoice_email_enabled,
             'automatic_invoice_email_delay_days' => $company->automatic_invoice_email_delay_days,
             ...app(CompanyProfile::class)->read($company),

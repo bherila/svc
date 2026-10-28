@@ -37,6 +37,7 @@ use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\WorkspaceClock;
@@ -113,9 +114,7 @@ final class AgentReadService
             'withheld_tools' => app(AgentWithheldTools::class)->for($allowsScope,
                 $workspaces->contains(fn (Workspace $workspace): bool => $this->access->isWorkspaceManager($user, $workspace))),
             'workspaces' => $workspaces->map(function (Workspace $workspace) use ($user, $allowsScope): array {
-                return [
-                    'id' => $workspace->public_id,
-                    'name' => $workspace->name,
+                return AgentWorkspacePresenter::identity($workspace) + [
                     'timezone' => $workspace->timezone,
                     'default_currency' => $workspace->default_currency,
                     'workspace_role' => $this->projects->workspaceRole($user, $workspace),

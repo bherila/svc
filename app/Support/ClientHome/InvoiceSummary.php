@@ -2,6 +2,9 @@
 
 namespace App\Support\ClientHome;
 
+use App\Models\ClientInvoice;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+
 /** One invoice, as much of it as an at-a-glance line can carry. */
 final class InvoiceSummary
 {
@@ -17,6 +20,15 @@ final class InvoiceSummary
         public readonly int $balanceAmount,
         public readonly string $href,
     ) {}
+
+    public static function fromInvoice(ClientInvoice $invoice, string $href): self
+    {
+        $facts = AgentInvoicePresenter::summary($invoice);
+
+        return new self(id: $facts['id'], invoiceNumber: $facts['invoice_number'], status: $facts['status'],
+            currency: $facts['currency'], issueDate: $facts['issue_date'], dueDate: $facts['due_date'],
+            totalAmount: $facts['total_amount'], paidAmount: $facts['paid_amount'], balanceAmount: $facts['balance_amount'], href: $href);
+    }
 
     /**
      * @return array{

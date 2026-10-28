@@ -3,8 +3,10 @@
 namespace App\Services\Tasks\Organization;
 
 use App\Models\ClientCompany;
-use App\Models\ClientTask;
 use App\Models\Workspace;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use DomainException;
 
 /** Presentation over already authorized, bounded facts; no queries per row. */
@@ -13,6 +15,7 @@ final class TaskOrganizationNativePresenter
     public function present(Workspace $workspace, ClientCompany $company, TaskOrganizationRecords $records, TaskGraph $graph, TaskContainer $container, ?string $movingId): TaskOrganizationNativeView
     {
         $snapshot = TaskOrganizationSnapshot::capture($records, $graph, $container);
+        $containerTasks = array_column($snapshot->data['container']['tasks'], null, 'id');
         $tasks = $records->tasks->keyBy('public_id');
         $lists = $records->lists->keyBy('public_id');
         abort_if($movingId !== null && ! isset($graph->tasks[$movingId]), 404);
@@ -64,8 +67,9 @@ final class TaskOrganizationNativePresenter
         foreach ($graph->siblings($container) as $id) {
             $task = $tasks[$id];
             $child = new TaskContainer($id, null);
-            $taskRows[] = ['id' => $id, 'title' => $task->title, 'status_label' => $this->statusLabel($task),
-                'version' => $graph->tasks[$id]['version'], 'is_visible_to_client' => $task->is_visible_to_client,
+            $core = $containerTasks[$id];
+            $taskRows[] = ['id' => $core['id'], 'title' => $core['title'], 'status_label' => $this->statusLabel($core['status']),
+                'version' => $core['version'], 'is_visible_to_client' => $core['is_visible_to_client'],
                 'effective_visible_to_client' => $this->effectiveVisibility($records, $graph, $id),
                 'task_href' => route('tasks.show', [$workspace, $task]), 'browse_href' => $browse($child, $movingId),
                 'create_child_href' => $createHref($child), 'child_target' => $this->target($child),
@@ -85,11 +89,11 @@ final class TaskOrganizationNativePresenter
             $title = $tasks[$id]->title;
             $breadcrumbs[] = ['label' => $title, 'href' => $browse(new TaskContainer($id, null), $movingId)];
         }
-        $moving = $movingId === null ? null : ['id' => $movingId, 'title' => $tasks[$movingId]->title,
+        $moving = $movingId === null ? null : AgentTaskPresenter::identity($tasks[$movingId]) + [
             'version' => $graph->tasks[$movingId]['version'], 'move_href' => route('tasks.organization.tasks.move', $path + ['task' => $movingId]), 'cancel_href' => $currentHref];
 
-        return new TaskOrganizationNativeView(['company' => ['name' => $company->name, 'href' => route('clients.show', [$workspace, $company])],
-            'project' => ['id' => $records->project->public_id, 'name' => $records->project->name, 'href' => route('clients.project', [$workspace, $company, $records->project])],
+        return new TaskOrganizationNativeView(['company' => ['name' => AgentClientPresenter::identity($company)['name'], 'href' => route('clients.show', [$workspace, $company])],
+            'project' => AgentProjectPresenter::identity($records->project) + ['href' => route('clients.project', [$workspace, $company, $records->project])],
             'organization' => ['graph_version' => $graph->graphVersion(), 'lists_version' => $graph->graphVersion(),
                 'create_list_href' => count($graph->lists) < TaskGraph::MAX_LISTS ? route('tasks.organization.lists.store', $path) : null,
                 'reorder_lists_href' => route('tasks.organization.lists.reorder', $path), 'ordered_list_ids' => $orderedListIds,
@@ -151,9 +155,9 @@ final class TaskOrganizationNativePresenter
         return null;
     }
 
-    private function statusLabel(ClientTask $task): string
+    private function statusLabel(string $status): string
     {
-        return match ($task->status) {
+        return match ($status) {
             'open' => 'Open', 'in_progress' => 'In progress', 'completed' => 'Completed', default => 'Unknown',
         };
     }

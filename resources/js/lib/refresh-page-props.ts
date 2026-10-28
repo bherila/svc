@@ -18,6 +18,10 @@ export function refreshPageProps({
             ...options,
             ...(requireSuccess
                 ? {
+                      // The caller renders a recoverable failure after onFinish.
+                      // Suppress Inertia's default error modal/global network throw.
+                      onNetworkError: () => false,
+                      onHttpException: () => false,
                       onSuccess: () => {
                           succeeded = true;
                       },
