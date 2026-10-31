@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bherila/shared-cpanel-deployment
-          ref: 57aacf3e6f7c1972e1fd0f09eb459c85635900e7
+          ref: 5f635730a4ddbac1d10c2a031ac0b4a102066fe2
           path: .shared-cpanel-deployment
           persist-credentials: false
 

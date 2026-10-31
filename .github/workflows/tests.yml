@@ -268,7 +268,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bherila/shared-cpanel-deployment
-          ref: 57aacf3e6f7c1972e1fd0f09eb459c85635900e7
+          ref: 5f635730a4ddbac1d10c2a031ac0b4a102066fe2
           path: .shared-cpanel-deployment
           persist-credentials: false
 
@@ -707,7 +707,7 @@ jobs:
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
         id: deploy
-        uses: bherila/shared-cpanel-deployment@57aacf3e6f7c1972e1fd0f09eb459c85635900e7 # v2.4.0
+        uses: bherila/shared-cpanel-deployment@5f635730a4ddbac1d10c2a031ac0b4a102066fe2 # v2.5.0
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
