@@ -11,3 +11,13 @@ All edits, pauses and generation serialize on the schedule row. The cursor and n
 The manager page is paginated at 25 schedules. `pnpm test:layout` covers its initial, create and edit states at 390, 820, 1440 and 1920 with synthetic oversized company/project/description values. Occurrences use the ordinary expense lifecycle and do not inherit receipt attachments or approval stamps from other expenses.
 
 The MariaDB test lane runs independent processes for generation/generation and both generation/pause orderings. It observes an actual InnoDB lock wait before releasing the first writer and verifies the resulting occurrence count and cursor. SQLite skips these cases explicitly.
+
+The browser uses the same `/api/v1` schedule create, update and generate operations
+as REST and MCP. Creation names the client company version; later moves name the
+schedule version. Every logical attempt retains its idempotency key across a lost
+response, and generation explicitly confirms the displayed batch action. The old
+web mutation routes are retired. Amount inputs may be positive decimal digit
+strings as well as integers; the additive `amount_exact` response preserves all
+64-bit minor-unit digits for browser clients. Existing integer `amount` responses
+remain available. No conversion through a JavaScript floating-point number is
+needed for an edit.

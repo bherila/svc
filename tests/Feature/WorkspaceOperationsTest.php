@@ -19,12 +19,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 class WorkspaceOperationsTest extends TestCase
 {
     use AssertsSurfaceIsolation;
+    use CallsInvoiceApi;
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
@@ -101,21 +103,19 @@ class WorkspaceOperationsTest extends TestCase
                 ->where('workspace.clients.0.billing_schedules.0.agreement_id', $agreement->public_id)
                 ->has('workspace.clients.0.invoices', 1));
 
-        $this->actingAs($manager)->from($operationsPath)->post(
-            "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices",
+        $this->createInvoiceApi($manager, $workspace, $company,
             [
                 'invoice_number' => 'SYN-002',
                 'currency' => 'USD',
-                'lines' => [[
+                'manual_lines' => [[
                     'type' => 'service',
                     'description' => 'Synthetic service',
                     'quantity' => '1',
                     'unit_amount' => 2500,
                     'tax_amount' => 0,
-                    'sort_order' => 0,
                 ]],
             ],
-        )->assertRedirect($operationsPath);
+        )->assertCreated();
         $this->assertDatabaseHas('client_invoices', [
             'workspace_id' => $workspace->id,
             'invoice_number' => 'SYN-002',
@@ -209,6 +209,9 @@ class WorkspaceOperationsTest extends TestCase
         $workspace = Workspace::query()->create(['name' => 'Synthetic Query Scope', 'slug' => 'synthetic-query-scope']);
         $workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
 
+        // Both measurements start inside the entered workspace; remembering a
+        // return point on the first navigation is a separate one-time write.
+        $manager->forceFill(['last_workspace_id' => $workspace->id])->save();
         $singleCompanyQueries = null;
         foreach (range(1, 4) as $companyNumber) {
             $company = ClientCompany::query()->create([
@@ -294,7 +297,11 @@ class WorkspaceOperationsTest extends TestCase
         // The shared file reader adds two current actor authority lookups,
         // independent of the number of companies, parents and files.
         $this->assertSame($singleCompanyQueries, count($queries));
-        $this->assertLessThanOrEqual(14, count($queries));
+        // The page now renders WorkspaceShell: five fixed navigation queries
+        // (staff access, manager role, staff role, portal grants, client list)
+        // join the existing fourteen-query controller/binding ceiling. Growth
+        // from one to four companies must still add no query at all.
+        $this->assertLessThanOrEqual(14 + 5, count($queries));
 
         $attachmentQueries = collect($queries)->filter(
             fn (array $query): bool => str_contains($query['query'], 'client_attachments'),

@@ -1,13 +1,15 @@
-import { Link, useForm } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     CollaborationErrors,
     RemoveContent,
     VisibilityControl,
 } from '@/components/collaboration/content-controls';
+import { useCollaborationMutation } from '@/components/collaboration/use-collaboration-mutation';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useVersionedDraft } from '@/hooks/use-versioned-draft';
 import { formatTimestamp } from '@/lib/datetime';
 import type {
     CollaborationContent,
@@ -21,25 +23,36 @@ function CommentEditor({
     comment: CollaborationContent;
     onCancel: () => void;
 }) {
-    const form = useForm({
-        body: comment.body ?? '',
-        expected_version: comment.version,
-    });
+    const form = useVersionedDraft(
+        {
+            body: comment.body ?? '',
+        },
+        comment.version,
+        false,
+    );
+    const mutation = useCollaborationMutation();
 
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-3"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.patch(comment.update_href!, {
-                    preserveScroll: true,
-                    onSuccess: onCancel,
-                });
+                const submitted = { ...form.data };
+                void mutation.run(
+                    'PATCH',
+                    comment.update_href!,
+                    { ...submitted, expected_version: form.version },
+                    (saved) => {
+                        form.saved(submitted, saved.version);
+                        onCancel();
+                    },
+                );
             }}
         >
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 Edit comment
                 <Textarea
+                    disabled={mutation.locked}
                     required
                     maxLength={50000}
                     value={form.data.body}
@@ -49,12 +62,19 @@ function CommentEditor({
                     className="min-h-32"
                 />
             </label>
-            <CollaborationErrors errors={form.errors} />
+            <CollaborationErrors errors={mutation.errors} />
             <div className="flex flex-wrap gap-2">
-                <Button disabled={form.processing} type="submit">
-                    Save comment
+                <Button disabled={mutation.pending} type="submit">
+                    {mutation.unresolved
+                        ? 'Check original change'
+                        : 'Save comment'}
                 </Button>
-                <Button variant="outline" type="button" onClick={onCancel}>
+                <Button
+                    variant="outline"
+                    type="button"
+                    disabled={mutation.locked}
+                    onClick={onCancel}
+                >
                     Cancel
                 </Button>
             </div>
@@ -64,6 +84,7 @@ function CommentEditor({
 
 function Comment({ comment }: { comment: CollaborationContent }) {
     const [editing, setEditing] = useState(false);
+    const [uploadPending, setUploadPending] = useState(false);
 
     return (
         <article
@@ -82,7 +103,7 @@ function Comment({ comment }: { comment: CollaborationContent }) {
                 </p>
             ) : editing && comment.update_href ? (
                 <CommentEditor
-                    key={comment.version}
+                    key={comment.id}
                     comment={comment}
                     onCancel={() => setEditing(false)}
                 />
@@ -94,15 +115,17 @@ function Comment({ comment }: { comment: CollaborationContent }) {
             {!comment.deleted &&
                 comment.attachment_panel &&
                 (comment.attachment_panel.files.length > 0 ||
-                    comment.attachment_panel.upload !== null) && (
+                    comment.attachment_panel.upload !== null ||
+                    uploadPending) && (
                     <details className="min-w-0">
                         <summary className="cursor-pointer text-sm">
                             Files
                         </summary>
                         <div className="min-w-0 pt-3">
                             <AttachmentSharingPanel
-                                key={comment.attachment_panel.parent_version}
+                                key={comment.id}
                                 panel={comment.attachment_panel}
+                                onUploadPendingChange={setUploadPending}
                             />
                         </div>
                     </details>
@@ -110,7 +133,7 @@ function Comment({ comment }: { comment: CollaborationContent }) {
             {!comment.deleted && (
                 <>
                     <VisibilityControl
-                        key={`sharing-${comment.version}`}
+                        key={`sharing-${comment.id}`}
                         content={comment}
                     />
                     <div className="flex flex-wrap items-start gap-2">
@@ -124,7 +147,7 @@ function Comment({ comment }: { comment: CollaborationContent }) {
                             </Button>
                         )}
                         <RemoveContent
-                            key={`remove-${comment.version}`}
+                            key={`remove-${comment.id}`}
                             content={comment}
                         />
                     </div>
@@ -135,26 +158,34 @@ function Comment({ comment }: { comment: CollaborationContent }) {
 }
 
 function NewComment({ thread }: { thread: CollaborationThread }) {
-    const form = useForm({
-        body: '',
-        is_visible_to_client: false,
-        expected_version: thread.parent_version,
-    });
+    const form = useVersionedDraft(
+        {
+            body: '',
+            is_visible_to_client: false as boolean,
+        },
+        thread.parent_version,
+        false,
+    );
+    const mutation = useCollaborationMutation();
 
     return (
         <form
             className="grid min-w-0 grid-cols-1 gap-3 rounded-lg border p-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.post(thread.store_href!, {
-                    preserveScroll: false,
-                    onSuccess: () => form.reset('body', 'is_visible_to_client'),
-                });
+                void mutation.run(
+                    'POST',
+                    thread.store_href!,
+                    { ...form.data, expected_version: form.version },
+                    undefined,
+                    true,
+                );
             }}
         >
             <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                 New comment
                 <Textarea
+                    disabled={mutation.locked}
                     required
                     maxLength={50000}
                     value={form.data.body}
@@ -168,6 +199,7 @@ function NewComment({ thread }: { thread: CollaborationThread }) {
                 <label className="flex items-center gap-2 text-sm">
                     <input
                         type="checkbox"
+                        disabled={mutation.locked}
                         checked={form.data.is_visible_to_client}
                         onChange={(event) =>
                             form.setData(
@@ -179,13 +211,13 @@ function NewComment({ thread }: { thread: CollaborationThread }) {
                     Visible to client
                 </label>
             )}
-            <CollaborationErrors errors={form.errors} />
+            <CollaborationErrors errors={mutation.errors} />
             <Button
                 type="submit"
-                disabled={form.processing}
+                disabled={mutation.pending}
                 className="justify-self-start"
             >
-                Add comment
+                {mutation.unresolved ? 'Check original change' : 'Add comment'}
             </Button>
         </form>
     );
@@ -224,7 +256,7 @@ export default function CommentThread({
                 )}
             </nav>
             {thread.store_href && (
-                <NewComment key={thread.parent_version} thread={thread} />
+                <NewComment key={thread.href} thread={thread} />
             )}
         </section>
     );

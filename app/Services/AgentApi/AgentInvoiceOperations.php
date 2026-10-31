@@ -5,6 +5,7 @@ namespace App\Services\AgentApi;
 use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
@@ -16,9 +17,11 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ExplicitConfirmation;
+use App\Support\AgentApi\InvoiceSendResult;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Concurrency\Locks;
 use Closure;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -111,9 +114,10 @@ final class AgentInvoiceOperations
      *
      * @param  array<string, mixed>  $body
      */
-    public function send(User $actor, Workspace $workspace, string $client, string $key, string $invoice, array $body): ClientInvoice
+    public function send(User $actor, Workspace $workspace, string $client, string $key, string $invoice, array $body): InvoiceSendResult
     {
-        $ids = $this->run('invoices.send', $actor, $workspace, $client, $key, ['invoice_id' => $invoice, 'body' => $body], function () use ($actor, $workspace, $invoice, $body): string {
+        $this->authorize($actor, $workspace);
+        $ids = $this->mutations->run($actor, $workspace, $client, 'invoices.send', $key, ['invoice_id' => $invoice, 'body' => $body], function () use ($actor, $workspace, $invoice, $body): array {
             $data = $this->validateFields($body, [
                 'expected_version' => ['required', 'string', 'size:64'],
                 'confirm' => ['required', new ExplicitConfirmation],
@@ -123,9 +127,9 @@ final class AgentInvoiceOperations
                 'message' => ['sometimes', 'nullable', 'string', 'max:'.InvoiceEmailDraft::MESSAGE_MAX_LENGTH],
                 'bcc_self' => ['sometimes', 'boolean:strict'],
             ]);
-            $record = $this->invoice($workspace, $invoice);
+            $record = $this->invoice($workspace, $invoice, lock: true);
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
-            $this->email->sendAfterCommit($record, InvoiceEmailDraft::composed(
+            $delivery = $this->email->sendAfterCommit($record, InvoiceEmailDraft::composed(
                 array_values($data['recipients']),
                 (string) $actor->email,
                 ($data['bcc_self'] ?? false) === true,
@@ -134,10 +138,18 @@ final class AgentInvoiceOperations
                 $data['message'] ?? null,
             ), $workspace);
 
-            return $record->public_id;
-        });
+            return [$record->public_id, $delivery->public_id];
+        }, fn (array $ids) => $this->authorize($actor, $workspace));
 
-        return $this->invoice($workspace, $ids[0]);
+        $record = $this->invoice($workspace, $ids[0]);
+        // Old receipts contain only an invoice id. Never guess their delivery
+        // from the newest row: a later, unrelated send may already exist.
+        $delivery = isset($ids[1]) ? ClientInvoiceEmailDelivery::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_invoice_id', $record->id)
+            ->where('public_id', $ids[1])->first() : null;
+
+        return new InvoiceSendResult($record, $delivery);
     }
 
     /** @param array<string, mixed> $body */
@@ -341,8 +353,13 @@ final class AgentInvoiceOperations
         abort_unless($this->access->isWorkspaceManager($actor, $workspace), 403);
     }
 
-    private function invoice(Workspace $workspace, string $id): ClientInvoice
+    private function invoice(Workspace $workspace, string $id, bool $lock = false): ClientInvoice
     {
-        return ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->whereHas('clientCompany', fn ($companies) => $companies->where('workspace_id', $workspace->id))->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)])->firstOrFail();
+        $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->whereHas('clientCompany', fn ($companies) => $companies->where('workspace_id', $workspace->id))->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)]);
+        if ($lock) {
+            $query->tap(Locks::forUpdate());
+        }
+
+        return $query->firstOrFail();
     }
 }

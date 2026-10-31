@@ -1,5 +1,5 @@
-import { router } from '@inertiajs/react';
 import { useState } from 'react';
+import { useClientChange } from '@/components/clients/use-client-change';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { visitPage } from '@/lib/visit-page';
 
 /**
  * Adding a client, from the control that switches between them.
@@ -23,51 +24,57 @@ import { Label } from '@/components/ui/label';
  * thing they just made is the thing they are looking at.
  */
 export function NewClientDialog({
-    workspaceId,
+    action,
     open,
     onOpenChange,
 }: {
-    workspaceId: string;
+    action: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
     const [name, setName] = useState('');
     const [billingEmail, setBillingEmail] = useState('');
-    const [error, setError] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
+    const change = useClientChange();
 
     const submit = () => {
-        if (saving) {
-            return;
-        }
-
-        setSaving(true);
-        router.post(
-            `/workspaces/${workspaceId}/clients`,
+        void change.run(
+            'POST',
+            action,
             {
                 name,
                 billing_email: billingEmail === '' ? null : billingEmail,
             },
-            {
-                onSuccess: () => {
-                    setName('');
-                    setBillingEmail('');
-                    setError(null);
-                    onOpenChange(false);
-                },
-                onError: (errors) =>
-                    setError(
-                        Object.values(errors)[0] ??
-                            'That client could not be created.',
-                    ),
-                onFinish: () => setSaving(false),
+            async (result) => {
+                const destination = result.location;
+
+                if (!destination) {
+                    throw new Error(
+                        'The finished client destination is missing.',
+                    );
+                }
+
+                await visitPage(destination);
+                setName('');
+                setBillingEmail('');
+                onOpenChange(false);
             },
+            { requireLocation: true },
         );
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                if (!change.busy) {
+                    onOpenChange(next);
+                }
+            }}
+        >
+            <DialogContent
+                className="sm:max-w-md"
+                showCloseButton={!change.busy}
+            >
                 <DialogHeader>
                     <DialogTitle>Add client</DialogTitle>
                     <DialogDescription>
@@ -85,6 +92,7 @@ export function NewClientDialog({
                     <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="new-client-name">Name</Label>
                         <Input
+                            disabled={change.locked}
                             id="new-client-name"
                             value={name}
                             required
@@ -98,6 +106,7 @@ export function NewClientDialog({
                             Billing email
                         </Label>
                         <Input
+                            disabled={change.locked}
                             id="new-client-billing-email"
                             type="email"
                             value={billingEmail}
@@ -107,23 +116,40 @@ export function NewClientDialog({
                         />
                     </div>
 
-                    {error !== null && (
+                    {change.error !== null && (
                         <p role="alert" className="text-sm text-destructive">
-                            {error}
+                            {change.error}
                         </p>
                     )}
 
                     <DialogFooter>
                         <DialogClose
                             render={
-                                <Button variant="outline" type="button">
+                                <Button
+                                    variant="outline"
+                                    type="button"
+                                    disabled={change.busy}
+                                >
                                     Cancel
                                 </Button>
                             }
                         />
-                        <Button type="submit" disabled={saving || name === ''}>
+                        <Button
+                            type="submit"
+                            disabled={change.locked || name === ''}
+                        >
                             Add client
                         </Button>
+                        {change.unresolved && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={change.busy}
+                                onClick={() => void change.check()}
+                            >
+                                Check original change
+                            </Button>
+                        )}
                     </DialogFooter>
                 </form>
             </DialogContent>

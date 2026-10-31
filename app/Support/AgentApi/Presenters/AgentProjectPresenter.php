@@ -8,6 +8,21 @@ use App\Support\AgentApi\AgentApiVersion;
 
 final class AgentProjectPresenter
 {
+    /** @return array{id: string, name: string} */
+    public static function identity(ClientProject $project): array
+    {
+        return ['id' => $project->public_id, 'name' => $project->name];
+    }
+
+    /** Safe core fields shared by resource and native detail projections.
+     * @return array{id: string, name: string, description: ?string, status: string, is_visible_to_client: bool}
+     */
+    public static function summary(ClientProject $project): array
+    {
+        return self::identity($project) + ['description' => $project->description,
+            'status' => $project->status, 'is_visible_to_client' => $project->is_visible_to_client];
+    }
+
     /**
      * @param  bool  $includeRepository  False for a portal client. The mapping
      *                                   names an internal host, organization and
@@ -19,12 +34,14 @@ final class AgentProjectPresenter
      */
     public function present(Workspace $workspace, ClientProject $project, bool $includeRepository): array
     {
+        $summary = self::summary($project);
+
         return [
-            'id' => $project->public_id,
+            'id' => $summary['id'],
             'company_id' => $project->clientCompany->public_id,
             'company_name' => $project->clientCompany->name,
-            'name' => $project->name,
-            'description' => $project->description,
+            'name' => $summary['name'],
+            'description' => $summary['description'],
             // The canonical `host/owner/name` this project is worked in, or
             // null when nobody has said. An internal caller resolves its own
             // checkout by normalizing its remote the same way and comparing;
@@ -36,8 +53,8 @@ final class AgentProjectPresenter
             // afterwards, which would also have dropped any other field whose
             // value happened to equal the sentinel.
             ...($includeRepository ? ['repository' => $project->repository] : []),
-            'status' => $project->status,
-            'is_visible_to_client' => $project->is_visible_to_client,
+            'status' => $summary['status'],
+            'is_visible_to_client' => $summary['is_visible_to_client'],
             'version' => AgentApiVersion::for($project),
             'web_url' => route('workspaces.operations', $workspace).'?project='.$project->public_id,
         ];

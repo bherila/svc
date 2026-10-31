@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Tasks;
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
@@ -10,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -50,6 +52,34 @@ final class TaskWebPaginationTest extends TestCase
             $response->assertInertia(fn (Assert $page) => $page->where('task_management', null)->where('tasks.0.detail_url', null));
             $this->get(route('tasks.show', [$workspace, $this->taskById($workspace, $ids[0])]))->assertForbidden();
         }
+    }
+
+    #[DataProvider('creationBoundaries')]
+    public function test_session_creation_publishes_new_continuation_links_in_the_partial_refresh(int $limit, string $pageName, string $continuation): void
+    {
+        [$workspace, $company, $project, $actor, $ids] = $this->fixture('workspace_owner');
+        ClientTask::query()->where('workspace_id', $workspace->id)->whereNotIn('public_id', array_slice($ids, 0, $limit))->delete();
+        $pageUrl = $pageName === 'clients/project' ? route('clients.project', [$workspace, $company, $project]) : route('clients.tasks', [$workspace, $company]);
+        $this->actingAs($actor, 'web')->get($pageUrl)->assertOk()->assertInertia(fn (Assert $page) => $page->where($continuation, null));
+        $this->actingAs($actor, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-boundary-'.$limit)
+            ->postJson(route('agent-api.v1.tasks.store', [$workspace, $project->public_id]), ['title' => 'ZZZ Synthetic newly overflowed task'])->assertCreated();
+        $refresh = $this->actingAs($actor, 'web')->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/')) ?? '',
+            'X-Inertia-Partial-Component' => $pageName,
+            'X-Inertia-Partial-Data' => 'tasks,task_management,tasks_next_href,pagination',
+        ])->get($pageUrl)->assertOk()->assertJsonCount($limit, 'props.tasks');
+        $next = data_get($refresh->json('props'), $continuation);
+        $this->assertIsString($next);
+        $this->withoutHeader('X-Inertia')->withoutHeader('X-Inertia-Version')->withoutHeader('X-Inertia-Partial-Component')->withoutHeader('X-Inertia-Partial-Data');
+        $this->get($next)->assertOk()->assertSee('ZZZ Synthetic newly overflowed task');
+    }
+
+    public static function creationBoundaries(): iterable
+    {
+        yield 'project preview crosses 25' => [25, 'clients/project', 'tasks_next_href'];
+        yield 'company task list crosses 50' => [50, 'clients/tasks', 'pagination.next_href'];
     }
 
     public function test_project_filter_and_pagination_never_expand_the_actor_company_or_workspace_scope(): void

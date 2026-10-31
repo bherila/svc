@@ -9,6 +9,24 @@ use App\Support\AgentApi\TimeEntryAllocation;
 
 final class AgentTimeEntryPresenter
 {
+    /** Pure summary preserves the caller's explicit internal/client description policy.
+     * @return array{id:string,worked_on:string,minutes:int,description:?string,status:string,is_billable:bool,is_deferred:bool} */
+    public static function summary(ClientTimeEntry $entry, bool $useClientDescription = false, bool $compact = false): array
+    {
+        return ['id' => $entry->public_id, 'worked_on' => $entry->worked_on->toDateString(),
+            'minutes' => $entry->minutes, 'description' => $compact ? null : ($useClientDescription ? $entry->client_visible_description : $entry->description),
+            'status' => $entry->status, 'is_billable' => $entry->is_billable, 'is_deferred' => $entry->is_deferred];
+    }
+
+    /** @return array{id:string,worked_on:string,project:?string,description:?string,minutes:int} */
+    public static function clientRow(ClientTimeEntry $entry, ?string $project): array
+    {
+        $facts = self::summary($entry, useClientDescription: true);
+
+        return ['id' => $facts['id'], 'worked_on' => $facts['worked_on'], 'project' => $project,
+            'description' => $facts['description'], 'minutes' => $facts['minutes']];
+    }
+
     /** @return array<string, \Closure> */
     public static function authorRelations(Workspace $workspace): array
     {
@@ -26,13 +44,7 @@ final class AgentTimeEntryPresenter
         bool $useClientDescription = false,
         bool $compact = false,
     ): array {
-        if (! $entry->relationLoaded('invoiceLines')) {
-            $entry->load(['invoiceLines' => fn ($lines) => $lines
-                ->where('client_invoice_lines.workspace_id', $workspace->id)
-                ->wherePivot('workspace_id', $workspace->id)
-                ->with(['invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)]),
-            ]);
-        }
+        $entry->loadMissing(TimeEntryAllocation::relations($workspace->id));
         $entry->loadMissing(self::authorRelations($workspace));
         $author = $entry->user;
         $authorId = $author !== null && $author->workspaces->contains('id', $workspace->id) ? $author->public_id : null;
@@ -46,20 +58,12 @@ final class AgentTimeEntryPresenter
         $payload = [
             'invoice_id' => $allocation->invoiceId,
             'allocation_state' => $allocation->state,
-            'id' => $entry->public_id,
+            ...self::summary($entry, $useClientDescription, $compact),
             'author_id' => $authorId,
             'project_id' => $entry->project->public_id,
             'task_id' => $taskId,
-            'worked_on' => $entry->worked_on->toDateString(),
-            'minutes' => $entry->minutes,
-            'description' => $compact ? null : ($useClientDescription
-                ? $entry->client_visible_description
-                : $entry->description),
-            'is_billable' => $entry->is_billable,
-            'is_deferred' => $entry->is_deferred,
             'is_visible_to_client' => $entry->is_visible_to_client,
             'client_visible_description' => $compact ? null : $entry->client_visible_description,
-            'status' => $entry->status,
             'version' => AgentApiVersion::for($entry),
             'web_url' => route('workspaces.operations', $workspace).'?time_entry='.$entry->public_id,
         ];

@@ -9,11 +9,14 @@ use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ProjectRole;
 use App\Support\Expenses\ExpenseStatus;
 use App\Support\Expenses\NewExpense;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\TestCase;
@@ -45,6 +48,7 @@ final class ExpenseSurfaceTest extends TestCase
     {
         parent::setUp();
 
+        $this->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40));
         $this->manager = User::factory()->create();
         $this->workspace = Workspace::query()->create(['name' => 'Expenses', 'slug' => 'expenses']);
         $this->workspace->memberships()->create(['user_id' => $this->manager->id, 'role' => 'admin']);
@@ -107,7 +111,7 @@ final class ExpenseSurfaceTest extends TestCase
         $expense = $this->expense();
         (new WorkspaceExpenses($this->workspace))->approve($expense, $this->manager);
         $this->actingAs($this->manager)->get($this->url())->assertOk()->assertInertia(fn (Assert $page) => $page->where('expenses.0.can_discard', false)->where('expenses.0.can_unapprove', true));
-        $this->actingAs($this->manager)->delete('/workspaces/'.$this->workspace->public_id.'/expenses/'.$expense->public_id)->assertSessionHasErrors('expense');
+        $this->actingAs($this->manager)->expenseRequest('DELETE', $expense)->assertConflict();
         $this->assertNull($expense->fresh()->deleted_at);
         $this->assertSame('approved', $expense->fresh()->status);
     }
@@ -115,21 +119,21 @@ final class ExpenseSurfaceTest extends TestCase
     public function test_web_currency_requires_the_same_uppercase_code_as_the_api(): void
     {
         $body = ['spent_on' => '2026-03-14', 'amount' => 100, 'currency' => 'usd', 'description' => 'Synthetic expense'];
-        $this->actingAs($this->manager)->postJson($this->url(), $body)->assertUnprocessable()->assertJsonValidationErrors('currency');
+        $this->actingAs($this->manager)->recordExpense($body)->assertUnprocessable()->assertJsonValidationErrors('entries.0.currency');
         $this->assertDatabaseCount('client_expenses', 0);
     }
 
     public function test_a_manager_records_approves_and_discards_an_expense(): void
     {
         $this->actingAs($this->manager)
-            ->post($this->url(), [
+            ->recordExpense([
                 'spent_on' => '2026-03-14',
                 'amount' => 4250,
                 'currency' => 'USD',
                 'description' => 'Courier',
                 'project_id' => $this->project->public_id,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $expense = ClientExpense::query()->sole();
         $this->assertSame('draft', $expense->status);
@@ -139,19 +143,19 @@ final class ExpenseSurfaceTest extends TestCase
         $this->assertSame($this->manager->id, $expense->created_by_user_id);
 
         $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}/approve")
-            ->assertRedirect();
+            ->expenseRequest('POST', $expense, 'approve')
+            ->assertSuccessful();
         $this->assertSame('approved', $expense->fresh()?->status);
 
         $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}/unapprove")
-            ->assertRedirect();
+            ->expenseRequest('POST', $expense, 'unapprove')
+            ->assertSuccessful();
         $this->assertSame('draft', $expense->fresh()?->status);
         $this->assertNull($expense->fresh()?->approved_at);
 
         $this->actingAs($this->manager)
-            ->delete("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}")
-            ->assertRedirect();
+            ->expenseRequest('DELETE', $expense)
+            ->assertSuccessful();
         $this->assertNull(ClientExpense::query()->find($expense->id));
     }
 
@@ -170,14 +174,13 @@ final class ExpenseSurfaceTest extends TestCase
 
         $this->actingAs($this->manager)
             ->from($this->url())
-            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+            ->expenseRequest('PATCH', $expense, '', [
                 'spent_on' => '2026-03-14',
                 'amount' => 9999,
                 'currency' => 'USD',
                 'description' => 'Rewritten after approval',
             ])
-            ->assertRedirect($this->url())
-            ->assertSessionHasErrors('expense');
+            ->assertConflict();
 
         // And the approved amount is the amount that was approved.
         $this->assertSame(4250, (int) $expense->fresh()?->amount);
@@ -195,8 +198,8 @@ final class ExpenseSurfaceTest extends TestCase
 
         $this->actingAs($other)
             ->from($this->url())
-            ->post("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}/approve")
-            ->assertSessionHasErrors('expense');
+            ->expenseRequest('POST', $expense, 'approve')
+            ->assertConflict();
 
         $this->assertSame($firstApprover, $expense->fresh()?->approved_by_user_id);
     }
@@ -215,14 +218,14 @@ final class ExpenseSurfaceTest extends TestCase
 
         $this->actingAs($this->manager)
             ->from($this->url())
-            ->post($this->url(), [
+            ->recordExpense([
                 'spent_on' => '2026-03-14',
                 'amount' => 4250,
                 'currency' => 'USD',
                 'description' => 'Courier',
                 'project_id' => $theirs->public_id,
             ])
-            ->assertSessionHasErrors('project_id');
+            ->assertNotFound();
 
         $this->assertSame(0, ClientExpense::query()->count());
     }
@@ -247,7 +250,7 @@ final class ExpenseSurfaceTest extends TestCase
         );
 
         $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/expenses/{$foreign->public_id}/approve")
+            ->expenseRequest('POST', $foreign, 'approve')
             ->assertNotFound();
 
         $this->assertSame('draft', $foreign->fresh()?->status);
@@ -279,7 +282,7 @@ final class ExpenseSurfaceTest extends TestCase
                 ->where('expenses.0.can_discard', false));
 
         $this->actingAs($member)
-            ->post($this->url(), [
+            ->recordExpense([
                 'spent_on' => '2026-03-14',
                 'amount' => 4250,
                 'currency' => 'USD',
@@ -396,35 +399,35 @@ final class ExpenseSurfaceTest extends TestCase
 
         // Named: it moves.
         $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+            ->expenseRequest('PATCH', $expense, '', [
                 ...$facts,
                 'project_id' => $elsewhere->public_id,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
         $this->assertSame($elsewhere->id, $expense->fresh()?->client_project_id);
 
         // Cleared explicitly: it clears.
         $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+            ->expenseRequest('PATCH', $expense, '', [
                 ...$facts,
                 'project_id' => null,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
         $this->assertNull($expense->fresh()?->client_project_id);
 
         // Absent: an edit to the money alone leaves the attribution alone.
         $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+            ->expenseRequest('PATCH', $expense, '', [
                 ...$facts,
                 'project_id' => $elsewhere->public_id,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
         $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/expenses/{$expense->public_id}", [
+            ->expenseRequest('PATCH', $expense, '', [
                 ...$facts,
                 'amount' => 6000,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
         $this->assertSame($elsewhere->id, $expense->fresh()?->client_project_id);
         $this->assertSame(6000, (int) $expense->fresh()?->amount);
     }
@@ -485,6 +488,42 @@ final class ExpenseSurfaceTest extends TestCase
                 }
             },
         );
+    }
+
+    public function test_browser_mutations_require_current_versions_and_replay_one_logical_recording(): void
+    {
+        $expense = $this->expense();
+        $this->actingAs($this->manager);
+        $stale = AgentApiVersion::for($expense);
+        $this->expenseRequest('POST', $expense, 'approve')->assertOk();
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson(
+            route('agent-api.v1.expenses.unapprove', [$this->workspace, $expense->public_id]),
+            ['expected_version' => $stale],
+        )->assertConflict();
+        $this->assertSame('approved', $expense->fresh()->status);
+        $body = ['entries' => [['company_id' => $this->company->public_id, 'spent_on' => '2030-01-01', 'amount' => 1250, 'currency' => 'USD', 'description' => 'Synthetic retry']]];
+        $url = route('agent-api.v1.expenses.store', $this->workspace);
+        $this->withHeader('Idempotency-Key', 'synthetic-browser-retry')->postJson($url, $body)->assertCreated();
+        $this->postJson($url, $body)->assertCreated();
+        $this->assertSame(1, ClientExpense::query()->where('description', 'Synthetic retry')->count());
+    }
+
+    /** @param array<string, mixed> $facts */
+    private function recordExpense(array $facts): TestResponse
+    {
+        return $this->withHeader('Idempotency-Key', (string) Str::uuid())->postJson(
+            route('agent-api.v1.expenses.store', $this->workspace),
+            ['entries' => [['company_id' => $this->company->public_id, ...$facts]]],
+        );
+    }
+
+    /** @param array<string, mixed> $facts */
+    private function expenseRequest(string $method, ClientExpense $expense, string $action = '', array $facts = []): TestResponse
+    {
+        $url = '/api/v1/workspaces/'.$this->workspace->public_id.'/expenses/'.$expense->public_id.($action === '' ? '' : '/'.$action);
+
+        return $this->withHeader('Idempotency-Key', (string) Str::uuid())->json($method, $url,
+            ['expected_version' => AgentApiVersion::for($expense->fresh()), ...$facts]);
     }
 
     private function url(): string

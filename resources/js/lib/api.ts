@@ -5,7 +5,7 @@ export type ApiSchema<Name extends keyof components['schemas']> =
     components['schemas'][Name];
 
 export type ApiResult<T> =
-    | { ok: true; status: number; data: T }
+    | { ok: true; status: number; data: T; location?: string }
     | {
           ok: false;
           status: number;
@@ -84,13 +84,33 @@ export async function apiRequest<T = unknown>(
         };
     }
 
-    const payload: unknown = await response.json().catch(() => null);
+    let payload: unknown = null;
+
+    try {
+        payload = await response.json();
+    } catch {
+        if (response.ok && response.status !== 204 && response.status !== 205) {
+            return {
+                ok: false,
+                status: 0,
+                message:
+                    'SVC’s response could not be read. Retry to check the original change.',
+            };
+        }
+    }
 
     if (response.ok) {
         const data =
             isRecord(payload) && 'data' in payload ? payload.data : payload;
 
-        return { ok: true, status: response.status, data: data as T };
+        const location = response.headers.get('Location');
+
+        return {
+            ok: true,
+            status: response.status,
+            data: data as T,
+            ...(location ? { location } : {}),
+        };
     }
 
     const errors = fieldErrors(payload);

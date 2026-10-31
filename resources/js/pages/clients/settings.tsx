@@ -1,4 +1,5 @@
 import { Head, useForm } from '@inertiajs/react';
+import { useRef, useState } from 'react';
 import { PaymentReminderCadenceCard } from '@/components/billing/payment-reminders';
 import type { CompanyRemindersState } from '@/components/billing/payment-reminders';
 import { ClientContacts } from '@/components/clients/client-contacts';
@@ -7,6 +8,8 @@ import { CompanyProfile } from '@/components/clients/company-profile';
 import type { CompanyProfileData } from '@/components/clients/company-profile';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
+import { useClientChange } from '@/components/clients/use-client-change';
+import { useClientDraft } from '@/components/clients/use-client-draft';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,15 +17,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { cn } from '@/lib/utils';
 
 type ManagedCompany = {
     id: string;
+    version: string;
+    update_url: string;
     name: string;
     billing_email: string | null;
     automatic_invoice_email_enabled?: boolean;
@@ -43,8 +51,16 @@ type ManagedProject = {
     repository: string | null;
     status: string;
     is_visible_to_client: boolean;
-    lock_version: number;
+    version: string;
+    update_url: string;
+    members_update_url: string;
     members: ProjectMember[];
+};
+
+type ProjectCreate = {
+    url: string;
+    company_id: string;
+    expected_version: string;
 };
 
 type AssignableMember = { id: string; name: string };
@@ -65,21 +81,130 @@ const PROJECT_ROLES = [
     { value: 'none', label: 'No access' },
 ] as const;
 
+/** Keep a retry on its original receipt until the server confirms the write. */
+function useProjectWrite() {
+    const attempt = useRef<{
+        method: 'POST' | 'PATCH' | 'PUT';
+        url: string;
+        body: object;
+        key: string;
+        uncertain: boolean;
+        saved?: ApiSchema<'ProjectResponse'>['data'];
+    } | null>(null);
+    const running = useRef(false);
+    const [busy, setBusy] = useState(false);
+    const [unresolved, setUnresolved] = useState(false);
+    const [confirmed, setConfirmed] = useState(false);
+    const [failure, setFailure] = useState<string | null>(null);
+    useUnknownWriteGuard(
+        () => attempt.current !== null && attempt.current.saved === undefined,
+        () =>
+            setFailure(
+                'Check the original project result before leaving this page.',
+            ),
+    );
+
+    async function write(
+        method: 'POST' | 'PATCH' | 'PUT',
+        url: string,
+        body: object,
+    ) {
+        if (running.current) {
+            return null;
+        }
+
+        running.current = true;
+        setBusy(true);
+        setFailure(null);
+        attempt.current ??= {
+            method,
+            url,
+            body: structuredClone(body),
+            key: newIdempotencyKey(),
+            uncertain: false,
+        };
+        const original = attempt.current;
+
+        try {
+            if (original.saved === undefined) {
+                const result = await apiRequest<
+                    ApiSchema<'ProjectResponse'>['data']
+                >(original.method, original.url, original.body, original.key);
+
+                if (!result.ok) {
+                    original.uncertain ||=
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    setUnresolved(original.uncertain);
+                    setFailure(
+                        Object.values(result.errors ?? {})
+                            .flat()
+                            .join(' ') || result.message,
+                    );
+
+                    if (!original.uncertain) {
+                        attempt.current = null;
+                    }
+
+                    return null;
+                }
+
+                if (
+                    !result.data ||
+                    typeof result.data.version !== 'string' ||
+                    typeof result.data.name !== 'string'
+                ) {
+                    original.uncertain = true;
+                    setUnresolved(true);
+                    setFailure(
+                        'SVC’s response could not be read. Check the original change.',
+                    );
+
+                    return null;
+                }
+
+                original.saved = result.data;
+                setConfirmed(true);
+            }
+
+            setUnresolved(true);
+            await refreshPageProps({
+                only: ['projects', 'project_create'],
+                requireSuccess: true,
+            });
+            const saved = original.saved;
+            attempt.current = null;
+            setUnresolved(false);
+            setConfirmed(false);
+
+            return saved;
+        } catch {
+            original.uncertain = true;
+            setUnresolved(true);
+            setFailure(
+                original.saved
+                    ? 'The project change was saved, but its page could not refresh. Refresh the saved result before editing again.'
+                    : 'The original project result could not be checked. Check the original change before editing again.',
+            );
+
+            return null;
+        } finally {
+            running.current = false;
+            setBusy(false);
+        }
+    }
+
+    return { busy, unresolved, confirmed, failure, write };
+}
+
 function ProjectAccess({
-    workspaceId,
-    companyId,
     project,
     assignable,
 }: {
-    workspaceId: string;
-    companyId: string;
     project: ManagedProject;
     assignable: AssignableMember[];
 }) {
-    const roleOf = (userId: string): string =>
-        project.members.find((member) => member.user === userId)?.role ??
-        'none';
-
     if (assignable.length === 0) {
         return (
             <p className="text-sm text-muted-foreground">
@@ -94,11 +219,12 @@ function ProjectAccess({
             {assignable.map((member) => (
                 <AccessRow
                     key={member.id}
-                    workspaceId={workspaceId}
-                    companyId={companyId}
-                    projectId={project.id}
+                    project={project}
                     member={member}
-                    role={roleOf(member.id)}
+                    role={
+                        project.members.find((row) => row.user === member.id)
+                            ?.role ?? 'none'
+                    }
                 />
             ))}
         </div>
@@ -106,46 +232,65 @@ function ProjectAccess({
 }
 
 function AccessRow({
-    workspaceId,
-    companyId,
-    projectId,
+    project,
     member,
     role,
 }: {
-    workspaceId: string;
-    companyId: string;
-    projectId: string;
+    project: ManagedProject;
     member: AssignableMember;
     role: string;
 }) {
-    const form = useForm({ user: member.id, role });
+    const mutation = useProjectWrite();
 
     return (
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span className="min-w-40">{member.name}</span>
-            <select
-                aria-label={`Access for ${member.name}`}
-                className="h-9 rounded-md border bg-transparent px-2"
-                value={form.data.role}
-                onChange={(event) => {
-                    // `setData` is asynchronous, so the request is transformed
-                    // to carry the value that was just chosen rather than
-                    // whichever one the state happens to hold when it fires.
-                    const next = event.target.value;
-                    form.setData('role', next);
-                    form.transform((data) => ({ ...data, role: next }));
-                    form.put(
-                        `/workspaces/${workspaceId}/clients/${companyId}/projects/${projectId}/access`,
-                        { preserveScroll: true },
-                    );
-                }}
-            >
-                {PROJECT_ROLES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
+        <div className="grid grid-cols-1 gap-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
+                <span className="min-w-0 wrap-anywhere">{member.name}</span>
+                <select
+                    aria-label={`Access for ${member.name}`}
+                    className="h-9 rounded-md border bg-transparent px-2"
+                    disabled={mutation.busy || mutation.unresolved}
+                    value={role}
+                    onChange={(event) =>
+                        void mutation.write('PUT', project.members_update_url, {
+                            user_id: member.id,
+                            role: event.target.value,
+                            expected_version: project.version,
+                            confirm: true,
+                        })
+                    }
+                >
+                    {PROJECT_ROLES.map((option) => (
+                        <option key={option.value} value={option.value}>
+                            {option.label}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            {mutation.failure && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-destructive"
+                >
+                    {mutation.failure}
+                </p>
+            )}
+            {mutation.unresolved && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={mutation.busy}
+                    onClick={() =>
+                        void mutation.write(
+                            'PUT',
+                            project.members_update_url,
+                            {},
+                        )
+                    }
+                >
+                    Check access change
+                </Button>
+            )}
         </div>
     );
 }
@@ -162,31 +307,52 @@ function AccessRow({
  * what the engagement *is*; this tab is the record around it - who the client
  * is, and what projects exist.
  */
-function CompanyForm({
-    workspaceId,
-    company,
-}: {
-    workspaceId: string;
-    company: ManagedCompany;
-}) {
-    const form = useForm({
-        name: company.name,
-        billing_email: company.billing_email ?? '',
-        automatic_invoice_email_enabled:
-            company.automatic_invoice_email_enabled ?? false,
-        automatic_invoice_email_delay_days:
-            company.automatic_invoice_email_delay_days ?? 0,
-        is_active: company.is_active,
-    });
+function CompanyForm({ company }: { company: ManagedCompany }) {
+    const form = useClientDraft(
+        {
+            name: company.name,
+            billing_email: company.billing_email ?? '',
+            automatic_invoice_email_enabled:
+                company.automatic_invoice_email_enabled ?? false,
+            automatic_invoice_email_delay_days:
+                company.automatic_invoice_email_delay_days ?? 0,
+            is_active: company.is_active,
+        },
+        company.version,
+    );
+
+    const change = useClientChange();
 
     return (
         <form
             className="grid grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.patch(`/workspaces/${workspaceId}/clients/${company.id}`, {
-                    preserveScroll: true,
-                });
+                const submitted = { ...form.data };
+                void change.run(
+                    'PATCH',
+                    company.update_url,
+                    {
+                        ...submitted,
+                        billing_email:
+                            submitted.billing_email === ''
+                                ? null
+                                : submitted.billing_email,
+                        expected_version: form.version,
+                    },
+                    async (result) => {
+                        form.saved(submitted, result.data.version);
+                        await refreshPageProps({
+                            only: [
+                                'company',
+                                'company_profile',
+                                'project_create',
+                                'workspaceNavigation',
+                            ],
+                            requireSuccess: true,
+                        });
+                    },
+                );
             }}
         >
             {/*
@@ -198,15 +364,16 @@ function CompanyForm({
             <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="company-name">Name</Label>
                 <Input
+                    disabled={change.locked}
                     id="company-name"
                     value={form.data.name}
                     onChange={(event) =>
                         form.setData('name', event.target.value)
                     }
                 />
-                {form.errors.name !== undefined && (
+                {change.errors.name !== undefined && (
                     <p className="text-sm text-destructive">
-                        {form.errors.name}
+                        {change.errors.name?.[0]}
                     </p>
                 )}
             </div>
@@ -214,6 +381,7 @@ function CompanyForm({
             <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="company-billing-email">Billing email</Label>
                 <Input
+                    disabled={change.locked}
                     id="company-billing-email"
                     type="email"
                     value={form.data.billing_email}
@@ -222,15 +390,16 @@ function CompanyForm({
                     }
                     placeholder="Not set"
                 />
-                {form.errors.billing_email !== undefined && (
+                {change.errors.billing_email !== undefined && (
                     <p className="text-sm text-destructive">
-                        {form.errors.billing_email}
+                        {change.errors.billing_email?.[0]}
                     </p>
                 )}
             </div>
 
             <div className="flex items-center gap-3">
                 <Switch
+                    disabled={change.locked}
                     id="company-active"
                     checked={form.data.is_active}
                     onCheckedChange={(next) =>
@@ -243,6 +412,7 @@ function CompanyForm({
             <div className="grid max-w-xl grid-cols-1 gap-3 rounded-lg border p-4">
                 <div className="flex items-center gap-3">
                     <Switch
+                        disabled={change.locked}
                         id="automatic-invoice-email"
                         checked={form.data.automatic_invoice_email_enabled}
                         onCheckedChange={(next) =>
@@ -263,6 +433,7 @@ function CompanyForm({
                             Days after issue
                         </Label>
                         <Input
+                            disabled={change.locked}
                             id="automatic-invoice-delay"
                             type="number"
                             min={0}
@@ -310,65 +481,92 @@ function CompanyForm({
                     )}
                 </div>
 
-                {form.errors.automatic_invoice_email_enabled !== undefined && (
-                    <p className="text-sm wrap-anywhere text-destructive">
-                        {form.errors.automatic_invoice_email_enabled}
-                    </p>
-                )}
-                {form.errors.automatic_invoice_email_delay_days !==
+                {change.errors.automatic_invoice_email_enabled !==
                     undefined && (
                     <p className="text-sm wrap-anywhere text-destructive">
-                        {form.errors.automatic_invoice_email_delay_days}
+                        {change.errors.automatic_invoice_email_enabled?.[0]}
+                    </p>
+                )}
+                {change.errors.automatic_invoice_email_delay_days !==
+                    undefined && (
+                    <p className="text-sm wrap-anywhere text-destructive">
+                        {change.errors.automatic_invoice_email_delay_days?.[0]}
                     </p>
                 )}
             </div>
 
             <div>
-                <Button type="submit" disabled={form.processing}>
+                {change.error && (
+                    <p role="alert" className="text-sm text-destructive">
+                        {change.error}
+                    </p>
+                )}
+                <Button type="submit" disabled={change.locked}>
                     Save client
                 </Button>
+                {change.unresolved && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={change.busy}
+                        onClick={() => void change.check()}
+                    >
+                        Check original change
+                    </Button>
+                )}
             </div>
         </form>
     );
 }
 
 function ProjectForm({
-    workspaceId,
-    companyId,
     project,
     assignable,
 }: {
-    workspaceId: string;
-    companyId: string;
     project: ManagedProject;
     assignable: AssignableMember[];
 }) {
     const form = useForm({
+        expected_version: project.version,
         name: project.name,
         description: project.description ?? '',
         repository: project.repository ?? '',
         status: project.status,
         is_visible_to_client: project.is_visible_to_client,
-        // Round-tripped unchanged. The server compares it to the row's current
-        // version and refuses the save if someone else has written since this
-        // form was rendered, which is the only way a stale but well-formed
-        // payload can be told from a deliberate one.
-        lock_version: project.lock_version,
     });
+
+    const mutation = useProjectWrite();
 
     return (
         <form
             className="grid grid-cols-1 gap-3 rounded-xl border p-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.patch(
-                    `/workspaces/${workspaceId}/clients/${companyId}/projects/${project.id}`,
-                    { preserveScroll: true },
-                );
+                void mutation
+                    .write('PATCH', project.update_url, {
+                        ...form.data,
+                        description: form.data.description || null,
+                        repository: form.data.repository || null,
+                        confirm: true,
+                    })
+                    .then((saved) => {
+                        if (saved) {
+                            form.setData({
+                                expected_version: saved.version,
+                                name: saved.name,
+                                description: saved.description ?? '',
+                                repository: saved.repository ?? '',
+                                status: saved.status,
+                                is_visible_to_client:
+                                    saved.is_visible_to_client,
+                            });
+                        }
+                    });
             }}
         >
             <div className="flex flex-wrap items-center gap-2">
                 <Input
+                    disabled={mutation.busy || mutation.unresolved}
                     aria-label={`Name of ${project.name}`}
                     value={form.data.name}
                     onChange={(event) =>
@@ -380,6 +578,7 @@ function ProjectForm({
             </div>
 
             <Textarea
+                disabled={mutation.busy || mutation.unresolved}
                 aria-label={`Description of ${project.name}`}
                 value={form.data.description}
                 onChange={(event) =>
@@ -398,6 +597,7 @@ function ProjectForm({
             <div className="grid grid-cols-1 gap-1">
                 <Label htmlFor={`repository-${project.id}`}>Repository</Label>
                 <Input
+                    disabled={mutation.busy || mutation.unresolved}
                     id={`repository-${project.id}`}
                     value={form.data.repository}
                     onChange={(event) =>
@@ -412,23 +612,19 @@ function ProjectForm({
                 ) : null}
             </div>
 
-            {/*
-                A refused save has to say so. The conflict case is the reason
-                this exists: the request is rejected, Inertia re-renders with
-                the operator's edits intact, and without a message on screen
-                that is indistinguishable from a save that worked - which is
-                the failure the version check was added to prevent, moved one
-                step later.
-            */}
-            {form.errors.lock_version ? (
-                <p role="alert" className="text-sm text-destructive">
-                    {form.errors.lock_version}
+            {mutation.failure && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-destructive"
+                >
+                    {mutation.failure}
                 </p>
-            ) : null}
+            )}
 
             <div className="flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-3">
                     <Switch
+                        disabled={mutation.busy || mutation.unresolved}
                         id={`visible-${project.id}`}
                         checked={form.data.is_visible_to_client}
                         onCheckedChange={(next) =>
@@ -441,6 +637,7 @@ function ProjectForm({
                 </div>
                 <div className="flex items-center gap-3">
                     <Switch
+                        disabled={mutation.busy || mutation.unresolved}
                         id={`archived-${project.id}`}
                         checked={form.data.status === 'archived'}
                         onCheckedChange={(next) =>
@@ -455,51 +652,63 @@ function ProjectForm({
                 <Button
                     type="submit"
                     variant="outline"
-                    disabled={form.processing}
+                    disabled={mutation.busy}
                 >
-                    Save project
+                    {mutation.confirmed
+                        ? 'Refresh saved project'
+                        : mutation.unresolved
+                          ? 'Check project save'
+                          : 'Save project'}
                 </Button>
             </div>
 
+            {mutation.unresolved && (
+                <p
+                    role="status"
+                    className="text-sm wrap-anywhere text-muted-foreground"
+                >
+                    {mutation.confirmed
+                        ? 'The change is saved. Refresh its result before editing again.'
+                        : 'The result is unknown. Check the original save before editing again.'}
+                </p>
+            )}
             <div className="grid grid-cols-1 gap-2 border-t pt-3">
                 <Label>Who can reach this project</Label>
-                <ProjectAccess
-                    workspaceId={workspaceId}
-                    companyId={companyId}
-                    project={project}
-                    assignable={assignable}
-                />
+                <ProjectAccess project={project} assignable={assignable} />
             </div>
         </form>
     );
 }
 
-function NewProjectForm({
-    workspaceId,
-    companyId,
-}: {
-    workspaceId: string;
-    companyId: string;
-}) {
+function NewProjectForm({ capability }: { capability: ProjectCreate }) {
     const form = useForm({ name: '', description: '' });
+
+    const mutation = useProjectWrite();
 
     return (
         <form
             className="grid grid-cols-1 gap-3"
             onSubmit={(event) => {
                 event.preventDefault();
-                form.post(
-                    `/workspaces/${workspaceId}/clients/${companyId}/projects`,
-                    {
-                        preserveScroll: true,
-                        onSuccess: () => form.reset(),
-                    },
-                );
+                void mutation
+                    .write('POST', capability.url, {
+                        ...form.data,
+                        description: form.data.description || null,
+                        company_id: capability.company_id,
+                        expected_version: capability.expected_version,
+                        confirm: true,
+                    })
+                    .then((saved) => {
+                        if (saved) {
+                            form.reset();
+                        }
+                    });
             }}
         >
             <div className="grid max-w-md grid-cols-1 gap-2">
                 <Label htmlFor="new-project-name">New project</Label>
                 <Input
+                    disabled={mutation.busy || mutation.unresolved}
                     id="new-project-name"
                     value={form.data.name}
                     onChange={(event) =>
@@ -513,9 +722,29 @@ function NewProjectForm({
                     </p>
                 )}
             </div>
+            {mutation.failure && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-destructive"
+                >
+                    {mutation.failure}
+                </p>
+            )}
+            {mutation.unresolved && (
+                <p
+                    role="status"
+                    className="text-sm wrap-anywhere text-muted-foreground"
+                >
+                    {mutation.confirmed
+                        ? 'The project is created. Refresh its result before creating another.'
+                        : 'The result is unknown. Check the original creation before editing again.'}
+                </p>
+            )}
             <div>
-                <Button type="submit" disabled={form.processing}>
-                    Add project
+                <Button type="submit" disabled={mutation.busy}>
+                    {mutation.unresolved
+                        ? 'Check project creation'
+                        : 'Add project'}
                 </Button>
             </div>
         </form>
@@ -523,9 +752,9 @@ function NewProjectForm({
 }
 
 export default function ClientManage({
-    workspace,
     company,
     projects,
+    project_create: projectCreate,
     assignable,
     portal,
     payment_reminders: paymentReminders = null,
@@ -541,6 +770,7 @@ export default function ClientManage({
     contacts?: ClientContact[];
     contact_create_action?: string;
     projects: ManagedProject[];
+    project_create: ProjectCreate;
     assignable: AssignableMember[];
     portal: PortalAccessProps['portal'];
     /** The client's automatic payment reminder cadence (#438). */
@@ -565,10 +795,7 @@ export default function ClientManage({
                         <CardTitle>Client</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <CompanyForm
-                            workspaceId={workspace.id}
-                            company={company}
-                        />
+                        <CompanyForm key={company.id} company={company} />
                     </CardContent>
                 </Card>
 
@@ -579,8 +806,10 @@ export default function ClientManage({
                         </CardHeader>
                         <CardContent>
                             <CompanyProfile
+                                key={company.id}
                                 profile={companyProfile}
                                 action={profileAction}
+                                version={company.version}
                             />
                         </CardContent>
                     </Card>
@@ -612,17 +841,12 @@ export default function ClientManage({
                             projects.map((project) => (
                                 <ProjectForm
                                     key={project.id}
-                                    workspaceId={workspace.id}
-                                    companyId={company.id}
                                     project={project}
                                     assignable={assignable}
                                 />
                             ))
                         )}
-                        <NewProjectForm
-                            workspaceId={workspace.id}
-                            companyId={company.id}
-                        />
+                        <NewProjectForm capability={projectCreate} />
                     </CardContent>
                 </Card>
 

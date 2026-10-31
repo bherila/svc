@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     AgreementTermsForm,
@@ -32,6 +32,7 @@ import type {
     AgreementFile,
     AgreementTerms,
 } from '@/types/agreement';
+import type { AttachmentPanel } from '@/types/files';
 
 type RecurringItem = {
     id: string;
@@ -78,11 +79,10 @@ function Term({
 }
 
 export default function ClientAgreementDetail({
-    company,
-    home_href: homeHref,
     audience,
     actions,
     files,
+    attachment_upload: attachmentUpload = null,
     files_next_href: nextFilesHref = null,
     files_previous_href: previousFilesHref = null,
     agreement,
@@ -95,6 +95,7 @@ export default function ClientAgreementDetail({
     audience: 'operator' | 'client';
     actions: AgreementActions;
     files: AgreementFile[];
+    attachment_upload?: AttachmentPanel['upload'];
     files_next_href?: string | null;
     files_previous_href?: string | null;
     agreement: AgreementTerms;
@@ -117,13 +118,7 @@ export default function ClientAgreementDetail({
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
-                <header className="grid grid-cols-1 gap-1">
-                    <Link
-                        href={homeHref}
-                        className="text-sm wrap-anywhere text-muted-foreground underline-offset-4 hover:underline"
-                    >
-                        ← {company.name}
-                    </Link>
+                <div className="grid grid-cols-1 gap-1">
                     <div className="flex flex-wrap items-center gap-3">
                         <AgreementTitle
                             agreement={agreement}
@@ -136,7 +131,7 @@ export default function ClientAgreementDetail({
                             <Badge variant="outline">One time</Badge>
                         )}
                     </div>
-                </header>
+                </div>
 
                 {forOperator && agreement.square_series_key !== undefined && (
                     <Card>
@@ -383,10 +378,9 @@ export default function ClientAgreementDetail({
                                     ...file,
                                     sharing: file.sharing ?? null,
                                 })),
-                                upload: null,
+                                upload: attachmentUpload,
                                 next_href: null,
                             }}
-                            legacyForms={{ upload_href: actions.upload_file }}
                             title="Attached files"
                         />
 

@@ -1,0 +1,439 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ClientSettings from '@/pages/clients/settings';
+
+const inertia = vi.hoisted(() => ({
+    reload: vi.fn(
+        (options: { onSuccess?: () => void; onFinish?: () => void }) => {
+            options.onSuccess?.();
+            options.onFinish?.();
+        },
+    ),
+}));
+vi.mock('@inertiajs/react', async () => {
+    const React = await import('react');
+
+    return {
+        Head: () => null,
+        router: inertia,
+        useForm: (initial: Record<string, unknown>) => {
+            const [data, setData] = React.useState(initial);
+
+            return {
+                data,
+                setData: (
+                    key: string | Record<string, unknown>,
+                    value: unknown,
+                ) =>
+                    setData((current) =>
+                        typeof key === 'string'
+                            ? { ...current, [key]: value }
+                            : key,
+                    ),
+                errors: {},
+                processing: false,
+                reset: () => setData(initial),
+            };
+        },
+    };
+});
+vi.mock('@/layouts/workspace-shell', () => ({
+    default: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock('@/components/clients/portal-access', () => ({
+    PortalAccess: () => null,
+}));
+
+const version = 'a'.repeat(64);
+const props = {
+    workspace: { id: 'workspace-1' },
+    company: {
+        id: 'client-1',
+        version,
+        update_url: '/synthetic/company-update',
+        name: 'Synthetic Client',
+        billing_email: null,
+        is_active: true,
+    },
+    project_create: {
+        url: '/synthetic/project-create',
+        company_id: 'client-1',
+        expected_version: version,
+    },
+    projects: [
+        {
+            id: 'project-1',
+            name: 'Synthetic Project',
+            description: 'Existing description',
+            repository: null,
+            status: 'active',
+            is_visible_to_client: true,
+            version,
+            update_url: '/synthetic/project-update',
+            members_update_url: '/synthetic/project-members',
+            members: [],
+        },
+    ],
+    assignable: [{ id: 'member-1', name: 'Synthetic Member' }],
+    portal: { members: [], add_url: '/synthetic/portal' },
+};
+let fetchMock: ReturnType<typeof vi.fn>;
+function respond(status: number, body: unknown) {
+    fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify(body), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+}
+function request(index = 0) {
+    const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
+
+    return {
+        url,
+        method: init.method,
+        body: JSON.parse(String(init.body)),
+        key: (init.headers as Record<string, string>)['Idempotency-Key'],
+    };
+}
+beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    inertia.reload.mockReset().mockImplementation((options) => {
+        options.onSuccess?.();
+        options.onFinish?.();
+    });
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe('project settings API mutations', () => {
+    it('sends current project facts and version to the server-provided URL', async () => {
+        respond(200, {
+            data: {
+                name: 'Synthetic Rename',
+                description: 'Existing description',
+                repository: null,
+                status: 'active',
+                is_visible_to_client: true,
+                version: 'b'.repeat(64),
+            },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+            target: { value: 'Synthetic Rename' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request()).toMatchObject({
+            url: '/synthetic/project-update',
+            method: 'PATCH',
+            body: {
+                name: 'Synthetic Rename',
+                description: 'Existing description',
+                repository: null,
+                status: 'active',
+                is_visible_to_client: true,
+                expected_version: version,
+                confirm: true,
+            },
+        });
+        expect(request().body).not.toHaveProperty('lock_version');
+    });
+
+    it('keeps a create retry on the same receipt after an uncertain network result', async () => {
+        fetchMock.mockRejectedValueOnce(
+            new TypeError('synthetic network loss'),
+        );
+        respond(201, {
+            data: {
+                ...props.projects[0],
+                name: 'Synthetic New Project',
+                version: 'b'.repeat(64),
+            },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.change(screen.getByLabelText('New project'), {
+            target: { value: 'Synthetic New Project' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Add project' }));
+        await screen.findByRole('alert');
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project creation' }),
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(0)).toEqual(request(1));
+        expect(request().body).toEqual({
+            name: 'Synthetic New Project',
+            description: null,
+            company_id: 'client-1',
+            expected_version: version,
+            confirm: true,
+        });
+        await waitFor(() =>
+            expect(screen.getByLabelText('New project')).toHaveValue(''),
+        );
+    });
+
+    it('shows a stale refusal and keeps the operator edits', async () => {
+        respond(409, {
+            message: 'This project has changed. Reload before saving.',
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+            target: { value: 'Unsaved edit' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'This project has changed',
+        );
+        expect(screen.getByLabelText('Name of Synthetic Project')).toHaveValue(
+            'Unsaved edit',
+        );
+        expect(inertia.reload).not.toHaveBeenCalled();
+    });
+
+    it('confirms a member grant and leaves the recorded role visible on failure', async () => {
+        respond(422, { message: 'Synthetic grant refused.' });
+        render(<ClientSettings {...props} />);
+        fireEvent.change(screen.getByLabelText('Access for Synthetic Member'), {
+            target: { value: 'viewer' },
+        });
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'Synthetic grant refused',
+        );
+        expect(
+            screen.getByLabelText('Access for Synthetic Member'),
+        ).toHaveValue('none');
+        expect(request()).toMatchObject({
+            url: '/synthetic/project-members',
+            method: 'PUT',
+            body: {
+                user_id: 'member-1',
+                role: 'viewer',
+                expected_version: version,
+                confirm: true,
+            },
+        });
+    });
+    it('keeps a draft paired with its old version when another project refreshes the list', async () => {
+        respond(409, {
+            message: 'The project has changed; read it and retry.',
+        });
+        const page = render(<ClientSettings {...props} />);
+        fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+            target: { value: 'Unsaved operator draft' },
+        });
+        page.rerender(
+            <ClientSettings
+                {...props}
+                projects={[
+                    {
+                        ...props.projects[0],
+                        name: 'Concurrent rename',
+                        is_visible_to_client: false,
+                        version: 'c'.repeat(64),
+                    },
+                ]}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        expect(request().body).toMatchObject({
+            name: 'Unsaved operator draft',
+            is_visible_to_client: true,
+            expected_version: version,
+        });
+        expect(screen.getByLabelText('Name of Concurrent rename')).toHaveValue(
+            'Unsaved operator draft',
+        );
+    });
+
+    it('reconciles an own successful save before advancing the editable version', async () => {
+        const saved = {
+            name: 'Synthetic saved project',
+            description: 'Saved scope',
+            repository: 'github.com/synthetic/project',
+            status: 'active',
+            is_visible_to_client: false,
+            version: 'b'.repeat(64),
+        };
+        respond(200, { data: saved });
+        respond(200, { data: saved });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() =>
+            expect(
+                screen.getByLabelText('Name of Synthetic Project'),
+            ).toHaveValue(saved.name),
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(request(1).body).toMatchObject({
+            name: saved.name,
+            description: saved.description,
+            repository: saved.repository,
+            is_visible_to_client: false,
+            expected_version: saved.version,
+        });
+        expect(request(1).key).not.toBe(request(0).key);
+    });
+
+    it('freezes and replays the original edit while its outcome is unknown', async () => {
+        fetchMock.mockRejectedValueOnce(
+            new TypeError('synthetic lost response'),
+        );
+        respond(200, {
+            data: { ...props.projects[0], version: 'b'.repeat(64) },
+        });
+        const page = render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        expect(
+            screen.getByLabelText('Name of Synthetic Project'),
+        ).toBeDisabled();
+        page.rerender(
+            <ClientSettings
+                {...props}
+                projects={[{ ...props.projects[0], version: 'c'.repeat(64) }]}
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project save' }),
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(0)).toEqual(request(1));
+        await waitFor(() =>
+            expect(
+                screen.getByLabelText('Name of Synthetic Project'),
+            ).toBeEnabled(),
+        );
+    });
+
+    it('starts a new receipt after a definitive validation refusal', async () => {
+        respond(422, { message: 'Name refused.' });
+        respond(200, {
+            data: {
+                ...props.projects[0],
+                name: 'Corrected project',
+                version: 'b'.repeat(64),
+            },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+            target: { value: 'Corrected project' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(1).body.name).toBe('Corrected project');
+        expect(request(1).key).not.toBe(request(0).key);
+    });
+    it('keeps an uncertain edit latched through a later validation refusal', async () => {
+        fetchMock.mockRejectedValueOnce(new TypeError('Synthetic lost answer'));
+        respond(422, { message: 'Correct the project name.' });
+        respond(200, {
+            data: { ...props.projects[0], version: 'b'.repeat(64) },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        await screen.findByRole('alert');
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project save' }),
+        );
+        await screen.findByText('Correct the project name.');
+        expect(
+            screen.getByLabelText('Name of Synthetic Project'),
+        ).toBeDisabled();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project save' }),
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(1)).toEqual(request(0));
+        expect(request(2)).toEqual(request(0));
+    });
+
+    it('keeps a receipt pending when a successful response has no usable project', async () => {
+        respond(200, { data: null });
+        respond(200, {
+            data: { ...props.projects[0], version: 'b'.repeat(64) },
+        });
+        render(<ClientSettings {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'could not be read',
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check project save' }),
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(request(0)).toEqual(request(1));
+    });
+});
+
+it('keeps a saved project edit frozen until an authorized refresh succeeds, without repeating its write', async () => {
+    inertia.reload.mockImplementationOnce((options) => options.onFinish?.());
+    const saved = {
+        ...props.projects[0],
+        name: 'Synthetic normalized saved name',
+        version: 'b'.repeat(64),
+    };
+    respond(200, { data: saved });
+    render(<ClientSettings {...props} />);
+    fireEvent.change(screen.getByLabelText('Name of Synthetic Project'), {
+        target: { value: 'Synthetic edited draft' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
+    await screen.findByText(
+        /project change was saved, but its page could not refresh/,
+    );
+    expect(screen.getByLabelText('Name of Synthetic Project')).toHaveValue(
+        'Synthetic edited draft',
+    );
+    expect(screen.getByLabelText('Name of Synthetic Project')).toBeDisabled();
+    fireEvent.click(
+        screen.getByRole('button', { name: 'Refresh saved project' }),
+    );
+    await waitFor(() =>
+        expect(
+            screen.getByLabelText('Name of Synthetic Project'),
+        ).toBeEnabled(),
+    );
+    expect(screen.getByLabelText('Name of Synthetic Project')).toHaveValue(
+        saved.name,
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(inertia.reload).toHaveBeenCalledTimes(2);
+});
+
+it('retains the created project result and entered draft through failed refresh recovery', async () => {
+    inertia.reload.mockImplementationOnce((options) => options.onFinish?.());
+    respond(201, {
+        data: {
+            ...props.projects[0],
+            name: 'Synthetic created project',
+            version: 'b'.repeat(64),
+        },
+    });
+    render(<ClientSettings {...props} />);
+    fireEvent.change(screen.getByLabelText('New project'), {
+        target: { value: 'Synthetic created project' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add project' }));
+    await screen.findByText(
+        /project change was saved, but its page could not refresh/,
+    );
+    expect(screen.getByLabelText('New project')).toHaveValue(
+        'Synthetic created project',
+    );
+    expect(screen.getByLabelText('New project')).toBeDisabled();
+    fireEvent.click(
+        screen.getByRole('button', { name: 'Check project creation' }),
+    );
+    await waitFor(() =>
+        expect(screen.getByLabelText('New project')).toHaveValue(''),
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(inertia.reload).toHaveBeenCalledTimes(2);
+});

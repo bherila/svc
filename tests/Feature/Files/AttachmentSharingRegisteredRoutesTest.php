@@ -59,7 +59,7 @@ final class AttachmentSharingRegisteredRoutesTest extends TestCase
         $this->withHeader('Idempotency-Key', 'synthetic-registered-file')->post($url, [
             'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic registered file'),
             'expected_version' => $upload['expected_version'],
-        ], ['Accept' => 'application/json'])->assertOk()->assertJsonPath('data.is_visible_to_client', false);
+        ], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertOk()->assertJsonPath('data.is_visible_to_client', false);
         $file = ClientAttachment::query()->sole();
         $payload = [...$arguments, 'attachment_id' => $file->public_id, 'is_visible_to_client' => true,
             'expected_version' => AgentApiVersion::for($file), 'expected_parent_version' => AgentApiVersion::for($topic),
@@ -108,7 +108,7 @@ final class AttachmentSharingRegisteredRoutesTest extends TestCase
         $url = $this->postJson($base.'/upload-url')->assertOk()->json('data.url');
         File::delete($this->policyDirectory.'/'.AttachmentPrivacyLatch::MARKER);
         $this->withHeader('Idempotency-Key', 'synthetic-held-upload')->post($url, ['expected_version' => AgentApiVersion::for($topic),
-            'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic held URL')], ['Accept' => 'application/json'])->assertStatus(503);
+            'file' => UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic held URL')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertStatus(503);
         $this->getJson($base)->assertOk()->assertJsonCount(0, 'data');
         File::put($this->policyDirectory.'/'.AttachmentPrivacyLatch::MARKER, "enabled\n");
         $company->portalUsers()->attach($publisher->id, ['role' => 'client', 'access_scope' => 'company']);
@@ -127,7 +127,7 @@ final class AttachmentSharingRegisteredRoutesTest extends TestCase
         $this->withHeader('Idempotency-Key', 'synthetic-preview-upload')->post($prepared['url'], [
             'file' => UploadedFile::fake()->createWithContent('synthetic-private-filename.txt', 'Synthetic preview content'),
             'expected_version' => $prepared['expected_version'],
-        ], ['Accept' => 'application/json'])->assertOk();
+        ], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertOk();
         $this->getJson($base.'/topics/'.$topic->public_id)->assertOk()->assertJsonPath('data.attachments.data.0.filename', 'synthetic-private-filename.txt');
         $this->actingAsMcp($publisher, ['collaboration:read']);
         $response = $this->getJson($base.'/topics/'.$topic->public_id)->assertOk()->assertJsonMissingPath('data.attachments');

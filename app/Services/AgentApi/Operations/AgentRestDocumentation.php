@@ -266,6 +266,7 @@ final class AgentRestDocumentation
         return [
             ...TaskOrganizationOperations::documentation(),
             ...TaskPlanningOperations::documentation(),
+            ...SquareCoveredPaymentOperations::documentation(),
             ...AttachmentSharingOperations::documentation(),
             ...self::collaborationOperations(),
             'agreements.activate' => [
@@ -373,7 +374,7 @@ final class AgentRestDocumentation
                     ],
                 ],
                 'binary' => [
-                    'application/octet-stream',
+                    '*/*',
                     'Stream the private file using the signed URL, same bearer credential and current manager permission.',
                 ],
             ],
@@ -396,7 +397,7 @@ final class AgentRestDocumentation
             'attachments.list' => [
                 'method' => 'GET',
                 'scopes' => ['files:read'],
-                'description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
+                'description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -411,14 +412,16 @@ final class AgentRestDocumentation
                     self::uuidPath('recordPublicId'),
                     self::filePageLimit(),
                     self::filePageCursor(),
+                    AttachmentSharingOperations::panelPresentation(),
+                    ['name' => 'client', 'in' => 'query', 'description' => 'Required only for the portal panel representation; exact current company and parent access is rechecked.', 'schema' => ['type' => 'string', 'format' => 'uuid']],
                 ],
                 'response' => 'AttachmentListResponse',
-                'response_description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
+                'response_description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged.',
             ],
             'attachments.upload' => [
                 'method' => 'POST',
                 'scopes' => ['files:write'],
-                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -448,7 +451,7 @@ final class AgentRestDocumentation
                 'request' => 'AttachmentUploadRequest',
                 'request_types' => ['multipart/form-data'],
                 'response' => 'AttachmentResponse',
-                'response_description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'response_description' => 'Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
                 'errors' => [503 => 'The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.'],
             ],
             'attachments.upload_url' => [
@@ -966,7 +969,17 @@ final class AgentRestDocumentation
                         'schema' => ['type' => 'string'],
                     ],
                 ],
-                'binary' => ['application/octet-stream', 'Receipt bytes'],
+                'binary' => ['*/*', 'Receipt bytes'],
+            ],
+            'expenses.receipts.delete' => [
+                'method' => 'DELETE',
+                'scopes' => ['expenses:read', 'expenses:write'],
+                'description' => 'Workspace-manager-only logical deletion of one receipt on this expense. Requires confirm true, current receipt expected_version, current expense expected_parent_version and Idempotency-Key. Checks tenant ownership and current role under the expense and receipt locks, advances expense revision once, and retains existing purge policy. No expense amount or posting changes. Completed receipt replay rechecks current authority and parent lineage. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access.',
+                'parameters' => ['WorkspaceId', 'ExpenseId', self::uuidPath('receipt'), 'IdempotencyKey'],
+                'request' => 'ExpenseReceiptDeleteRequest',
+                'response' => 'ExpenseReceiptUploadResponse',
+                'response_description' => 'Deleted expense receipt and current expense version',
+                'errors' => [409 => 'The receipt or expense revision changed, or the retry key was reused with different input.'],
             ],
             'expenses.receipts.download' => [
                 'method' => 'GET',
@@ -979,7 +992,7 @@ final class AgentRestDocumentation
             'expenses.receipts.list' => [
                 'method' => 'GET',
                 'scopes' => ['expenses:read'],
-                'description' => 'Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied.',
+                'description' => 'Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access.',
                 'parameters' => ['WorkspaceId', 'ExpenseId', self::filePageLimit(), self::filePageCursor()],
                 'response' => 'ExpenseReceiptListResponse',
                 'response_description' => 'Successful operation',
@@ -987,7 +1000,7 @@ final class AgentRestDocumentation
             'expenses.receipts.upload' => [
                 'method' => 'POST',
                 'scopes' => ['expenses:read', 'expenses:write'],
-                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
                 'parameters' => ['WorkspaceId', 'ExpenseId', 'IdempotencyKey'],
                 'request' => 'ExpenseReceiptUploadRequest',
                 'request_types' => ['multipart/form-data'],
@@ -1180,11 +1193,11 @@ final class AgentRestDocumentation
             'invoices.send' => [
                 'method' => 'POST',
                 'scopes' => ['billing:deliver'],
-                'description' => 'Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen\'s compose fields: an optional subject (default: the invoice\'s own), an optional covering message, and bcc_self to blind-copy the signed-in user\'s own address - no other blind copy can be named. The delivery is registered with this request\'s receipt and sent once it commits; repeating the same idempotency key sends nothing more.',
+                'description' => 'Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen\'s compose fields: an optional subject (default: the invoice\'s own), an optional covering message, and bcc_self to blind-copy the signed-in user\'s own address - no other blind copy can be named. The delivery is registered with this request\'s receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceSendRequest',
-                'response' => 'InvoiceMutationResponse',
-                'response_description' => 'Invoice delivery queued',
+                'response' => 'InvoiceSendResponse',
+                'response_description' => 'Invoice and recorded delivery outcome',
             ],
             'invoices.reminders.list' => [
                 'method' => 'GET',
@@ -1215,7 +1228,7 @@ final class AgentRestDocumentation
             'invoices.square_cover' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice\'s. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice\'s current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square.',
+                'description' => 'Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice\'s. A coverage is not a link: SVC never automatically collects or allocates payments through it; covered payments require a separate explicit review and recording. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice\'s current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceSquareCoverRequest',
                 'response' => 'InvoiceSquareResponse',
@@ -1300,7 +1313,7 @@ final class AgentRestDocumentation
             'payments.record' => [
                 'method' => 'POST',
                 'scopes' => ['payments:record', 'billing:read'],
-                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment\'s finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment\'s finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending. OAuth/MCP callers also refuse invoices Square collects (invoices.get reports pending_payments and collection_owner). The trusted first-party website session may explicitly record money already received on a Square-collected invoice as operator bookkeeping; this server-selected policy is not a request field. A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentRecordRequest',
                 'response' => 'ReceivedPaymentBatchResponse',
@@ -1476,6 +1489,11 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'SearchResponse',
                 'response_description' => 'Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.',
+            ],
+            'tasks.assignees.list' => [
+                'method' => 'GET', 'scopes' => ['tasks:read'], 'description' => false,
+                'parameters' => ['WorkspaceId', 'ProjectId', self::query('q', ['type' => 'string', 'maxLength' => 100])],
+                'response' => 'TaskAssigneeOptionsResponse', 'response_description' => 'Bounded eligible staff identities',
             ],
             'tasks.create' => [
                 'method' => 'POST',

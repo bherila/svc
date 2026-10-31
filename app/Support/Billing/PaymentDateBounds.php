@@ -19,7 +19,7 @@ use DomainException;
  *
  * So the bound is a domain rule rather than a form rule, and it lives where
  * every caller crosses. `svc:billing:payment`, an import and a hand-repair do
- * not pass through `StorePaymentRequest`; they do pass through
+ * not pass through the API request validator; they do pass through
  * {@see InvoiceLifecycleService}.
  *
  * Dates are compared as `Y-m-d` strings rather than as instants, deliberately.

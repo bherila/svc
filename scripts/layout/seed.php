@@ -8,6 +8,7 @@ use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
+use App\Models\ClientTaskLabel;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceReminderLog;
 use App\Models\User;
@@ -89,6 +90,9 @@ $workspace = Workspace::query()->create([
     'timezone' => 'America/Los_Angeles',
 ]);
 $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+if (getenv('SVC_LAYOUT_WORKSPACES') === '1') {
+    $workspace->update(['name' => str_repeat('SyntheticWorkspaceWithoutBreaks', 4)]);
+}
 $company = ClientCompany::query()->create([
     'workspace_id' => $workspace->id, 'name' => str_repeat('Synthetic', 8),
     'slug' => 'synthetic-layout-client',
@@ -119,7 +123,7 @@ $company->forceFill([
     'tax_id' => str_repeat('SyntheticTaxIdentifier', 8), 'currency' => 'USD',
     'notes' => str_repeat('SyntheticCompanyNotesWithoutBreaks', 16),
 ])->save();
-ClientContact::query()->create([
+$historicalContact = ClientContact::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'first_name' => str_repeat('SyntheticContact', 6), 'last_name' => 'Example',
     'title' => str_repeat('SyntheticRole', 12), 'email' => 'contact@example.test',
@@ -151,10 +155,31 @@ $proposal->items()->create([
     'quantity' => 2, 'unit_amount' => 5000, 'cadence' => 'one_time', 'sort_order' => 0,
 ]);
 
+$engagementAgreementPath = null;
+if (getenv('SVC_LAYOUT_ENGAGEMENT') === '1') {
+    $proposal->forceFill(['status' => 'draft', 'sent_at' => null])->save();
+    $draftAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'title' => str_repeat('SyntheticDraftAgreementWithoutBreaks', 8), 'status' => 'draft',
+        'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly',
+    ]);
+    $activeAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'title' => str_repeat('SyntheticActiveAgreementWithoutBreaks', 8), 'status' => 'active',
+        'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly',
+    ]);
+    $engagementAgreementPath = route('clients.agreement', [$workspace, $company, $draftAgreement], absolute: false);
+}
+
 $project = ClientProject::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'name' => str_repeat('SyntheticProject', 10), 'status' => 'active',
 ]);
+if (getenv('SVC_LAYOUT_PROJECTS') === '1') {
+    $project->update(['description' => $description, 'repository' => 'git.internal.example.test/platform-engineering-group/synthetic-project-layout-repository']);
+    $projectMember = User::factory()->create(['name' => str_repeat('SyntheticProjectMember', 12), 'email' => 'synthetic-project-member@example.test']);
+    $workspace->memberships()->create(['user_id' => $projectMember->id, 'role' => 'member']);
+}
 $planningTask = null;
 if (getenv('SVC_LAYOUT_TASKS') === '1') {
     $taskAssignees = [];
@@ -178,6 +203,14 @@ if (getenv('SVC_LAYOUT_TASKS') === '1') {
         ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
             'title' => 'ZZZ Synthetic paginated task '.str_repeat('UnbrokenTitle', 8).' '.str_pad((string) $index, 3, '0', STR_PAD_LEFT),
             'status' => 'open', 'is_visible_to_client' => true]);
+    }
+}
+
+if (getenv('SVC_LAYOUT_TASK_LOOKUPS') === '1') {
+    for ($index = 0; $index < 28; $index++) {
+        $name = 'Synthetic lookup label '.str_repeat('UnbrokenLabel', 10).$index;
+        ClientTaskLabel::query()->create(['workspace_id' => $workspace->id, 'name' => $name, 'name_key' => hash('sha256', $name)]);
+        ClientContact::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'first_name' => 'Synthetic lookup contact '.str_repeat('UnbrokenContact', 10).$index]);
     }
 }
 
@@ -310,6 +343,11 @@ app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPa
     'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
 ]));
 
+if (getenv('SVC_LAYOUT_DISPUTES') === '1') {
+    $service->setPaymentDisputed($layoutPayment, 500, $workspace);
+    $service->setPaymentDisputed($squareInvoice->payments()->sole(), 345, $workspace);
+}
+
 // Payment reminders (#438): an open invoice of a client with the cadence on,
 // and a logged reminder of every kind with oversized recipients and reasons.
 $company->forceFill(['payment_reminders_enabled_at' => CarbonImmutable::parse($date)->subMonth()])->save();
@@ -395,23 +433,25 @@ $historyInvoice = app(HistoricalLibraryRepository::class)->publish($workspace, $
     ]), $company);
 
 $taskViewer = $owner;
-if ($planningTask !== null) {
+if ($planningTask !== null && getenv('SVC_LAYOUT_TASK_LOOKUPS') !== '1') {
     $taskViewer = User::factory()->create(['name' => 'Synthetic Project Manager', 'email' => 'layout-project-manager@example.test']);
     $workspace->memberships()->create(['user_id' => $taskViewer->id, 'role' => 'member']);
     ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);
 }
 
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'selector' => route('workspaces.index', absolute: false),
+    'workspace_create' => route('agent-api.v1.workspaces.store', absolute: false),
     'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),
     'task_list' => route('clients.tasks', [$workspace, $company], absolute: false),
     'task_project' => route('clients.project', [$workspace, $company, $project], absolute: false),
     'task_portal' => route('portal.tasks', $company, absolute: false),
-    'task_create' => $planningTask === null ? null : route('tasks.store', [$workspace, $project], absolute: false),
-    'task_update' => $planningTask === null ? null : route('tasks.update', [$workspace, $planningTask], absolute: false),
+    'task_create' => $planningTask === null ? null : route('agent-api.v1.tasks.store', [$workspace, $project->public_id], absolute: false),
+    'task_update' => $planningTask === null ? null : route('agent-api.v1.tasks.update', [$workspace, $planningTask->public_id], absolute: false),
     'history_index' => route('history.index', $workspace, absolute: false),
     'history_discussion' => route('history.show', [$workspace, $historyDiscussion], absolute: false),
     'history_invoice' => route('history.show', [$workspace, $historyInvoice], absolute: false),
-    'agreement' => $backlogAgreementPath,
+    'agreement' => $engagementAgreementPath ?? $backlogAgreementPath,
     'buydown_create' => $backlogCreatePath,
     'reminder_invoice' => route('clients.invoice', [$workspace, $company, $reminderInvoice], absolute: false),
     'square_explore' => route('square.explore', $workspace, absolute: false),
@@ -421,22 +461,33 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'mcp_setup' => route('mcp.setup', $workspace, absolute: false),
     'draft_invoice' => route('clients.invoice', [$workspace, $company, $draft], absolute: false),
     'draft_time' => route('clients.time', [$workspace, $company, 'draft_invoice' => $draft->public_id], absolute: false),
-    'workspace_id' => $workspace->id, 'log_project_id' => $logProject->id,
+    'workspace_id' => $workspace->id, 'workspace_public_id' => $workspace->public_id, 'log_project_id' => $logProject->id,
     'project_log' => route('clients.time', [$workspace, $company, 'log_project' => $logProject->public_id], absolute: false),
-    'draft_id' => $draft->id, 'correction_id' => $correction->id, 'companion_id' => $companion->id,
+    'draft_id' => $draft->id, 'draft_public_id' => $draft->public_id, 'correction_id' => $correction->id, 'companion_id' => $companion->id,
     'preserved_lines' => $draft->lines()->whereDoesntHave('timeEntries')->orderBy('id')->get()->map->getAttributes()->all(),
     'draft_writes' => [
-        'POST' => [route('agent-api.v1.time-entries.store', $workspace, absolute: false), route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
+        'POST' => [route('agent-api.v1.time-entries.store', $workspace, absolute: false), route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false), route('agent-api.v1.invoices.issue', [$workspace, $draft->public_id], absolute: false), route('agent-api.v1.payments.store', $workspace, absolute: false),
             '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/approve'],
         'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],
+    'receipt_upload' => route('agent-api.v1.expense-receipts.store', [$workspace, $receiptExpense->public_id], absolute: false),
+    'receipt_prefix' => '/api/v1/workspaces/'.$workspace->public_id.'/expenses/'.$receiptExpense->public_id.'/receipts/',
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $taskViewer->id, 'date' => $date,
-    'expense_schedule_store' => route('svc.expense-schedules.store', [$workspace, $company], absolute: false),
-    'expense_schedule_prefix' => '/workspaces/'.$workspace->public_id.'/expense-schedules/',
+    'expense_schedule_store' => route('agent-api.v1.expense-schedules.store', $workspace, absolute: false),
+    'expense_schedule_prefix' => '/api/v1/workspaces/'.$workspace->public_id.'/expense-schedules/',
+    'expense_api_store' => route('agent-api.v1.expenses.store', $workspace, absolute: false),
+    'expense_api_prefix' => '/api/v1/workspaces/'.$workspace->public_id.'/expenses/',
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
     'invoice' => route('clients.invoice', [$workspace, $company, $invoice], absolute: false),
     'invoice_review' => route('clients.invoice', [$workspace, $company, $reviewInvoice], absolute: false),
+    'project_writes' => [
+        'POST' => [route('agent-api.v1.projects.store', $workspace, absolute: false)],
+        'PATCH' => [route('agent-api.v1.projects.update', [$workspace, $project->public_id], absolute: false)],
+        'PUT' => [route('agent-api.v1.projects.members.update', [$workspace, $project->public_id], absolute: false)],
+    ],
+    'client_profile_update' => route('agent-api.v1.clients.update', [$workspace, $company], absolute: false),
+    'contact_restore' => route('agent-api.v1.clients.contacts.restore', [$workspace, $company, $historicalContact], absolute: false),
     'settings' => route('clients.settings', [$workspace, $company], absolute: false),
     'portal_settings' => route('clients.settings', [$workspace, $company], absolute: false).'?invitation_page=2',
     'proposal' => route('clients.proposal', [$workspace, $company, $proposal], absolute: false),

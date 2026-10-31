@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceEmailDraft;
 use Closure;
 use DateTimeInterface;
@@ -23,12 +24,17 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Tests\Concerns\CallsInvoiceApi;
+use Tests\Concerns\FakesInvoiceMailOutcomes;
 use Tests\TestCase;
 
 final class InvoiceReviewDeliveryTest extends TestCase
 {
+    use CallsInvoiceApi;
+    use FakesInvoiceMailOutcomes;
     use RefreshDatabase;
 
     protected function tearDown(): void
@@ -222,50 +228,49 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'workspace_id' => $workspace->id,
             'role' => 'client',
         ]);
-        $url = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => null,
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 1,
-        ])->assertSessionHasErrors('automatic_invoice_email_enabled');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_enabled');
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => 'billing@synthetic.test',
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 366,
-        ])->assertSessionHasErrors('automatic_invoice_email_delay_days');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_delay_days');
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => 'billing@synthetic.test',
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 1.5,
-        ])->assertSessionHasErrors('automatic_invoice_email_delay_days');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_delay_days');
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => 'billing@synthetic.test',
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 0,
-        ])->assertRedirect();
+        ])->assertOk();
 
         $this->assertTrue($company->fresh()->automatic_invoice_email_enabled);
         $this->assertSame(0, $company->fresh()->automatic_invoice_email_delay_days);
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             'name' => $company->name,
             'billing_email' => null,
             'is_active' => true,
             'automatic_invoice_email_enabled' => true,
             'automatic_invoice_email_delay_days' => 0,
-        ])->assertSessionHasErrors('automatic_invoice_email_enabled');
+        ])->assertUnprocessable()->assertJsonValidationErrors('automatic_invoice_email_enabled');
         $this->assertSame('billing@synthetic.test', $company->fresh()->billing_email);
         $this->assertDatabaseHas('client_company_activity', [
             'workspace_id' => $workspace->id,
@@ -280,7 +285,6 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $historical = app(InvoiceLifecycleService::class)->issue($historical, $workspace);
         $viewer = User::factory()->create(['email' => 'viewer@synthetic.test']);
         $workspace->memberships()->create(['user_id' => $viewer->id, 'role' => 'viewer']);
-        $url = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}";
         $enabled = [
             'name' => $company->name,
             'billing_email' => $company->billing_email,
@@ -289,8 +293,8 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'automatic_invoice_email_delay_days' => 0,
         ];
 
-        $this->actingAs($viewer)->patch($url, $enabled)->assertForbidden();
-        $this->actingAs($owner)->patch($url, $enabled)->assertRedirect();
+        $this->clientSettingsPatch($viewer, $workspace, $company, $enabled)->assertForbidden();
+        $this->clientSettingsPatch($owner, $workspace, $company, $enabled)->assertOk();
         $historical = $historical->fresh();
         $this->assertNull($historical->automatic_delivery_status);
         $this->assertNull($historical->automatic_delivery_delay_days);
@@ -302,14 +306,14 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $newInvoice = app(InvoiceLifecycleService::class)->issue($newInvoice, $workspace);
         $this->assertSame('scheduled', $newInvoice->automatic_delivery_status);
 
-        $this->actingAs($owner)->patch($url, [
+        $this->clientSettingsPatch($owner, $workspace, $company, [
             ...$enabled,
             'automatic_invoice_email_enabled' => false,
             'automatic_invoice_email_delay_days' => null,
-        ])->assertRedirect();
+        ])->assertOk();
         $this->assertSame('cancelled', $newInvoice->fresh()->automatic_delivery_status);
 
-        $this->actingAs($owner)->patch($url, $enabled)->assertRedirect();
+        $this->clientSettingsPatch($owner, $workspace, $company, $enabled)->assertOk();
         $this->assertSame('cancelled', $newInvoice->fresh()->automatic_delivery_status);
     }
 
@@ -410,7 +414,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         Mail::clearResolvedInstance('mail.manager');
         app()->forgetInstance('mail.manager');
-        Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic client refusal'));
+        $this->failInvoiceMail(new TransportException('synthetic client refusal'));
         Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
 
         $failed = ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->sole();
@@ -446,13 +450,13 @@ final class InvoiceReviewDeliveryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where(
                 'actions.hold_automatic',
-                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/hold",
+                "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/hold",
             ));
 
         for ($attempt = 1; $attempt <= 5; $attempt++) {
             Mail::clearResolvedInstance('mail.manager');
             app()->forgetInstance('mail.manager');
-            Mail::shouldReceive('to')->once()->andThrow(new TransportException('synthetic client refusal'));
+            $this->failInvoiceMail(new TransportException('synthetic client refusal'));
             Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
 
             $invoice = $invoice->fresh();
@@ -482,9 +486,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
         ])->save();
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send",
-        )->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice->fresh())->assertOk()->assertJsonPath('data.delivery.status', 'sent');
         Date::setTestNow('2026-09-17 12:00:00 UTC');
         Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
 
@@ -499,29 +501,25 @@ final class InvoiceReviewDeliveryTest extends TestCase
         Mail::fake();
         [$owner, $workspace, , $invoice] = $this->draft();
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
-        $url = "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send";
         $payload = [
             'recipients' => ['billing@synthetic.test'],
             'subject' => 'Synthetic invoice',
             'idempotency_key' => '11111111-1111-4111-8111-111111111111',
         ];
 
-        $this->actingAs($owner)->postJson($url, $payload)->assertRedirect()->assertSessionHasNoErrors();
-        $this->actingAs($owner)->postJson($url, $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, $payload)->assertOk()->assertJsonPath('data.delivery.status', 'sent');
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, $payload)->assertOk()->assertJsonPath('data.delivery.status', 'sent');
 
         Mail::assertSent(InvoiceMail::class, 1);
         $this->assertSame(1, ClientInvoiceEmailDelivery::query()->count());
 
         $payload['subject'] = 'A different message';
-        $this->actingAs($owner)->postJson($url, $payload)->assertStatus(422);
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice, $payload)->assertConflict();
 
         $secondKey = 'opaque-agent-retry-key';
-        $this->actingAs($owner)->withHeader('Idempotency-Key', $secondKey)
-            ->postJson($url, ['subject' => 'Another delivery'])
-            ->assertRedirect()->assertSessionHasNoErrors();
-        $this->actingAs($owner)->withHeader('Idempotency-Key', $secondKey)
-            ->postJson($url, ['subject' => 'Another delivery'])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $observed = $invoice->fresh();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $observed, ['subject' => 'Another delivery'], $secondKey)->assertOk();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $observed, ['subject' => 'Another delivery'], $secondKey)->assertOk();
         Mail::assertSent(InvoiceMail::class, 2);
     }
 
@@ -546,9 +544,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
         );
 
         try {
-            $this->actingAs($owner)->postJson(
-                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send",
-            )->assertStatus(422);
+            $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice)->assertOk()->assertJsonPath('data.delivery.status', 'sending');
 
             Mail::assertSent(InvoiceMail::class, 1);
             $this->assertSame('sending', ClientInvoiceEmailDelivery::query()->sole()->status);
@@ -557,6 +553,28 @@ final class InvoiceReviewDeliveryTest extends TestCase
         } finally {
             $rejectAcceptedResult = false;
         }
+    }
+
+    public function test_automatic_delivery_does_not_retry_an_uncertain_mail_handoff(): void
+    {
+        Mail::fake();
+        Date::setTestNow('2026-09-15 12:00:00 UTC');
+        [, $workspace, $company, $invoice] = $this->draft();
+        $company->forceFill(['automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
+        $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $this->failInvoiceMail(new TransportException('Synthetic accepted then response lost'), handoffStarted: true);
+
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
+        $delivery = ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->sole();
+        $this->assertSame('sending', $delivery->status);
+        $this->assertSame('sending', $invoice->fresh()->automatic_delivery_status);
+        $this->assertNull($delivery->failed_at);
+        $this->assertNull($delivery->next_attempt_at);
+        $this->assertNull($delivery->error_summary);
+        Date::setTestNow('2026-09-16 12:00:00 UTC');
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
+        $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('origin', 'automatic')->count());
+        $this->assertSame('sending', $delivery->fresh()->status);
     }
 
     public function test_hold_void_and_payment_each_prevent_automatic_delivery(): void
@@ -569,7 +587,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'automatic_invoice_email_delay_days' => 0,
         ])->save();
         $held = app(InvoiceLifecycleService::class)->issue($held, $workspace);
-        $this->actingAs($owner)->post("/workspaces/{$workspace->public_id}/invoices/{$held->public_id}/automatic-delivery/hold")->assertRedirect();
+        $this->invoiceApi($owner, $workspace, $held->fresh(), 'hold')->assertOk();
 
         [, , , $voided] = $this->draft('INV-VOID', existing: [$owner, $workspace, $company]);
         $voided = app(InvoiceLifecycleService::class)->issue($voided, $workspace);
@@ -673,13 +691,12 @@ final class InvoiceReviewDeliveryTest extends TestCase
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('actions.correct', "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct")
+                ->where('actions.correct', "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct")
                 ->where('lines.0.money_correctable', true));
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct",
+        $this->invoiceApi($owner, $workspace, $invoice->fresh(), 'correct',
             [
-                'expected_revision' => 1,
+                'expected_version' => AgentApiVersion::for($invoice->fresh()),
                 'reason' => 'Correct the synthetic service wording and rate.',
                 'lines' => [[
                     'id' => $line->public_id,
@@ -689,7 +706,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
                     'tax_amount' => 0,
                 ]],
             ],
-        )->assertRedirect()->assertSessionHasNoErrors();
+        )->assertOk();
 
         $corrected = $invoice->fresh();
         $this->assertSame(2, $corrected->document_revision);
@@ -703,9 +720,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'action' => 'invoice.corrected',
         ]);
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send",
-        )->assertRedirect()->assertSessionHasNoErrors();
+        $this->sendAndResolveInvoiceApi($owner, $workspace, $invoice->fresh())->assertOk()->assertJsonPath('data.delivery.status', 'sent');
         $delivery = ClientInvoiceEmailDelivery::query()->where('origin', 'manual')->sole();
         $this->assertSame(2, $delivery->invoice_revision);
         Mail::assertSent(InvoiceMail::class, fn (InvoiceMail $mail): bool => $mail->invoice->total_amount === 13000);
@@ -719,7 +734,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
         $line = $invoice->lines()->sole();
         $payload = [
-            'expected_revision' => 99,
+            'expected_version' => str_repeat('0', 64),
             'reason' => 'Synthetic stale correction.',
             'due_date' => $invoice->due_date?->toDateString(),
             'lines' => [[
@@ -730,16 +745,15 @@ final class InvoiceReviewDeliveryTest extends TestCase
                 'tax_amount' => 0,
             ]],
         ];
-        $url = "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct";
 
-        $this->actingAs($owner)->postJson($url, $payload)->assertStatus(422);
-        $payload['expected_revision'] = 1;
+        $this->invoiceApi($owner, $workspace, $invoice, 'correct', $payload)->assertConflict();
         app(InvoiceEmailService::class)->send(
             $invoice,
             InvoiceEmailDraft::of(['billing@synthetic.test'], [], 'Invoice', null),
             $workspace,
         );
-        $this->actingAs($owner)->postJson($url, $payload)->assertStatus(422);
+        $payload['expected_version'] = AgentApiVersion::for($invoice->fresh());
+        $this->invoiceApi($owner, $workspace, $invoice->fresh(), 'correct', $payload)->assertUnprocessable();
         $this->assertSame(1, $invoice->fresh()->document_revision);
         $this->actingAs($owner)
             ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}")
@@ -757,10 +771,9 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $invoice = app(InvoiceLifecycleService::class)->issue($invoice->fresh(), $workspace);
         $line = $invoice->lines()->sole();
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct",
+        $this->invoiceApi($owner, $workspace, $invoice->fresh(), 'correct',
             [
-                'expected_revision' => 1,
+                'expected_version' => AgentApiVersion::for($invoice->fresh()),
                 'reason' => 'Correct wording without changing accounting facts.',
                 'due_date' => $invoice->due_date?->toDateString(),
                 'lines' => [[
@@ -771,7 +784,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
                     'tax_amount' => 0,
                 ]],
             ],
-        )->assertRedirect()->assertSessionHasNoErrors();
+        )->assertOk();
 
         $this->assertSame(2, $invoice->fresh()->document_revision);
         $this->assertSame('Corrected retainer wording', $line->fresh()->description);
@@ -807,10 +820,9 @@ final class InvoiceReviewDeliveryTest extends TestCase
         ])->save();
         $lines = $invoice->lines()->orderBy('id')->get();
 
-        $this->actingAs($owner)->postJson(
-            "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/correct",
+        $this->invoiceApi($owner, $workspace, $invoice->fresh(), 'correct',
             [
-                'expected_revision' => 1,
+                'expected_version' => AgentApiVersion::for($invoice->fresh()),
                 'reason' => 'Clarify the synthetic credit description.',
                 'lines' => $lines->map(fn ($line): array => [
                     'id' => $line->public_id,
@@ -820,7 +832,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
                     'tax_amount' => (int) $line->tax_amount,
                 ])->all(),
             ],
-        )->assertRedirect()->assertSessionHasNoErrors();
+        )->assertOk();
 
         $corrected = $invoice->fresh();
         $this->assertSame(-2500, $credit->fresh()->unit_amount);
@@ -831,8 +843,15 @@ final class InvoiceReviewDeliveryTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where(
                 'actions.release_automatic',
-                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release",
+                "/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/automatic-delivery/release",
             ));
+    }
+
+    private function clientSettingsPatch(User $user, Workspace $workspace, ClientCompany $company, array $fields): TestResponse
+    {
+        return $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-delivery-settings-'.str()->uuid())
+            ->patchJson(route('agent-api.v1.clients.update', [$workspace, $company]), $fields + ['expected_version' => AgentApiVersion::for($company->fresh())]);
     }
 
     private function attachmentData(Attachment $attachment): string

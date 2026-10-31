@@ -1,12 +1,9 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { ChevronRightIcon, PlusIcon } from 'lucide-react';
-import { useState } from 'react';
-import { AppearanceSelector } from '@/components/appearance-selector';
-import { AccountMenu } from '@/components/navigation/account-menu';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
-    DialogClose,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -15,8 +12,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
+import WorkspaceShell from '@/layouts/workspace-shell';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
+import { visitPage } from '@/lib/visit-page';
 
 /**
  * Choose a workspace. That is the whole screen.
@@ -46,17 +48,126 @@ type WorkspaceChoice = {
 function NewWorkspaceDialog({
     open,
     onOpenChange,
+    createUrl,
 }: {
+    createUrl: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
     const [name, setName] = useState('');
+    const attempt = useRef<{
+        name: string;
+        url: string;
+        savedUrl?: string;
+        key: string;
+        uncertain: boolean;
+    } | null>(null);
+    const [unresolved, setUnresolved] = useState(false);
+    const [created, setCreated] = useState(false);
+    const running = useRef(false);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
+    useUnknownWriteGuard(
+        () =>
+            attempt.current !== null && attempt.current.savedUrl === undefined,
+        () =>
+            setError(
+                'Check the original workspace result before leaving this page.',
+            ),
+    );
+
+    const close = (next: boolean) => {
+        if (!running.current && !unresolved) {
+            onOpenChange(next);
+        }
+    };
+    async function create() {
+        if (running.current) {
+            return;
+        }
+
+        running.current = true;
+        setSaving(true);
+        setError(null);
+        attempt.current ??= {
+            name,
+            url: createUrl,
+            key: newIdempotencyKey(),
+            uncertain: false,
+        };
+        const original = attempt.current;
+
+        try {
+            if (original.savedUrl === undefined) {
+                const result = await apiRequest<
+                    ApiSchema<'WorkspaceCreateResponse'>['data']
+                >('POST', original.url, { name: original.name }, original.key);
+
+                if (!result.ok) {
+                    original.uncertain ||=
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    setUnresolved(original.uncertain);
+
+                    if (!original.uncertain) {
+                        attempt.current = null;
+                    }
+
+                    setError(
+                        Object.values(result.errors ?? {})
+                            .flat()
+                            .join(' ') || result.message,
+                    );
+
+                    return;
+                }
+
+                if (
+                    !result.data ||
+                    typeof result.data.web_url !== 'string' ||
+                    result.data.web_url.trim() === ''
+                ) {
+                    original.uncertain = true;
+                    setUnresolved(true);
+                    setError(
+                        'SVC’s response could not be read. Check the original creation.',
+                    );
+
+                    return;
+                }
+
+                original.savedUrl = result.data.web_url;
+                setCreated(true);
+                setUnresolved(true);
+            }
+
+            await visitPage(original.savedUrl);
+            attempt.current = null;
+            setUnresolved(false);
+            setCreated(false);
+            onOpenChange(false);
+        } catch {
+            original.uncertain = true;
+            setUnresolved(true);
+            setError(
+                original.savedUrl
+                    ? 'The workspace was created, but its page could not open. Open the created workspace to continue.'
+                    : 'The original workspace result could not be checked. Check the original creation before starting another.',
+            );
+        } finally {
+            running.current = false;
+            setSaving(false);
+        }
+    }
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+        <Dialog open={open} onOpenChange={close}>
+            <DialogContent
+                className="sm:max-w-md"
+                showCloseButton={!saving && !unresolved}
+            >
                 <DialogHeader>
                     <DialogTitle>New workspace</DialogTitle>
                     <DialogDescription>
@@ -69,28 +180,13 @@ function NewWorkspaceDialog({
                     onSubmit={(event) => {
                         event.preventDefault();
 
-                        if (saving) {
-                            return;
-                        }
-
-                        setSaving(true);
-                        router.post(
-                            '/workspaces',
-                            { name },
-                            {
-                                onError: (errors) =>
-                                    setError(
-                                        Object.values(errors)[0] ??
-                                            'That workspace could not be created.',
-                                    ),
-                                onFinish: () => setSaving(false),
-                            },
-                        );
+                        void create();
                     }}
                 >
                     <div className="grid grid-cols-1 gap-2">
                         <Label htmlFor="new-workspace-name">Name</Label>
                         <Input
+                            disabled={saving || unresolved}
                             id="new-workspace-name"
                             value={name}
                             required
@@ -105,16 +201,31 @@ function NewWorkspaceDialog({
                         </p>
                     )}
 
+                    {unresolved && (
+                        <p
+                            role="status"
+                            className="text-sm wrap-anywhere text-muted-foreground"
+                        >
+                            {created
+                                ? 'The workspace is created. Open it before starting another creation.'
+                                : 'The result is unknown. Check the original creation before editing again.'}
+                        </p>
+                    )}
                     <DialogFooter>
-                        <DialogClose
-                            render={
-                                <Button variant="outline" type="button">
-                                    Cancel
-                                </Button>
-                            }
-                        />
+                        <Button
+                            variant="outline"
+                            type="button"
+                            disabled={saving || unresolved}
+                            onClick={() => close(false)}
+                        >
+                            Cancel
+                        </Button>
                         <Button type="submit" disabled={saving || name === ''}>
-                            Create
+                            {created
+                                ? 'Open created workspace'
+                                : unresolved
+                                  ? 'Check creation'
+                                  : 'Create'}
                         </Button>
                     </DialogFooter>
                 </form>
@@ -125,48 +236,28 @@ function NewWorkspaceDialog({
 
 export default function WorkspaceSelector({
     workspaces,
+    create_url: createUrl,
 }: {
+    create_url: string;
     workspaces: WorkspaceChoice[];
 }) {
     const [creating, setCreating] = useState(false);
 
     return (
-        <div
-            className="min-h-screen bg-background text-foreground"
-            data-appearance-bridge
-        >
+        <WorkspaceShell selector>
             <Head title="Choose a workspace" />
 
-            <header className="border-b border-border">
-                <div
-                    className={cn(
-                        SHELL_CONTAINER,
-                        'flex h-12 items-center gap-2',
-                    )}
-                >
-                    {/*
-                     * Not a link. This *is* the workspace selector, so the
-                     * wordmark has nowhere to take the reader from here.
-                     */}
-                    <span className="px-1 text-base font-bold tracking-tight">
-                        SVC
-                    </span>
-                    <div className="ms-auto flex items-center gap-1">
-                        <AppearanceSelector />
-                        <AccountMenu />
-                    </div>
-                </div>
-            </header>
-
             <main className={cn(SHELL_CONTAINER, 'py-12')}>
-                <div className="flex items-baseline justify-between gap-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-4">
                     <h1 className="text-2xl font-semibold tracking-tight">
                         Choose a workspace
                     </h1>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setCreating(true)}
+                        onClick={() => {
+                            setCreating(true);
+                        }}
                     >
                         <PlusIcon />
                         New workspace
@@ -203,7 +294,11 @@ export default function WorkspaceSelector({
                 )}
             </main>
 
-            <NewWorkspaceDialog open={creating} onOpenChange={setCreating} />
-        </div>
+            <NewWorkspaceDialog
+                createUrl={createUrl}
+                open={creating}
+                onOpenChange={setCreating}
+            />
+        </WorkspaceShell>
     );
 }

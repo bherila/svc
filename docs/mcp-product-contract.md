@@ -129,6 +129,33 @@ operation as a finished URL plus the record's opaque version, call it through
 generated from the OpenAPI document (`pnpm run api:types`; CI fails when the
 generated file is stale).
 
+The browser mutation allowlist is closed to business operations. Its twelve
+named exceptions cover four credential-management actions, sign-out, the client
+management redirect, three provider/email webhooks, the Stripe payment hand-off,
+and interactive agreement/proposal signing. The portal recipient's proposal
+signature remains a browser act; authorized REST/MCP clients can separately
+record confirmed offline acceptance with `proposals.accept`. Inertia resource
+props use the same pure resource presenters as API responses, with explicit
+safe field selections and page navigation/capability extras.
+
+The one read-only browser UI helper is `GET /search`, used by the command
+palette to jump between already-authorized destinations across the operator's
+workspaces, including manager-only History links and the workspace selector.
+It returns only navigation rows (`kind`, stable `id`, `title`, distinguishing
+`subtitle`, finished `href`, and workspace label); selecting one navigates to
+its page. It does not refetch resource facts or supply mutation inputs. Business
+resource search remains the scoped `workspace.search` API operation and shared
+`WorkspaceSearch` query, with API read-scope filtering unchanged. This navigation
+helper is separate from the twelve mutation exceptions above; resource option
+lookups and JSON list appends use the canonical API.
+
+`BrowserJsonReadParityTest` checks the actual task editor/organization options
+and native/portal attachment continuation URLs. It also keeps the nine retired
+task-assignee/planning lookup and attachment JSON index routes absent while
+preserving Inertia pages and authorized byte-download destinations. The guard
+tracks these consumer contracts; unused native read handlers are not a promise
+of an additional resource API.
+
 Apps that use the REST API without MCP connect one of two ways (#384). A person
 registers an OAuth app on the setup page - exact HTTPS or loopback redirect URIs,
 public (PKCE only) or confidential (a client secret shown once, used with
@@ -213,7 +240,6 @@ time and invoice work. Clients that implement MCP prompts can also expose the gu
 `log-time-across-projects` and `prepare-invoice-safely` workflows. Tool descriptions,
 schemas, and annotations remain the authority for each individual call.
 
-
 Received-payment bookkeeping uses separate `payments:read` and `payments:record`
 grants. Recording is owner/admin-only, default-disabled behind the payment and
 outer workflow flags, and requires an explicit invoice, amount, currency, payment
@@ -257,6 +283,7 @@ none of these actions. Portal acceptance obeys the same company and project scop
 as portal reads. Confirmed sends publish to the portal; they do not email.
 
 Proposal creation also requires `clients:read` to obtain the parent version; send and acceptance require `proposals:read` to obtain the current proposal version.
+
 ## Workspace creation, search and generic files (#386)
 
 `workspaces.create` requires `workspaces:create`, `AGENT_API_WRITES_ENABLED`
@@ -324,7 +351,12 @@ Task creation defaults to hidden in the API. The website request must send its
 visibility choice explicitly. Both creation surfaces accept titles up to 255
 characters and descriptions up to 10,000. Expense deletion requires draft status
 on every surface; unapprove an approved expense first. Web and API expense facts
-require uppercase three-letter currency codes.
+require uppercase three-letter currency codes. The browser expense list now
+uses the same `expenses.log/update/approve/unapprove/delete` operations on
+`/api/v1`: current opaque versions guard edits and lifecycle moves, and a dialog
+keeps one idempotency key across retries. Its rows extend the API presenter with
+scoped display names and finished action URLs. The retired expense web mutation
+routes have no remaining browser callers; recurrence is a separate migration.
 
 New archives validate confirmation inside their receipt callback. A completed
 archive receipt from before the confirmation requirement can replay its original

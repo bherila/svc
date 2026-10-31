@@ -255,12 +255,14 @@ final class AgentMutationIntegrityTest extends TestCase
         ]);
         $staleVersion = AgentApiVersion::for($task);
 
-        $this->actingAs($user)->patch("/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
-            'expected_version' => $staleVersion,
-            'status' => 'completed',
-        ])->assertRedirect();
+        $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-native-revision')->patchJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
+                'expected_version' => $staleVersion,
+                'status' => 'completed',
+            ])->assertOk();
         $this->assertNotSame($staleVersion, AgentApiVersion::for($task->fresh()));
 
+        $this->unencryptedCookies = [];
         $this->actingAsAgent($user, [AgentApiScopes::TASKS_WRITE]);
         $this->withHeader('Idempotency-Key', 'stale-after-web')->patchJson(
             "/api/v1/workspaces/{$workspace->public_id}/tasks/{$task->public_id}",

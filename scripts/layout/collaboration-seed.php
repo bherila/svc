@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAttachment;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -115,8 +116,19 @@ if ($sharingLayout) {
         }
     }
 }
+if (getenv('SVC_LAYOUT_ATTACHMENT_PAGINATION') === 'true') {
+    foreach (range(1, 2) as $number) {
+        $file = $storage->store($workspace, $project, UploadedFile::fake()->createWithContent(str_repeat('SyntheticPaginationFile', 12).'-'.$number.'.txt', 'Synthetic pagination bytes'), $manager);
+        DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $file->id)->update(['is_visible_to_client' => true]);
+    }
+}
 file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->id, 'portal_user_id' => $portal->id,
     'company_name' => $company->name,
+    'pagination_native_parent' => route('svc.files.parent.show', [$workspace, 'project', $project->public_id, 'limit' => 1], absolute: false),
+    'pagination_portal_parent' => route('portal.files.parent.show', [$company, 'project', $project->public_id, 'limit' => 1], absolute: false),
+    'pagination_native_collaboration' => route('svc.files.collaboration.show', [$workspace, $company->public_id, 'topic', $topics['discussion']->public_id, 'limit' => 1], absolute: false),
+    'pagination_portal_collaboration' => route('portal.files.collaboration.show', [$company, 'topic', $topics['discussion']->public_id, 'limit' => 1], absolute: false),
+    'attachment_visibility' => route('agent-api.v1.attachments.visibility.update', [$workspace, ClientAttachment::query()->where('workspace_id', $workspace->id)->where('record_type', 'agreement')->where('record_public_id', $agreement->public_id)->orderBy('id')->firstOrFail()->public_id], absolute: false),
     'portalprojectfiles' => route('portal.files.parent.show', [$company, 'project', $project->public_id], absolute: false),
     'portaltaskfiles' => route('portal.files.parent.show', [$company, 'task', $task->public_id], absolute: false),
     'portalproposalfiles' => route('portal.proposal', [$company, $portalProposal], absolute: false),
@@ -130,6 +142,8 @@ file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->
     'expensefiles' => route('svc.expenses.receipts', [$workspace, $company, $expense->public_id], absolute: false),
     'operationsfiles' => route('workspaces.operations', $workspace, absolute: false),
     'taskthread' => route('collaboration.comments.index', [$workspace, $company, 'task', $task->public_id], absolute: false),
+    'content_topic_create' => route('agent-api.v1.collaboration.topics.store', [$workspace, $company->public_id], absolute: false),
+    'content_comment_create' => route('agent-api.v1.collaboration.comments.store', [$workspace, $company->public_id, 'topic', $topics['note']->public_id], absolute: false),
     'index' => route('collaboration.index', [$workspace, $company, 'kind' => 'note'], absolute: false),
     'note' => route('collaboration.show', [$workspace, $company, $topics['note']], absolute: false),
     'discussion' => route('collaboration.show', [$workspace, $company, $topics['discussion']], absolute: false),

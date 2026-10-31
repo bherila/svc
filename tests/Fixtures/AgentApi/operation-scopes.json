@@ -926,6 +926,19 @@
             "expenses:read"
         ]
     },
+    "expenses.receipts.delete": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.receipts.delete"
+        ]
+    },
     "expenses.receipts.download": {
         "scopes": [
             "expenses:read"
@@ -1273,6 +1286,31 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:invoices.square_cover"
+        ]
+    },
+    "invoices.square_covered_payment_record": {
+        "scopes": [
+            "billing:read",
+            "payments:record"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_covered_payment_record"
+        ]
+    },
+    "invoices.square_covered_payments": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.square_covered_payments"
         ]
     },
     "invoices.square_link": {
@@ -2122,6 +2160,16 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:task_planning.labels.update"
+        ]
+    },
+    "tasks.assignees.list": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:tasks.assignees.list"
         ]
     },
     "tasks.create": {

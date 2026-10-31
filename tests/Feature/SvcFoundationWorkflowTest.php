@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -20,9 +21,9 @@ class SvcFoundationWorkflowTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)
-            ->post('/workspaces', ['name' => 'Synthetic Studio'])
-            ->assertRedirect(route('workspaces.enter', Workspace::query()->sole()));
+        $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('w', 40))
+            ->withHeader('Idempotency-Key', 'foundation-workspace-create')->postJson(route('agent-api.v1.workspaces.store'), ['name' => 'Synthetic Studio'])
+            ->assertCreated()->assertJsonPath('data.web_url', route('workspaces.operations', Workspace::query()->sole()));
 
         $workspace = Workspace::query()->sole();
         $this->assertSame('synthetic-studio', $workspace->slug);
@@ -39,9 +40,10 @@ class SvcFoundationWorkflowTest extends TestCase
         $outsider = User::factory()->create();
         $workspace = $this->workspaceOwnedBy($owner);
 
-        $this->actingAs($outsider)
-            ->post("/workspaces/{$workspace->public_id}/clients", ['name' => 'Forbidden Client'])
-            ->assertForbidden();
+        $this->actingAs($outsider, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-refused-client-create')
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/clients", ['name' => 'Forbidden Client'])
+            ->assertNotFound();
 
         $this->assertDatabaseCount('client_companies', 0);
     }
@@ -51,38 +53,42 @@ class SvcFoundationWorkflowTest extends TestCase
         $owner = User::factory()->create();
         $workspace = $this->workspaceOwnedBy($owner);
 
-        $this->actingAs($owner)
-            ->post("/workspaces/{$workspace->public_id}/clients", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-client-create')
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/clients", [
                 'name' => 'Example Client',
                 'billing_email' => 'billing@example.test',
-            ])->assertRedirect(route('clients.show', [$workspace, ClientCompany::query()->sole()]));
+            ])->assertCreated()->assertHeader('Location', route('clients.show', [$workspace, ClientCompany::query()->sole()], absolute: false));
 
         $company = ClientCompany::query()->sole();
-        $this->actingAs($owner)
-            ->post("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('p', 40))
+            ->withHeader('Idempotency-Key', 'foundation-project-create')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects", [
+                'company_id' => $company->public_id, 'expected_version' => AgentApiVersion::for($company), 'confirm' => true,
                 'name' => 'Website refresh',
                 'description' => 'Synthetic project description.',
                 'is_visible_to_client' => true,
-            ])->assertRedirect('/');
+            ])->assertCreated();
 
         $project = ClientProject::query()->sole();
-        $this->actingAs($owner)
-            ->post("/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-foundation-task-post')
+            ->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", [
                 'title' => 'Prepare discovery notes',
                 'is_visible_to_client' => true,
-            ])->assertRedirect('/');
+            ])->assertCreated();
 
         $task = ClientTask::query()->sole();
         $this->assertSame($workspace->id, $company->workspace_id);
         $this->assertSame($workspace->id, $project->workspace_id);
         $this->assertSame($workspace->id, $task->workspace_id);
 
-        $this->actingAs($owner)
-            ->patch("/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))
+            ->withHeader('Idempotency-Key', 'synthetic-foundation-task-patch')
+            ->patchJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
                 'expected_version' => AgentApiVersion::for($task),
                 'status' => 'completed',
                 'is_visible_to_client' => true,
-            ])->assertRedirect('/');
+            ])->assertOk();
 
         $this->assertSame('completed', $task->fresh()->status);
         $this->assertNotNull($task->fresh()->completed_at);
@@ -99,8 +105,9 @@ class SvcFoundationWorkflowTest extends TestCase
             'slug' => 'other-client',
         ]);
 
-        $this->actingAs($owner)
-            ->post("/workspaces/{$workspace->public_id}/clients/{$otherCompany->public_id}/projects", [
+        $this->actingAs($owner, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('p', 40))
+            ->withHeader('Idempotency-Key', 'foundation-foreign-project')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects", [
+                'company_id' => $otherCompany->public_id, 'expected_version' => AgentApiVersion::for($otherCompany), 'confirm' => true,
                 'name' => 'Cross-tenant project',
             ])->assertNotFound();
 

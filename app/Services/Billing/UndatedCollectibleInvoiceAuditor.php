@@ -25,7 +25,7 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * ## Why the null survives
  *
- * `due_date` is nullable by design: `StoreInvoiceRequest` accepts null and the
+ * `due_date` is nullable by design: the draft API accepts null and the
  * importer passes the source value through. `InvoiceLifecycleService::issue()`
  * defaults a null due date to the issue date, which is the native lifecycle
  * contract - but it returns early for an invoice that is already charged, so an

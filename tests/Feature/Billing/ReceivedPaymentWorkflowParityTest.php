@@ -10,14 +10,17 @@ use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\FirstPartySession;
 use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\TestCase;
 
 final class ReceivedPaymentWorkflowParityTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
 
     public function test_web_standalone_api_and_issue_with_payment_use_the_same_received_money_operation(): void
@@ -35,11 +38,11 @@ final class ReceivedPaymentWorkflowParityTest extends TestCase
         $issue = $this->draft($workspace, $company, 'ISSUE');
         $pending = $lifecycle->issue($this->draft($workspace, $company, 'PENDING'), $workspace);
         $facts = ['amount' => 1200, 'currency' => 'USD', 'method' => 'Synthetic wire', 'received_on' => '2026-10-08'];
-        $this->actingAs($owner)->post('/workspaces/'.$workspace->public_id.'/invoices/'.$web->public_id.'/payments', $facts, ['Idempotency-Key' => 'synthetic-web-receipt'])->assertRedirect()->assertSessionHas('status', 'Payment recorded.');
-        $this->post('/workspaces/'.$workspace->public_id.'/invoices/'.$web->public_id.'/payments', $facts, ['Idempotency-Key' => 'synthetic-web-receipt'])->assertRedirect();
+        $this->recordPaymentApi($owner, $workspace, $web, $facts, 'synthetic-web-receipt')->assertCreated();
+        $this->recordPaymentApi($owner, $workspace, $web, $facts, 'synthetic-web-receipt')->assertCreated();
         $this->assertDatabaseCount('client_invoice_payments', 1);
-        $this->postJson('/workspaces/'.$workspace->public_id.'/invoices/'.$pending->public_id.'/payments', ['amount' => 100, 'currency' => 'USD', 'method' => 'Synthetic check', 'status' => 'pending', 'notes' => 'Synthetic web bookkeeping', 'idempotency_key' => 'synthetic-web-pending'])->assertRedirect()->assertSessionHasNoErrors();
-        $this->assertSame('Synthetic web bookkeeping', ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->where('idempotency_key', 'synthetic-web-pending')->firstOrFail()->notes);
+        $this->recordPaymentApi($owner, $workspace, $pending, ['amount' => 100, 'currency' => 'USD', 'method' => 'Synthetic check', 'status' => 'pending', 'notes' => 'Synthetic web bookkeeping'], 'synthetic-web-pending')->assertCreated();
+        $this->assertSame('Synthetic web bookkeeping', ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->where('idempotency_key', RecordReceivedPayment::agentKey($owner->id, FirstPartySession::CLIENT_ID, 'synthetic-web-pending'))->firstOrFail()->notes);
         $this->assertSame(1200, $pending->fresh()->balance_amount);
         $principal = $this->actingAsMcp($owner, ['billing:deliver', 'payments:record', 'billing:read']);
         $client = $principal->token()->oauth_client_id;
@@ -49,7 +52,7 @@ final class ReceivedPaymentWorkflowParityTest extends TestCase
             $this->assertSame('paid', $invoice->fresh()->status);
             $this->assertSame(0, $invoice->fresh()->balance_amount);
         }
-        $this->assertDatabaseHas('client_invoice_payments', ['workspace_id' => $workspace->id, 'client_invoice_id' => $web->id, 'idempotency_key' => 'synthetic-web-receipt']);
+        $this->assertDatabaseHas('client_invoice_payments', ['workspace_id' => $workspace->id, 'client_invoice_id' => $web->id, 'idempotency_key' => RecordReceivedPayment::agentKey($owner->id, FirstPartySession::CLIENT_ID, 'synthetic-web-receipt')]);
         $this->assertDatabaseHas('client_invoice_payments', ['workspace_id' => $workspace->id, 'client_invoice_id' => $api->id, 'idempotency_key' => RecordReceivedPayment::agentKey($owner->id, $client, 'synthetic-agent-receipt')]);
         $this->assertDatabaseHas('client_invoice_payments', ['workspace_id' => $workspace->id, 'client_invoice_id' => $issue->id, 'idempotency_key' => RecordReceivedPayment::agentKey($owner->id, $client, 'synthetic-issue-receipt', 'invoices.issue')]);
     }

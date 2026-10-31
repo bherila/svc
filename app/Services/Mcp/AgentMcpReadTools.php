@@ -14,6 +14,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Services\Tasks\TaskAssigneeReadService;
 use App\Support\AgentApi\InvoiceListFilters;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use LogicException;
@@ -134,6 +135,14 @@ final class AgentMcpReadTools
     }
 
     /** @return array<string, mixed> */
+    public function taskAssignees(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(maxLength: 100)] string $q = ''): array
+    {
+        $context = $this->workspace($workspace_id, 'tasks:read');
+
+        return app(TaskAssigneeReadService::class)->list($context->principal->subject, $context->workspace, $project_id, $q);
+    }
+
+    /** @return array<string, mixed> */
     public function task(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $task_id): array
     {
         $context = $this->workspace($workspace_id, 'tasks:read');
@@ -181,7 +190,7 @@ final class AgentMcpReadTools
      */
     public function invoices(
         #[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(enum: ['draft', 'issued', 'partially_paid', 'paid', 'void'])] ?string $status = null,
+        #[Schema(enum: ['draft', 'issued', 'partially_paid', 'paid', 'disputed', 'void'])] ?string $status = null,
         #[Schema(minimum: 1, maximum: 100)] int $limit = 25,
         #[Schema(maxLength: 2048)] ?string $cursor = null,
         #[Schema(format: 'uuid')] ?string $company_id = null,

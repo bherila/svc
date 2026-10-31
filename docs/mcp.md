@@ -355,6 +355,19 @@ default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
 migration plus the approved confirmation design before general availability.
 
+`invoices.send` adds `data.delivery` beside the existing invoice result. It is
+the exact delivery registered by that idempotency receipt: `{id, status,
+error_summary}`, or `null` when an older receipt did not retain its delivery
+identity. `sent` means the mailer accepted the message, not that the recipient
+received it. `pending` and `sending` are unresolved; `sending` also covers a
+lost transport response or accepted mail whose local result could not be saved.
+Only a preparation failure before handoff is `failed`, with a sanitized error.
+The send still runs explicitly after commit in the request and needs no worker.
+Repeat an uncertain request with the same key and unchanged body to read its
+recorded outcome without another handoff. Do not automatically resend a `null`,
+`pending` or `sending` result. A proven `failed` result allows an operator to
+make a new confirmed attempt with a new key and current invoice version.
+
 `time_entries.log` accepts `approve: true` to approve the logged entries in
 the same transaction and under the same idempotency receipt, so a batch is
 either logged and approved or not written at all. It carries every gate
@@ -444,6 +457,10 @@ resolves authenticated context, validates its DTO, and maps the result.
 
 ## Compatibility and current coverage
 
+The shared [`/api/v1` compatibility policy](finance-api.md#compatibility) states
+which additions are compatible, how consumers handle unknown enum values, and
+when a breaking change requires a new version or a deprecation period.
+
 Existing clients depend on the public tool and prompt names, dotted naming,
 tool ordering, schema shapes, safe error messages, OAuth/PKCE discovery, and
 credential-bound sessions. Additive capabilities must not rename, remove, or
@@ -468,6 +485,19 @@ The operation is removed only by its removal issue, after the deprecation window
 | Deprecated                                        | Since | Removal | Replacement |
 | ------------------------------------------------- | ----- | ------- | ----------- |
 | `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | None: the #134 repair it sized is done |
+
+Every feature-test HTTP exchange under `/api/v1` now checks the published
+OpenAPI contract through `Tests\TestCase`: accepted requests validate their
+parameters and bodies, and all responses, including refusals, validate their
+status, media type and JSON shape. Deliberately invalid negative-test inputs may
+be refused; they cannot be accepted outside the schema. The MCP transport
+endpoint retains its separate JSON-RPC envelope and tool-schema contract tests.
+Historical receipt replays and ignored-input security regressions explicitly pin
+a closed request schema for that one named operation at the test call; their
+responses still use the current published schema.
+Tests disable debug responses so refusal shapes match the deployed API rather
+than Laravel's development exception traces. Protected-resource discovery links
+the public contract with `service_documentation`.
 
 Current coverage includes initialization, scope-filtered discovery, prompts,
 tool schema closure, input and output validation, REST parity, credential
@@ -723,7 +753,7 @@ receipt, as `finance.reconciliations.upsert` would. It needs the
 audited under both operations. Null means none. See
 [the finance API](finance-api.md#recording-a-deposit-and-its-allocation-in-one-call).
 
-Whatever it carries, `payments.record` refuses a new payment, under the
+For OAuth and MCP callers, `payments.record` refuses a new payment, under the
 invoice lock, while another payment on the invoice is `pending`, is a Stripe
 payment stored as `failed` (whose intent can still be confirmed), or carries a
 status SVC cannot read exactly, and while Square collects the invoice. Recording
@@ -731,9 +761,23 @@ any payment, even a pending one, advances the invoice's version. `invoices.get`
 shows owners and admins `pending_payments` and `collection_owner` (`svc` or
 `square`) for exactly these two checks; both are null for other readers. A
 completed receipt replays before either check, so a retry of a payment already
-recorded still answers with it. The website's payment form, a payment folded
-into `invoices.issue`, the console and the processors' webhooks are not
-affected.
+recorded still answers with it.
+
+The website calls the same operation with a server-selected operator
+bookkeeping policy: an owner/admin may explicitly record money already
+received on an invoice Square collects, preserving that website capability.
+Only the trusted authenticated session adapter can select this policy; it is
+not a request field and OAuth/MCP callers cannot select it. The invoice version,
+agreement/snapshot checks and in-flight payment refusal still apply. Recording
+this money initiates no processor charge and does not remove the Square link.
+
+An invoice with any disputed payment is `disputed`, even when only part of the
+payment is contested or replacement payments already cover its balance.
+`invoices.list` accepts that status. The invoice remains visible and charged;
+collection and reminders pause, while `payments.record` can still record money
+already received against the remaining balance. Disputed payments supply no
+spendable credit until restored; restored excess after a win is available to
+future drafts. See the [disputed invoice contract](finance-api.md#disputed-invoice-state).
 
 ### Correcting a recorded payment
 
@@ -966,6 +1010,8 @@ Square identifiers are opaque, shape-checked strings.
 | `invoices.square_link` | `POST /workspaces/{workspace}/invoices/{invoice}/square-link` | `billing:write`, `billing:read` | invoices |
 | `invoices.square_unlink` | `DELETE /workspaces/{workspace}/invoices/{invoice}/square-link` | `billing:write`, `billing:read` | invoices |
 | `invoices.square_cover` | `POST /workspaces/{workspace}/invoices/{invoice}/square-coverage` | `billing:write`, `billing:read` | invoices |
+| `invoices.square_covered_payments` | `GET /workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments` | `billing:read` | read |
+| `invoices.square_covered_payment_record` | `POST /workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments/{payment}` | `billing:read`, `payments:record` | payments |
 | `invoices.square_uncover` | `DELETE /workspaces/{workspace}/invoices/{invoice}/square-coverage` | `billing:write`, `billing:read` | invoices |
 | `companies.square_customer.get` | `GET /workspaces/{workspace}/clients/{client}/square-customer` | `billing:read` | - |
 | `companies.square_customer.set` | `PUT /workspaces/{workspace}/clients/{client}/square-customer` | `billing:write`, `billing:read` | clients |
@@ -996,9 +1042,16 @@ current `expected_version`, and are recorded in the client's activity.
   both commit. An invoice that covers others cannot be unlinked until those
   coverages are cleared, and `invoices.square_candidates` lists a covered Square
   invoice under `excluded.linked_elsewhere` rather than offering it. A
-  coverage is not a link: SVC collects, reconciles and records no payment
-  through it, and a payment on a covered Square invoice is still reported by the
-  billing audit until it is recorded. The billing audit does not report a
+  coverage is not a link and never starts automatic collection or allocation.
+  Review its current completed payments with `invoices.square_covered_payments`
+  (or the invoice screen's **Review payments**) and explicitly record one with
+  `invoices.square_covered_payment_record`. Confirmation requires the current
+  invoice `expected_version`, selected payment `reviewed_version`, `confirm: true`
+  and an idempotency key. The operation refetches provider facts and disputes,
+  rechecks the active coverage and invoice under locks, and records the payment's
+  canonical Square identity once. Refunded, disputed, over-balance or in-flight
+  cases return a refusal and no record URL; they remain manual review cases.
+  A payment stays in the billing audit until it is actually recorded. The billing audit does not report a
   covered series member as an unmirrored period. `invoices.get` lists coverages
   in `square.covers`.
 - **Customer mapping.** One active mapping per client and per Square customer.
@@ -1118,6 +1171,15 @@ legacy entry still has status `approved`. Only allocations whose pivot, line,
 and invoice belong to the entry's workspace and client company affect these
 fields. Allocation reads are eager loaded for a page.
 
+The opaque time-entry `version` binds both the entry revision and these visible
+allocation fields. Reserving time, releasing it, changing its invoice, or moving
+from reserved to consumed changes the token even if the entry itself was not
+edited. Use the latest token for a following time mutation. Tokens identify the
+current representation; they are not ordered revisions or a change feed, and
+returning to an identical representation may restore a previous token. Listing
+still uses ordinary ID pagination, so detecting allocation changes requires
+rereading the relevant entries rather than treating a cursor as a watermark.
+
 `time_entries.list` and its REST route accept `allocation_state` and
 `is_billable` filters. `allocation_state: unallocated` includes draft and deferred
 rows that have no allocation. To find the exact work behind
@@ -1128,6 +1190,22 @@ selector, including flat-hourly subcontractor pricing. Combine it with existing
 project/date filters to narrow the result. Pagination cursors are bound to all
 filters; fetch a new first page when changing them. Pages default to 25 rows and
 are capped at 100; descriptions are preserved.
+
+## Browser client records
+
+Client creation, company details and business contacts on Settings use the same
+`clients.*` and `clients.contacts.*` operations as REST and MCP. Their former web
+mutation routes are retired (#385). Settings reads share the API presenters and
+opaque versions; edits send `expected_version` and an idempotency key. A lost
+response retains the key for the same edit, while a refusal keeps the entered
+values visible. Successful changes reload the affected props.
+
+Existing contacts archive through the explicit-confirmation operation and restore
+through its lifecycle twin. Updating contact details does not change archival
+state. Adding a contact still creates no login or invitation. The signed-in
+browser remains usable when agent write cutovers are off, under the same role and
+workspace checks. Client creation returns a finished `Location` for its new home;
+the client switcher follows that server URL.
 
 ## Expense finance provenance
 
@@ -1195,6 +1273,28 @@ same private attachment storage adapter as the web receipt screen and record
 success, replay, and refusal in the mutation audit.
 
 Receipt upload bytes are staged, promoted and verified before the expense lock. A durable staged recovery row records both object keys before promotion. The locked mutation only checks the current expense version, publishes the prepared row and advances the expense revision. A process termination or rollback leaves recoverable staged state; failed cleanup preserves that state for `svc:attachments:repair`. Replays return the original receipt and discard their unused preparation.
+
+`expenses.receipts.delete` uses `DELETE /workspaces/{workspace}/expenses/{expense}/receipts/{receipt}`
+with `expenses:read` and `expenses:write`, `Idempotency-Key`, `confirm: true`,
+`expected_version` for the receipt and `expected_parent_version` for the expense.
+Receipt metadata now includes its opaque `version` and `lifecycle_state`; list,
+upload and deletion responses also include `expense_version`. Deletion marks the
+receipt unavailable through the existing retention lifecycle and advances the
+expense revision once. It does not change expense money, approval or posting.
+A completed retry rechecks current manager authority and exact parent lineage.
+OAuth/MCP dual Portal identities remain refused. Trusted first-party sessions
+use native staff authority for all receipt routes, so current managers retain
+upload, list, download and deletion even if they also have portal access.
+
+Native CLI deletion previews by default, with no receipt, audit or storage writes:
+
+```sh
+php artisan svc:attachments:delete-expense-receipt WORKSPACE_UUID EXPENSE_UUID RECEIPT_UUID \
+  --actor=MANAGER_UUID --expected-version=RECEIPT_VERSION \
+  --expected-parent-version=EXPENSE_VERSION --format=json
+# Add --apply --confirm --key=STABLE_RETRY_KEY only after reviewing the preview.
+```
+
 
 ### Completing an invoice workflow
 
@@ -1355,6 +1455,14 @@ Workspace owners/admins can administer projects through REST and MCP:
 | `projects.members.list` | `GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/members` | Returns the project version |
 | `projects.members.update` | `PUT /api/v1/workspaces/{workspace_id}/projects/{project_id}/members` | Project version from the member listing |
 
+Client settings uses these same project operations with the signed-in browser
+session, finished server-provided URLs, explicit confirmation, and stable retry
+keys. Project create uses the client version; edit and member access use the
+current project version. The former nested project creation, update, and access
+web mutation routes have been retired. A refused write keeps the operator’s
+unsaved edits and displays its error.
+
+
 Writes require `projects:write` and the scope that exposes the current revision:
 `clients:read` for create, or `projects:read` for update, archive and member access.
 Both `AGENT_API_WRITES_ENABLED` and
@@ -1391,6 +1499,18 @@ redirects and numeric form revision error.
 
 
 ### Proposals
+
+The Operations proposal draft/send controls, agreement activation and billing
+schedule creation/generation call the canonical REST operations through the
+signed-in browser session. Agreement rename and terms editing use
+`agreements.update`. The server supplies finished URLs and current opaque
+versions; viewer controls are absent. Activation, sending and generation require
+explicit confirmation. An uncertain POST response retains the original payload
+and receipt key for a safe retry; a stale revision refreshes the current page.
+The former seven engagement/schedule mutation routes have been retired. Portal
+proposal acceptance and interactive agreement signatures keep their browser
+flows.
+
 
 `proposals.list` and `proposals.get` require `proposals:read`. Managers can read
 workspace proposals; portal recipients can read only sent or accepted proposals
@@ -1671,7 +1791,15 @@ They never activate imported history. Both topic kinds accept comments.
 versioned writes also need `collaboration:read`. Agent writes require both
 `AGENT_API_WRITES_ENABLED` and `AGENT_API_COLLABORATION_WRITES_ENABLED` (the latter
 defaults false). Signed-in first-party web sessions bypass these deployment
-switches. Native web and CLI use their current staff permissions independently.
+switches. The website's create, edit, sharing and removal forms use these
+session-authenticated API operations; the six parallel browser writers are
+retired. New topics and comments follow the server's finished `web_url`,
+including the comment focus and page. Drafts survive refused or uncertain
+requests, and retries retain their receipt key until authoritative content
+loads. Native web and CLI use their current staff permissions independently.
+A website session with internal membership, including a dual staff identity,
+retains Internal authority; a portal-only session keeps scoped Portal reads
+and cannot write.
 
 The server chooses the audience: an agent actor with any current portal
 membership in the workspace, including a dual staff identity, receives the
@@ -1692,3 +1820,10 @@ lists default to one row, with `limit` from 1 to 30; native UI pages retain 30.
 A list containing several maximal bodies can exceed the result ceiling: reduce
 `limit` and follow `next_href`. Comment `web_url` uses an authorized comment UUID
 focus, so API page size never changes the native permalink destination.
+
+Covered-payment CLI: `svc:square:covered-payments <workspace UUID> <invoice UUID>
+<covered Square invoice id> --actor=<manager UUID> --format=json` reviews without
+recording. To record the selected safe payment, supply `--apply --confirm`,
+`--payment`, `--expected-version`, `--reviewed-version` and `--idempotency-key`
+from that review. The same canonical operation owns validation, provider dedup,
+receipts and audit for CLI, REST, MCP and the signed-in website.

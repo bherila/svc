@@ -31,6 +31,7 @@ final class AgentMcpReadToolSchemaContractTest extends TestCase
         'collaboration.attachments.download_url' => ['recordType' => 'record_type', 'recordPublicId' => 'record_id'],
         'collaboration.comments.list' => ['parentType' => 'parent_type', 'parentPublicId' => 'parent_id'],
         'square.series.get' => ['series' => 'series_key'],
+        'invoices.square_covered_payments' => ['squareInvoice' => 'square_invoice_id'],
         'finance.invoice_payments.list' => ['invoice' => 'invoice_id'],
     ];
 
@@ -40,6 +41,13 @@ final class AgentMcpReadToolSchemaContractTest extends TestCase
      * @var array<string, array<string, string>>
      */
     private const array REST_ONLY = [
+        'attachments.list' => [
+            'presentation' => 'Trusted first-party native panel representation; not selectable by MCP callers.',
+            'client' => 'Trusted first-party portal preview context; not selectable by MCP callers.',
+        ],
+        'collaboration.attachments.list' => [
+            'presentation' => 'Trusted first-party native panel representation; not selectable by MCP callers.',
+        ],
         'invoices.list' => [
             'updated_since' => 'Incremental sync for the website and finance clients; an agent pages the list.',
             'watermark' => 'Incremental sync for the website and finance clients; an agent pages the list.',

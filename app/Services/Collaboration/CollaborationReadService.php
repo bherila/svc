@@ -229,6 +229,16 @@ final class CollaborationReadService
     /** @param array<string, mixed> $params */
     private function url(string $operation, Workspace $workspace, ClientCompany $company, CollaborationAudience $audience, array $params = []): string
     {
+        $write = match ($operation) {
+            'store' => 'topics.store', 'update' => 'topics.update', 'destroy' => 'topics.destroy',
+            'comments.store', 'comments.update', 'comments.destroy' => $operation,
+            default => null,
+        };
+        if ($write !== null) {
+            return route('agent-api.v1.collaboration.'.$write,
+                ['workspace' => $workspace, 'client' => $company->public_id, ...$params], absolute: false);
+        }
+
         return route(($audience === CollaborationAudience::Portal ? 'portal.' : '').'collaboration.'.$operation,
             [...($audience === CollaborationAudience::Internal ? ['workspace' => $workspace] : []), 'clientCompany' => $company, ...$params], absolute: false);
     }

@@ -17,6 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Tests\Concerns\CallsInvoiceApi;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -35,15 +36,13 @@ use Tests\TestCase;
  */
 final class PaymentDateCorrectionTest extends TestCase
 {
+    use CallsInvoiceApi;
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
     protected function setUp(): void
     {
         parent::setUp();
-        if (! Route::has('svc.billing.invoices.payments.received-on')) {
-            require base_path('routes/billing.php');
-        }
         Date::setTestNow(CarbonImmutable::parse('2026-08-29 12:00:00 UTC'));
     }
 
@@ -120,26 +119,25 @@ final class PaymentDateCorrectionTest extends TestCase
     }
 
     /**
-     * The HTTP door validates one field and writes one column.
-     *
-     * Money sent alongside is not validated, not read and not written: the
-     * request names `received_on` and nothing else, and the service takes a
-     * date rather than an array of attributes.
+     * The screen's date-only payload uses the canonical descriptive-field
+     * correction. Monetary fields are refused by its closed schema before
+     * anything changes; the accepted date-only request moves no money.
      */
-    public function test_the_route_corrects_the_date_and_ignores_everything_sent_beside_it(): void
+    public function test_the_session_api_refuses_monetary_fields_then_corrects_only_the_date(): void
     {
         [$owner, $workspace, $invoice, $payment] = $this->recordedPayment();
 
-        $this->actingAs($owner)
-            ->postJson($this->correctionUrl($workspace, $invoice, $payment), [
-                'received_on' => '2026-08-18',
-                'reason' => 'Synthetic bank statement',
-                'amount' => 999999,
-                'status' => 'refunded',
-                'refunded_amount' => 999999,
-                'method' => 'cash',
-            ])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->correctPaymentApi($owner, $workspace, $payment, [
+            'received_on' => '2026-08-18',
+            'reason' => 'Synthetic bank statement',
+            'amount' => 999999,
+            'status' => 'refunded',
+            'refunded_amount' => 999999,
+            'method' => 'cash',
+        ])
+            ->assertUnprocessable();
+        $this->assertSame('2026-08-25', $payment->fresh()->received_on?->toDateString());
+        $this->correctPaymentApi($owner, $workspace, $payment, ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])->assertOk();
 
         $fresh = $payment->fresh();
         $this->assertSame('2026-08-18', $fresh?->received_on?->toDateString());
@@ -153,10 +151,9 @@ final class PaymentDateCorrectionTest extends TestCase
     {
         [$owner, $workspace, $invoice, $payment] = $this->recordedPayment();
 
-        $this->actingAs($owner)
-            ->postJson($this->correctionUrl($workspace, $invoice, $payment), ['received_on' => '08/18/2026'])
+        $this->correctPaymentApi($owner, $workspace, $payment, ['received_on' => '08/18/2026', 'reason' => 'Synthetic bank statement'])
             ->assertStatus(422)
-            ->assertJsonValidationErrors('received_on');
+            ->assertJsonValidationErrors('body.received_on');
 
         $this->assertSame('2026-08-25', $payment->fresh()?->received_on?->toDateString());
     }
@@ -184,17 +181,14 @@ final class PaymentDateCorrectionTest extends TestCase
 
         // Their own workspace and invoice in the URL, another workspace's
         // payment in it.
-        $this->actingAs($owner)
-            ->postJson(
-                "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments/{$otherPayment->public_id}/received-on",
-                ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'],
-            )
+        $this->correctPaymentApi($owner, $workspace, $otherPayment,
+            ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'],
+        )
             ->assertNotFound();
 
         // The other workspace in the URL, where they are not a member.
-        $this->actingAs($owner)
-            ->postJson($this->correctionUrl($otherWorkspace, $otherInvoice, $otherPayment), ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])
-            ->assertForbidden();
+        $this->correctPaymentApi($owner, $otherWorkspace, $otherPayment, ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])
+            ->assertNotFound();
 
         $this->assertSame('2026-08-25', $otherPayment->fresh()?->received_on?->toDateString());
         $this->assertSame('2026-08-25', $payment->fresh()?->received_on?->toDateString());
@@ -297,9 +291,8 @@ final class PaymentDateCorrectionTest extends TestCase
             }
         });
 
-        $this->actingAs($owner)
-            ->postJson($this->correctionUrl($workspace, $invoice, $payment), ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])
-            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->correctPaymentApi($owner, $workspace, $payment, ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])
+            ->assertOk();
 
         // The binding layer really was exercised, so an empty capture cannot be
         // mistaken for a clean one: both records are named in the URL by a
@@ -459,11 +452,6 @@ final class PaymentDateCorrectionTest extends TestCase
         $tables = array_values(array_unique($matches[1]));
 
         return $tables;
-    }
-
-    private function correctionUrl(Workspace $workspace, ClientInvoice $invoice, ClientInvoicePayment $payment): string
-    {
-        return "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments/{$payment->public_id}/received-on";
     }
 
     /** @return array{0:User,1:Workspace,2:ClientInvoice,3:ClientInvoicePayment} */

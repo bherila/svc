@@ -11,6 +11,8 @@ use App\Models\WorkspaceMembership;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\CursorPage;
+use App\Support\AgentApi\Presenters\AgentProjectMemberPresenter;
+use App\Support\AgentApi\Presenters\AgentUserPresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -40,7 +42,10 @@ final class AgentProjectMemberReadService
         }, function (WorkspaceMembership $membership): array {
             $grant = $membership->getRelation('projectGrant');
 
-            return ['user_id' => $membership->user->public_id, 'name' => $membership->user->name, 'role' => $grant instanceof ClientProjectMembership ? $grant->role->value : 'none'];
+            $identity = AgentUserPresenter::identity($membership->user);
+            $resource = AgentProjectMemberPresenter::grant($identity['id'], $grant instanceof ClientProjectMembership ? $grant : null);
+
+            return ['user_id' => $resource['user_id'], 'name' => $identity['name'], 'role' => $resource['role']];
         });
 
         return [...$page, 'project_id' => $project->public_id, 'version' => AgentApiVersion::for($project)];

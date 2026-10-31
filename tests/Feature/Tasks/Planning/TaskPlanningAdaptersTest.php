@@ -10,6 +10,7 @@ use App\Models\ClientContact;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
+use App\Models\ClientTaskDependency;
 use App\Models\ClientTaskLabel;
 use App\Models\User;
 use App\Models\Workspace;
@@ -29,7 +30,9 @@ final class TaskPlanningAdaptersTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach ([['api/v1/synthetic-planning', AgentTaskPlanningController::class, ['api', 'auth:api']],
+        // Isolated controller probes are not published API routes; registry tests
+        // cover the real /api/v1 bindings and their OpenAPI contracts.
+        foreach ([['synthetic-api/planning', AgentTaskPlanningController::class, ['api', 'auth:api']],
             ['synthetic-planning', ClientTaskPlanningController::class, ['web', 'auth:web']]] as [$prefix, $controller, $middleware]) {
             Route::prefix($prefix.'/{workspace}')->middleware($middleware)->group(function () use ($controller, $prefix): void {
                 foreach ([['get', '/tasks/{task}', 'get'], ['get', '/labels', 'labels.list'], ['post', '/labels', 'labels.create'],
@@ -37,6 +40,9 @@ final class TaskPlanningAdaptersTest extends TestCase
                     ['post', '/labels/{label}/restore', 'labels.restore'], ['get', '/projects/{project}/labels', 'labels.options'], ['put', '/tasks/{task}/labels', 'labels.replace'],
                     ['get', '/tasks/{task}/dependencies', 'dependencies.get'], ['get', '/tasks/{task}/dependency-options', 'dependencies.options'], ['put', '/tasks/{task}/dependencies', 'dependencies.replace'],
                     ['get', '/tasks/{task}/contacts', 'contacts.get'], ['get', '/tasks/{task}/contact-options', 'contacts.options'], ['put', '/tasks/{task}/contacts', 'contacts.replace']] as [$verb, $uri, $operation]) {
+                    if ($prefix === 'synthetic-planning' && $verb !== 'get') {
+                        continue;
+                    }
                     $route = Route::$verb($uri, [$controller, $verb === 'get' ? 'show' : 'mutate'])->defaults('task_planning_operation', $operation);
                     if ($prefix === 'synthetic-planning') {
                         $route->name('tasks.planning.'.$operation);
@@ -54,7 +60,7 @@ final class TaskPlanningAdaptersTest extends TestCase
     {
         [$workspace, $project, $owner, $task] = $this->fixture();
         $this->actingAsMcp($owner, ['tasks:read', 'tasks:write', 'clients:read']);
-        $base = '/api/v1/synthetic-planning/'.$workspace->public_id;
+        $base = '/synthetic-api/planning/'.$workspace->public_id;
         $version = $this->getJson($base.'/tasks/'.$task->public_id)->assertOk()->json('data.version');
         $id = $this->withHeader('Idempotency-Key', 'synthetic-label')->postJson($base.'/labels', ['name' => 'Synthetic HTTP label'])->assertCreated()->json('data.id');
         $input = ['expected_version' => $version, 'label_ids' => [$id]];
@@ -76,7 +82,7 @@ final class TaskPlanningAdaptersTest extends TestCase
     {
         [$workspace, $project, $owner, $task] = $this->fixture();
         $this->actingAsMcp($owner, ['tasks:read', 'tasks:write', 'clients:read']);
-        $base = '/api/v1/synthetic-planning/'.$workspace->public_id;
+        $base = '/synthetic-api/planning/'.$workspace->public_id;
         config(['task_planning_details.enabled' => false]);
         $this->getJson($base.'/tasks/'.$task->public_id)->assertNotFound();
         $this->withHeader('Idempotency-Key', 'synthetic-off')->postJson($base.'/labels', ['name' => 'Synthetic refused'])->assertNotFound();
@@ -126,21 +132,34 @@ final class TaskPlanningAdaptersTest extends TestCase
         [$workspace, $project, $owner, $task] = $this->fixture();
         for ($i = 0; $i < 27; $i++) {
             ClientTaskLabel::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic label '.$i, 'name_key' => hash('sha256', 'synthetic label '.$i)]);
+            ClientContact::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'first_name' => 'Synthetic contact '.$i]);
+            ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'Synthetic candidate '.$i]);
+            $dependent = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'Synthetic dependent '.$i]);
+            ClientTaskDependency::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'client_task_id' => $dependent->id, 'prerequisite_task_id' => $task->id]);
         }
-        $this->actingAs($owner, 'web');
-        $base = '/synthetic-planning/'.$workspace->public_id;
-        $page = $this->getJson($base.'/projects/'.$project->public_id.'/labels?q=Synthetic&limit=25')->assertOk()
-            ->assertJsonCount(25, 'data')->assertJsonMissingPath('meta')->assertJsonPath('previous_href', null);
+        $this->actingAsMcp($owner, ['tasks:read', 'clients:read']);
+        $base = '/api/v1/workspaces/'.$workspace->public_id;
+        $page = $this->getJson($base.'/projects/'.$project->public_id.'/task-label-options?q=Synthetic&limit=25')->assertOk()
+            ->assertJsonCount(25, 'data')->assertJsonPath('previous_href', null);
         $next = $page->json('next_href');
         $this->assertIsString($next);
+        $this->assertStringContainsString('/api/v1/', $next);
         $this->assertStringContainsString('q=Synthetic', $next);
-        $this->assertStringContainsString('cursor=', $next);
-        $this->getJson($next)->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('next_href', null);
-        $this->getJson($base.'/tasks/'.$task->public_id.'/dependencies')->assertOk()->assertJsonPath('next_href', null)->assertJsonMissingPath('meta');
-        $this->actingAsMcp($owner, ['tasks:read']);
-        $this->getJson('/api/v1/synthetic-planning/'.$workspace->public_id.'/projects/'.$project->public_id.'/labels')
-            ->assertOk()->assertJsonCount(25, 'data')->assertJsonMissingPath('next_href');
-        $this->assertDatabaseCount('client_task_graph_states', 0);
+        $this->assertStringContainsString('limit=25', $next);
+        $this->assertStringContainsString('cursor='.urlencode($page->json('meta.next_cursor')), $next);
+        $this->getJson($next)->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('next_href', null)->assertJsonPath('meta.next_cursor', null);
+        foreach (['dependencies' => 'data.dependents', 'dependency-options' => 'data', 'contact-responsibility-options' => 'data'] as $suffix => $rows) {
+            $page = $this->getJson($base.'/tasks/'.$task->public_id.'/'.$suffix.'?limit=25')->assertOk()->assertJsonCount(25, $rows)->assertJsonPath('previous_href', null);
+            $next = $page->json('next_href');
+            $this->assertIsString($next);
+            $this->assertStringContainsString('/api/v1/', $next);
+            $this->assertStringContainsString('limit=25', $next);
+            $this->assertStringContainsString('cursor='.urlencode($page->json('meta.next_cursor')), $next);
+            $this->getJson($next)->assertOk()->assertJsonCount(2, $rows)->assertJsonPath('next_href', null)->assertJsonPath('meta.next_cursor', null);
+        }
+        foreach (['/projects/'.$project->public_id.'/task-label-options', '/tasks/'.$task->public_id.'/dependencies', '/tasks/'.$task->public_id.'/dependency-options', '/tasks/'.$task->public_id.'/contact-responsibility-options'] as $path) {
+            $this->getJson('/workspaces/'.$workspace->public_id.$path)->assertNotFound();
+        }
     }
 
     public function test_cli_preview_rolls_back_receipts_catalog_and_associations_while_apply_and_replay_commit(): void

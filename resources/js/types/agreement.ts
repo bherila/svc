@@ -17,6 +17,7 @@ import type { AttachmentSharing } from '@/types/files';
  * them.
  */
 export type AgreementTerms = CompanyAgreement & {
+    version: string;
     hourly_rate_amount: number | null;
     rollover_policy: string | null;
     catch_up_threshold_minutes: number | null;
@@ -56,7 +57,6 @@ export type AgreementTerms = CompanyAgreement & {
  */
 export type AgreementActions = {
     update: string | null;
-    upload_file: string | null;
     deferred_buydown?: { preview: string; create: string } | null;
 };
 

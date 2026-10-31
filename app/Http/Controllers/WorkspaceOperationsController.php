@@ -21,7 +21,16 @@ use App\Services\Files\AttachmentSharingGate;
 use App\Services\Files\AttachmentSharingPresenter;
 use App\Services\Files\AttachmentSharingView;
 use App\Support\Access\StaffRole;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentProposalPresenter;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
+use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
+use App\Support\Billing\InvoiceStatus;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -78,7 +87,7 @@ class WorkspaceOperationsController extends Controller
             : ClientProposal::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('client_company_id', $companyIds)
-                ->with('items')
+                ->with(['items' => fn ($items) => $items->where('workspace_id', $workspace->id)])
                 ->latest('id')
                 ->get();
         $proposalsByCompany = $proposals->groupBy('client_company_id');
@@ -166,13 +175,13 @@ class WorkspaceOperationsController extends Controller
             $filesPreviousHref = $fileRows->previousPageUrl();
         }
         $attachmentPayload = fn (string $type, string $recordPublicId): array => ($attachments->get($type.':'.$recordPublicId) ?? collect())
-            ->map(fn (ClientAttachment $attachment): array => [
-                'id' => $attachment->public_id,
-                'name' => $attachment->original_filename,
-                'media_type' => $attachment->media_type,
-                'bytes' => $attachment->bytes,
-                'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}",
-            ])->values()->all();
+            ->map(function (ClientAttachment $attachment) use ($workspace): array {
+                $metadata = AttachmentMetadata::for($attachment);
+
+                return ['id' => $metadata['id'], 'name' => $metadata['filename'],
+                    'media_type' => $metadata['media_type'], 'bytes' => $metadata['bytes'],
+                    'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}"];
+            })->values()->all();
 
         $parents = ['proposal' => $proposals->keyBy('public_id'), 'agreement' => $agreements->keyBy('public_id'), 'invoice' => $invoices->keyBy('public_id')];
         $visible = [];
@@ -190,10 +199,9 @@ class WorkspaceOperationsController extends Controller
 
             return ['files' => $rows->map(fn (ClientAttachment $file): array => AttachmentMetadata::native($file,
                 route('svc.files.download', [$workspace, $file->public_id], absolute: false),
-                $canManage ? route('svc.files.destroy', [$workspace, $file->public_id], absolute: false) : null,
-                app(AttachmentSharingPresenter::class)->nativeControl($file, $view, route('svc.files.visibility.update', [$workspace, $file->public_id], absolute: false), AttachmentAudience::Internal)))->values()->all(),
-                'upload' => null, 'next_href' => null,
-                'legacy_upload_href' => $canManage ? route('svc.files.store', [$workspace, $type, $id], absolute: false) : null];
+                $canManage ? route('agent-api.v1.attachments.destroy', [$workspace, $file->public_id], absolute: false) : null,
+                app(AttachmentSharingPresenter::class)->nativeControl($file, $view, route('agent-api.v1.attachments.visibility.update', [$workspace, $file->public_id], absolute: false), AttachmentAudience::Internal)))->values()->all(),
+                'upload' => $canManage ? ['href' => route('agent-api.v1.attachments.upload-url', ['workspace' => $workspace, 'recordType' => $type, 'recordPublicId' => $id], absolute: false), 'parent_version' => AgentApiVersion::for($parent)] : null, 'next_href' => null];
         };
 
         $clients = [];
@@ -203,67 +211,52 @@ class WorkspaceOperationsController extends Controller
 
             foreach ($company->projects as $project) {
                 $projects[] = [
-                    'id' => $project->public_id,
-                    'name' => $project->name,
+                    ...AgentProjectPresenter::identity($project),
                     'time_url' => route('clients.time', [$workspace, $company, 'log_project' => $project->public_id], absolute: false),
                     'time_entries' => ($timeEntriesByProject->get($project->id) ?? collect())
-                        ->map(fn (ClientTimeEntry $entry): array => [
-                            'id' => $entry->public_id,
-                            'worked_on' => $entry->worked_on->toDateString(),
-                            'minutes' => $entry->minutes,
-                            'description' => $entry->description,
-                            'status' => $entry->status,
-                            'is_billable' => $entry->is_billable,
-                            'is_deferred' => $entry->is_deferred,
-                        ])
+                        ->map(fn (ClientTimeEntry $entry): array => AgentTimeEntryPresenter::summary($entry))
                         ->all(),
                 ];
             }
 
             $clients[] = [
-                'id' => $company->public_id,
-                'name' => $company->name,
+                ...AgentClientPresenter::identity($company),
+                'invoice_create_href' => $canManage ? route('agent-api.v1.invoices.store', $workspace, absolute: false) : null,
+                'version' => AgentApiVersion::for($company),
+                'create_proposal_href' => $canManage ? route('agent-api.v1.proposals.store', [$workspace], absolute: false) : null,
                 'projects' => $projects,
                 'proposals' => ($proposalsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientProposal $proposal): array => [
-                        'id' => $proposal->public_id,
-                        'title' => $proposal->title,
-                        'status' => $proposal->status,
-                        'total_amount' => $proposal->totalAmount(),
-                        'currency' => $proposal->currency,
+                        ...AgentProposalPresenter::summary($proposal),
+                        'version' => AgentApiVersion::for($proposal),
+                        'send_href' => $canManage && $proposal->status === 'draft' ? route('agent-api.v1.proposals.send', [$workspace, $proposal->public_id], absolute: false) : null,
                         'attachments' => $attachmentPayload('proposal', $proposal->public_id),
                         'attachment_panel' => $filePanel('proposal', $proposal->public_id),
                     ])
                     ->all(),
                 'agreements' => ($agreementsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientAgreement $agreement): array => [
-                        'id' => $agreement->public_id,
-                        'title' => $agreement->title,
-                        'status' => $agreement->status,
-                        'billing_cadence' => $agreement->billing_cadence,
+                        ...AgreementReadPresenter::summary($agreement),
+                        'version' => AgentApiVersion::for($agreement),
+                        'activate_href' => $canManage && $agreement->status === 'draft' ? route('agent-api.v1.agreements.activate', [$workspace, $agreement->public_id], absolute: false) : null,
+                        'create_schedule_href' => $canManage && $agreement->status === 'active' && ! $schedules->contains('client_agreement_id', $agreement->id) ? route('agent-api.v1.billing-schedules.store', [$workspace], absolute: false) : null,
+                        'currency' => $agreement->currency,
                         'attachments' => $attachmentPayload('agreement', $agreement->public_id),
                         'attachment_panel' => $filePanel('agreement', $agreement->public_id),
                     ])
                     ->all(),
                 'billing_schedules' => ($schedulesByCompany->get($company->id) ?? collect())
-                    ->map(fn (ClientBillingSchedule $schedule): array => $this->schedules->present($schedule))
+                    ->map(fn (ClientBillingSchedule $schedule): array => [...$this->schedules->present($schedule), 'generate_href' => $canManage && $schedule->is_active ? route('agent-api.v1.billing-schedules.generate', [$workspace, $schedule->public_id], absolute: false) : null])
                     ->all(),
                 'invoices' => ($invoicesByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientInvoice $invoice): array => [
-                        'id' => $invoice->public_id,
-                        'invoice_number' => $invoice->invoice_number,
-                        'status' => $invoice->status,
-                        'total_amount' => $invoice->total_amount,
-                        'paid_amount' => $invoice->paid_amount,
-                        'balance_amount' => $invoice->balance_amount,
-                        'currency' => $invoice->currency,
-                        // What the record-payment form measures a payment date
-                        // against: a payment dated before the invoice existed
-                        // is legitimate and is warned about rather than
-                        // refused, and the screen cannot warn about a date it
-                        // was never told.
-                        'issue_date' => $invoice->issue_date?->toDateString(),
-                        'due_date' => $invoice->due_date?->toDateString(),
+                        ...AgentInvoicePresenter::summary($invoice),
+                        'version' => AgentApiVersion::for($invoice),
+                        'pdf_href' => route('svc.billing.invoices.pdf', [$workspace, $invoice], absolute: false),
+                        'issue_href' => $canManage && $invoice->status === InvoiceStatus::Draft->value
+                            ? route('agent-api.v1.invoices.issue', [$workspace, $invoice->public_id], absolute: false) : null,
+                        'payment_href' => $canManage && in_array($invoice->status, InvoiceStatus::recordable(), true) && $invoice->balance_amount > 0
+                            ? route('agent-api.v1.payments.store', $workspace, absolute: false) : null,
                         'attachments' => $attachmentPayload('invoice', $invoice->public_id),
                         'attachment_panel' => $filePanel('invoice', $invoice->public_id),
                     ])
@@ -285,9 +278,7 @@ class WorkspaceOperationsController extends Controller
         }
 
         return Inertia::render('operations', [
-            'workspace' => [
-                'id' => $workspace->public_id,
-                'name' => $workspace->name,
+            'workspace' => AgentWorkspacePresenter::identity($workspace) + [
                 'clients' => $clients,
                 'files_next_href' => $filesNextHref,
                 'files_previous_href' => $filesPreviousHref,

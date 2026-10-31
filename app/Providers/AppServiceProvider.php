@@ -14,6 +14,8 @@ use App\Services\AgentApi\Operations\AgentAvailability;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\AgentPrincipalResolver;
 use App\Services\ApiCredentials\OpenApiGrantableScopes;
+use App\Services\Billing\Mail\InvoiceMailSender;
+use App\Services\Billing\Mail\LaravelInvoiceMailSender;
 use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
@@ -69,6 +71,7 @@ class AppServiceProvider extends ServiceProvider
         // enforcement and adds the allow-listed first-party consent exception.
         Passport::useClientModel(OAuthClient::class);
         $this->app->singleton(ReplayHistoryBasis::class);
+        $this->app->bind(InvoiceMailSender::class, LaravelInvoiceMailSender::class);
         // Holds which credential an MCP write tool call already verified, for that call only.
         $this->app->singleton(ProviderIdentityWrites::class);
         // Offer a REST credential only scopes some REST operation requires.

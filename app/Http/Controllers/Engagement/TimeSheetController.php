@@ -19,7 +19,11 @@ use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentClientPresenter;
+use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
@@ -191,9 +195,7 @@ class TimeSheetController extends Controller
         }
 
         return Inertia::render('time', [
-            'workspace' => [
-                'id' => $workspace->public_id,
-                'name' => $workspace->name,
+            'workspace' => AgentWorkspacePresenter::identity($workspace) + [
                 'default_currency' => $workspace->default_currency,
                 'timezone' => $workspace->timezone,
             ],
@@ -203,7 +205,8 @@ class TimeSheetController extends Controller
             'approval_limit' => ApproveTimeEntriesRequest::MAX_ENTRIES,
             'actions' => ['approve' => route('agent-api.v1.time-entries.approve', $workspace, absolute: false)],
             'invoice_draft' => $isManager ? [
-                'url' => $draft === null ? route('svc.billing.invoices.store', [$workspace, $clientCompany])
+                'company_id' => $clientCompany->public_id,
+                'url' => $draft === null ? route('agent-api.v1.invoices.store', $workspace, absolute: false)
                     : route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false),
                 'target' => $draft === null ? null : ['number' => $draft->invoice_number, 'currency' => $draft->currency,
                     'total_amount' => $draft->total_amount, 'version' => AgentApiVersion::for($draft),
@@ -212,12 +215,8 @@ class TimeSheetController extends Controller
             'filters' => [
                 'company_id' => $selectedCompany?->public_id,
             ],
-            'companies' => $companies->map(fn (ClientCompany $company): array => [
-                'id' => $company->public_id,
-                'name' => $company->name,
-                'projects' => $company->projects->map(fn (ClientProject $project): array => [
-                    'id' => $project->public_id,
-                    'name' => $project->name,
+            'companies' => $companies->map(fn (ClientCompany $company): array => AgentClientPresenter::identity($company) + [
+                'projects' => $company->projects->map(fn (ClientProject $project): array => AgentProjectPresenter::identity($project) + [
                     // One half now, because the write asks one question. This
                     // was `$canManage && ...`, to keep the screen from
                     // advertising a form the workspace gate on `store()` would
@@ -231,10 +230,7 @@ class TimeSheetController extends Controller
                     'rate_override' => ($permissions[$project->id]['approve'] ?? false) ? ['currency' => $workspace->default_currency] : null,
                     'log_time_url' => ($permissions[$project->id]['log'] ?? false)
                         ? route('agent-api.v1.time-entries.store', $workspace, absolute: false) : null,
-                    'tasks' => $project->tasks->map(fn (ClientTask $task): array => [
-                        'id' => $task->public_id,
-                        'title' => $task->title,
-                    ])->values()->all(),
+                    'tasks' => $project->tasks->map(fn (ClientTask $task) => AgentTaskPresenter::identity($task))->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
             'months' => $this->months($workspace, $entries, $invoicesByEntry, $capacityByMonth, $permissions, $user->id, $isManager),
@@ -819,14 +815,8 @@ class TimeSheetController extends Controller
         return [
             ...app(AgentTimeEntryPresenter::class)->present($workspace, $entry),
             ...($isManager ? ['subcontractor_billing_mode' => $entry->subcontractor_billing_mode?->value] : []),
-            'project' => [
-                'id' => $project->public_id,
-                'name' => $project->name,
-            ],
-            'task' => $task === null ? null : [
-                'id' => $task->public_id,
-                'title' => $task->title,
-            ],
+            'project' => AgentProjectPresenter::identity($project),
+            'task' => $task === null ? null : AgentTaskPresenter::identity($task),
             'worker' => $entry->user?->name,
             'invoice' => $invoice === null ? null : [
                 'id' => $invoice['id'],

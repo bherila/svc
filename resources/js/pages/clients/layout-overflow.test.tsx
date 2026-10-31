@@ -116,21 +116,16 @@ describe('client screens under data that does not fit', () => {
             screen.getByRole('main'),
         );
         expect(
-            screen.getByRole('link', { name: '← Workspaces' }),
+            screen.getByRole('link', { name: 'Leave this workspace' }),
         ).toHaveAttribute('href', '/app');
         expect(
-            screen.getByRole('navigation', { name: 'Workspace operations' }),
-        ).toContainElement(screen.getByRole('link', { name: 'Clients' }));
-        expect(screen.getByRole('link', { name: 'Clients' })).toHaveAttribute(
+            screen.getByRole('navigation', { name: 'Client sections' }),
+        ).toContainElement(screen.getByRole('link', { name: 'Client Home' }));
+        expect(screen.getByRole('link', { name: 'Time' })).toHaveAttribute(
             'href',
-            '/workspaces/synthetic-workspace/clients',
+            '/workspaces/workspace-1/clients/company-1/time',
         );
-        expect(
-            screen.getByRole('link', { name: 'Time sheet' }),
-        ).toHaveAttribute('href', '/workspaces/synthetic-workspace/time');
-        expect(
-            screen.getByRole('combobox', { name: 'Appearance' }),
-        ).toBeVisible();
+        expect(screen.getAllByRole('banner')).toHaveLength(1);
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
@@ -141,12 +136,13 @@ describe('client screens under data that does not fit', () => {
                 company={company}
                 home_href="/synthetic-client"
                 audience="operator"
-                actions={{ update: null, upload_file: null }}
+                actions={{ update: null }}
                 files={[]}
                 recurring_items={[]}
                 deferred_backlog={null}
                 agreement={{
                     id: 'synthetic-agreement',
+                    version: 'a'.repeat(64),
                     title: 'Synthetic agreement',
                     status: 'active',
                     currency: 'USD',
@@ -365,6 +361,8 @@ describe('client screens under data that does not fit', () => {
                     id: 'company-1',
                     name: LONG_NAME,
                     billing_email: 'billing@example.test',
+                    version: 'synthetic-company-version',
+                    update_url: '/synthetic/company-update',
                     automatic_invoice_email_enabled: true,
                     automatic_invoice_email_delay_days: 365,
                     invoice_recipients: [
@@ -388,10 +386,17 @@ describe('client screens under data that does not fit', () => {
                         repository: LONG_REPOSITORY,
                         status: 'active',
                         is_visible_to_client: true,
-                        lock_version: 3,
+                        version: 'b'.repeat(64),
+                        update_url: '/synthetic/project-update',
+                        members_update_url: '/synthetic/project-members',
                         members: [{ user: 'user-1', role: 'contributor' }],
                     },
                 ]}
+                project_create={{
+                    url: '/synthetic/project-create',
+                    company_id: 'company-1',
+                    expected_version: 'c'.repeat(64),
+                }}
                 assignable={[{ id: 'user-1', name: LONG_NAME }]}
                 portal={{
                     add_url:
@@ -621,7 +626,11 @@ describe('recurring expense layout', () => {
         const project = 'SyntheticProjectWithoutBreaks'.repeat(8);
         const { container, getByRole, getByLabelText } = render(
             <ExpenseSchedules
-                company={{ name: LONG_NAME.repeat(4) }}
+                company={{
+                    id: 'synthetic-company',
+                    name: LONG_NAME.repeat(4),
+                    version: 'synthetic-company-version',
+                }}
                 today="2028-03-31"
                 currency="USD"
                 urls={{ store: '/synthetic/schedules' }}
@@ -632,7 +641,9 @@ describe('recurring expense layout', () => {
                     {
                         id: 'synthetic-schedule',
                         description,
-                        amount: '1200',
+                        amount: 1200,
+                        amount_exact: '1200',
+                        version: 'synthetic-schedule-version',
                         currency: 'USD',
                         project_id: 'synthetic-project',
                         starts_on: '2028-01-31',

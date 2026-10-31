@@ -16,7 +16,7 @@ final class AttachmentReaderOperationContractTest extends TestCase
         $this->assertSame(['files:read'], $document['scopes']);
         $this->assertSame('AttachmentListResponse', $document['response'] ?? null);
         $parameters = $document['parameters'];
-        $this->assertCount(5, $parameters);
+        $this->assertCount(7, $parameters);
         $this->assertSame('WorkspaceId', $parameters[0]);
         $this->assertSame(['name' => 'recordType', 'in' => 'path', 'required' => true,
             'schema' => ['type' => 'string', 'enum' => ['company', 'project', 'task', 'proposal', 'agreement', 'invoice', 'topic', 'comment']]], $parameters[1]);
@@ -25,6 +25,9 @@ final class AttachmentReaderOperationContractTest extends TestCase
         $this->assertIsArray($parameters[3]);
         $this->assertIsArray($parameters[4]);
         $this->assertPagination($parameters[3], $parameters[4]);
+        $this->assertSame(['name' => 'presentation', 'in' => 'query', 'description' => 'Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused.',
+            'schema' => ['type' => 'string', 'enum' => ['native', 'portal']]], $parameters[5]);
+        $this->assertSame(['name' => 'client', 'in' => 'query', 'description' => 'Required only for the portal panel representation; exact current company and parent access is rechecked.', 'schema' => ['type' => 'string', 'format' => 'uuid']], $parameters[6]);
     }
 
     public function test_expense_receipt_pages_keep_the_separate_tenant_parent_scope_and_same_continuation_bounds(): void

@@ -12,6 +12,7 @@ use App\Services\AgentApi\AgentTaskPlanningMutationAction;
 use App\Services\Tasks\Planning\TaskPlanningDetailsGate;
 use App\Services\Tasks\Planning\TaskPlanningTransport;
 use App\Services\Tasks\TaskMutationOrigin;
+use App\Support\AgentApi\FirstPartySession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -25,7 +26,7 @@ final class AgentTaskPlanningController extends Controller
         abort_unless($actor instanceof User || $actor instanceof AgentPrincipal, 401);
         $operation = TaskPlanningInput::operation($request);
 
-        return response()->json($transport->read($actor, $workspace, TaskMutationOrigin::Agent, $operation, TaskPlanningInput::target($request, $operation), $request->query()));
+        return response()->json($transport->read($actor, $workspace, FirstPartySession::is($request) ? TaskMutationOrigin::Internal : TaskMutationOrigin::Agent, $operation, TaskPlanningInput::target($request, $operation), $request->query()));
     }
 
     public function options(Request $request, Workspace $workspace, TaskPlanningTransport $transport): JsonResponse
@@ -44,7 +45,8 @@ final class AgentTaskPlanningController extends Controller
         $context = $contexts->from($request);
         $operation = TaskPlanningInput::operation($request);
         abort_unless(in_array($operation, TaskPlanningInput::WRITES, true), 404);
-        $id = $writes->execute($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey,
+        $method = FirstPartySession::is($request) ? 'executeInternal' : 'execute';
+        $id = $writes->{$method}($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey,
             $operation, TaskPlanningInput::target($request, $operation), $request->all());
 
         return response()->json(['data' => ['id' => $id]], $operation === 'labels.create' ? 201 : 200);

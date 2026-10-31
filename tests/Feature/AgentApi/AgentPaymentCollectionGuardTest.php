@@ -235,6 +235,68 @@ final class AgentPaymentCollectionGuardTest extends TestCase
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
     }
 
+    #[DataProvider('squareReasons')]
+    public function test_only_the_trusted_operator_session_can_record_square_bookkeeping(string $transport, string $reason): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $this->makeSquareCollected($reason, $owner, $workspace, $invoice);
+        $body = $this->payload($invoice->refresh(), 5000);
+        $refused = $this->record($transport, $owner, $workspace, $body, 'synthetic-agent-square-refusal', 422);
+        $this->assertStringContainsString('is collected through Square', $refused);
+        $this->assertSame(0, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
+
+        config(['agent_api.writes_enabled' => false, 'agent_api.payment_writes_enabled' => false]);
+        $this->operatorSession($owner);
+        $url = '/api/v1/workspaces/'.$workspace->public_id.'/payments';
+        $id = $this->postJson($url, $body, ['Idempotency-Key' => 'synthetic-operator-square'])->assertCreated()->json('data.0.id');
+        $this->postJson($url, $body, ['Idempotency-Key' => 'synthetic-operator-square'])->assertCreated()->assertJsonPath('data.0.id', $id);
+        $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertNull($payment->provider);
+        $this->assertNull($payment->provider_payment_identifier);
+        $this->assertSame(5000, $payment->amount);
+        $this->assertSame(['partially_paid', 5000], [$invoice->fresh()->status, $invoice->fresh()->balance_amount]);
+        $this->assertSame(PaymentCollectionGuard::OWNER_SQUARE, app(PaymentCollectionGuard::class)->summary($invoice->fresh())['collection_owner']);
+    }
+
+    public function test_operator_square_bookkeeping_retains_in_flight_and_version_guards(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $this->makeSquareCollected('linked', $owner, $workspace, $invoice);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $pending = $lifecycle->applyPayment($invoice, ['amount' => 1000, 'currency' => 'USD', 'method' => 'cheque', 'status' => 'pending'], $workspace);
+        $body = $this->payload($invoice->fresh(), 1000);
+        $this->operatorSession($owner);
+        $url = '/api/v1/workspaces/'.$workspace->public_id.'/payments';
+        $this->postJson($url, $body, ['Idempotency-Key' => 'synthetic-operator-pending'])->assertUnprocessable()
+            ->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'still in flight'));
+        $this->assertSame(1, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
+        $lifecycle->setPaymentStatus($pending, 'succeeded', $workspace);
+        $this->postJson($url, $body, ['Idempotency-Key' => 'synthetic-operator-stale'])->assertConflict();
+        $this->postJson($url, $this->payload($invoice->fresh(), 1000), ['Idempotency-Key' => 'synthetic-operator-settled'])->assertCreated();
+        $this->assertSame([2000, 8000], [$invoice->fresh()->paid_amount, $invoice->fresh()->balance_amount]);
+    }
+
+    public function test_operator_bookkeeping_still_requires_manager_and_tenant_ownership(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        [, $foreign, $foreignInvoice] = $this->fixture();
+        $this->makeSquareCollected('linked', $owner, $workspace, $invoice);
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        $url = '/api/v1/workspaces/'.$workspace->public_id.'/payments';
+        $this->operatorSession($member);
+        $this->postJson($url, $this->payload($invoice->fresh(), 1000), ['Idempotency-Key' => 'synthetic-member-square'])->assertForbidden();
+        $this->operatorSession($owner);
+        $this->postJson($url, $this->payload($foreignInvoice, 1000), ['Idempotency-Key' => 'synthetic-foreign-invoice'])->assertNotFound();
+        $this->postJson('/api/v1/workspaces/'.$foreign->public_id.'/payments', $this->payload($foreignInvoice, 1000), ['Idempotency-Key' => 'synthetic-foreign-workspace'])->assertNotFound();
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+    }
+
+    private function operatorSession(User $user): void
+    {
+        $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40));
+    }
+
     /**
      * The caller read the invoice before the other payment arrived: the
      * version it holds is still current (a payment row does not move the

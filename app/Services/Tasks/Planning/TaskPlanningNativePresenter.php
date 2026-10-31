@@ -9,6 +9,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskMutationOrigin;
 use App\Services\Tasks\TaskReadScope;
+use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
@@ -76,7 +77,7 @@ final class TaskPlanningNativePresenter
             throw new LogicException('The planning cursor must be an opaque string.');
         }
 
-        return ['workspace' => ['id' => $workspace->public_id, 'name' => $workspace->name],
+        return ['workspace' => AgentWorkspacePresenter::identity($workspace),
             'catalog' => ['labels' => $rows, 'filters' => ['status' => $status, 'q' => $q],
                 'search_href' => $this->href('labels.page', $workspace), 'create_href' => $this->href('labels.create', $workspace),
                 'next_href' => $next === null ? null : route('tasks.planning.labels.page', ['workspace' => $workspace, 'status' => $status, 'q' => $q, 'limit' => $limit, 'cursor' => $next]),
@@ -134,7 +135,7 @@ final class TaskPlanningNativePresenter
             $parameters[$targetName] = $target;
         }
 
-        return route('tasks.planning.'.$operation, $parameters);
+        return route($operation === 'labels.page' ? 'tasks.planning.labels.page' : 'agent-api.v1.task-planning.'.$operation, $parameters);
     }
 
     /** @return array<string,mixed> */

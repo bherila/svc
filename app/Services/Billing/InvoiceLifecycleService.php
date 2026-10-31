@@ -644,7 +644,7 @@ final class InvoiceLifecycleService
      * has, and it touches neither.
      *
      * So the only true instruction is to replace the row, and which replacement
-     * is possible depends on the link: `StoreInvoiceRequest` accepts both
+     * is possible depends on the link: the draft API accepts both
      * boundaries but neither `client_billing_schedule_id` nor
      * `client_agreement_id`, so a schedule-linked draft cannot be recreated by
      * hand without losing the link that makes it the schedule's.
@@ -1881,7 +1881,7 @@ final class InvoiceLifecycleService
         // `InvoiceStatus` has to answer this question rather than inheriting
         // whichever of the four outcomes the arithmetic below happens to reach.
         match (InvoiceStatus::tryFrom((string) $invoice->status)) {
-            InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid, InvoiceStatus::Void => null,
+            InvoiceStatus::Issued, InvoiceStatus::PartiallyPaid, InvoiceStatus::Paid, InvoiceStatus::Disputed, InvoiceStatus::Void => null,
             InvoiceStatus::Draft => throw new DomainException(
                 'A payment is attached to a draft invoice, which is an inconsistent state: refreshing its '
                 .'payment status would move it to issued without the checks issue() performs. Neither the '
@@ -1906,6 +1906,7 @@ final class InvoiceLifecycleService
         // migration or a hand-repair can put such a row here without passing
         // through applyPayment().
         $paid = 0;
+        $hasDispute = false;
 
         foreach ($invoice->payments()->where('workspace_id', $invoice->workspace_id)->get(['public_id', 'status', 'amount', 'refunded_amount', 'disputed_amount']) as $payment) {
             $paymentStatus = InvoicePaymentStatus::tryFrom((string) $payment->status);
@@ -1924,13 +1925,12 @@ final class InvoiceLifecycleService
             // A succeeded payment net of refunds, and the undisputed part of a
             // partly disputed one.
             $paid += $payment->paidContribution();
+            $hasDispute = $hasDispute || $paymentStatus === InvoicePaymentStatus::Disputed;
         }
 
         $paid = min($paid, (int) $invoice->total_amount);
         $balance = max(0, (int) $invoice->total_amount - $paid);
-        $status = $invoice->status === 'void'
-            ? 'void'
-            : ($paid >= (int) $invoice->total_amount ? 'paid' : ($paid > 0 ? 'partially_paid' : 'issued'));
+        $status = InvoiceStatus::from($invoice->status)->withPayments($paid, (int) $invoice->total_amount, $hasDispute)->value;
 
         $invoice->forceFill([
             'paid_amount' => $paid,

@@ -165,7 +165,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
+        /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged. */
         get: operations['attachments.list'];
         put?: never;
         post?: never;
@@ -184,7 +184,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
         post: operations['attachments.upload'];
         delete?: never;
         options?: never;
@@ -704,7 +704,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation. */
+        /** @description Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs. Portal narrows to client-safe metadata and controls even for owner previews. Bearer/MCP callers cannot select this representation. Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. This read remains available when sharing writers are disabled and performs no durable mutation. */
         get: operations['collaboration.attachments.list'];
         put?: never;
         post?: never;
@@ -1075,7 +1075,8 @@ export interface paths {
         get: operations['expenses.receipts.download'];
         put?: never;
         post?: never;
-        delete?: never;
+        /** @description Workspace-manager-only logical deletion of one receipt on this expense. Requires confirm true, current receipt expected_version, current expense expected_parent_version and Idempotency-Key. Checks tenant ownership and current role under the expense and receipt locks, advances expense revision once, and retains existing purge policy. No expense amount or posting changes. Completed receipt replay rechecks current authority and parent lineage. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. */
+        delete: operations['expenses.receipts.delete'];
         options?: never;
         head?: never;
         patch?: never;
@@ -1088,10 +1089,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied. */
+        /** @description Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. */
         get: operations['expenses.receipts.list'];
         put?: never;
-        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
         post: operations['expenses.receipts.upload'];
         delete?: never;
         options?: never;
@@ -1479,7 +1480,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits; repeating the same idempotency key sends nothing more. */
+        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome. */
         post: operations['invoices.send'];
         delete?: never;
         options?: never;
@@ -1513,10 +1514,44 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square. */
+        /** @description Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC never automatically collects or allocates payments through it; covered payments require a separate explicit review and recording. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square. */
         post: operations['invoices.square_cover'];
         /** @description Workspace managers only. Stop recording a Square invoice as covered by this invoice. The record is kept as history and the Square invoice may be covered or linked again. Requires the invoice's current expected_version and confirm: true; a Square invoice this invoice does not cover is refused with 409. */
         delete: operations['invoices.square_uncover'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments/{payment}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Review or explicitly record one payment received by an actively covered Square invoice. This never automatically allocates covered payments. Reads the current Square invoice, order, up to 100 payments and up to 10 dispute pages before any ledger transaction; incomplete or malformed facts are refused. Each review or confirmation consumes one of 20 requests per workspace per ten minutes. Refunded or disputed unrecorded payments, over-balance amounts, and invoices with in-flight payments remain manual review cases. Nothing is written to Square. Requires confirm: true, the reviewed invoice expected_version and the selected payment reviewed_version. Current facts and active coverage are checked again under the invoice lock; the full payment is recorded once using its canonical Square provider identity, with no splitting or overpayment credit. A completed idempotency receipt may replay after the coverage is removed or Square becomes unavailable. */
+        post: operations['invoices.square_covered_payment_record'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/square-coverage/{squareInvoice}/payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Review or explicitly record one payment received by an actively covered Square invoice. This never automatically allocates covered payments. Reads the current Square invoice, order, up to 100 payments and up to 10 dispute pages before any ledger transaction; incomplete or malformed facts are refused. Each review or confirmation consumes one of 20 requests per workspace per ten minutes. Refunded or disputed unrecorded payments, over-balance amounts, and invoices with in-flight payments remain manual review cases. Nothing is written to Square. Returns current amounts, captured dates, recorded identifiers, refusal reasons and finished record URLs; a null record_href means recording is unavailable. */
+        get: operations['invoices.square_covered_payments'];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1651,7 +1686,7 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending. OAuth/MCP callers also refuse invoices Square collects (invoices.get reports pending_payments and collection_owner). The trusted first-party website session may explicitly record money already received on a Square-collected invoice as operator bookkeeping; this server-selected policy is not a request field. A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
         delete?: never;
         options?: never;
@@ -2443,6 +2478,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/projects/{project}/task-assignees': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['tasks.assignees.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/tasks': {
         parameters: {
             query?: never;
@@ -2702,12 +2753,21 @@ export interface components {
             data: components['schemas']['AttachmentDownloadUrl'];
         };
         AttachmentListResponse: {
-            data: components['schemas']['Attachment'][];
-            parent_version: string;
-            meta: {
+            data:
+                | components['schemas']['Attachment'][]
+                | components['schemas']['NativeAttachmentPanel'];
+            parent_version?: string;
+            meta?: {
                 next_cursor: string | null;
             };
-        };
+        } & (
+            | {
+                  data: components['schemas']['Attachment'][];
+              }
+            | {
+                  data: components['schemas']['NativeAttachmentPanel'];
+              }
+        );
         AttachmentResponse: {
             data: components['schemas']['Attachment'];
         };
@@ -2936,12 +2996,21 @@ export interface components {
             confirm: true;
         };
         CollaborationAttachmentListResponse: {
-            data: components['schemas']['CollaborationAttachment'][];
-            parent_version: string;
-            meta: {
+            data:
+                | components['schemas']['CollaborationAttachment'][]
+                | components['schemas']['NativeAttachmentPanel'];
+            parent_version?: string;
+            meta?: {
                 next_cursor: string | null;
             };
-        };
+        } & (
+            | {
+                  data: components['schemas']['CollaborationAttachment'][];
+              }
+            | {
+                  data: components['schemas']['NativeAttachmentPanel'];
+              }
+        );
         CollaborationAttachmentPreview: {
             data: components['schemas']['CollaborationAttachment'][];
             parent_version: components['schemas']['Version'];
@@ -3205,12 +3274,39 @@ export interface components {
         DeletionResponse: {
             data: components['schemas']['DeletionReceipt'];
         };
-        Error: {
-            message: string;
-            errors?: {
-                [key: string]: string[];
-            };
-        };
+        Error:
+            | {
+                  message: string;
+                  errors?: {
+                      [key: string]: string[];
+                  };
+              }
+            | {
+                  /** @enum {string} */
+                  error: 'invalid_token' | 'insufficient_scope';
+              }
+            | {
+                  message: string;
+                  operation: string;
+                  /** @enum {string} */
+                  reason:
+                      | 'deployment_flag'
+                      | 'unauthenticated'
+                      | 'missing_scope'
+                      | 'missing_permission'
+                      | 'group_not_granted'
+                      | 'policy'
+                      | 'depends_on';
+                  detail: string;
+              }
+            | {
+                  /** @enum {string} */
+                  error:
+                      | 'invalid_token'
+                      | 'temporarily_unavailable'
+                      | 'access_denied';
+                  message: string;
+              };
         ExpectedVersionRequest: {
             expected_version: components['schemas']['Version'];
         };
@@ -3275,6 +3371,16 @@ export interface components {
             sha256: string;
             /** Format: date-time */
             uploaded_at: string | null;
+            version: components['schemas']['Version'];
+            /** @enum {string} */
+            lifecycle_state:
+                'staged' | 'available' | 'corrupt' | 'deleting' | 'deleted';
+        };
+        ExpenseReceiptDeleteRequest: {
+            expected_version: components['schemas']['Version'];
+            expected_parent_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
         };
         ExpenseReceiptDownloadResponse: {
             data: {
@@ -3330,6 +3436,8 @@ export interface components {
             /** Format: date */
             next_on: string;
             version: components['schemas']['Version'];
+            /** @description Exact minor-unit amount for clients whose numbers cannot represent every 64-bit integer. */
+            amount_exact: string;
         };
         ExpenseScheduleCreateRequest: {
             /** Format: uuid */
@@ -3341,7 +3449,8 @@ export interface components {
             starts_on: string;
             /** @enum {string} */
             cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            amount: number;
+            /** @description Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision. */
+            amount: number | string;
             currency: components['schemas']['Currency'];
             description: string;
         };
@@ -3366,7 +3475,8 @@ export interface components {
             /** Format: uuid */
             project_id?: string | null;
             active: boolean;
-            amount: number;
+            /** @description Positive minor units; decimal digit strings preserve amounts beyond JavaScript safe integer precision. */
+            amount: number | string;
             currency: components['schemas']['Currency'];
             description: string;
         };
@@ -4084,6 +4194,29 @@ export interface components {
         InvoiceRemindersResponse: {
             data: components['schemas']['InvoiceReminders'];
         };
+        InvoiceSendMutation: {
+            id: components['schemas']['Uuid'];
+            status: components['schemas']['InvoiceStatus'];
+            linked_time_state: components['schemas']['LinkedTimeState'];
+            invoice_number: string;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+            correction?: {
+                /** Format: uuid */
+                id: string;
+                from_revision: number;
+                to_revision: number;
+                reason: string;
+                href: string;
+            } | null;
+            delivery: {
+                id: components['schemas']['Uuid'];
+                /** @enum {string} */
+                status: 'pending' | 'sending' | 'sent' | 'failed';
+                error_summary: string | null;
+            } | null;
+        };
         InvoiceSendRequest: {
             expected_version: components['schemas']['Version'];
             /** @constant */
@@ -4098,6 +4231,9 @@ export interface components {
              * @default false
              */
             bcc_self: boolean;
+        };
+        InvoiceSendResponse: {
+            data: components['schemas']['InvoiceSendMutation'];
         };
         InvoiceSquare: {
             invoice_id: components['schemas']['Uuid'];
@@ -4172,8 +4308,17 @@ export interface components {
             /** @constant */
             confirm: true;
         };
-        /** @enum {string} */
-        InvoiceStatus: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'void';
+        /**
+         * @description An unresolved disputed payment keeps its invoice disputed, including partial disputes and invoices covered by replacement payments. Disputed invoices remain charged and visible but collection and reminders are suspended; resolving all disputes restores the status derived from net payments. Void remains terminal.
+         * @enum {string}
+         */
+        InvoiceStatus:
+            | 'draft'
+            | 'issued'
+            | 'partially_paid'
+            | 'paid'
+            | 'disputed'
+            | 'void';
         InvoiceUpdateRequest: {
             expected_version: components['schemas']['Version'];
             currency?: string | null;
@@ -4205,6 +4350,54 @@ export interface components {
         };
         MissingBilledOverageAuditResponse: {
             data: components['schemas']['MissingBilledOverageAudit'];
+        };
+        NativeAttachment: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            record_type:
+                | 'company'
+                | 'project'
+                | 'task'
+                | 'proposal'
+                | 'agreement'
+                | 'invoice'
+                | 'topic'
+                | 'comment';
+            /** Format: uuid */
+            record_id: string;
+            filename: string;
+            media_type: string;
+            bytes: number;
+            sha256: string;
+            /** @enum {string} */
+            status: 'staged' | 'available' | 'deleting' | 'deleted' | 'corrupt';
+            version: string;
+            /** Format: date-time */
+            uploaded_at: string | null;
+            download_href: string;
+            delete_href: string | null;
+            sharing: {
+                is_visible_to_client: boolean;
+                effective_visible_to_client: boolean;
+                sharing_note: string | null;
+                version: string;
+                parent_version: string;
+                update_href: string;
+            } | null;
+            deletion: {
+                expected_version: string;
+                expected_parent_version?: string;
+            } | null;
+        };
+        NativeAttachmentPanel: {
+            files: components['schemas']['NativeAttachment'][];
+            upload: {
+                href: string;
+                parent_version: string;
+            } | null;
+            parent_version: string;
+            next_href: string | null;
         };
         OpeningRolloverAudit: {
             agreements: number;
@@ -4582,11 +4775,11 @@ export interface components {
             /** @description The operator's private note. */
             notes?: string | null;
             /**
-             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status.
+             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status. Omitted or null means succeeded.
              * @default succeeded
-             * @enum {string}
+             * @enum {string|null}
              */
-            status: 'pending' | 'succeeded';
+            status: 'pending' | 'succeeded' | null;
             /**
              * Format: uuid
              * @description The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers.
@@ -4828,6 +5021,42 @@ export interface components {
                 pool_truncated: boolean;
             };
         };
+        SquareCoveredPaymentRecordRequest: {
+            expected_version: components['schemas']['Version'];
+            reviewed_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        SquareCoveredPaymentRecordResponse: {
+            data: {
+                payment_id: components['schemas']['Uuid'];
+                invoice_id: components['schemas']['Uuid'];
+            };
+        };
+        SquareCoveredPaymentReviewResponse: {
+            data: {
+                invoice_id: components['schemas']['Uuid'];
+                invoice_number: string | null;
+                invoice_version: components['schemas']['Version'];
+                balance_amount: number;
+                currency: string;
+                square_invoice_id: components['schemas']['SquareInvoiceId'];
+                square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+                payments: {
+                    square_payment_id: string;
+                    amount: number;
+                    refunded_amount: number;
+                    currency: string;
+                    /** Format: date */
+                    received_on: string;
+                    reviewed_version: components['schemas']['Version'];
+                    /** Format: uuid */
+                    recorded_payment_id: string | null;
+                    refusal: string | null;
+                    record_href: string | null;
+                }[];
+            };
+        };
         SquareCustomer: {
             id: string | null;
             version: number | null;
@@ -4950,6 +5179,8 @@ export interface components {
             covered_at: string;
             /** @description Who recorded it, when known. */
             covered_by: string | null;
+            /** @description Finished URL to review covered payments; null when Square does not serve this workspace. */
+            review_href?: string | null;
         };
         /** @description A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square. */
         SquareInvoiceId: string;
@@ -5519,11 +5750,22 @@ export interface components {
             completion_advisory?: string | null;
             planning_details?: components['schemas']['TaskPlanningFields'];
         };
+        TaskAssigneeOptionsResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            }[];
+            has_more: boolean;
+        };
         TaskContactOptionListResponse: {
             data: components['schemas']['TaskResponsibilityContact'][];
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskContactResponsibilities: {
             /** Format: uuid */
@@ -5563,12 +5805,18 @@ export interface components {
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskDependencyOptionListResponse: {
             data: components['schemas']['TaskDependencyReference'][];
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskDependencyReference: {
             /** Format: uuid */
@@ -5610,6 +5858,9 @@ export interface components {
             meta: {
                 next_cursor: string | null;
             };
+            /** @description Finished canonical API continuation URL, preserving the current filter and page size. */
+            next_href?: string | null;
+            previous_href?: null;
         };
         TaskLabelReplacementRequest: {
             expected_version: components['schemas']['Version'];
@@ -6455,7 +6706,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             default: components['responses']['Error'];
@@ -6490,6 +6741,10 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                /** @description Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused. */
+                presentation?: 'native' | 'portal';
+                /** @description Required only for the portal panel representation; exact current company and parent access is rechecked. */
+                client?: string;
             };
             header?: never;
             path: {
@@ -6509,7 +6764,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
+            /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. Trusted first-party sessions may request presentation=native or presentation=portal for a native panel under current parent access; portal also requires a workspace-scoped client UUID and only narrows to the client-safe projection, including owner previews. This opt-in returns data as NativeAttachmentPanel with finished continuation and download/control URLs. Bearer/MCP callers cannot select this representation; their listing policy and response stay unchanged. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6549,7 +6804,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+            /** @description Staff-manager-only multipart upload, at most 50 MiB. OAuth and MCP dual Portal identities are denied; trusted native sessions retain current manager access. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8452,7 +8707,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             /** @description Authentication is missing, expired or revoked. */
@@ -8616,6 +8871,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                /** @description Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused. */
+                presentation?: 'native' | 'portal';
             };
             header?: never;
             path: {
@@ -10435,7 +10692,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/octet-stream': string;
+                    '*/*': string;
                 };
             };
             default: components['responses']['Error'];
@@ -10461,6 +10718,46 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseReceiptDownloadResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+                receipt: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseReceiptDeleteRequest'];
+            };
+        };
+        responses: {
+            /** @description Deleted expense receipt and current expense version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
+                };
+            };
+            /** @description The receipt or expense revision changed, or the retry key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -11691,13 +11988,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Invoice delivery queued */
+            /** @description Invoice and recorded delivery outcome */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                    'application/json': components['schemas']['InvoiceSendResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -11785,6 +12082,207 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_covered_payment_record': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+                squareInvoice: string;
+                payment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SquareCoveredPaymentRecordRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCoveredPaymentRecordResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scopes or workspace manager role are insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, invoice or active coverage is unavailable, or payment writers are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The invoice, coverage or reviewed payment facts changed, or an idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field or explicit confirmation is invalid, or current facts cannot be recorded safely. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The request budget is exhausted; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square returned malformed or incomplete current facts. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square is unavailable or not connected to this workspace. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_covered_payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+                squareInvoice: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCoveredPaymentReviewResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Current scopes or workspace manager role are insufficient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, invoice or active coverage is unavailable, or payment writers are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The invoice, coverage or reviewed payment facts changed, or an idempotency key was reused with different input. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field or explicit confirmation is invalid, or current facts cannot be recorded safely. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The request budget is exhausted; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square returned malformed or incomplete current facts. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Square is unavailable or not connected to this workspace. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -15021,6 +15519,32 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'tasks.assignees.list': {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded eligible staff identities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskAssigneeOptionsResponse'];
                 };
             };
             default: components['responses']['Error'];

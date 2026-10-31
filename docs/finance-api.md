@@ -39,6 +39,27 @@ and each is an MCP tool and a console command of the same name, all running one
 | `finance.reconciliations.acknowledge` | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}/acknowledgement` | `finance:reconcile` | `svc:finance:acknowledge-reconciliation` |
 | `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
 
+## Compatibility
+
+Changes within `/api/v1` are additive: new operations, optional request
+parameters, response properties and accepted request-enum values may be added.
+Response enums may also gain values; consumers must handle an unknown value as
+"other" rather than fail parsing or assume an existing case.
+
+Removing or renaming a response property, changing its type, making an optional
+request field required, narrowing an accepted enum, or removing an operation or
+scope is breaking. A breaking change requires a new API version or an announced
+deprecation period: mark the operation `deprecated: true` in OpenAPI, describe the
+migration in the PR body, and keep serving the old contract for at least one
+release that affected consumers have re-pinned against before removing it.
+Public MCP names follow the same [deprecation convention](mcp.md#deprecations).
+
+The integer `contract_version` advertises the supported baseline; increasing it
+does not by itself waive this migration policy. Consumers that pin an exact
+baseline must deliberately adopt the next one after checking its published
+schemas and migration notes. Existing authorization, workspace isolation and
+write-cutover checks continue to apply throughout a transition.
+
 ## Billable expense provenance
 
 A finance consumer can record a billable expense through `expenses.log`, using
@@ -331,6 +352,36 @@ Where the facts come from:
 - Deactivates the allocation for auditability; it does not delete its history.
   It also clears a processor review flag (below). Upserting it again with
   `is_active: true` reactivates it. Idempotent for the same tuple.
+
+## Disputed invoice state
+
+An invoice with any payment whose status is `disputed` has invoice status
+`disputed`, including a partial dispute or a balance already covered by a
+replacement payment. The invoice remains charged and immutable; authorized
+internal and portal readers can still see it, and `invoices.list` accepts
+`status=disputed`. It is excluded from `collectible` and `overdue` filters and
+collection summaries. Payment initiation, invoice collection email and payment
+reminders pause while the dispute remains. An operator may still explicitly
+record money already received against its remaining balance.
+
+The undisputed part of a partly disputed payment still reduces the invoice's
+balance. The entire disputed payment is withheld from the spendable credit pool;
+its undisputed remainder does not become credit. Once every disputed payment
+leaves that state, net payment contributions determine `issued`, `partially_paid`
+or `paid` again. A processor restoring a won dispute after replacement payment is
+recorded even when it creates excess credit; that restored excess is available
+to future drafts without a separate hold. A void invoice always stays void.
+
+Existing charged invoices with tenant-matching disputed payments are backfilled
+to this status with a new invoice revision. Draft, void, unknown-status invoices
+and malformed cross-workspace payment links are excluded.
+
+The processor follow-ups tracked in #481 are delivered: scheduled Square dispute
+recovery handles missed notifications and disputes arriving before payment;
+conditional reconciliation acknowledgement records a reviewed allocation;
+Stripe refund recovery rereads the refund list rather than trusting a stale
+charge aggregate. Synthetic regressions are in `SquareDisputeRecoveryTest`,
+`ReconciliationReviewAcknowledgementTest` and `StripeAuthoritativeRefundTest`.
 
 ## Recording a deposit and its allocation in one call
 

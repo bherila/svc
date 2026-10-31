@@ -25,7 +25,7 @@ final class TaskPlanningTransport
         $limit = $input['limit'] ?? 25;
         $cursor = $input['cursor'] ?? null;
 
-        return match ($operation) {
+        $response = match ($operation) {
             'get' => $this->presenter->response($this->reads->get($actor, $workspace, $origin, $id)),
             'labels.list' => $this->reads->labels($actor, $workspace, $origin, $input['status'] ?? 'active', $q, $limit, $cursor),
             'labels.get' => $this->reads->label($actor, $workspace, $origin, $id),
@@ -36,5 +36,13 @@ final class TaskPlanningTransport
             'contacts.options' => $this->reads->contactOptions($actor, $workspace, $origin, $id, $q, $limit, $cursor),
             default => abort(404),
         };
+        if (in_array($operation, ['labels.options', 'dependencies.get', 'dependencies.options', 'contacts.options'], true)) {
+            $parameters = ['workspace' => $workspace, TaskPlanningInput::targetName($operation) => $id];
+            $next = $response['meta']['next_cursor'];
+            $response['next_href'] = $next === null ? null : route('agent-api.v1.task-planning.'.$operation, $parameters + array_replace($input, ['cursor' => $next]));
+            $response['previous_href'] = null;
+        }
+
+        return $response;
     }
 }

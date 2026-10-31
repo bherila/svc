@@ -26,29 +26,14 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/invoices', [InvoiceController::class, 'index'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('svc.billing.invoices.index');
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/invoices', [InvoiceController::class, 'store'])->name('svc.billing.invoices.store');
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}', [InvoiceController::class, 'show'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('svc.billing.invoices.show');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/issue', [InvoiceController::class, 'issue'])->name('svc.billing.invoices.issue');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/payments', [InvoiceController::class, 'payment'])->name('svc.billing.invoices.payments.store');
-    // Narrowly the date, and only the date. Corrections to what a payment is
-    // worth still go through its status or its refunded amount, which is the
-    // path that preserves the history; a mistyped day moves no money and had no
-    // remedy short of cancelling the payment and recording it again.
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/payments/{clientInvoicePayment}/received-on', [InvoiceController::class, 'correctPaymentDate'])->name('svc.billing.invoices.payments.received-on');
     Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/stripe-payment-intent', [InvoiceController::class, 'stripePaymentIntent'])->name('svc.billing.invoices.stripe-payment-intent');
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}/pdf', [InvoiceController::class, 'pdf'])->name('svc.billing.invoices.pdf');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/send', [InvoiceController::class, 'send'])->name('svc.billing.invoices.send');
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}/corrections/{correction}', [InvoiceController::class, 'correction'])->name('svc.billing.invoices.corrections.show');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/correct', [InvoiceController::class, 'correct'])->name('svc.billing.invoices.correct');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/automatic-delivery/hold', [InvoiceController::class, 'holdAutomatic'])->name('svc.billing.invoices.automatic-delivery.hold');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/automatic-delivery/release', [InvoiceController::class, 'releaseAutomatic'])->name('svc.billing.invoices.automatic-delivery.release');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/void', [InvoiceController::class, 'void'])->name('svc.billing.invoices.void');
 
-    Route::post('/workspaces/{workspace}/clients/{clientCompany}/billing-schedules', [BillingScheduleController::class, 'store'])->name('svc.billing.schedules.store');
     Route::get('/workspaces/{workspace}/billing-schedules/{schedule}', [BillingScheduleController::class, 'show'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('svc.billing.schedules.show');
-    Route::post('/workspaces/{workspace}/billing-schedules/{schedule}/generate', [BillingScheduleController::class, 'generate'])->name('svc.billing.schedules.generate');
 });

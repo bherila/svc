@@ -111,6 +111,18 @@ final class ClientPortalInvitationScreenTest extends TestCase
                 ]));
     }
 
+    public function test_settings_never_disclose_another_companys_project_from_a_historical_invitation(): void
+    {
+        $this->invite('synthetic-project-scope@client.example.test');
+        $otherCompany = $this->company($this->workspace, 'synthetic-other-client');
+        $otherProject = $this->project($otherCompany, 'Synthetic other client project');
+        $invitation = ClientPortalInvitation::query()->sole();
+        $invitation->forceFill(['access_scope' => 'projects', 'project_ids' => [$this->alpha->id, $otherProject->id]])->save();
+        $this->actingAs($this->admin, 'web')->get($this->settings())->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('portal.invitations.0.projects', [$this->alpha->public_id])
+                ->where('portal.invitations.0.link', $invitation->link));
+    }
+
     public function test_an_invitation_is_sent_again_and_withdrawn_from_settings(): void
     {
         $this->invite('person@client.example.test');

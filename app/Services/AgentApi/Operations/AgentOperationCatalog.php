@@ -20,6 +20,7 @@ use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
+use App\Services\Mcp\AgentMcpSquareCoveredPaymentTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
@@ -69,6 +70,7 @@ final class AgentOperationCatalog
         ...TaskOrganizationOperations::ROUTES,
         ...TaskPlanningOperations::ROUTES,
         ...AttachmentSharingOperations::ROUTES,
+        ...SquareCoveredPaymentOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -144,6 +146,7 @@ final class AgentOperationCatalog
         'expenses.list' => ['expenses.index', '/workspaces/{workspace}/expenses', [200]],
         'expenses.log' => ['expenses.store', '/workspaces/{workspace}/expenses', [201]],
         'expenses.receipts.content' => ['expense-receipts.content', '/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}/content', [200]],
+        'expenses.receipts.delete' => ['expense-receipts.destroy', '/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}', [200]],
         'expenses.receipts.download' => ['expense-receipts.download', '/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}', [200]],
         'expenses.receipts.list' => ['expense-receipts.index', '/workspaces/{workspace}/expenses/{expense}/receipts', [200]],
         'expenses.receipts.upload' => ['expense-receipts.store', '/workspaces/{workspace}/expenses/{expense}/receipts', [201]],
@@ -219,6 +222,7 @@ final class AgentOperationCatalog
         'square.series.get' => ['square.series.show', '/workspaces/{workspace}/square/series/{series}', [200]],
         'square.series.list' => ['square.series.index', '/workspaces/{workspace}/square/series', [200]],
         'square.sync' => ['square.sync', '/workspaces/{workspace}/square/sync', [200]],
+        'tasks.assignees.list' => ['tasks.assignees.index', '/workspaces/{workspace}/projects/{project}/task-assignees', [200]],
         'tasks.create' => ['tasks.store', '/workspaces/{workspace}/projects/{project}/tasks', [201]],
         'tasks.get' => ['tasks.show', '/workspaces/{workspace}/tasks/{task}', [200]],
         'tasks.list' => ['tasks.index', '/workspaces/{workspace}/tasks', [200]],
@@ -353,6 +357,7 @@ final class AgentOperationCatalog
                 true,
                 'mcp.read',
             ),
+            $this->tool('tasks.assignees.list', 'List eligible task assignees', 'Find at most 25 eligible staff identities by name in a project whose tasks the caller may manage. Portal identities are excluded for agents; trusted native sessions retain internal project management access.', [AgentMcpReadTools::class, 'taskAssignees'], Effect::Read, true, 'mcp.read'),
             $this->tool(
                 'tasks.list',
                 'List tasks',
@@ -685,6 +690,17 @@ final class AgentOperationCatalog
                 manager: true,
             ),
             $this->tool(
+                'expenses.receipts.delete',
+                'Delete expense receipt',
+                self::restDescription('expenses.receipts.delete'),
+                [AgentMcpWriteTools::class, 'expenseReceiptsDelete'],
+                Effect::Destructive,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::EXPENSES],
+                manager: true,
+            ),
+            $this->tool(
                 'expenses.log',
                 'Record expenses',
                 'Idempotently record up to 20 draft expenses as a workspace manager. Amounts use minor units; no receipt attachment or approval.',
@@ -962,7 +978,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.square_cover',
                 'Record Square invoice as covered',
-                'Workspace managers only. When one invoice covers what Square split into several, record another Square invoice as covered by this one, after the person confirms it. The invoice must already be linked to its primary Square invoice; a Square invoice linked or covered anywhere is refused. Not a link: SVC collects, reconciles and records nothing through it, and the billing audit stops reporting it as an unmirrored period. Nothing is sent to Square.',
+                'Workspace managers only. When one invoice covers what Square split into several, record another Square invoice as covered by this one, after the person confirms it. The invoice must already be linked to its primary Square invoice; a Square invoice linked or covered anywhere is refused. Not a link: SVC never automatically collects or allocates payments through it, and the billing audit stops reporting it as an unmirrored period. Nothing is sent to Square.',
                 [AgentMcpSquareLinkTools::class, 'cover'],
                 Effect::LocalWrite,
                 true,
@@ -1618,6 +1634,8 @@ final class AgentOperationCatalog
     {
         $this->external['square.sync'] = true;
         $this->external['invoices.square_reconcile'] = true;
+        $this->external['invoices.square_covered_payments'] = true;
+        $this->external['invoices.square_covered_payment_record'] = true;
         $reads = [];
         foreach ([
             'square.mirror.invoices.list' => ['List mirrored Square invoices', 'invoices'],
@@ -1650,6 +1668,29 @@ final class AgentOperationCatalog
                 true,
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.square_covered_payments',
+                'Review covered Square payments',
+                self::documented('invoices.square_covered_payments'),
+                [AgentMcpSquareCoveredPaymentTools::class, 'review'],
+                Effect::Read,
+                true,
+                'mcp.read',
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.square_covered_payment_record',
+                'Record a reviewed covered Square payment',
+                self::documented('invoices.square_covered_payment_record'),
+                [AgentMcpSquareCoveredPaymentTools::class, 'record'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::PAYMENTS],
                 availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             ),

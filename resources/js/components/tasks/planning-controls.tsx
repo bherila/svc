@@ -2,51 +2,90 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { PlanningPage } from '@/types/task-planning';
 
-export function usePlanningMutation(refresh: () => Promise<void>) {
+export function usePlanningMutation(
+    refresh: () => Promise<void>,
+    noun = 'Planning',
+) {
     const [pending, setPending] = useState(false);
+    const [unresolved, setUnresolved] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const inFlight = useRef(false);
-    const keys = useRef(new Map<string, string>());
+    const attempt = useRef<{
+        method: 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+        href: string;
+        body: object;
+        key: string;
+        accepted: boolean;
+        uncertain: boolean;
+        saved?: () => void;
+    } | null>(null);
 
-    async function run(
-        method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
-        href: string,
-        body: object,
-        saved: () => void,
-    ) {
-        if (inFlight.current) {
+    useUnknownWriteGuard(
+        () => attempt.current !== null && !attempt.current.accepted,
+        () => setError('Check the original change before leaving this page.'),
+    );
+
+    async function retry() {
+        const original = attempt.current;
+
+        if (inFlight.current || original === null) {
             return;
         }
 
         inFlight.current = true;
         setPending(true);
         setError(null);
-        const signature = JSON.stringify([method, href, body]);
-        const key = keys.current.get(signature) ?? newIdempotencyKey();
-        keys.current.set(signature, key);
 
         try {
-            const result = await apiRequest(method, href, body, key);
-
-            if (!result.ok) {
-                setError(
-                    result.status === 409
-                        ? 'Planning changed since you started editing. Your choices are preserved. Reload planning before trying again.'
-                        : result.message,
+            if (!original.accepted) {
+                const result = await apiRequest(
+                    original.method,
+                    original.href,
+                    original.body,
+                    original.key,
                 );
 
-                return;
+                if (!result.ok) {
+                    const uncertain =
+                        original.uncertain ||
+                        result.status === 0 ||
+                        result.status === 408 ||
+                        result.status >= 500;
+                    original.uncertain = uncertain;
+                    setUnresolved(uncertain);
+                    setError(
+                        result.status === 409 &&
+                            !uncertain &&
+                            noun === 'Planning'
+                            ? `${noun} changed since you started editing. Your choices are preserved. Reload ${noun.toLowerCase()} before trying again.`
+                            : result.message,
+                    );
+
+                    if (!uncertain) {
+                        attempt.current = null;
+                    }
+
+                    return;
+                }
+
+                original.accepted = true;
             }
 
-            keys.current.delete(signature);
             await refresh();
-            saved();
+            original.saved?.();
+            attempt.current = null;
+            setUnresolved(false);
         } catch {
+            original.uncertain = true;
+            setUnresolved(true);
             setError(
-                'The change was saved, but current planning could not be refreshed. Reload planning before making another change.',
+                original.accepted
+                    ? `The change was saved, but current ${noun.toLowerCase()} could not be refreshed. Check the original change to refresh it.`
+                    : 'The outcome could not be confirmed. Check the original change before editing.',
             );
         } finally {
             inFlight.current = false;
@@ -54,8 +93,30 @@ export function usePlanningMutation(refresh: () => Promise<void>) {
         }
     }
 
-    async function reload(discardDraft: () => void) {
+    async function run(
+        method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+        href: string,
+        body: object,
+        saved?: () => void,
+    ) {
         if (inFlight.current) {
+            return;
+        }
+
+        attempt.current ??= {
+            method,
+            href,
+            body: structuredClone(body),
+            key: newIdempotencyKey(),
+            accepted: false,
+            uncertain: false,
+            saved,
+        };
+        await retry();
+    }
+
+    async function reload(discardDraft: () => void) {
+        if (inFlight.current || attempt.current !== null) {
             return;
         }
 
@@ -68,7 +129,7 @@ export function usePlanningMutation(refresh: () => Promise<void>) {
             setError(null);
         } catch {
             setError(
-                'Planning could not be refreshed. Your choices are preserved. Try reloading again.',
+                `${noun} could not be refreshed. Your choices are preserved. Try reloading again.`,
             );
         } finally {
             inFlight.current = false;
@@ -76,7 +137,44 @@ export function usePlanningMutation(refresh: () => Promise<void>) {
         }
     }
 
-    return { pending, error, run, reload, clearError: () => setError(null) };
+    return {
+        pending,
+        unresolved,
+        locked: pending || unresolved,
+        error,
+        run,
+        retry,
+        reload,
+        clearError: () => {
+            if (attempt.current === null) {
+                setError(null);
+            }
+        },
+    };
+}
+
+export function PlanningMutationError({
+    mutation,
+}: {
+    mutation: ReturnType<typeof usePlanningMutation>;
+}) {
+    return mutation.error ? (
+        <div className="grid min-w-0 grid-cols-1 gap-2">
+            <p role="alert" className="text-sm wrap-anywhere text-destructive">
+                {mutation.error}
+            </p>
+            {mutation.unresolved && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={mutation.pending}
+                    onClick={() => void mutation.retry()}
+                >
+                    Check original change
+                </Button>
+            )}
+        </div>
+    ) : null;
 }
 
 /** Seeded empty pages are authoritative; only typing or explicit continuation fetches. */

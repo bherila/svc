@@ -47,13 +47,19 @@ final class TaskEditorPresenterTest extends TestCase
         $taskView = $presenter->task($workspace, $task, $seed);
         $this->assertSame($project->public_id, $projectView['id']);
         $this->assertSame($task->public_id, $taskView['id']);
+        // The canonical API and pre-cutover web route share this resource
+        // suffix. A presentation refactor must retain the finished write URL.
+        $this->assertArrayHasKey('create_action', $projectView);
+        $this->assertStringEndsWith('/workspaces/'.$workspace->public_id.'/projects/'.$project->public_id.'/tasks', $projectView['create_action']);
+        $this->assertArrayHasKey('update_action', $taskView);
+        $this->assertStringEndsWith('/workspaces/'.$workspace->public_id.'/tasks/'.$task->public_id, $taskView['update_action']);
         foreach ([$projectView, $taskView] as $view) {
             if ($seed === null) {
                 $this->assertArrayNotHasKey('assignee_options', $view);
             } else {
                 $this->assertSame($seed, $view['assignee_options']);
             }
-            $this->assertSame(route('tasks.assignees', [$workspace, $project]), $view['assignees_action']);
+            $this->assertSame(route('agent-api.v1.tasks.assignees.index', [$workspace, $project]), $view['assignees_action']);
         }
         $this->assertSame([['id' => $user->public_id, 'name' => $user->name]], $taskView['assignees']);
         $this->assertSame('2026-10-20', $taskView['starts_on']);

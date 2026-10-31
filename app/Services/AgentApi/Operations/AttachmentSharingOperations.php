@@ -56,6 +56,7 @@ final class AttachmentSharingOperations
             if ($id === 'collaboration.attachments.list') {
                 $parameters[] = ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 100]];
                 $parameters[] = ['name' => 'cursor', 'in' => 'query', 'schema' => ['type' => 'string', 'maxLength' => 4096]];
+                $parameters[] = self::panelPresentation();
             }
             if ($write && ! str_ends_with($id, 'upload_url')) {
                 $parameters[] = 'IdempotencyKey';
@@ -66,7 +67,7 @@ final class AttachmentSharingOperations
             }
             $result[$id] = [
                 'method' => $method, 'scopes' => $scopes, 'summary' => $summary,
-                'description' => ($collaboration
+                'description' => ($id === 'collaboration.attachments.list' ? 'Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs. Portal narrows to client-safe metadata and controls even for owner previews. Bearer/MCP callers cannot select this representation. ' : '').($collaboration
                     ? 'Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. '
                     : 'Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. ')
                     .($write ? 'Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.'
@@ -77,12 +78,19 @@ final class AttachmentSharingOperations
                     409 => 'A captured version is stale or the idempotency key was reused for different input.',
                     422 => 'A field, confirmation, cursor or file is invalid.', 429 => 'Too many requests; retry after Retry-After.',
                     503 => 'The retained local privacy latch is unavailable; no write was performed.'],
-            ] + ($response === null ? ['binary' => ['application/octet-stream', 'Authorized attachment content.']] : ['response' => $response])
+            ] + ($response === null ? ['binary' => ['*/*', 'Authorized attachment content.']] : ['response' => $response])
                 + ($id === 'collaboration.attachments.upload' ? ['request_types' => ['multipart/form-data']] : [])
                 + ($request === null ? [] : ['request' => $request]);
         }
 
         return $result;
+    }
+
+    /** @return array<string,mixed> */
+    public static function panelPresentation(): array
+    {
+        return ['name' => 'presentation', 'in' => 'query', 'description' => 'Optional native panel representation for trusted first-party sessions only. It never grants parent authority. Portal always narrows to the client-safe whitelist; bearer and MCP callers are refused.',
+            'schema' => ['type' => 'string', 'enum' => ['native', 'portal']]];
     }
 
     public static function writes(string $id): bool

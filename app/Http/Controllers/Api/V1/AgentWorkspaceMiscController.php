@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AgentPrincipal;
+use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentAttachmentService;
@@ -12,9 +13,13 @@ use App\Services\AgentApi\AgentWorkspaceCreationAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
 use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Files\AttachmentMutationOrigin;
 use App\Services\Files\AttachmentPageQuery;
+use App\Services\Files\AttachmentParentReference;
+use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Files\AttachmentUploadPolicy;
 use App\Services\Search\WorkspaceSearch;
+use App\Support\AgentApi\FirstPartySession;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
 use Illuminate\Http\JsonResponse;
@@ -54,31 +59,44 @@ final class AgentWorkspaceMiscController extends Controller
 
     public function index(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
     {
-        return response()->json($this->files->listing($this->principal($request), $workspace, $recordType, $recordPublicId, AttachmentPageQuery::fromInput($request->query())));
+        if ($request->query->has('presentation')) {
+            abort_unless(FirstPartySession::is($request), 403);
+            $input = $request->validate(['presentation' => ['required', 'in:native,portal'], 'client' => ['required_if:presentation,portal', 'uuid']]);
+            $actor = User::query()->findOrFail($this->principal($request)->id);
+            $view = app(AttachmentSharingNativeView::class);
+            $page = AttachmentPageQuery::fromInput($request->query());
+            $panel = $input['presentation'] === 'portal'
+                ? $view->portalLegacy($actor, ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $input['client'])->firstOrFail(), $recordType, $recordPublicId, $page)
+                : $view->legacy($actor, $workspace, new AttachmentParentReference($recordType, $recordPublicId), $page);
+
+            return response()->json(['data' => $panel]);
+        }
+
+        return response()->json($this->files->listing($this->principal($request), $workspace, $recordType, $recordPublicId, AttachmentPageQuery::fromInput($request->query()), $this->origin($request)));
     }
 
     public function show(Request $request, Workspace $workspace, string $attachment): JsonResponse
     {
-        return response()->json($this->files->metadata($this->principal($request), $workspace, $attachment));
+        return response()->json($this->files->metadata($this->principal($request), $workspace, $attachment, $this->origin($request)));
     }
 
     public function downloadUrl(Request $request, Workspace $workspace, string $attachment): JsonResponse
     {
-        return response()->json($this->files->downloadUrl($this->principal($request), $workspace, $attachment));
+        return response()->json($this->files->downloadUrl($this->principal($request), $workspace, $attachment, $this->origin($request)));
     }
 
     public function download(Request $request, Workspace $workspace, string $attachment): StreamedResponse
     {
         abort_unless($request->hasValidRelativeSignature(), 403);
 
-        return $this->files->download($this->principal($request), $workspace, $attachment);
+        return $this->files->download($this->principal($request), $workspace, $attachment, $this->origin($request));
     }
 
     public function uploadUrl(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
     {
         AttachmentUploadPolicy::validateLegacyPayload($request->all());
 
-        return response()->json($this->files->uploadUrl($this->principal($request), $workspace, $recordType, $recordPublicId));
+        return response()->json($this->files->uploadUrl($this->principal($request), $workspace, $recordType, $recordPublicId, $this->origin($request)));
     }
 
     public function upload(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
@@ -89,7 +107,7 @@ final class AgentWorkspaceMiscController extends Controller
         abort_unless($file instanceof UploadedFile, 422);
 
         return response()->json($this->files->upload($context->user, $workspace, $context->oauthClientId,
-            $context->idempotencyKey, $recordType, $recordPublicId, $file, $request->all()), 201);
+            $context->idempotencyKey, $recordType, $recordPublicId, $file, $request->all(), $this->origin($request)), 201);
     }
 
     public function delete(Request $request, Workspace $workspace, string $attachment): JsonResponse
@@ -97,7 +115,12 @@ final class AgentWorkspaceMiscController extends Controller
         $context = $this->contexts->from($request);
 
         return response()->json($this->files->delete($context->user, $workspace, $context->oauthClientId,
-            $context->idempotencyKey, $attachment, $request->all()), 202);
+            $context->idempotencyKey, $attachment, $request->all(), $this->origin($request)), 202);
+    }
+
+    private function origin(Request $request): AttachmentMutationOrigin
+    {
+        return FirstPartySession::is($request) ? AttachmentMutationOrigin::Native : AttachmentMutationOrigin::Agent;
     }
 
     private function principal(Request $request): User|AgentPrincipal

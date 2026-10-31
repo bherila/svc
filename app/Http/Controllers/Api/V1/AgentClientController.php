@@ -53,7 +53,8 @@ final class AgentClientController extends Controller
         $context = $this->contexts->from($request);
         $id = $this->mutations->createClient($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all());
 
-        return response()->json(['data' => $this->clients->get($context->user, $workspace, $id)], 201);
+        return response()->json(['data' => $this->clients->get($context->user, $workspace, $id)], 201)
+            ->header('Location', route('clients.show', [$workspace, $id], absolute: false));
     }
 
     public function update(Request $request, Workspace $workspace, string $client): JsonResponse

@@ -265,13 +265,13 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string,mixed> */
-    public function expenseSchedulesCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(format: 'date')] string $starts_on, #[Schema(enum: ['monthly', 'quarterly', 'semi_annual', 'annual'])] string $cadence, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
+    public function expenseSchedulesCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(format: 'date')] string $starts_on, #[Schema(enum: ['monthly', 'quarterly', 'semi_annual', 'annual'])] string $cadence, #[Schema(minimum: 1)] int|string $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
     {
         return $this->rest->call('expense_schedules.create', ['workspace' => $workspace_id], compact('company_id', 'expected_version', 'starts_on', 'cadence', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
-    public function expenseSchedulesUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $active, #[Schema(minimum: 1)] int $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
+    public function expenseSchedulesUpdate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $schedule_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, bool $active, #[Schema(minimum: 1)] int|string $amount, #[Schema(pattern: '^[A-Z]{3}$')] string $currency, #[Schema(minLength: 1, maxLength: 2000)] string $description, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(format: 'uuid')] ?string $project_id = null): array
     {
         return $this->rest->call('expense_schedules.update', ['workspace' => $workspace_id, 'schedule' => $schedule_id], compact('expected_version', 'active', 'amount', 'currency', 'description', 'project_id'), $idempotency_key);
     }
@@ -292,6 +292,16 @@ final class AgentMcpWriteTools
     public function expenseReceiptsDownload(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(format: 'uuid')] string $receipt_id): array
     {
         return $this->rest->call('expenses.receipts.download', ['workspace' => $workspace_id, 'expense' => $expense_id, 'receipt' => $receipt_id], null);
+    }
+
+    /** @return array<string,mixed> */
+    public function expenseReceiptsDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id,
+        #[Schema(format: 'uuid')] string $receipt_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_parent_version, bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->rest->call('expenses.receipts.delete', ['workspace' => $workspace_id, 'expense' => $expense_id, 'receipt' => $receipt_id],
+            compact('expected_version', 'expected_parent_version', 'confirm'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */

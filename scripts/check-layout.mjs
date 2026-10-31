@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /* global process */
 
+import { Buffer } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import {
     existsSync,
     mkdirSync,
@@ -34,14 +35,29 @@ const artifacts = path.join(
     path.basename(runtime),
 );
 const widths = [390, 820, 1440, 1920];
-const portalOnly = process.argv.includes('--portal-access');
+const clientsOnly = process.argv.includes('--clients');
+const resourceChromeOnly = process.argv.includes('--resource-chrome');
+const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
 const correctionOnly = process.argv.includes('--invoice-correction');
+const invoiceActionsOnly = process.argv.includes('--invoice-actions');
+const invoiceSendOnly = process.argv.includes('--invoice-send');
+const invoiceHistoryOnly = process.argv.includes('--invoice-history');
+const invoiceRecoveryOnly =
+    process.argv.includes('--invoice-recovery') || invoiceHistoryOnly;
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
+const disputesOnly = process.argv.includes('--disputes');
 const timeOnly = process.argv.includes('--time');
+const engagementOnly = process.argv.includes('--engagement');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
-const tasksOnly = process.argv.includes('--tasks');
+const taskLookupsOnly = process.argv.includes('--task-lookups');
+const tasksOnly = process.argv.includes('--tasks') || taskLookupsOnly;
+const receiptsOnly = process.argv.includes('--receipts');
+const schedulesOnly = process.argv.includes('--expense-schedules');
+const expensesOnly = process.argv.includes('--expenses');
+const projectsOnly = process.argv.includes('--projects');
+const workspacesOnly = process.argv.includes('--workspaces');
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -145,8 +161,16 @@ try {
         SVC_FINANCE_TRANSACTION_URL:
             'https://finance.example.test/transactions/{transaction_uuid}',
         SVC_LAYOUT_PORTAL_PAGES: portalOnly ? '1' : '0',
+        SVC_LAYOUT_ENGAGEMENT: engagementOnly ? '1' : '0',
         SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
         SVC_LAYOUT_TASKS: tasksOnly ? '1' : '0',
+        SVC_LAYOUT_TASK_LOOKUPS: taskLookupsOnly ? '1' : '0',
+        TASK_PLANNING_DETAILS_ENABLED: taskLookupsOnly ? 'true' : 'false',
+        SVC_LAYOUT_PROJECTS: projectsOnly ? '1' : '0',
+        SVC_LAYOUT_WORKSPACES: workspacesOnly ? '1' : '0',
+        SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
+        SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
+        SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -247,6 +271,181 @@ try {
         failures.push(`Browser error: ${error.message}`),
     );
 
+    async function checkInvoiceRecovery(
+        screen,
+        width,
+        state,
+        pattern,
+        submit,
+        field,
+    ) {
+        // Synthetic API outcomes never write fixture money or send mail. The
+        // normal invoice journey below separately checks real canonical writes.
+        const requests = [];
+        await page.route(
+            pattern,
+            async (route) => {
+                const request = route.request();
+                requests.push({
+                    method: request.method(),
+                    url: request.url(),
+                    body: request.postData(),
+                    key: request.headers()['idempotency-key'],
+                });
+                expect(requests.at(-1).key).toBeTruthy();
+
+                if (requests.length > 1) {
+                    expect(requests.at(-1)).toEqual(requests[0]);
+                }
+
+                await route.fulfill({
+                    status:
+                        requests.length === 1
+                            ? 408
+                            : requests.length === 2
+                              ? 422
+                              : 200,
+                    json:
+                        requests.length < 3
+                            ? {
+                                  message:
+                                      'Synthetic uncertain result. Check the original request before starting another change.',
+                              }
+                            : { data: {} },
+                });
+            },
+            { times: 3 },
+        );
+        await submit.click();
+        const check = page.getByRole('button', {
+            name: 'Check original request',
+            exact: true,
+        });
+        await expect(check).toBeEnabled();
+
+        if (invoiceHistoryOnly) {
+            const keptUrl = page.url();
+            await page.evaluate(() => window.history.back());
+            await expect(page.getByRole('alert')).toContainText(
+                'Check the original result before leaving this page.',
+            );
+            await expect(page).toHaveURL(keptUrl);
+            await expect(page.getByRole('dialog')).toBeVisible();
+        }
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await capture(screen, `${state}-uncertain`, width);
+        await check.click();
+        await expect.poll(() => requests.length).toBe(2);
+        await expect(check).toBeEnabled();
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await page.route(page.url(), (route) => route.abort('failed'), {
+            times: 1,
+        });
+        await check.click();
+        const refresh = page.getByRole('button', {
+            name: 'Refresh saved result',
+            exact: true,
+        });
+        await expect(refresh).toBeEnabled();
+        await expect(page.getByRole('alert')).toContainText(
+            'The change was saved, but the page could not refresh',
+        );
+
+        if (field) {
+            await expect(field).toBeDisabled();
+        }
+
+        await capture(screen, `${state}-saved-refresh-failure`, width);
+        await refresh.click();
+        await expect(refresh).toHaveCount(0);
+        expect(requests).toHaveLength(3);
+    }
+
+    async function checkExpenseRecovery(screen, width, pattern, submitLabel) {
+        // Exercise browser recovery without adding rows to the width fixtures.
+        // Real canonical writes are checked separately after these captures.
+        const requests = [];
+        await page.route(
+            pattern,
+            async (route) => {
+                const request = route.request();
+                requests.push({
+                    url: request.url(),
+                    body: request.postData(),
+                    key: request.headers()['idempotency-key'],
+                });
+
+                if (requests.length === 2) {
+                    expect(requests[1]).toEqual(requests[0]);
+                }
+
+                await route.fulfill({
+                    status: requests.length === 1 ? 408 : 201,
+                    contentType: 'application/json',
+                    body: JSON.stringify(
+                        requests.length === 1
+                            ? {
+                                  message:
+                                      'Synthetic uncertain result. Check the original request before starting another change.',
+                              }
+                            : { data: {} },
+                    ),
+                });
+            },
+            { times: 2 },
+        );
+        await page
+            .getByRole('button', { name: submitLabel, exact: true })
+            .click();
+        await expect(
+            page.getByRole('button', {
+                name: 'Check original request',
+                exact: true,
+            }),
+        ).toBeEnabled();
+        await expect(
+            page.getByLabel('Description', { exact: true }),
+        ).toBeDisabled();
+        await expect(
+            page.getByRole('button', { name: 'Cancel', exact: true }),
+        ).toBeDisabled();
+        await capture(screen, 'uncertain-request', width);
+        await page.route(page.url(), (route) => route.abort('failed'), {
+            times: 1,
+        });
+        await page
+            .getByRole('button', {
+                name: 'Check original request',
+                exact: true,
+            })
+            .click();
+        await expect(
+            page.getByRole('button', {
+                name: 'Refresh saved result',
+                exact: true,
+            }),
+        ).toBeEnabled();
+        await expect(
+            page.getByRole('button', { name: 'Cancel', exact: true }),
+        ).toBeDisabled();
+        await capture(screen, 'saved-refresh-failure', width);
+        await page
+            .getByRole('button', { name: 'Refresh saved result', exact: true })
+            .click();
+        await expect(
+            page.getByLabel('Description', { exact: true }),
+        ).toHaveCount(0);
+        expect(requests).toHaveLength(2);
+    }
+
     async function capture(screen, state, width, measuredOnly = false) {
         await page.evaluate(() => document.fonts.ready);
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -304,38 +503,94 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of tasksOnly
-            ? ['task_list', 'task_project', 'task_editor', 'task_portal']
-            : historyOnly
-              ? ['history_index', 'history_discussion', 'history_invoice']
-              : portalOnly
-                ? ['settings']
-                : correctionOnly
-                  ? ['invoice_review']
-                  : squareOnly
-                    ? ['square_explore', 'square_invoice', 'square_portal']
-                    : remindersOnly
-                      ? ['reminder_invoice', 'settings']
-                      : timeOnly
-                        ? ['time', 'draft_time']
-                        : backlogOnly
-                          ? ['agreement']
-                          : [
-                                'mcp_setup',
-                                'invoice',
-                                'invoice_review',
-                                'reminder_invoice',
-                                'settings',
-                                'draft_invoice',
-                                'draft_time',
-                                'proposal',
-                                'proposal_acceptance',
-                                'operations',
-                                'time',
-                                'expenses',
-                                'receipts',
-                                'expense_schedules',
-                            ]) {
+        for (const screen of invoiceSendOnly
+            ? ['invoice']
+            : invoiceHistoryOnly
+              ? ['draft_time']
+              : invoiceRecoveryOnly
+                ? [
+                      'invoice',
+                      'operations',
+                      'draft_time',
+                      'time',
+                      'draft_invoice',
+                      'invoice_review',
+                  ]
+                : receiptsOnly
+                  ? ['receipts']
+                  : projectsOnly
+                    ? ['settings']
+                    : schedulesOnly
+                      ? ['expense_schedules']
+                      : expensesOnly
+                        ? ['expenses']
+                        : workspacesOnly
+                          ? ['selector']
+                          : invoiceActionsOnly
+                            ? [
+                                  'invoice',
+                                  'invoice_review',
+                                  'draft_invoice',
+                                  'draft_time',
+                              ]
+                            : engagementOnly
+                              ? ['operations', 'agreement']
+                              : disputesOnly
+                                ? ['invoice', 'square_portal']
+                                : taskLookupsOnly
+                                  ? ['task_editor']
+                                  : tasksOnly
+                                    ? [
+                                          'task_list',
+                                          'task_project',
+                                          'task_editor',
+                                          'task_portal',
+                                      ]
+                                    : historyOnly
+                                      ? [
+                                            'history_index',
+                                            'history_discussion',
+                                            'history_invoice',
+                                        ]
+                                      : portalOnly
+                                        ? ['settings']
+                                        : correctionOnly
+                                          ? ['invoice_review']
+                                          : squareOnly
+                                            ? [
+                                                  'square_explore',
+                                                  'square_invoice',
+                                                  'square_portal',
+                                              ]
+                                            : remindersOnly
+                                              ? ['reminder_invoice', 'settings']
+                                              : timeOnly
+                                                ? ['time', 'draft_time']
+                                                : backlogOnly
+                                                  ? ['agreement']
+                                                  : [
+                                                        'mcp_setup',
+                                                        'invoice',
+                                                        'invoice_review',
+                                                        'reminder_invoice',
+                                                        'settings',
+                                                        'draft_invoice',
+                                                        'draft_time',
+                                                        'proposal',
+                                                        'proposal_acceptance',
+                                                        'operations',
+                                                        'time',
+                                                        'expenses',
+                                                        'receipts',
+                                                        'expense_schedules',
+                                                    ]) {
+            if (
+                resourceChromeOnly &&
+                !['invoice', 'proposal', 'proposal_acceptance'].includes(screen)
+            ) {
+                continue;
+            }
+
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -355,7 +610,122 @@ try {
                     throw error;
                 });
 
+            if (resourceChromeOnly) {
+                await expect(
+                    page.locator('main').getByRole('link', { name: /^←/ }),
+                ).toHaveCount(0);
+                await expect(
+                    page.locator('main').getByRole('heading', { level: 1 }),
+                ).toBeVisible();
+
+                if (screen === 'proposal_acceptance') {
+                    await expect(page.locator('#signer-name')).toBeVisible();
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Accept',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await page
+                        .locator('#signer-name')
+                        .fill('SyntheticChromeSigner'.repeat(5));
+                    await page
+                        .locator('#signer-title')
+                        .fill('SyntheticChromeTitle'.repeat(5));
+                }
+
+                await capture(screen, 'shared-shell', width);
+                continue;
+            }
+
+            if (taskLookupsOnly) {
+                await capture(screen, 'seeded-options', width);
+                const staffSearch = page.getByLabel(
+                    'Find staff with project access',
+                );
+                const staffResponse = page.waitForResponse(
+                    (response) =>
+                        response.url().includes('/api/v1/workspaces/') &&
+                        response.url().includes('/task-assignees?q=') &&
+                        response.request().method() === 'GET',
+                );
+                await staffSearch.fill('27');
+                const staff = await staffResponse;
+                expect(staff.status()).toBe(200);
+                const staffRows = await staff.json();
+                expect(staffRows.data).toHaveLength(1);
+                expect(Object.keys(staffRows.data[0]).sort()).toEqual([
+                    'id',
+                    'name',
+                ]);
+                expect(staffRows.data[0].name).toMatch(/27$/);
+                await capture(screen, 'searched-assignee', width);
+
+                for (const [label, pathPart, query] of [
+                    [
+                        'Find labels',
+                        '/task-label-options',
+                        'Synthetic lookup label',
+                    ],
+                    ['Find prerequisites', '/dependency-options', 'ZZZ'],
+                    [
+                        'Find contacts',
+                        '/contact-responsibility-options',
+                        'Synthetic lookup contact',
+                    ],
+                ]) {
+                    const control = page.getByLabel(label, { exact: true });
+                    const responsePromise = page.waitForResponse(
+                        (response) =>
+                            response.url().includes('/api/v1/workspaces/') &&
+                            response.url().includes(pathPart) &&
+                            response.url().includes('q=') &&
+                            response.request().method() === 'GET',
+                    );
+                    await control.fill(query);
+                    const response = await responsePromise;
+                    expect(response.status()).toBe(200);
+                    const result = await response.json();
+                    expect(result.data.length).toBe(25);
+                    expect(result.meta.next_cursor).toBeTruthy();
+                    expect(result.next_href).toContain('/api/v1/');
+                    await capture(screen, pathPart.slice(1) + '-search', width);
+                    const nextResponse = page.waitForResponse(
+                        (response) =>
+                            response.url() === result.next_href &&
+                            response.request().method() === 'GET',
+                    );
+                    await control
+                        .locator('..')
+                        .getByRole('button', {
+                            name:
+                                'Load more ' +
+                                label.replace('Find ', '').toLowerCase(),
+                            exact: true,
+                        })
+                        .click();
+                    const continuation = await nextResponse;
+                    expect(continuation.status()).toBe(200);
+                    await expect(
+                        control.locator('..').getByRole('button', {
+                            name:
+                                'Load more ' +
+                                label.replace('Find ', '').toLowerCase(),
+                            exact: true,
+                        }),
+                    ).toHaveCount(pathPart === '/dependency-options' ? 1 : 0);
+                    await capture(
+                        screen,
+                        pathPart.slice(1) + '-continued',
+                        width,
+                    );
+                }
+
+                continue;
+            }
+
             if (screen === 'task_list') {
+                const createdTitle = `SyntheticTaskCreatedInBrowser${width}`;
                 await expect(
                     page.getByRole('link', { name: 'Next tasks', exact: true }),
                 ).toBeVisible();
@@ -385,7 +755,7 @@ try {
                 await capture(screen, 'create-empty', width);
                 await page
                     .getByLabel('Title', { exact: true })
-                    .fill('SyntheticTaskCreatedInBrowser');
+                    .fill(createdTitle);
                 await page
                     .getByLabel('Description', { exact: true })
                     .fill('Synthetic create task description. '.repeat(20));
@@ -402,24 +772,96 @@ try {
                     .scrollIntoViewIfNeeded();
                 await capture(screen, 'create-dialog', width);
 
-                if (width === 1440) {
-                    await page
-                        .getByRole('button', {
-                            name: 'Create task',
-                            exact: true,
-                        })
-                        .click();
-                    await expect(page.getByRole('dialog')).toHaveCount(0);
-                    await expect(
-                        page.getByRole('link', {
-                            name: 'SyntheticTaskCreatedInBrowser',
-                            exact: true,
-                        }),
-                    ).toBeVisible();
-                    await capture(screen, 'created', width);
-                } else {
-                    await page.keyboard.press('Escape');
-                }
+                const createPattern =
+                    origin +
+                    new URL(fixture.task_create, origin).pathname +
+                    '*';
+                const readPattern = origin + new URL(page.url()).pathname + '*';
+                const writes = [];
+                let loseWriteAnswer = true;
+                let loseRead = true;
+                const createHandler = async (route) => {
+                    if (route.request().method() !== 'POST') {
+                        return route.continue();
+                    }
+
+                    writes.push({
+                        body: route.request().postDataJSON(),
+                        key: route.request().headers()['idempotency-key'],
+                    });
+
+                    if (loseWriteAnswer) {
+                        loseWriteAnswer = false;
+                        const committed = await route.fetch();
+                        expect(committed.status()).toBe(201);
+
+                        return route.abort('failed');
+                    }
+
+                    return route.continue();
+                };
+                const readHandler = async (route) => {
+                    if (
+                        loseRead &&
+                        route.request().method() === 'GET' &&
+                        route.request().headers()['x-inertia-partial-data']
+                    ) {
+                        loseRead = false;
+
+                        return route.abort('failed');
+                    }
+
+                    return route.continue();
+                };
+                await page.route(createPattern, createHandler);
+                await page.route(readPattern, readHandler);
+                await page
+                    .getByRole('button', { name: 'Create task', exact: true })
+                    .click();
+                const check = page.getByRole('button', {
+                    name: 'Check task save',
+                    exact: true,
+                });
+                await expect(check).toBeEnabled();
+                await expect(
+                    page.getByLabel('Title', { exact: true }),
+                ).toBeDisabled();
+                await expect(
+                    page.getByRole('combobox', {
+                        name: 'Project',
+                        exact: true,
+                    }),
+                ).toBeDisabled();
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toBeVisible();
+                const unresolvedUrl = page.url();
+                await page.evaluate(() => window.history.back());
+                await expect(page.getByRole('alert')).toContainText(
+                    'Check the original change before leaving this page.',
+                );
+                expect(page.url()).toBe(unresolvedUrl);
+                await expect(page.getByRole('dialog')).toBeVisible();
+                expect(writes).toHaveLength(1);
+                await check.scrollIntoViewIfNeeded();
+                await capture(screen, 'create-unknown', width);
+                await check.click();
+                await expect(page.getByRole('alert')).toContainText(
+                    'saved, but current tasks could not be refreshed',
+                );
+                await expect(check).toBeEnabled();
+                expect(writes).toHaveLength(2);
+                expect(writes[1]).toEqual(writes[0]);
+                await check.scrollIntoViewIfNeeded();
+                await capture(screen, 'create-refresh-failed', width);
+                await check.click();
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                expect(writes).toHaveLength(2);
+                await expect(
+                    page.getByRole('link', { name: createdTitle, exact: true }),
+                ).toHaveCount(1);
+                await capture(screen, 'created', width);
+                await page.unroute(createPattern, createHandler);
+                await page.unroute(readPattern, readHandler);
             }
 
             if (screen === 'task_project') {
@@ -473,12 +915,15 @@ try {
                     origin + fixture.task_update,
                     {
                         data: { expected_version: version },
-                        headers: { 'Sec-Fetch-Site': 'same-origin' },
+                        headers: {
+                            'Sec-Fetch-Site': 'same-origin',
+                            'Idempotency-Key': randomUUID(),
+                        },
                         maxRedirects: 0,
                     },
                 );
 
-                expect([302, 303]).toContain(revised.status());
+                expect(revised.status()).toBe(200);
 
                 await page
                     .getByRole('button', { name: 'Save task', exact: true })
@@ -518,7 +963,34 @@ try {
                 ).toBeVisible();
             }
 
-            if (screen.startsWith('square_')) {
+            if (disputesOnly) {
+                await expect(
+                    page.getByText('Disputed', { exact: true }).first(),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Send reminder',
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Send invoice',
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+
+                if (screen === 'square_portal') {
+                    await expect(
+                        page.getByRole('link', {
+                            name: 'View or pay in Square',
+                            exact: true,
+                        }),
+                    ).toHaveCount(0);
+                }
+            }
+
+            if (screen.startsWith('square_') && !disputesOnly) {
                 await expect(
                     page
                         .getByRole('link', {
@@ -544,6 +1016,79 @@ try {
                     'href',
                     'https://squareupsandbox.com/dashboard/invoices/inv_fixture_layout',
                 );
+
+                // Synthetic provider responses exercise review/confirmation layout
+                // without any network request to Square or ledger mutation.
+                let recordable = false;
+                const reviewPattern = '**/square-coverage/*/payments';
+                await page.route(reviewPattern, async (route) => {
+                    await route.fulfill({
+                        json: {
+                            data: {
+                                invoice_id:
+                                    '00000000-0000-4000-8000-000000000001',
+                                invoice_number:
+                                    'SYNTHETICCOVEREDINVOICE'.repeat(8),
+                                invoice_version: 'a'.repeat(64),
+                                balance_amount: 12345,
+                                currency: 'USD',
+                                square_invoice_id: 'inv_fixture_layout_covered',
+                                square_invoice_number:
+                                    'SYNTHETICCOVERED'.repeat(10),
+                                payments: [
+                                    {
+                                        square_payment_id:
+                                            'synthetic_payment_'.repeat(10),
+                                        amount: 12345,
+                                        refunded_amount: 0,
+                                        currency: 'USD',
+                                        received_on: '2030-02-01',
+                                        reviewed_version: 'b'.repeat(64),
+                                        recorded_payment_id: null,
+                                        refusal: recordable
+                                            ? null
+                                            : 'This payment includes a refund and requires manual review.',
+                                        record_href: recordable
+                                            ? '/synthetic-covered-record'
+                                            : null,
+                                    },
+                                ],
+                            },
+                        },
+                    });
+                });
+                await page
+                    .getByRole('button', {
+                        name: 'Review payments',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByText(
+                        'This payment includes a refund and requires manual review.',
+                        { exact: true },
+                    ),
+                ).toBeVisible();
+                await capture(screen, 'covered-payment-refused', width);
+                recordable = true;
+                await page
+                    .getByRole('button', {
+                        name: 'Review payments',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', {
+                        name: 'Record this payment',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'covered-payment-confirm', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page.unroute(reviewPattern);
             }
 
             if (screen === 'reminder_invoice') {
@@ -589,6 +1134,328 @@ try {
                         name: 'Automatically remind this client about unpaid invoices',
                     }),
                 ).toBeChecked();
+            }
+
+            if (clientsOnly && screen === 'settings') {
+                const restore = page.getByRole('button', {
+                    name: 'Restore contact',
+                    exact: true,
+                });
+
+                if (await restore.count()) {
+                    await restore.click();
+                    const summary = page
+                        .locator('summary')
+                        .filter({ hasText: 'SyntheticContact'.repeat(6) });
+                    await expect(summary).not.toContainText('Archived');
+
+                    if (
+                        !(await summary.evaluate(
+                            (element) => element.parentElement.open,
+                        ))
+                    ) {
+                        await summary.click();
+                    }
+
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Archive contact',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                }
+
+                // Establish a real Inertia history entry before the unknown write.
+                const previousSettingsUrl = page.url();
+                await page
+                    .getByRole('link', {
+                        name: 'Newer invitations',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page).not.toHaveURL(previousSettingsUrl);
+                const activeSettingsUrl = page.url();
+
+                const profileRequests = [];
+                let profileReads = 0;
+                const profilePage = (url) =>
+                    url.pathname ===
+                    new URL(origin + fixture.settings).pathname;
+                const profileReadRoute = async (route) => {
+                    if (
+                        profileRequests.length === 3 &&
+                        route
+                            .request()
+                            .headers()
+                            ['x-inertia-partial-data']?.includes(
+                                'company_profile',
+                            )
+                    ) {
+                        profileReads++;
+
+                        if (profileReads === 1) {
+                            return route.abort('failed');
+                        }
+                    }
+
+                    return route.fallback();
+                };
+                await page.route(profilePage, profileReadRoute);
+                const profileRoute = async (route) => {
+                    const request = route.request();
+
+                    if (request.method() !== 'PATCH') {
+                        return route.continue();
+                    }
+
+                    profileRequests.push({
+                        url: request.url(),
+                        method: request.method(),
+                        body: request.postData(),
+                        key: request.headers()['idempotency-key'],
+                    });
+
+                    if (profileRequests.length <= 2) {
+                        return route.fulfill({
+                            status: profileRequests.length === 1 ? 408 : 409,
+                            json: {
+                                message:
+                                    'Synthetic original change needs checking.',
+                            },
+                        });
+                    }
+
+                    return route.continue();
+                };
+                await page.route('**/api/v1/**', profileRoute);
+                await page
+                    .getByLabel('Phone', { exact: true })
+                    .first()
+                    .fill('555-0100');
+                await page
+                    .getByRole('button', {
+                        name: 'Save company profile',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await capture(screen, 'profile-unknown-change', width);
+                await page.evaluate(() => {
+                    window.__svcHistoryRestored = false;
+                    const originalPush = window.history.pushState;
+                    window.history.pushState = function (...args) {
+                        window.history.pushState = originalPush;
+                        const result = originalPush.apply(this, args);
+                        window.__svcHistoryRestored = true;
+
+                        return result;
+                    };
+                    window.history.back();
+                });
+                await page.waitForFunction(
+                    () => window.__svcHistoryRestored === true,
+                );
+                await expect(page).toHaveURL(activeSettingsUrl);
+                await expect(
+                    page.getByLabel('Phone', { exact: true }).first(),
+                ).toHaveValue('555-0100');
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                expect(profileRequests).toHaveLength(1);
+                await capture(screen, 'profile-unknown-history-back', width);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                expect(profileRequests[1]).toEqual(profileRequests[0]);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByText(
+                        'The change was recorded, but this page could not load it. Check the original change.',
+                        { exact: true },
+                    ),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeDisabled();
+                await capture(screen, 'profile-recorded-read-failed', width);
+                expect(profileRequests[2]).toEqual(profileRequests[0]);
+                await page
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+                await expect(
+                    page.getByLabel('Internal company notes'),
+                ).toBeEnabled();
+                expect(profileRequests).toHaveLength(3);
+                expect(profileReads).toBe(2);
+                await page.unroute('**/api/v1/**', profileRoute);
+                await page.unroute(profilePage, profileReadRoute);
+
+                const contactSummary = page
+                    .locator('summary')
+                    .filter({ hasText: 'SyntheticContact'.repeat(6) });
+
+                if (
+                    !(await contactSummary.evaluate(
+                        (element) => element.parentElement.open,
+                    ))
+                ) {
+                    await contactSummary.click();
+                }
+
+                await capture(screen, 'client-contact-form', width);
+                await page
+                    .getByRole('button', {
+                        name: 'Archive contact',
+                        exact: true,
+                    })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'contact-archive-confirmation', width);
+                await page
+                    .getByRole('alertdialog')
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
+                    .getByRole('button', {
+                        name: 'Current client',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'Add client', exact: true })
+                    .click();
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await page
+                    .getByRole('dialog')
+                    .getByLabel('Name', { exact: true })
+                    .fill('SyntheticNewClient'.repeat(8));
+                await page
+                    .getByRole('dialog')
+                    .getByLabel('Billing email', { exact: true })
+                    .fill('billing@example.test');
+                await capture(screen, 'create-client-dialog', width);
+                const clientRequests = [];
+                const clientRoute = async (route) => {
+                    const request = route.request();
+
+                    if (request.method() !== 'POST') {
+                        return route.continue();
+                    }
+
+                    clientRequests.push({
+                        url: request.url(),
+                        method: request.method(),
+                        body: request.postData(),
+                        key: request.headers()['idempotency-key'],
+                    });
+
+                    return route.fulfill({
+                        status: clientRequests.length === 1 ? 408 : 403,
+                        json: {
+                            message: 'Synthetic client result is uncertain.',
+                        },
+                    });
+                };
+                await page.route('**/api/v1/**', clientRoute);
+                await page
+                    .getByRole('dialog')
+                    .getByRole('button', { name: 'Add client', exact: true })
+                    .click();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByRole('button', { name: 'Cancel', exact: true }),
+                ).toBeEnabled();
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                await page
+                    .getByRole('button', {
+                        name: 'Current client',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'Add client', exact: true })
+                    .click();
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toHaveValue('SyntheticNewClient'.repeat(8));
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'create-client-unknown-change', width);
+                await page
+                    .getByRole('dialog')
+                    .getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    page.getByRole('dialog').getByRole('button', {
+                        name: 'Check original change',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(clientRequests[1]).toEqual(clientRequests[0]);
+                await expect(
+                    page
+                        .getByRole('dialog')
+                        .getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await page.unroute('**/api/v1/**', clientRoute);
+                // Each viewport starts from its own synthetic dialog attempt.
+                await page.goto(origin + fixture.portal_settings);
             }
 
             if (screen === 'history_index') {
@@ -641,12 +1508,623 @@ try {
             }
 
             if (screen !== 'task_editor') {
-                await capture(
-                    screen,
-                    'initial',
-                    width,
-                    screen === 'operations',
+                await capture(screen, 'initial', width, false);
+            }
+
+            if (invoiceSendOnly) {
+                await page
+                    .getByRole('button', {
+                        name: 'Send to client',
+                        exact: true,
+                    })
+                    .click();
+                const compose = page.getByRole('dialog');
+                await compose
+                    .getByLabel('Subject', { exact: true })
+                    .fill('SyntheticComposeSubject'.repeat(8));
+                const requests = [];
+                await page.route(
+                    '**/api/v1/workspaces/*/invoices/*/send',
+                    async (route) => {
+                        const request = route.request();
+                        requests.push({
+                            url: request.url(),
+                            body: request.postData(),
+                            key: request.headers()['idempotency-key'],
+                        });
+                        const count = requests.length;
+                        const status =
+                            count === 1 || count === 3
+                                ? 409
+                                : count === 2
+                                  ? 408
+                                  : 200;
+                        await route.fulfill({
+                            status,
+                            json:
+                                status !== 200
+                                    ? {
+                                          message:
+                                              'Synthetic refused or uncertain send. Review the current invoice before confirming again.',
+                                      }
+                                    : {
+                                          data: {
+                                              id: new URL(
+                                                  request.url(),
+                                              ).pathname
+                                                  .split('/')
+                                                  .at(-2),
+                                              version: 'f'.repeat(64),
+                                              delivery: {
+                                                  id: 'synthetic-send-outcome',
+                                                  status:
+                                                      count === 4
+                                                          ? 'failed'
+                                                          : 'sent',
+                                                  error_summary:
+                                                      count === 4
+                                                          ? 'Synthetic known preparation failure.'
+                                                          : null,
+                                              },
+                                          },
+                                      },
+                        });
+                    },
+                    { times: 5 },
                 );
+                // Prove the next confirmation adopts the authoritative read,
+                // rather than either the stale attempt or receipt version.
+                await page.route(
+                    page.url(),
+                    async (route) => {
+                        const response = await route.fetch();
+                        const data = await response.json();
+                        data.props.version = 'b'.repeat(64);
+                        await route.fulfill({ response, json: data });
+                    },
+                    { times: 1 },
+                );
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(compose.getByRole('alert')).toContainText(
+                    'Review its current details',
+                );
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeEnabled();
+                expect(requests).toHaveLength(1);
+                await capture(screen, 'send-initial-conflict', width);
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[1].key).not.toBe(requests[0].key);
+                expect(JSON.parse(requests[1].body).expected_version).toBe(
+                    'b'.repeat(64),
+                );
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect.poll(() => requests.length).toBe(3);
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[2]).toEqual(requests[1]);
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Cancel',
+                        exact: true,
+                    }),
+                ).toBeDisabled();
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'send-uncertain-later-conflict', width);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[3]).toEqual(requests[1]);
+                await expect(compose.getByRole('alert')).toContainText(
+                    'The message was not handed off, but the invoice could not refresh',
+                );
+                await capture(screen, 'send-failed-refresh-failure', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    compose.getByRole('button', { name: 'Send', exact: true }),
+                ).toBeEnabled();
+                expect(requests).toHaveLength(4);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                expect(requests[4].key).not.toBe(requests[3].key);
+                expect(JSON.parse(requests[4].body).expected_version).toBe(
+                    JSON.parse(requests[0].body).expected_version,
+                );
+                await expect(compose.getByRole('alert')).toContainText(
+                    'The message was sent, but the invoice could not refresh',
+                );
+                await capture(screen, 'send-accepted-refresh-failure', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Refresh invoice',
+                        exact: true,
+                    })
+                    .click();
+                await expect(compose).toHaveCount(0);
+                expect(requests).toHaveLength(5);
+                continue;
+            }
+
+            if (invoiceRecoveryOnly) {
+                if (screen === 'invoice') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Record payment',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Reference', { exact: true })
+                        .fill('SyntheticOriginalReference'.repeat(8));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'payment',
+                        '**/api/v1/workspaces/*/payments',
+                        page.getByRole('button', {
+                            name: 'Record',
+                            exact: true,
+                        }),
+                        page.getByLabel('Reference', { exact: true }),
+                    );
+                } else if (screen === 'operations') {
+                    const draft = page
+                        .getByRole('form', { name: 'Draft invoice' })
+                        .first();
+                    await draft
+                        .getByPlaceholder('Invoice number', { exact: true })
+                        .fill('SYNTHETIC-RECOVERY');
+                    await draft
+                        .getByPlaceholder('Line description', { exact: true })
+                        .fill('SyntheticUnbrokenInvoiceDescription'.repeat(10));
+                    await draft
+                        .getByPlaceholder('Unit price', { exact: true })
+                        .fill('123.45');
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'draft',
+                        '**/api/v1/workspaces/*/invoices',
+                        draft.getByRole('button', {
+                            name: 'Draft invoice',
+                            exact: true,
+                        }),
+                        draft.getByPlaceholder('Invoice number', {
+                            exact: true,
+                        }),
+                    );
+                    const payment = page
+                        .locator('form')
+                        .filter({
+                            has: page.getByLabel('Payment amount', {
+                                exact: true,
+                            }),
+                        })
+                        .first();
+                    await payment
+                        .getByPlaceholder('Payment reference', { exact: true })
+                        .fill('SyntheticUnbrokenReference'.repeat(10));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'payment',
+                        '**/api/v1/workspaces/*/payments',
+                        payment.getByRole('button', {
+                            name: 'Record payment',
+                            exact: true,
+                        }),
+                        payment.getByLabel('Payment amount', { exact: true }),
+                    );
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'issue',
+                        '**/api/v1/workspaces/*/invoices/*/issue',
+                        page
+                            .getByRole('button', { name: 'Issue', exact: true })
+                            .first(),
+                        null,
+                    );
+                } else if (screen === 'draft_time' || screen === 'time') {
+                    if (invoiceHistoryOnly) {
+                        // Enter by Inertia so Back exercises same-document history,
+                        // rather than the browser's separate beforeunload prompt.
+                        await page.goto(origin + fixture.draft_invoice);
+                        await page
+                            .getByRole('link', {
+                                name: 'Add time',
+                                exact: true,
+                            })
+                            .click();
+                        await expect(page).toHaveURL(
+                            origin + fixture.draft_time,
+                        );
+                    }
+
+                    if (screen === 'time') {
+                        await page
+                            .getByRole('button', {
+                                name: 'Select time to invoice',
+                                exact: true,
+                            })
+                            .click();
+                    }
+
+                    await page
+                        .getByRole('checkbox', { name: / for invoice$/ })
+                        .first()
+                        .check();
+                    await page
+                        .getByRole('button', {
+                            name: 'Review draft invoice',
+                            exact: true,
+                        })
+                        .click();
+
+                    if (screen === 'time') {
+                        await page
+                            .getByLabel('Invoice number', { exact: true })
+                            .fill('SYNTHETIC-SELECTED-RECOVERY');
+                    }
+
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'selection',
+                        screen === 'time'
+                            ? '**/api/v1/workspaces/*/invoices'
+                            : '**/api/v1/workspaces/*/invoices/*/time',
+                        page.getByRole('button', {
+                            name:
+                                screen === 'time'
+                                    ? 'Create draft invoice'
+                                    : 'Add time to draft',
+                            exact: true,
+                        }),
+                        page.getByRole('button', {
+                            name: 'Cancel',
+                            exact: true,
+                        }),
+                    );
+                } else if (screen === 'draft_invoice') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Change dates',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Due date', { exact: true })
+                        .fill('2026-12-31');
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'dates',
+                        '**/api/v1/workspaces/*/invoices/*/details',
+                        page.getByRole('button', {
+                            name: 'Save dates',
+                            exact: true,
+                        }),
+                        page.getByLabel('Due date', { exact: true }),
+                    );
+                } else if (screen === 'invoice_review') {
+                    await page
+                        .getByRole('button', {
+                            name: 'Correct invoice',
+                            exact: true,
+                        })
+                        .click();
+                    await page
+                        .getByLabel('Reason for correction', { exact: true })
+                        .fill('SyntheticCorrectionReason'.repeat(10));
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'correction',
+                        '**/api/v1/workspaces/*/invoices/*/correct',
+                        page.getByRole('button', {
+                            name: 'Save audited correction',
+                            exact: true,
+                        }),
+                        page.getByLabel('Reason for correction', {
+                            exact: true,
+                        }),
+                    );
+                }
+
+                continue;
+            }
+
+            if (engagementOnly && screen === 'operations') {
+                await page
+                    .getByLabel('Proposal title', { exact: true })
+                    .first()
+                    .fill('SyntheticProposalTitle'.repeat(12));
+                await page
+                    .getByLabel('Proposal line description', { exact: true })
+                    .first()
+                    .fill('SyntheticProposalLine'.repeat(12));
+                await page
+                    .getByLabel('Proposal price', { exact: true })
+                    .first()
+                    .fill('1234.50');
+                await capture(screen, 'engagement-draft', width);
+                await page
+                    .getByRole('button', { name: 'Activate', exact: true })
+                    .first()
+                    .click();
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await capture(screen, 'activation-confirmation', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+            }
+
+            if (engagementOnly && screen === 'agreement') {
+                await page
+                    .getByRole('button', {
+                        name: 'Rename this agreement',
+                        exact: true,
+                    })
+                    .click();
+                await capture(screen, 'rename', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
+                    .getByRole('button', { name: 'Edit terms', exact: true })
+                    .click();
+                await capture(screen, 'terms', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+            }
+
+            if (projectsOnly && screen === 'settings') {
+                const form = page
+                    .locator('form')
+                    .filter({
+                        has: page.locator('input[aria-label^="Name of "]'),
+                    })
+                    .first();
+                const name = form.locator('input[aria-label^="Name of "]');
+                await name.fill(`Synthetic reconciled project ${width}`);
+                await page.route(
+                    origin + fixture.project_writes.PATCH[0],
+                    async (route) => {
+                        // The save reaches the real API; only its browser answer is lost.
+                        const response = await route.fetch();
+                        expect(response.status()).toBe(200);
+                        await route.abort('failed');
+                    },
+                    { times: 1 },
+                );
+                await form
+                    .getByRole('button', { name: 'Save project', exact: true })
+                    .click();
+                await expect(form.getByRole('alert')).toContainText(
+                    'could not be reached',
+                );
+                await expect(name).toBeDisabled();
+                await capture(screen, 'uncertain-save', width);
+                await page.route(page.url(), (route) => route.abort('failed'), {
+                    times: 1,
+                });
+                await form
+                    .getByRole('button', {
+                        name: 'Check project save',
+                        exact: true,
+                    })
+                    .click();
+                await expect(
+                    form.getByRole('button', {
+                        name: 'Refresh saved project',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(name).toBeDisabled();
+                await capture(screen, 'saved-refresh-failure', width);
+                await form
+                    .getByRole('button', {
+                        name: 'Refresh saved project',
+                        exact: true,
+                    })
+                    .click();
+                await expect(name).toBeEnabled();
+                await expect(name).toHaveValue(
+                    `Synthetic reconciled project ${width}`,
+                );
+                await expect(form.getByRole('alert')).toHaveCount(0);
+                await capture(screen, 'reconciled-save', width);
+            }
+
+            if (projectsOnly && screen === 'settings' && width === 1920) {
+                const form = page
+                    .locator('form')
+                    .filter({
+                        has: page.locator('input[aria-label^="Name of "]'),
+                    })
+                    .first();
+                const name = form.locator('input[aria-label^="Name of "]');
+                await name.fill('Synthetic browser edited project');
+                const saved = page.waitForResponse(
+                    (response) =>
+                        response.request().method() === 'PATCH' &&
+                        fixture.project_writes.PATCH.includes(
+                            new URL(response.url()).pathname,
+                        ),
+                );
+                await form
+                    .getByRole('button', { name: 'Save project', exact: true })
+                    .click();
+                expect((await saved).status()).toBe(200);
+                await expect(
+                    page.getByLabel('Name of Synthetic browser edited project'),
+                ).toBeVisible();
+                const access = page
+                    .getByRole('combobox', {
+                        name:
+                            'Access for ' + 'SyntheticProjectMember'.repeat(12),
+                    })
+                    .first();
+                const granted = page.waitForResponse(
+                    (response) =>
+                        response.request().method() === 'PUT' &&
+                        fixture.project_writes.PUT.includes(
+                            new URL(response.url()).pathname,
+                        ),
+                );
+                await access.selectOption('viewer');
+                expect((await granted).status()).toBe(200);
+                await expect(access).toHaveValue('viewer');
+                await capture(screen, 'project-edited-and-granted', width);
+                await page
+                    .getByLabel('New project', { exact: true })
+                    .fill('Synthetic browser created project');
+                const created = page.waitForResponse(
+                    (response) =>
+                        response.request().method() === 'POST' &&
+                        fixture.project_writes.POST.includes(
+                            new URL(response.url()).pathname,
+                        ),
+                );
+                await page
+                    .getByRole('button', { name: 'Add project', exact: true })
+                    .click();
+                expect((await created).status()).toBe(201);
+                await expect(
+                    page.getByLabel(
+                        'Name of Synthetic browser created project',
+                    ),
+                ).toBeVisible();
+                await capture(screen, 'project-created', width);
+            }
+
+            if (workspacesOnly && screen === 'selector') {
+                await page
+                    .getByRole('button', { name: 'New workspace', exact: true })
+                    .click();
+                await page
+                    .getByLabel('Name', { exact: true })
+                    .fill('SyntheticWorkspaceWithoutBreaks'.repeat(4));
+                await capture(screen, 'create-dialog', width);
+
+                const createdName = `Synthetic browser recovered workspace ${width}`;
+                await page
+                    .getByLabel('Name', { exact: true })
+                    .fill(createdName);
+                const creations = [];
+                const recordCreation = (request) => {
+                    if (
+                        request.method() === 'POST' &&
+                        new URL(request.url()).pathname ===
+                            fixture.workspace_create
+                    ) {
+                        creations.push(request);
+                    }
+                };
+                page.on('request', recordCreation);
+                await page.route(
+                    '**/workspaces/*/operations',
+                    (route) => route.abort('failed'),
+                    { times: 1 },
+                );
+                const created = page.waitForResponse(
+                    (response) =>
+                        response.request().method() === 'POST' &&
+                        new URL(response.url()).pathname ===
+                            fixture.workspace_create,
+                );
+                await page
+                    .getByRole('button', { name: 'Create', exact: true })
+                    .click();
+                const result = await created;
+                expect(result.status()).toBe(201);
+                const body = await result.json();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Open created workspace',
+                        exact: true,
+                    }),
+                ).toBeEnabled();
+                await expect(
+                    page.getByLabel('Name', { exact: true }),
+                ).toBeDisabled();
+                await expect(
+                    page.getByRole('button', { name: 'Cancel', exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'created-navigation-failure', width);
+                await page
+                    .getByRole('button', {
+                        name: 'Open created workspace',
+                        exact: true,
+                    })
+                    .click();
+                await page.waitForURL(body.data.web_url);
+                await expect(
+                    page.getByRole('heading', {
+                        name: createdName,
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                expect(creations).toHaveLength(1);
+                page.off('request', recordCreation);
+                await page.goto(origin + fixture.selector);
+                await expect(
+                    page.getByRole('link', {
+                        name: `${createdName} Open`,
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await capture(screen, 'created', width);
             }
 
             if (screen === 'agreement' && backlogOnly) {
@@ -786,6 +2264,18 @@ try {
                     .getByLabel('Description', { exact: true })
                     .fill('SyntheticUnbrokenRecurringExpense'.repeat(8));
                 await capture(screen, 'create', width);
+
+                if (schedulesOnly) {
+                    await page
+                        .getByLabel('Amount in minor units', { exact: true })
+                        .fill('9007199254740993');
+                    await checkExpenseRecovery(
+                        screen,
+                        width,
+                        '**/api/v1/workspaces/*/expense-schedules',
+                        'Save schedule',
+                    );
+                }
             }
 
             if (screen === 'expenses') {
@@ -807,6 +2297,32 @@ try {
                         )
                         .first(),
                 ).toBeVisible();
+                await page
+                    .getByRole('button', {
+                        name: 'Record expense',
+                        exact: true,
+                    })
+                    .click();
+                await page
+                    .getByLabel('Description', { exact: true })
+                    .fill('SyntheticUnbrokenExpense'.repeat(10));
+                await capture(screen, 'record-dialog', width);
+
+                if (expensesOnly) {
+                    await page
+                        .getByLabel('Amount', { exact: true })
+                        .fill('12.50');
+                    await checkExpenseRecovery(
+                        screen,
+                        width,
+                        '**/api/v1/workspaces/*/expenses',
+                        'Record',
+                    );
+                } else {
+                    await page
+                        .getByRole('button', { name: 'Cancel', exact: true })
+                        .click();
+                }
             }
 
             if (screen === 'draft_time') {
@@ -941,19 +2457,335 @@ try {
 
             if (screen === 'receipts') {
                 await page
-                    .getByRole('button', { name: 'Remove', exact: true })
+                    .getByRole('button', { name: 'Remove file', exact: true })
+                    .first()
                     .click();
-                await expect(page.getByRole('alertdialog')).toHaveCSS(
-                    'opacity',
-                    '1',
-                );
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Confirm removal',
+                        exact: true,
+                    }),
+                ).toBeVisible();
                 await capture(screen, 'remove-receipt', width);
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();
+
+                if (receiptsOnly) {
+                    await page.evaluate(() => {
+                        const current = window.location.href;
+                        const previous = new URL(current);
+                        previous.searchParams.set(
+                            'synthetic_history',
+                            'before',
+                        );
+                        window.history.replaceState(
+                            window.history.state,
+                            '',
+                            previous.href,
+                        );
+                        window.history.pushState(
+                            window.history.state,
+                            '',
+                            current,
+                        );
+                    });
+                    const filename = `synthetic-browser-receipt-${width}.txt`;
+                    const uploads = [];
+                    await page.route(
+                        origin + fixture.receipt_upload + '*',
+                        async (route) => {
+                            if (route.request().method() !== 'POST') {
+                                await route.continue();
+
+                                return;
+                            }
+
+                            uploads.push({
+                                key: route.request().headers()[
+                                    'idempotency-key'
+                                ],
+                                bytes: route
+                                    .request()
+                                    .postDataBuffer()
+                                    .toString()
+                                    .replace(
+                                        /------WebKitFormBoundary[^\r\n]+/g,
+                                        'SYNTHETIC_BOUNDARY',
+                                    ),
+                            });
+                            const result = await route.fetch();
+                            expect(result.status()).toBe(201);
+
+                            if (uploads.length === 1) {
+                                await route.abort('failed');
+                            } else {
+                                await route.fulfill({ response: result });
+                            }
+                        },
+                    );
+                    await page.getByLabel('Upload a file').setInputFiles({
+                        name: filename,
+                        mimeType: 'text/plain',
+                        buffer: Buffer.from(
+                            'Synthetic receipt browser acceptance bytes.',
+                        ),
+                    });
+                    await page.route(
+                        (url) =>
+                            url.pathname.startsWith(fixture.receipt_upload) &&
+                            url.pathname.endsWith('/upload-url'),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await page
+                        .getByRole('button', {
+                            name: 'Upload file',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(page.getByRole('alert')).toBeVisible();
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeEnabled();
+                    expect(uploads).toHaveLength(0);
+                    await capture(screen, 'preparation-failed', width);
+                    await page
+                        .getByRole('button', {
+                            name: 'Upload file',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeDisabled();
+                    await capture(screen, 'upload-unknown', width);
+                    const originalPage = page.url();
+                    await page.evaluate(() => window.history.back());
+                    await expect(
+                        page.getByText(
+                            'Check the original file change before leaving this page.',
+                            { exact: true },
+                        ),
+                    ).toBeVisible();
+                    expect(page.url()).toBe(originalPage);
+                    await expect(
+                        page.getByLabel('Upload a file'),
+                    ).toBeDisabled();
+                    expect(uploads).toHaveLength(1);
+                    await capture(screen, 'upload-back-held', width);
+
+                    await page.route(
+                        page.url(),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await page
+                        .getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        page.getByText(
+                            'The upload was recorded, but this page could not refresh. Check the original upload to refresh it.',
+                            { exact: true },
+                        ),
+                    ).toBeVisible();
+                    await expect(
+                        page.getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await capture(screen, 'upload-refresh-failed', width);
+                    await page
+                        .getByRole('button', {
+                            name: 'Check upload',
+                            exact: true,
+                        })
+                        .click();
+                    const link = page.getByRole('link', {
+                        name: filename,
+                        exact: true,
+                    });
+                    await expect(link).toBeVisible();
+                    expect(uploads).toHaveLength(2);
+                    expect(uploads[1]).toEqual(uploads[0]);
+                    await page.unroute(origin + fixture.receipt_upload + '*');
+                    await capture(screen, 'uploaded', width);
+                    const row = page.locator('li').filter({ has: link });
+                    const removals = [];
+                    const deletionMatch = (url) =>
+                        url.pathname.startsWith(fixture.receipt_prefix);
+                    await page.route(deletionMatch, async (route) => {
+                        if (route.request().method() !== 'DELETE') {
+                            await route.continue();
+
+                            return;
+                        }
+
+                        removals.push({
+                            body: route.request().postData(),
+                            key: route.request().headers()['idempotency-key'],
+                        });
+                        const result = await route.fetch();
+                        expect(result.status()).toBe(200);
+
+                        if (removals.length === 1) {
+                            await route.abort('failed');
+                        } else {
+                            await route.fulfill({ response: result });
+                        }
+                    });
+                    await row
+                        .getByRole('button', {
+                            name: 'Remove file',
+                            exact: true,
+                        })
+                        .click();
+                    await row
+                        .getByRole('button', {
+                            name: 'Confirm removal',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Check removal',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Cancel',
+                            exact: true,
+                        }),
+                    ).toBeDisabled();
+                    await capture(screen, 'removal-unknown', width);
+                    await page.route(
+                        page.url(),
+                        (route) => route.abort('failed'),
+                        { times: 1 },
+                    );
+                    await row
+                        .getByRole('button', {
+                            name: 'Check removal',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(
+                        row.getByRole('button', {
+                            name: 'Refresh removed file',
+                            exact: true,
+                        }),
+                    ).toBeEnabled();
+                    await capture(screen, 'removal-refresh-failed', width);
+                    await row
+                        .getByRole('button', {
+                            name: 'Refresh removed file',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(link).toHaveCount(0);
+                    expect(removals).toHaveLength(2);
+                    expect(removals[1]).toEqual(removals[0]);
+                    await page.unroute(deletionMatch);
+                    await capture(screen, 'removed', width);
+                }
             }
 
             if (screen === 'invoice') {
+                await page
+                    .getByRole('button', {
+                        name: 'Send to client',
+                        exact: true,
+                    })
+                    .click();
+                const compose = page.getByRole('dialog');
+                await compose
+                    .getByLabel('Subject', { exact: true })
+                    .fill('Synthetic invoice subject '.repeat(8));
+                await compose
+                    .getByLabel('Covering note (optional)', { exact: true })
+                    .fill('SyntheticUnbrokenCoveringNote'.repeat(100));
+                await compose
+                    .getByLabel('To', { exact: true })
+                    .fill(
+                        `${'synthetic'.repeat(7)}@${'reserved'.repeat(7)}.example.test`,
+                    );
+                await compose
+                    .getByRole('button', { name: 'Add', exact: true })
+                    .click();
+                await capture(screen, 'send-compose', width);
+                // Synthetic adapter outcome only: no email leaves this layout
+                // fixture. The real after-commit path is proved by
+                // InvoiceSendOutcomeTest with its replaceable mail adapter.
+                let composeChecks = 0;
+                await page.route(
+                    '**/api/v1/workspaces/*/invoices/*/send',
+                    async (route) => {
+                        const request = route.request();
+                        const body = request.postDataJSON();
+
+                        if (
+                            request.headers()['idempotency-key'] == null ||
+                            body.confirm !== true ||
+                            typeof body.expected_version !== 'string'
+                        ) {
+                            throw new Error(
+                                'Invoice compose omitted its confirmed version or retry key.',
+                            );
+                        }
+
+                        await route.fulfill({
+                            status: 200,
+                            contentType: 'application/json',
+                            body: JSON.stringify({
+                                data: {
+                                    id: new URL(request.url()).pathname
+                                        .split('/')
+                                        .at(-2),
+                                    version: body.expected_version,
+                                    delivery: {
+                                        id: 'synthetic-layout-delivery',
+                                        status:
+                                            composeChecks++ === 0
+                                                ? 'sending'
+                                                : 'sent',
+                                        error_summary: null,
+                                    },
+                                },
+                            }),
+                        });
+                    },
+                );
+                await compose
+                    .getByRole('button', { name: 'Send', exact: true })
+                    .click();
+                await expect(
+                    compose.getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    compose.getByLabel('Subject', { exact: true }),
+                ).toBeDisabled();
+                await capture(screen, 'send-unresolved', width);
+                await compose
+                    .getByRole('button', {
+                        name: 'Check delivery',
+                        exact: true,
+                    })
+                    .click();
+                await expect(compose).toHaveCount(0);
                 await expect(
                     page.getByText('Reconciled in finance', { exact: true }),
                 ).toBeVisible();
@@ -1041,12 +2873,20 @@ try {
     }
 
     if (
+        !resourceChromeOnly &&
+        !invoiceActionsOnly &&
+        !invoiceSendOnly &&
+        !invoiceRecoveryOnly &&
+        !schedulesOnly &&
+        !expensesOnly &&
+        !disputesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
         !squareOnly &&
         !remindersOnly &&
-        !backlogOnly
+        !backlogOnly &&
+        !engagementOnly
     ) {
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.project_log);
@@ -1076,13 +2916,20 @@ try {
     }
 
     if (
+        !resourceChromeOnly &&
+        !invoiceSendOnly &&
+        !invoiceRecoveryOnly &&
+        !schedulesOnly &&
+        !expensesOnly &&
+        !disputesOnly &&
         !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
         !squareOnly &&
         !remindersOnly &&
         !timeOnly &&
-        !backlogOnly
+        !backlogOnly &&
+        !engagementOnly
     ) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
@@ -1145,9 +2992,24 @@ try {
         );
         await page.getByRole('button', { name: 'Record', exact: true }).click();
         await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
+        await expect(
+            page.getByRole('button', { name: 'Record payment', exact: true }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByText('Paid', { exact: true }).first(),
+        ).toBeVisible();
         await capture('draft_invoice', 'paid-after-correction', 1440);
         run('php', ['scripts/layout/verify-draft-time.php'], env);
 
+        await checkScheduleWrites();
+    }
+
+    if (schedulesOnly) {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await checkScheduleWrites();
+    }
+
+    async function checkScheduleWrites() {
         // Exercise real saves against the isolated database after layout capture,
         // so the additional schedule cannot change the fixtures used at each width.
         await page.goto(origin + fixture.expense_schedules);
@@ -1211,6 +3073,30 @@ try {
         await expect(expense).toHaveCount(1);
         await expect(expense).toContainText('Draft');
     }
+
+    if (expensesOnly) {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.goto(origin + fixture.expenses);
+        await page
+            .getByRole('button', { name: 'Record expense', exact: true })
+            .click();
+        await page.getByLabel('Amount', { exact: true }).fill('12.50');
+        await page
+            .getByLabel('Description', { exact: true })
+            .fill('Synthetic API browser journey');
+        await page.getByRole('button', { name: 'Record', exact: true }).click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        const row = page
+            .getByRole('row')
+            .filter({ hasText: 'Synthetic API browser journey' });
+        await expect(row).toContainText('$12.50');
+        await row.getByRole('button', { name: 'Approve', exact: true }).click();
+        await expect(row).toContainText('Approved');
+        await row
+            .getByRole('button', { name: 'Return to draft', exact: true })
+            .click();
+        await expect(row).toContainText('Draft');
+    }
 } catch (error) {
     failures.push(error.stack ?? String(error));
 } finally {
@@ -1231,17 +3117,36 @@ try {
         [
             '# Browser layout evidence',
             '',
-            tasksOnly
-                ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                : portalOnly
-                  ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                  : squareOnly
-                    ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                    : remindersOnly
-                      ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                      : backlogOnly
-                        ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                        : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+            resourceChromeOnly
+                ? 'Synthetic invoice and native/portal proposal screens use the shared shell without page-owned back links, at every required width. Interactive proposal signing remains visible; no writes are submitted.'
+                : invoiceSendOnly
+                  ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
+                  : receiptsOnly
+                    ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
+                    : projectsOnly
+                      ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
+                      : workspacesOnly
+                        ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
+                        : invoiceActionsOnly
+                          ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
+                          : disputesOnly
+                            ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                            : clientsOnly
+                              ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                              : tasksOnly
+                                ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                                : portalOnly
+                                  ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                                  : squareOnly
+                                    ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                                    : remindersOnly
+                                      ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                                      : backlogOnly
+                                        ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                                        : engagementOnly
+                                          ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                                          : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

@@ -1,6 +1,5 @@
-import { router } from '@inertiajs/react';
 import { PencilIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +12,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest } from '@/lib/api';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import type { AgreementTerms } from '@/types/agreement';
 
 /**
@@ -112,6 +113,7 @@ export function AgreementTitle({
 }) {
     const [editing, setEditing] = useState(false);
     const [title, setTitle] = useState(agreement.title);
+    const [expectedVersion, setExpectedVersion] = useState(agreement.version);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -128,6 +130,7 @@ export function AgreementTitle({
                         aria-label="Rename this agreement"
                         onClick={() => {
                             setTitle(agreement.title);
+                            setExpectedVersion(agreement.version);
                             setError(null);
                             setEditing(true);
                         }}
@@ -139,29 +142,36 @@ export function AgreementTitle({
         );
     }
 
-    const save = () => {
+    const save = async () => {
         if (busy) {
             return;
         }
 
         setBusy(true);
-        router.patch(
-            updateHref,
-            { title },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setError(null);
-                    setEditing(false);
-                },
-                onError: (errors) =>
-                    setError(
-                        Object.values(errors)[0] ??
-                            'That name could not be saved.',
-                    ),
-                onFinish: () => setBusy(false),
-            },
+        const result = await apiRequest('PATCH', updateHref, {
+            title,
+            expected_version: expectedVersion,
+        });
+
+        if (result.ok) {
+            setError(null);
+            setEditing(false);
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setError(
+            result.status === 409
+                ? `${result.message} Cancel and reopen the editor to use the latest agreement.`
+                : result.message,
         );
+
+        if (result.status === 409) {
+            await refreshPageProps();
+        }
+
+        setBusy(false);
     };
 
     return (
@@ -242,6 +252,7 @@ export function AgreementTermsForm({
     updateHref: string;
     onDone: () => void;
 }) {
+    const [expectedVersion] = useState(agreement.version);
     const [form, setForm] = useState({
         starts_on: agreement.starts_on,
         ends_on: agreement.ends_on ?? '',
@@ -278,7 +289,7 @@ export function AgreementTermsForm({
         value: (typeof form)[K],
     ) => setForm((current) => ({ ...current, [key]: value }));
 
-    const submit = () => {
+    const submit = async () => {
         if (busy) {
             return;
         }
@@ -306,46 +317,51 @@ export function AgreementTermsForm({
         }
 
         setBusy(true);
-        router.patch(
-            updateHref,
-            {
-                ...(numbers as Record<string, number | null>),
-                starts_on: form.starts_on,
-                ends_on: form.ends_on === '' ? null : form.ends_on,
-                billing_cadence: form.billing_cadence,
-                currency: form.currency.toUpperCase(),
-                rollover_policy:
-                    form.rollover_policy.trim() === ''
-                        ? null
-                        : form.rollover_policy.trim(),
-                first_cycle_proration:
-                    form.first_cycle_proration === UNSET
-                        ? null
-                        : form.first_cycle_proration,
-                bill_overage_interim:
-                    form.bill_overage_interim === UNSET
-                        ? null
-                        : form.bill_overage_interim === 'yes',
-                agreement_text:
-                    form.agreement_text === '' ? null : form.agreement_text,
-                is_visible_to_client: form.is_visible_to_client,
-                show_deferred_backlog_to_client:
-                    form.show_deferred_backlog_to_client,
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setError(null);
-                    onDone();
-                },
-                onError: (errors) =>
-                    setError(
-                        Object.values(errors)[0] ??
-                            'Those terms could not be saved.',
-                    ),
-                onFinish: () => setBusy(false),
-            },
+        const result = await apiRequest('PATCH', updateHref, {
+            expected_version: expectedVersion,
+            ...(numbers as Record<string, number | null>),
+            starts_on: form.starts_on,
+            ends_on: form.ends_on === '' ? null : form.ends_on,
+            billing_cadence: form.billing_cadence,
+            currency: form.currency.toUpperCase(),
+            rollover_policy:
+                form.rollover_policy.trim() === ''
+                    ? null
+                    : form.rollover_policy.trim(),
+            first_cycle_proration:
+                form.first_cycle_proration === UNSET
+                    ? null
+                    : form.first_cycle_proration,
+            bill_overage_interim:
+                form.bill_overage_interim === UNSET
+                    ? null
+                    : form.bill_overage_interim === 'yes',
+            agreement_text:
+                form.agreement_text === '' ? null : form.agreement_text,
+            is_visible_to_client: form.is_visible_to_client,
+            show_deferred_backlog_to_client:
+                form.show_deferred_backlog_to_client,
+        });
+
+        if (result.ok) {
+            setError(null);
+            onDone();
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setError(
+            result.status === 409
+                ? `${result.message} Cancel and reopen the editor to use the latest agreement.`
+                : result.message,
         );
+
+        if (result.status === 409) {
+            await refreshPageProps();
+        }
+
+        setBusy(false);
     };
 
     return (
@@ -678,66 +694,3 @@ export function formatBytes(bytes: number): string {
  * file input that still names the file you just uploaded reads as one that has
  * not finished.
  */
-export function AgreementFileUpload({ uploadHref }: { uploadHref: string }) {
-    const input = useRef<HTMLInputElement>(null);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    return (
-        <div className="grid grid-cols-1 gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-                <Input
-                    ref={input}
-                    type="file"
-                    aria-label="File to attach"
-                    className="max-w-sm"
-                    onChange={() => setError(null)}
-                />
-                <Button
-                    type="button"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                        const file = input.current?.files?.[0];
-
-                        if (file === undefined) {
-                            setError('Choose a file first.');
-
-                            return;
-                        }
-
-                        setBusy(true);
-                        router.post(
-                            uploadHref,
-                            { file },
-                            {
-                                forceFormData: true,
-                                preserveScroll: true,
-                                onSuccess: () => {
-                                    setError(null);
-
-                                    if (input.current !== null) {
-                                        input.current.value = '';
-                                    }
-                                },
-                                onError: (errors) =>
-                                    setError(
-                                        Object.values(errors)[0] ??
-                                            'That file could not be uploaded.',
-                                    ),
-                                onFinish: () => setBusy(false),
-                            },
-                        );
-                    }}
-                >
-                    Upload
-                </Button>
-            </div>
-            {error !== null && (
-                <p role="alert" className="text-sm text-destructive">
-                    {error}
-                </p>
-            )}
-        </div>
-    );
-}
