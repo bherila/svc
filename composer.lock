@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "077414c1ac0469b6a4e6a02d41773171",
+    "content-hash": "7bd2209a380fd5d39e1cc058d4577f55",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "v0.27.0",
+            "version": "dev-feat/scope-presentation",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth-laravel.git",
-                "reference": "5a65ea41b539c7f1e182ef219caf2fc0491fbd98"
+                "reference": "c0c758e8ed6c0a30123e42a5ab368d5d9668e23a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/5a65ea41b539c7f1e182ef219caf2fc0491fbd98",
-                "reference": "5a65ea41b539c7f1e182ef219caf2fc0491fbd98",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/c0c758e8ed6c0a30123e42a5ab368d5d9668e23a",
+                "reference": "c0c758e8ed6c0a30123e42a5ab368d5d9668e23a",
                 "shasum": ""
             },
             "require": {
@@ -67,7 +67,7 @@
                 "issues": "https://github.com/bherila/auth-laravel/issues",
                 "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-10-20T23:20:45+00:00"
+            "time": "2026-10-31T22:36:26+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",
@@ -13647,9 +13647,18 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [],
+    "aliases": [
+        {
+            "package": "bherila/auth-laravel",
+            "version": "dev-feat/scope-presentation",
+            "alias": "0.28.1",
+            "alias_normalized": "0.28.1.0"
+        }
+    ],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "bherila/auth-laravel": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {

@@ -19,6 +19,7 @@ use App\Services\Billing\Mail\LaravelInvoiceMailSender;
 use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
+use App\Support\AgentApi\AgentApiScopePresentation;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\InternalApiDispatch;
 use App\Support\AgentApi\MarkedInternalAgentApiTransport;
@@ -33,6 +34,7 @@ use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
 use Bherila\McpLaravelBridge\Http\OperationRoutes;
 use BWH\Auth\OAuth\Credentials\GrantableScopes;
+use BWH\Auth\OAuth\Credentials\ScopePresentation;
 use BWH\Auth\OAuth\DelegatedAccess\ApplicationAccessAdapter;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -76,6 +78,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ProviderIdentityWrites::class);
         // Offer a REST credential only scopes some REST operation requires.
         $this->app->bind(GrantableScopes::class, OpenApiGrantableScopes::class);
+        // Group, flag and preset the scopes a credential UI and the consent screen show (#582).
+        $this->app->bind(ScopePresentation::class, AgentApiScopePresentation::class);
         $this->app->bind(McpPrincipalResolverInterface::class, McpPrincipalResolver::class);
         // Workspace staff, managed through the identity provider. The package's endpoint exists
         // only while this is bound, and answers 404 until delegated access is enabled.
