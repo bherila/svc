@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "10008e337b7f4b529751360921266944",
+    "content-hash": "9ed9e6c2790427b0506bf4265b8998eb",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "dev-feat/oauth-rp-extraction",
+            "version": "v0.28.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth-laravel.git",
-                "reference": "f2740c0bd3929afe68dd0e2e0127b89729b075b0"
+                "reference": "52f11f2fd6a97b4a406c0de9b5ebe476f5994092"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/f2740c0bd3929afe68dd0e2e0127b89729b075b0",
-                "reference": "f2740c0bd3929afe68dd0e2e0127b89729b075b0",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/52f11f2fd6a97b4a406c0de9b5ebe476f5994092",
+                "reference": "52f11f2fd6a97b4a406c0de9b5ebe476f5994092",
                 "shasum": ""
             },
             "require": {
@@ -67,7 +67,7 @@
                 "issues": "https://github.com/bherila/auth-laravel/issues",
                 "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-10-31T21:37:50+00:00"
+            "time": "2026-10-31T22:26:20+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",
@@ -13647,18 +13647,9 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [
-        {
-            "package": "bherila/auth-laravel",
-            "version": "dev-feat/oauth-rp-extraction",
-            "alias": "0.27.0",
-            "alias_normalized": "0.27.0.0"
-        }
-    ],
+    "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "bherila/auth-laravel": 20
-    },
+    "stability-flags": {},
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
