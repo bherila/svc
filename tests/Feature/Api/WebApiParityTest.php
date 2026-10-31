@@ -21,6 +21,7 @@ final class WebApiParityTest extends TestCase
         // A credential may never mint another credential (#384).
         'bherila-auth.credentials.apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.apps.store' => 'deliberate:credentials are issued only by the signed-in person',
+        'bherila-auth.credentials.connections.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
