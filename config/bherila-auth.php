@@ -1,5 +1,6 @@
 <?php
 
+use App\Auth\OAuthAccounts;
 use App\Models\AgentPrincipal;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
@@ -11,6 +12,11 @@ return [
     // password, passkey, two-factor, or audit-log routes.
     'routes' => [
         'enabled' => false,
+    ],
+
+    // Provider sign-in keeps its accounts through SVC's lock-ordering helper.
+    'oauth_login' => [
+        'accounts' => OAuthAccounts::class,
     ],
 
     // Per-client limits key on Request::ip(). Behind a CDN that is only the

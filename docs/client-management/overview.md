@@ -155,7 +155,7 @@ auth package's application invitation client, to admit that address to this
 application only (no roles), and records a `client_portal_invitations` row with
 the scope and projects. The provider emails the link and creates the account and
 this application's grant at acceptance; the portal access itself is given at the
-person's first sign-in here (`OAuthLoginController` after the sign-in succeeds,
+person's first sign-in here (`OAuthLoginController::afterSignIn()` after the sign-in succeeds,
 `WorkspaceAccess::applyPortalInvitation`):
 
 - only to an account signing in with the invited address, case-insensitive. A

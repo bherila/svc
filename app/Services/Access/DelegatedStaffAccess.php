@@ -394,13 +394,13 @@ final class DelegatedStaffAccess implements ApplicationAccessAdapter
                     throw self::refusal(DelegatedRefusal::INVALID_REQUEST);
                 }
 
-                $user = User::query()->create([
+                // The binding is not mass-assignable: it is what sign-in resolves an account by.
+                $user = new User([
                     'name' => is_string($displayName) && trim($displayName) !== '' ? trim($displayName) : PendingAccount::name('Pending staff member', $subject),
                     'email' => $email,
                     'password' => Hash::make(Str::random(64)),
-                    'oauth_provider' => $issuer,
-                    'oauth_subject' => $subject,
                 ]);
+                $user->forceFill(['oauth_provider' => $issuer, 'oauth_subject' => $subject])->save();
 
                 $context = $this->context($actor);
                 foreach ($desired as $workspaceId => $role) {

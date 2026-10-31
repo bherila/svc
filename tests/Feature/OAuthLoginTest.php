@@ -212,6 +212,13 @@ class OAuthLoginTest extends TestCase
         $this->assertSame(session('oauth.login.state'), $query['state']);
     }
 
+    public function test_a_same_site_return_page_is_kept_through_sign_in_and_a_foreign_one_is_dropped(): void
+    {
+        $this->get('/oauth/redirect?redirect=/app/somewhere')->assertSessionHas('url.intended');
+        $this->flushSession();
+        $this->get('/oauth/redirect?redirect=https://evil.example.test/')->assertSessionMissing('url.intended');
+    }
+
     public function test_protected_pages_redirect_guests_to_oauth_login(): void
     {
         $this->get('/app')->assertRedirect('/login');
