@@ -110,7 +110,8 @@ class DeploymentSafetyTest extends TestCase
     public function every_shared_deployment_reference_uses_the_production_commit_and_version(): void
     {
         $production = $this->read('.github/workflows/tests.yml');
-        $this->assertSame(1, preg_match('~uses: bherila/shared-cpanel-deployment@([^\s#]+)\h+#\h*(v\d+\.\d+\.\d+)\b~', $production, $deploy));
+        // The main action, not a sub-action: it is the reference every other pin must equal.
+        $this->assertSame(1, preg_match('~^\h*(?:-\h*)?uses:\h*bherila/shared-cpanel-deployment@([^\s#]+)\h+#\h*(v\d+\.\d+\.\d+)\b~m', $production, $deploy));
         $expectedSha = $deploy[1];
         $expectedVersion = $deploy[2];
         $this->assertMatchesRegularExpression('/^[0-9a-fA-F]{40}$/D', $expectedSha, 'tests.yml must deploy a full commit.');
@@ -118,51 +119,44 @@ class DeploymentSafetyTest extends TestCase
         $workflows = glob(__DIR__.'/../../.github/workflows/*.yml');
         $this->assertNotFalse($workflows);
         $this->assertNotEmpty($workflows);
+        $references = 0;
+        $subActions = 0;
         foreach ($workflows as $path) {
             $lines = file($path, FILE_IGNORE_NEW_LINES);
             $this->assertNotFalse($lines);
             $pins = [];
             foreach ($lines as $index => $line) {
-                if (preg_match('~^\h*(?:-\h*)?uses:\h*[\'\"]?bherila/shared-cpanel-deployment(?:/[^@\s]+)?@([^\s\'\"#]+)~', $line, $use)) {
-                    $pins[$index] = $use[1];
+                // The main action and every sub-action (tooling, configure-ssh, ...).
+                if (preg_match('~^\h*(?:-\h*)?uses:\h*[\'"]?bherila/shared-cpanel-deployment(/[^@\s]+)?@([^\s\'"#]+)~', $line, $use)) {
+                    $pins[$index] = $use[2];
+                    $subActions += $use[1] === '' ? 0 : 1;
                 }
                 if (preg_match('~^\h*PILOT_TOOLING_SHA:\h*([^\s#]+)~', $line, $manifestPin)) {
                     $pins[$index] = $manifestPin[1];
                 }
-                if (! preg_match('~^(\h*)repository:\h*[\'\"]?bherila/shared-cpanel-deployment[\'\"]?\h*(?:#.*)?$~', $line, $repository)) {
-                    continue;
-                }
-
-                // Find the whole with: mapping, including a ref placed before repository:.
-                $indent = strlen($repository[1]);
-                $start = $index;
-                while ($start > 0 && (trim($lines[$start - 1]) === '' || strspn($lines[$start - 1], " \t") >= $indent)) {
-                    $start--;
-                }
-                $checkoutRefs = [];
-                for ($cursor = $start; $cursor < count($lines); $cursor++) {
-                    $candidate = $lines[$cursor];
-                    if (trim($candidate) !== '' && strspn($candidate, " \t") < $indent) {
-                        break;
-                    }
-                    if (preg_match('~^\h{'.$indent.'}ref:\h*([^#]+)~', $candidate, $ref)) {
-                        $checkoutRefs[$cursor] = trim($ref[1], " \t\"'");
-                    }
-                }
-                $this->assertCount(1, $checkoutRefs, basename($path).':'.($index + 1).' must pin its shared deployment checkout to '.$expectedSha.'.');
-                $pins += $checkoutRefs;
+                // Dependabot never bumps a checkout ref, so a checkout of this repository is drift
+                // waiting to happen. Use the tooling or configure-ssh sub-action instead.
+                $this->assertDoesNotMatchRegularExpression(
+                    '~^\h*repository:\h*[\'"]?bherila/shared-cpanel-deployment[\'"]?\h*(?:#.*)?$~',
+                    $line,
+                    basename($path).':'.($index + 1).' checks out bherila/shared-cpanel-deployment, whose ref: Dependabot never bumps; use its tooling or configure-ssh sub-action instead.',
+                );
             }
 
             foreach ($pins as $index => $ref) {
+                $references++;
                 $location = basename($path).':'.($index + 1);
-                $message = $location.' pins '.$ref.' but tests.yml deploys '.$expectedSha.'; a Dependabot bump of this action must update every checkout ref too';
+                $message = $location.' pins '.$ref.' but tests.yml deploys '.$expectedSha.'; a Dependabot bump of this action must update every reference too';
                 $this->assertMatchesRegularExpression('/^[0-9a-fA-F]{40}$/D', $ref, $message);
                 $this->assertSame($expectedSha, $ref, $message);
-                if (preg_match('~#\h*(v\d+\.\d+\.\d+)\b~', $lines[$index], $version)) {
+                if (str_contains($lines[$index], 'uses:')) {
+                    $this->assertSame(1, preg_match('~#\h*(v\d+\.\d+\.\d+)\b~', $lines[$index], $version), $location.' must carry a # vX.Y.Z comment naming '.$expectedVersion.'.');
                     $this->assertSame($expectedVersion, $version[1], $location.' must name '.$expectedVersion.' for '.$expectedSha.'.');
                 }
             }
         }
+        $this->assertGreaterThan(0, $subActions, 'The sub-action references were not collected.');
+        $this->assertGreaterThan(3, $references);
     }
 
     #[Test]
@@ -215,7 +209,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringNotContainsString('artisan', $postFinalize);
 
         $this->assertStringContainsString('bash tests/Deployment/test-cron-audit.sh', $workflow);
-        $this->assertStringContainsString('SHARED_DEPLOY_ACTION_PATH: .shared-cpanel-deployment', $workflow);
+        $this->assertStringContainsString('SHARED_DEPLOY_ACTION_PATH: ${{ steps.tooling.outputs.path }}', $workflow);
     }
 
     #[Test]
@@ -224,7 +218,10 @@ class DeploymentSafetyTest extends TestCase
         $workflow = $this->read('.github/workflows/deployment-diagnostic.yml');
         $diagnose = $this->read('scripts/deploy/diagnose-live.sh');
 
-        $this->assertStringNotContainsString('uses: bherila/shared-cpanel-deployment', $workflow);
+        // The main action deploys; a sub-action (tooling, configure-ssh) only reads scripts or sets up SSH.
+        $this->assertDoesNotMatchRegularExpression('~uses: bherila/shared-cpanel-deployment@~', $workflow);
+        $this->assertStringContainsString('uses: bherila/shared-cpanel-deployment/tooling@', $workflow);
+        $this->assertStringContainsString('uses: bherila/shared-cpanel-deployment/configure-ssh@', $workflow);
 
         // Manually dispatched only, from main, behind the deploy's protected environment, and never
         // in the deploy's concurrency group, where a queued run could displace a pending deploy.
@@ -239,7 +236,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringNotContainsString("group: svc-production-web1\n", $workflow);
 
         // The identity is an input, never a hardcoded SHA, and reaches the shell only through env.
-        $this->assertSame(1, preg_match_all('~(?<!@)\b[0-9a-f]{40}\b~', $workflow), 'Only the shared action ref may be a literal SHA.');
+        $this->assertSame(0, preg_match_all('~(?<!@)\b[0-9a-f]{40}\b~', $workflow), 'No literal SHA may appear outside a uses: pin.');
         foreach (['release_id', 'commit'] as $input) {
             $this->assertMatchesRegularExpression("~^      {$input}:\n(?:        .+\n)*?        required: true\n~m", $workflow);
         }
@@ -251,7 +248,7 @@ class DeploymentSafetyTest extends TestCase
 
         // It runs the pinned finalized runtime audit, the cron proof and the hashed asset audit, and
         // nothing that writes, provisions or issues credentials.
-        $this->assertStringContainsString('DIAG_AUDIT_SCRIPT: .shared-cpanel-deployment/scripts/operational-audit.sh', $workflow);
+        $this->assertStringContainsString('DIAG_AUDIT_SCRIPT: ${{ steps.tooling.outputs.path }}/scripts/operational-audit.sh', $workflow);
         $this->assertStringContainsString('"$persistent" finalized', $diagnose);
         $this->assertStringContainsString('phase=finalized', $diagnose);
         $this->assertStringContainsString("= 'runtime-audit generation=superseded'", $diagnose);
