@@ -3,22 +3,34 @@
 SVC exposes its agent surface through a versioned REST API and a remote Streamable
 HTTP MCP endpoint at `/api/v1/mcp`. MCP read tools adapt the same application
 queries as REST, and MCP write tools run the REST operation itself - its
-authorization, validation, receipts and refusals - except the payment tools,
-which still call their shared actions directly; neither queries Eloquent models
-directly. Invoice and payment write registrations remain disabled by default
+authorization, validation, receipts and refusals, including payment bookkeeping.
+Transport adapters do not query Eloquent models directly. Invoice and payment write registrations remain disabled by default
 behind their nested cutovers.
 
-## Scope and exclusions
+## Categories and exclusions
 
-The operations v1 release lets authorized users view projects, tasks, time,
-invoices, and received payments. Its feature-gated write catalog manages tasks,
-draft time, time approval, invoice draft creation/update/discard, invoice
-issue/send/void/reopen workflows, and recording money already received. Project creation,
-archival, and deletion remain website actions. Generic attachment metadata/download access and uploads, and workspace creation,
-have separate scopes and nested deployment cutovers described below. Payment
-collection, initiation, refunds, card data, and provider identifiers are out
-of scope. Invoice responses contain a role-authorized browser URL so a user can
-continue a payment flow in the website.
+The agent surface covers workspace identity and creation, operational summaries and
+search; clients, contacts and portal access; projects and member access; tasks,
+organization and planning; time; agreements and proposals; invoices, billing
+schedules, capacity and billing audits; received-payment bookkeeping and finance
+reconciliation; expenses and recurrence; native collaboration and files; and
+configured Square reads, mirroring and SVC-side links. Each family below links to
+the generated capability inventory rather than repeating its operation list.
+
+Project deletion remains website-only. Workspace settings, workspace membership
+administration and deletion, credential issuance and OAuth-app registration,
+interactive agreement signing and portal proposal signing, integration setup,
+and initiating a customer payment also remain browser workflows; the catalog
+does not supply general CRUD for every model. Proposal acceptance may separately
+record confirmed offline acceptance through the agent surface. Operator repair,
+retention and deployment commands are not general agent operations.
+
+Payment initiation and collection, executing processor refunds, full card numbers, card-on-file and payment-method credentials, and processor API credentials are out of scope. Bookkeeping operations may record money already received or returned, and never move money. Square read and link operations expose only the allowlisted record identifiers and the card summary (brand, type and last four digits) documented in `docs/mcp.md`.
+
+The card summary is `card_brand`, `card_type` and `last_4`; an invoice payment
+request reduces its card credential to the boolean `card_on_file`. Invoice
+responses contain a role-authorized browser URL so a user can continue a
+payment flow in the website.
 
 ## Roles
 
@@ -26,36 +38,93 @@ Workspace `owner` and `admin` retain full workspace access. Internal users can b
 assigned to a project as `owner`, `manager`, `contributor`, or `viewer`. Owners and
 managers can manage tasks and approve project time. Contributors can view assigned
 projects and manage only their own draft time. Viewers cannot read team time or log
-time. Client-company members remain read-only
-and see only records that existing client-visibility rules permit.
+time. Client-company identities see only records permitted by current portal visibility
+and project scope. They cannot use staff mutation authority; confirmed proposal
+acceptance is a separately scoped exception for an authorized recipient.
 
 ## Agent operations
 
-The core read catalog includes `context.get`, `operations.summary`, `projects.list`,
-`projects.get`, `tasks.list`, `tasks.get`, `time_entries.list`, `invoices.list`,
-`invoices.get`, and `payments.list`. When the explicit write cutover flag is
-enabled, the additional tools
-are `tasks.create`, `tasks.update`, `time_entries.log`, `time_entries.update`,
-`time_entries.delete`, and `time_entries.approve`. The nine invoice write tools —
-`invoices.create_draft`, `invoices.update_draft`, `invoices.update_details`,
-`invoices.discard_draft`, `invoices.issue`, `invoices.send`, `invoices.correct`,
-`invoices.reopen`, and `invoices.void` — additionally require
-`AGENT_API_INVOICE_WRITES_ENABLED`, a second cutover nested inside the first, so
-that agent-assisted time approval does not arrive with agent-initiated invoice
-delivery attached. `payments.record` requires `payments:record`, workspace owner/admin
-permission, and both `AGENT_API_WRITES_ENABLED` and
-`AGENT_API_PAYMENT_WRITES_ENABLED`; the payment flag defaults to false. It records
-money already received and cannot initiate a charge. `payments.correct` carries the
-same gates, plus `payments:read` for the version it checks (#473), and corrects only a recorded payment's method, reference or received
-date, with its version and a reason. There is no generic CRUD tool.
+The [generated public capability inventory](mcp.md#public-capability-inventory)
+is the authoritative operation list, including bindings, schemas, scopes and gates.
+The resource families have these responsibilities:
 
-All resources use public UUIDs. Lists use cursors with a maximum page size of 100.
-Every mutable representation contains an opaque `version`; updates and lifecycle
-transitions require `expected_version`. Every Agent API mutation requires an
-idempotency key and runs through the same reservation-first transaction and audit
-boundary. The write flag remains disabled until all production-readiness blockers
-and the final write-authority cutover are complete. Cross-workspace identifiers
-resolve as 404.
+**`context`:** Identity, authorized workspaces, capabilities and withheld-tool reasons. See the [inventory](mcp.md#public-capability-inventory).
+
+**`operations`:** Role- and scope-filtered workspace operational summaries. See the [inventory](mcp.md#public-capability-inventory).
+
+**`workspaces`:** Creation of a workspace owned by the caller, with its own creation scope and nested cutover. See the [inventory](mcp.md#public-capability-inventory).
+
+**`search`:** Bounded, tenant-selected resource search filtered by each resource’s read scope. See the [inventory](mcp.md#public-capability-inventory).
+
+**`clients`:** Client companies, contacts, portal access and invitations, with manager authorization and applicable product switches. See the [inventory](mcp.md#public-capability-inventory).
+
+**`companies`:** Client payment-reminder preferences and SVC-side Square customer mappings. See the [inventory](mcp.md#public-capability-inventory).
+
+**`projects`:** Authorized project reads, manager creation, edits, archival and member access; deletion stays website-only. See the [inventory](mcp.md#public-capability-inventory).
+
+**`tasks`:** Authorized task reads, eligible assignee lookup and task mutations under project roles. See the [inventory](mcp.md#public-capability-inventory).
+
+**`task_organization`:** Lists, ordering, movement and dependencies under the task-organization product switch. See the [inventory](mcp.md#public-capability-inventory).
+
+**`task_planning`:** Optional planning details and options under the planning product switch. See the [inventory](mcp.md#public-capability-inventory).
+
+**`time_entries`:** Draft logging and edits, approval and withdrawal, with the independent time-write emergency cutoff. See the [inventory](mcp.md#public-capability-inventory).
+
+**`agreements`:** Authorized agreement reads and manager drafting, activation, termination and Square-series mappings. See the [inventory](mcp.md#public-capability-inventory).
+
+**`proposals`:** Commercial-term reads, manager drafting and publishing, and separately scoped confirmed acceptance. See the [inventory](mcp.md#public-capability-inventory).
+
+**`invoices`:** Drafting, generation, time allocation, lifecycle transitions including reopening and reissuing, PDFs, delivery controls, reminders and SVC-side Square links. See the [inventory](mcp.md#public-capability-inventory).
+
+**`billing_schedules`:** Manager recurring-billing configuration and confirmed generation under the invoice cutover. See the [inventory](mcp.md#public-capability-inventory).
+
+**`capacity_ledger`:** The canonical agreement capacity ledger, including opening rollover as ongoing ledger behaviour. See the [inventory](mcp.md#public-capability-inventory).
+
+**`deferred_backlog`:** Preview of an agreement’s deferred work and settlement facts. See the [inventory](mcp.md#public-capability-inventory).
+
+**`billing`:** Aggregate billing data-quality audits and schedule-generation preflight. See the [inventory](mcp.md#public-capability-inventory).
+
+**`billing_audit`:** The bounded stale-and-missing billing audit and its SVC/Square bookkeeping discrepancies. See the [inventory](mcp.md#public-capability-inventory).
+
+**`payments`:** Received-payment reads and deliberate bookkeeping of receipts, corrections, status changes, returned money and reversal of an erroneous refund record; no provider transaction is initiated. See the [inventory](mcp.md#public-capability-inventory).
+
+**`finance`:** Manager payment-allocation, payout and processor-movement reads and reconciliation writes under separate finance scopes. See the [inventory](mcp.md#public-capability-inventory).
+
+**`expenses`:** Authorized expense recording, approval, withdrawal, draft deletion and dedicated receipt access. See the [inventory](mcp.md#public-capability-inventory).
+
+**`expense_schedules`:** Recurring-expense reads, configuration and bounded generation under the expense cutover. See the [inventory](mcp.md#public-capability-inventory).
+
+**`collaboration`:** Authorized native topics, comments and parent-scoped files, with staff write authority and portal read visibility. See the [inventory](mcp.md#public-capability-inventory).
+
+**`attachments`:** Generic file metadata, bytes, upload preparation, upload, deletion and sharing under current parent and publisher authority. See the [inventory](mcp.md#public-capability-inventory).
+
+**`square`:** Configured bounded provider reads and mirror/bootstrap operations; SVC remains the billing system of record and does not initiate provider payments. See the [inventory](mcp.md#public-capability-inventory).
+
+**`oauth`:** REST-only revocation of the calling OAuth token family. See the [inventory](mcp.md#public-capability-inventory).
+
+**`connections`:** REST-only revocation of the caller’s connection or application credentials. See the [inventory](mcp.md#public-capability-inventory).
+
+**`resources`:** MCP context and agreement resources governed by their operation scopes and visibility. See the [inventory](mcp.md#public-capability-inventory).
+
+**`prompts`:** MCP guided time and invoice workflows, visible only when their required operations are available. See the [inventory](mcp.md#public-capability-inventory).
+
+Business resources use public UUIDs. Paginated lists use bounded cursors with a
+maximum page size of 100; search and diagnostic projections have their own documented
+bounds. Mutable records expose opaque versions; updates and lifecycle transitions
+require the revisions declared in their request schemas. Persistent business
+mutations use idempotency keys and the reservation-first transaction and audit
+boundary. URL preparation creates no receipt, and credential revocation is a
+separate idempotent cleanup operation. Cross-workspace identifiers resolve as 404.
+
+The outer `AGENT_API_WRITES_ENABLED` flag defaults to false. Invoice, payment,
+expense, client, collaboration, project, proposal, workspace and file write flags
+also default to false and nest inside it. Time-entry writes instead use independent
+`AGENT_API_TIME_ENTRY_WRITES_ENABLED`, default true, so time logging has its own
+emergency cutoff. MCP defaults on; transport, group and per-tool switches filter
+MCP independently of REST. Task organization, task planning, attachment sharing and
+portal invitations have their own product switches, default off; first-party
+sessions do not bypass product availability. Configured Square access is an
+availability precondition, not a write cutover.
 
 Tool discovery is filtered by the current access token's scopes. `context.get`
 reports the intersection of token scope, the write cutover flag, and current role,
@@ -71,20 +140,24 @@ and the amount the termination invoice would charge for them (see
 [deferred billing](client-management/deferred-billing.md#deferred-backlog)).
 
 Time follows `draft -> approved -> invoiced`. Approval snapshots the hourly rate and
-currency from the most recently effective active agreement, preferring a
-project-specific agreement over a company-wide agreement. Billable approval fails
+currency from an agreement effective on the work date, including agreements now
+paused, terminated or expired. Project-specific agreements win over company-wide
+ones, then currently active agreements over other lifecycle states, then the most
+recent start and record id. Billable approval fails
 when no applicable rate exists unless the approving manager supplies an explicit
-amount and currency; nonbillable time needs no rate. A draft invoice may include
-manual lines and explicitly selected time-entry IDs only. Selected entries must be
+amount and currency; nonbillable time needs no rate. The manual draft endpoint accepts
+manual lines and explicitly selected time-entry IDs; agreement-period generation
+uses its separate ledger workflow. Selected entries must be
 approved, billable, non-deferred, currency-compatible, and unallocated. Time-derived
 line totals are rounded from integer minutes and hourly minor units; their four-place
-hour quantity is display-only. Invoice issue, send, correct, and void are distinct
+hour quantity is display-only. Invoice issue, send, correct, reopen and void are distinct
 confirmation-gated actions. Draft update is replace-all for the explicit time selection
 and manual lines. Removing time, discarding a draft, or voiding an unpaid invoice
 releases its allocation; issued linked time returns from `invoiced` to `approved`.
 Invoice responses describe linked time as `reserved`, `consumed`, or `released`.
-Invoice numbers come from a transaction-locked workspace counter consumed in the same
-transaction as invoice creation. Manual-line projects must belong to both the invoice
+Invoice numbers follow `InvoiceNumberAllocator` inside invoice creation
+transactions: it supports workspace-counter and client/period numbering, and
+manual drafts may supply a workspace-unique number. Manual-line projects must belong to both the invoice
 workspace and client company.
 
 Client-visible time requires a non-empty, explicitly authored client-facing
@@ -93,17 +166,20 @@ for legacy records that predate this invariant.
 
 ## Authorization
 
-Users authenticate in a browser through Bherila.net, then grant SVC-specific OAuth
+Users authenticate in a browser through the configured identity provider, then grant SVC-specific OAuth
 access. SVC validates a token's resource audience, scopes, current account status, and
 current workspace/project/company permissions for every request. The MCP endpoint
 (`/api/v1/mcp`) and the REST API (`/api/v1`) are separate protected resources: an MCP
 connection's token is requested for `/api/v1/mcp`, carries `mcp:use`, and is refused
-by REST routes; a REST token never carries `mcp:use` and is refused by the MCP
-endpoint. Initial scopes are
-`mcp:use`, `identity:read`, `projects:read`, `tasks:read`, `tasks:write`, `time:read`,
-`time:write`, `time:approve`, `billing:read`, and `billing:write`; invoice lifecycle
-delivery actions additionally require `billing:deliver`. Received-payment reads
-require `payments:read`; recording requires the separate `payments:record` grant.
+by ordinary REST business routes; a REST token never carries `mcp:use` and is
+refused by the MCP endpoint. Credential disposal is a deliberate exception:
+`oauth.token.revoke` accepts the calling token’s configured resource, and
+`connections.revoke` has its own MCP-resource binding. The scope catalog and descriptions live in `AgentApiScopes`, covering
+identity, projects, collaboration, tasks, time, billing, expenses, payments,
+finance, clients, proposals, workspace creation and files. The REST and MCP
+resource ceilings are derived from that catalog; only MCP includes `mcp:use`.
+Invoice lifecycle delivery uses `billing:deliver`, and received-payment
+bookkeeping uses the separate `payments:record` grant.
 Project detail embeds tasks only when the connection also has `tasks:read`.
 
 OAuth public clients use authorization code plus rotating refresh tokens, `code`
@@ -113,7 +189,7 @@ loopback redirect URIs. Registrations are marked, their exact scope ceiling and
 last token use are persisted,
 and a daily retention command removes only stale registrations with no active access
 or refresh credential. SVC configures the shared auth package's consent screen after
-the Bherila.net login. Access-token JWT issuer, audience, and resource claims agree
+the configured provider login. Access-token JWT issuer, audience, and resource claims agree
 with the authorization-code, access-token, and refresh-token database bindings.
 
 The signed-in website calls the same `/api/v1` routes on its own session
@@ -129,8 +205,8 @@ operation as a finished URL plus the record's opaque version, call it through
 generated from the OpenAPI document (`pnpm run api:types`; CI fails when the
 generated file is stale).
 
-The browser mutation allowlist is closed to business operations. Its twelve
-named exceptions cover four credential-management actions, sign-out, the client
+The browser mutation allowlist is closed to business operations. Its named
+exceptions cover credential issuance, revocation and connected-client management, sign-out, the client
 management redirect, three provider/email webhooks, the Stripe payment hand-off,
 and interactive agreement/proposal signing. The portal recipient's proposal
 signature remains a browser act; authorized REST/MCP clients can separately
@@ -144,9 +220,9 @@ workspaces, including manager-only History links and the workspace selector.
 It returns only navigation rows (`kind`, stable `id`, `title`, distinguishing
 `subtitle`, finished `href`, and workspace label); selecting one navigates to
 its page. It does not refetch resource facts or supply mutation inputs. Business
-resource search remains the scoped `workspace.search` API operation and shared
+resource search remains the scoped `search` API operation and shared
 `WorkspaceSearch` query, with API read-scope filtering unchanged. This navigation
-helper is separate from the twelve mutation exceptions above; resource option
+helper is separate from the named mutation exceptions above; resource option
 lookups and JSON list appends use the canonical API.
 
 `BrowserJsonReadParityTest` checks the actual task editor/organization options
@@ -187,9 +263,8 @@ package's trusted-proxy helper (`bherila-auth.trusted_proxies`, `TRUSTED_PROXIES
 `cloudflare` by default, an explicit list, or empty to trust nothing) honours
 `X-Forwarded-For` and its scheme - never the forwarded port, which Cloudflare passes
 through from the client, nor the host - only from the configured proxies, so the
-client is the address the edge appended. The origin also answers direct
-connections, so it never trusts `*`, and a direct caller's forged header is
-ignored. A weekly workflow runs `bherila-auth:check-cloudflare-ranges` and fails
+client is the address the edge appended. An origin accepting direct connections must not trust `*`; with the bounded
+proxy configuration, a direct caller’s forged header is ignored. A weekly workflow runs `bherila-auth:check-cloudflare-ranges` and fails
 when Cloudflare revises its ranges.
 
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
@@ -228,12 +303,11 @@ The canonical wire contract is `public/openapi/svc-agent-v1.json`. MCP output sc
 are packaged from each tool's declared REST success component and enforced at runtime;
 the MCP layer does not maintain a second response-schema tree.
 
-The document stays a checked, hand-maintained artifact until the operation registry can
-generate it byte for byte (#383). `OpenApiGenerationCheckTest` runs the package's
-`OpenApiDocumentBuilder` over every REST operation and pins, in
-`tests/Fixtures/AgentApi/openapi-generation-differences.json`, the operations it cannot
-yet express and the fields where its output still differs. The list may only shrink; when
-it is empty and the whole document matches, generation replaces the checked file.
+The checked OpenAPI document is generated from `AgentOperationCatalog` and
+`AgentRestDocumentation` through `AgentOpenApi` and the package’s
+`OpenApiDocumentBuilder`. `OpenApiDocumentGenerationTest` requires byte-for-byte
+parity with the generated document. Regenerate it with
+`UPDATE_OPERATION_SNAPSHOTS=1`, then regenerate and check the TypeScript API types.
 
 The MCP initialize response front-loads the operational rules a harness needs for safe
 time and invoice work. Clients that implement MCP prompts can also expose the guided
@@ -242,12 +316,15 @@ schemas, and annotations remain the authority for each individual call.
 
 Received-payment bookkeeping uses separate `payments:read` and `payments:record`
 grants. Recording is owner/admin-only, default-disabled behind the payment and
-outer workflow flags, and requires an explicit invoice, amount, currency, payment
-date, method and idempotency key. This records an already completed receipt of
-money; it never starts a charge, refunds funds or edits a payment's status.
-Correcting a recorded payment's method, reference or received date uses the same
-grant and gates, requires the payment's version and a reason, and cannot touch
-amount, currency, status or refunds.
+outer workflow flags, and requires an explicit invoice, amount, currency,
+method and idempotency key. The received date defaults to today on the workspace
+calendar. It records a receipt of money or its permitted
+pending state; it never starts a charge or sends a refund. Correcting a recorded
+payment's method, reference, notes or received date uses the same grant and gates,
+requires the payment's version and a reason, and cannot change amount, currency
+or status. Separate confirmed bookkeeping operations change eligible manual
+payment statuses, record money already returned and reverse erroneous refund
+records; none moves funds.
 Reference remains optional. Read responses follow invoice visibility and omit
 private finance reconciliation and processor identifiers.
 
@@ -303,8 +380,8 @@ Generic attachments use `files:read` for `attachments.list`, `attachments.get`
 and `attachments.download_url`. Workspace owners/admins can read metadata for
 company, project, task, proposal, agreement and invoice attachments. Expense
 receipts retain their dedicated expense routes. Metadata includes opaque file
-versions and excludes storage keys and uploader identifiers. Lists return the
-100 newest available files and the parent's current version.
+versions and excludes storage keys and uploader identifiers. Lists use bounded cursor pagination over available files, newest first, and
+return the parent's current version.
 
 `attachments.upload_url` requires `files:write` and both
 `AGENT_API_WRITES_ENABLED` and `AGENT_API_FILE_WRITES_ENABLED`. It prepares a URL
@@ -343,7 +420,7 @@ retry returns the original payment even after its invoice version advances.
 Draft `time_entries.delete` and `expenses.delete` do not require confirmation.
 
 `attachments.upload_url` and `expenses.receipts.upload_url` authorize writes and
-obey `mcp.write`, with no read-only hint. Preparing a URL has no request body or
+obey the MCP write-group switch, with no read-only hint. Preparing a URL has no request body or
 persistent receipt; the subsequent multipart upload requires its own idempotency
 key and parent version.
 
@@ -352,11 +429,12 @@ visibility choice explicitly. Both creation surfaces accept titles up to 255
 characters and descriptions up to 10,000. Expense deletion requires draft status
 on every surface; unapprove an approved expense first. Web and API expense facts
 require uppercase three-letter currency codes. The browser expense list now
-uses the same `expenses.log/update/approve/unapprove/delete` operations on
+uses the same canonical expense operations on
 `/api/v1`: current opaque versions guard edits and lifecycle moves, and a dialog
 keeps one idempotency key across retries. Its rows extend the API presenter with
 scoped display names and finished action URLs. The retired expense web mutation
-routes have no remaining browser callers; recurrence is a separate migration.
+routes have no remaining browser callers; recurring expenses have their own
+canonical API family.
 
 New archives validate confirmation inside their receipt callback. A completed
 archive receipt from before the confirmation requirement can replay its original

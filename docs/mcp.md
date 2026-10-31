@@ -1724,7 +1724,9 @@ cancels, refunds or marks anything paid in Square.
 - **Shapes.** Responses are allow-listed projections (`SquarePresenter`), not
   Square's raw objects. Card fingerprints, BINs, expiry dates, stored-card ids,
   receipt links, version tokens, addresses and notes are never returned; a
-  stored card on an invoice appears only as `card_on_file`. Money is
+  stored card on an invoice appears only as `card_on_file`. Payment card summaries
+  expose `card_brand`, `card_type` and `last_4`, never full card numbers or
+  card-on-file/payment-method credentials. Money is
   `{amount, currency}` in minor units. Every invoice carries `series_key` - the
   six-digit prefix every invoice of a recurring `NNNNNN-R-NNNN` series shares
   - and `series_occurrence` (the suffix); both are null for a one-off. A
