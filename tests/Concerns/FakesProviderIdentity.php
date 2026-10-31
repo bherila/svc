@@ -88,13 +88,12 @@ trait FakesProviderIdentity
     /** A local account bound to the provider subject, read back with every column. */
     protected function boundUser(string $subject): User
     {
-        $user = User::query()->create([
+        $user = new User([
             'name' => 'Bound '.$subject,
             'email' => $subject.'@synthetic.test',
             'password' => Str::random(40),
-            'oauth_provider' => self::PROVIDER,
-            'oauth_subject' => $subject,
         ]);
+        $user->forceFill(['oauth_provider' => self::PROVIDER, 'oauth_subject' => $subject])->save();
 
         return User::query()->findOrFail($user->id);
     }
