@@ -9,6 +9,8 @@ use Symfony\Component\Yaml\Yaml;
 
 class PilotDeploymentTest extends TestCase
 {
+    private const PILOT_ENV = "PILOT_DEPLOYMENT=1\nAPP_DEBUG=false\nMAIL_MAILER=log\nDB_CONNECTION=mariadb\nDB_HOST=127.0.0.1\n";
+
     private string $root;
 
     private string $temporary;
@@ -102,9 +104,8 @@ JS;
         foreach (['.config/sample', '.deployments/sample-app/shared/storage', 'sample-app/public', 'sample-app/bootstrap/cache'] as $path) {
             mkdir($home.'/'.$path, 0700, true);
         }
-        $env = "PILOT_DEPLOYMENT=1\nAPP_DEBUG=false\nMAIL_MAILER=log\nDB_HOST=127.0.0.1\n";
-        file_put_contents($home.'/.config/sample/deployment.env', $env);
-        file_put_contents($home.'/sample-app/.env', $env);
+        file_put_contents($home.'/.config/sample/deployment.env', self::PILOT_ENV);
+        file_put_contents($home.'/sample-app/.env', self::PILOT_ENV);
         symlink($home.'/.deployments/sample-app/shared/storage', $home.'/sample-app/storage');
 
         return $home;
@@ -139,35 +140,155 @@ JS;
         $this->assertDirectoryDoesNotExist($home.'/.deployments/sample-app/prepared-root');
     }
 
-    /** @return array<string, array{string}> */
-    public static function databaseUrlOverrides(): array
+    /** @return list<string> */
+    private static function databaseConnections(): array
     {
-        return [
-            'remote URL overrides localhost' => ['mysql://synthetic:synthetic@database.example.test/app'],
-            'local URL overrides isolated credentials' => ['mysql://synthetic:synthetic@127.0.0.1/another_app'],
-        ];
+        preg_match_all("/^        '([a-z]+)' => \[\R            'driver' => /m", (string) file_get_contents(dirname(__DIR__, 2).'/config/database.php'), $matches);
+
+        return $matches[1];
     }
 
-    #[DataProvider('databaseUrlOverrides')]
-    public function test_database_url_cannot_override_the_isolated_local_configuration(string $url): void
+    /**
+     * Every way config/database.php lets the environment move the default connection off the
+     * local server: the connection itself, then each destination key the pilot's connection reads.
+     *
+     * @return array<string, array{array<string, string>}>
+     */
+    public static function databaseDestinationOverrides(): array
+    {
+        $overrides = [
+            'remote URL overrides localhost' => [['DB_URL' => 'mysql://synthetic:synthetic@database.example.test/app']],
+            'local URL overrides isolated credentials' => [['DB_URL' => 'mysql://synthetic:synthetic@127.0.0.1/another_app']],
+            'socket replaces the host' => [['DB_SOCKET' => '/synthetic/another-server.sock']],
+            'remote host' => [['DB_HOST' => 'database.example.test']],
+            'forwarded local port' => [['DB_PORT' => '3307']],
+            'missing connection falls back to the configured default' => [['DB_CONNECTION' => '']],
+        ];
+        foreach (array_diff(self::databaseConnections(), ['mariadb']) as $connection) {
+            $overrides["{$connection} connection"] = [['DB_CONNECTION' => $connection, 'DB_DATABASE' => '/synthetic/another.sqlite']];
+        }
+
+        return $overrides;
+    }
+
+    /** @param array<string, string> $values */
+    private static function pilotEnv(array $values = []): string
+    {
+        $env = self::PILOT_ENV;
+        foreach ($values as $key => $value) {
+            $line = $key.'='.$value."\n";
+            $env = preg_match("/^{$key}=.*\$/m", $env) ? preg_replace("/^{$key}=.*\\R/m", $line, $env) : $env.$line;
+        }
+
+        return $env;
+    }
+
+    public function test_override_enumeration_covers_every_defined_connection(): void
+    {
+        $connections = self::databaseConnections();
+        $this->assertContains('mariadb', $connections);
+        $this->assertSame(['sqlite', 'mysql', 'mariadb', 'pgsql', 'sqlsrv'], $connections);
+        foreach (array_diff($connections, ['mariadb']) as $connection) {
+            $this->assertArrayHasKey("{$connection} connection", self::databaseDestinationOverrides());
+        }
+    }
+
+    /** @param array<string, string> $values */
+    #[DataProvider('databaseDestinationOverrides')]
+    public function test_host_preparation_refuses_every_database_destination_override(array $values): void
     {
         $home = $this->scaffold();
-        file_put_contents($home.'/.config/sample/deployment.env', 'DB_URL='.$url."\n", FILE_APPEND);
-        $this->assertFalse($this->prepare($home)->isSuccessful());
+        file_put_contents($home.'/.config/sample/deployment.env', self::pilotEnv($values));
+        $result = $this->prepare($home);
+        $this->assertFalse($result->isSuccessful());
+        $this->assertStringNotContainsString('synthetic', $result->getErrorOutput());
         $this->assertDirectoryExists($home.'/sample-app');
     }
 
-    public function test_empty_database_url_preserves_the_isolated_local_configuration(): void
+    public function test_empty_database_url_and_socket_preserve_the_isolated_local_configuration(): void
     {
         $home = $this->scaffold();
-        file_put_contents($home.'/.config/sample/deployment.env', "DB_URL=\n", FILE_APPEND);
+        file_put_contents($home.'/.config/sample/deployment.env', self::pilotEnv(['DB_URL' => '', 'DB_SOCKET' => '', 'DB_PORT' => '3306']));
         $this->assertTrue($this->prepare($home)->isSuccessful());
+    }
+
+    /** @param array<string, string> $environment */
+    private function premigrate(string $env, array $environment = [], ?callable $prepare = null): Process
+    {
+        $home = $this->temporary.'/release-home';
+        $release = $home.'/.deployments/sample-app/releases/release';
+        foreach (['bootstrap/cache', 'storage/framework/cache', 'storage/framework/views', 'storage/logs'] as $path) {
+            mkdir($release.'/'.$path, 0700, true);
+        }
+        foreach (['app', 'composer.json', 'config', 'database', 'public', 'resources', 'routes', 'vendor'] as $path) {
+            symlink($this->root.'/'.$path, $release.'/'.$path);
+        }
+        foreach (['artisan', 'bootstrap/app.php', 'bootstrap/providers.php'] as $path) {
+            copy($this->root.'/'.$path, $release.'/'.$path);
+        }
+        file_put_contents($release.'/.env', $env);
+        if ($prepare !== null) {
+            $prepare($release);
+        }
+        // Only what the test names reaches the hook; the suite's own database variables must not.
+        $inherited = array_fill_keys(array_keys(getenv() + $_ENV), false);
+        $process = new Process(['bash', $this->root.'/scripts/deploy/pilot/pre-migrate.sh',
+            '.deployments/sample-app/releases/release', PHP_BINARY, 'sample-app'], null,
+            array_replace($inherited, ['HOME' => $home, 'PATH' => (string) getenv('PATH')], $environment));
+        $process->run();
+        (new Process(['rm', '-rf', '--', $home]))->mustRun();
+
+        return $process;
+    }
+
+    public function test_resolved_configuration_accepts_the_local_pilot_database(): void
+    {
+        $result = $this->premigrate(self::pilotEnv(['DB_URL' => '', 'DB_SOCKET' => '']));
+        $this->assertTrue($result->isSuccessful(), $result->getErrorOutput());
+        $this->assertStringContainsString('Resolved pilot database is the local server.', $result->getOutput());
+    }
+
+    /** @param array<string, string> $values */
+    #[DataProvider('databaseDestinationOverrides')]
+    public function test_resolved_configuration_refuses_every_database_destination_override(array $values): void
+    {
+        $result = $this->premigrate(self::pilotEnv($values));
+        $this->assertFalse($result->isSuccessful());
+        $this->assertStringContainsString('Resolved pilot database is not the local server', $result->getErrorOutput());
+        $this->assertStringNotContainsString('synthetic', $result->getErrorOutput().$result->getOutput());
+    }
+
+    /**
+     * Overrides the private file's key checks cannot see: Laravel reads them only when it resolves
+     * the candidate's configuration on the host.
+     *
+     * @return array<string, array{string, array<string, string>, ?callable}>
+     */
+    public static function resolvedOnlyOverrides(): array
+    {
+        return [
+            'host process environment wins over .env' => [self::PILOT_ENV, ['DB_HOST' => 'database.example.test'], null],
+            'host process environment selects another connection' => [self::PILOT_ENV, ['DB_CONNECTION' => 'sqlite'], null],
+            'cached configuration is not what migrations read' => [self::PILOT_ENV, [],
+                static fn (string $release) => file_put_contents($release.'/bootstrap/cache/config.php', '<?php return [];')],
+            'environment-specific file replaces .env' => [self::PILOT_ENV, ['APP_ENV' => 'sample'],
+                static fn (string $release) => file_put_contents($release.'/.env.sample', "DB_CONNECTION=sqlite\nDB_DATABASE=/synthetic/another.sqlite\n")],
+        ];
+    }
+
+    /** @param array<string, string> $environment */
+    #[DataProvider('resolvedOnlyOverrides')]
+    public function test_resolved_configuration_refuses_overrides_outside_the_private_file(string $env, array $environment, ?callable $prepare): void
+    {
+        $result = $this->premigrate($env, $environment, $prepare);
+        $this->assertFalse($result->isSuccessful());
+        $this->assertStringContainsString('Resolved pilot database is not the local server', $result->getErrorOutput());
     }
 
     public function test_pilot_opt_in_cannot_be_written_by_the_bootstrap_to_admit_a_wrong_target(): void
     {
         $home = $this->scaffold();
-        file_put_contents($home.'/.config/sample/deployment.env', "APP_DEBUG=false\nMAIL_MAILER=log\nDB_HOST=127.0.0.1\n");
+        file_put_contents($home.'/.config/sample/deployment.env', str_replace("PILOT_DEPLOYMENT=1\n", '', self::PILOT_ENV));
         $this->assertFalse($this->prepare($home)->isSuccessful());
         $this->assertDirectoryExists($home.'/sample-app');
     }
@@ -287,13 +408,26 @@ JS;
         }
     }
 
-    public function test_workflows_clear_and_assert_the_database_url_before_migration(): void
+    public function test_workflow_pins_the_database_destination_and_checks_resolved_configuration_before_migration(): void
     {
         foreach (glob($this->root.'/.github/workflows/pilot*.yml') as $file) {
-            $text = file_get_contents($file);
-            $this->assertMatchesRegularExpression('/^          env-values: DB_URL=$/m', $text);
-            $this->assertMatchesRegularExpression('/^          env-assert: \|\R            DB_URL=$/m', $text);
-            $this->assertStringContainsString('            DB_HOST=127.0.0.1', $text);
+            $steps = Yaml::parseFile($file)['jobs']['deploy']['steps'];
+            $publish = array_values(array_filter($steps, fn (array $step): bool => preg_match('~^bherila/shared-cpanel-deployment@[0-9a-f]{40}$~', $step['uses'] ?? '') === 1));
+            $this->assertCount(1, $publish);
+            $with = $publish[0]['with'];
+            $lines = fn (string $input): array => array_values(array_filter(array_map('trim', explode("\n", $with[$input] ?? ''))));
+            $this->assertSame(['DB_URL=', 'DB_SOCKET='], $lines('env-values'));
+            foreach (['DB_URL=', 'DB_SOCKET=', 'DB_CONNECTION=mariadb', 'DB_HOST=127.0.0.1', 'PILOT_DEPLOYMENT=1', 'APP_DEBUG=false', 'MAIL_MAILER=log'] as $assertion) {
+                $this->assertContains($assertion, $lines('env-assert'));
+            }
+            // The action installs .env, enters the risk boundary, runs pre-migrate-script, then migrates.
+            $this->assertSame('atomic', $with['deployment-mode']);
+            $this->assertSame('after-upload', $with['migration-order'] ?? 'after-upload');
+            $this->assertSame('scripts/deploy/pilot/pre-migrate.sh', $with['pre-migrate-script']);
+            $hook = (string) file_get_contents($this->root.'/'.$with['pre-migrate-script']);
+            $this->assertStringContainsString('$default !== "mariadb"', $hook);
+            $this->assertStringContainsString('($connection["host"] ?? null) !== "127.0.0.1"', $hook);
+            $this->assertStringContainsString('($env["DB_CONNECTION"] ?? "") !== "mariadb"', (string) file_get_contents($this->root.'/scripts/deploy/pilot/prepare-host.sh'));
         }
     }
 }
