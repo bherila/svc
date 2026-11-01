@@ -258,21 +258,6 @@ running it after a branch is deleted produces a manifest that agrees with the
 deletion. It resolves conflicts, it does not approve them — read the diff. The
 guard test remains the gate.
 
-## Audit Opening Rollover — deprecated
-
-**Deprecated (#460); removal is tracked in #500.** The audit sized the opening-rollover repair (#134), and that repair is done, so the count now describes capacity agreements already receive rather than a pending change. The command, its `billing.audit_opening_rollover` MCP tool and `GET /workspaces/{workspace}/billing-audits/opening-rollover` stay through a deprecation window; nothing replaces them. Text output opens with the deprecation notice. The JSON output is unchanged.
-
-Read-only. Counts the agreements whose ledger takes the opening-rollover seed in `InvoiceLedgerBuilder` (#134).
-
-```bash
-php artisan svc:billing:audit-opening-rollover                 # counts
-php artisan svc:billing:audit-opening-rollover --format=json   # machine-readable
-```
-
-Three conditions have to hold together, and each alone overstates the population: the agreement carries an initial rollover, it takes the legacy monthly branch (an agreement with period retainer terms returns before the seed and never reaches it), and it has a rollover policy (with none, the seeded capacity expires in the month it is granted and no invoice sees it).
-
-It reports counts and aggregate minutes only — never a row, an id, a name, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It deliberately does not report the change to any particular invoice: that depends on how much of each month's capacity was actually used, which cannot be read off the agreement. Capacity at stake is the ceiling on what the repair can move. It always exits zero; it is a number to read, not a gate.
-
 ## Audit Undated Agreements — retired
 
 `svc:billing:audit-undated-agreements` was removed when #147 closed.

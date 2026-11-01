@@ -198,16 +198,6 @@
             "mcp.switch:billing.audit_missing_billed_overage"
         ]
     },
-    "billing.audit_opening_rollover": {
-        "scopes": [
-            "billing:read"
-        ],
-        "flags": [
-            "mcp",
-            "mcp.switch:mcp.read.billing.audit_opening_rollover",
-            "mcp.switch:billing.audit_opening_rollover"
-        ]
-    },
     "billing.audit_undated_collectible_invoices": {
         "scopes": [
             "billing:read"
