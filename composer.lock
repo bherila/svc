@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9ed9e6c2790427b0506bf4265b8998eb",
+    "content-hash": "165efb45833c537c21b54756afc3ee24",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "v0.28.0",
+            "version": "v0.28.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth-laravel.git",
-                "reference": "52f11f2fd6a97b4a406c0de9b5ebe476f5994092"
+                "reference": "d74e32767c7b7d64659f603ffb31009d308464f1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/52f11f2fd6a97b4a406c0de9b5ebe476f5994092",
-                "reference": "52f11f2fd6a97b4a406c0de9b5ebe476f5994092",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/d74e32767c7b7d64659f603ffb31009d308464f1",
+                "reference": "d74e32767c7b7d64659f603ffb31009d308464f1",
                 "shasum": ""
             },
             "require": {
@@ -67,7 +67,7 @@
                 "issues": "https://github.com/bherila/auth-laravel/issues",
                 "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-10-31T22:26:20+00:00"
+            "time": "2026-11-01T00:30:15+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",

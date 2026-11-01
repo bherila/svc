@@ -219,6 +219,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.2
         version: 6.1.2(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.10)(@babel/runtime@8.0.10)(rolldown@1.2.16)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(babel-plugin-react-compiler@1.0.0)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
+      bwh-auth:
+        specifier: 0.6.0
+        version: 0.6.0(lucide-react@1.65.0(@types/react@19.3.0)(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1730,6 +1733,14 @@ packages:
   bundle-name@4.1.1:
     resolution: {integrity: sha512-DdH81/zPLVS11EUgWq3tEu/xn+EzljlMYooDNdzWEnFha3R3NBMpMV1UqYIpjYHV/SgpFKMIX1Oh7o06SjM/oA==}
     engines: {node: '>=18'}
+
+  bwh-auth@0.6.0:
+    resolution: {integrity: sha512-H1hQkb2drevDEREdtdDcYJ6nGnNlz1dEbOreiaehQswHLf+FVRUN7TcTVHlBxNSu5bJazBTrX3OvQ9QYtG2P5Q==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      lucide-react: '>=0.468.0 <2.0.0'
+      react: ^18.3.0 || ^19.0.0
+      react-dom: ^18.3.0 || ^19.0.0
 
   bytes@3.1.2:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
@@ -5673,6 +5684,12 @@ snapshots:
   bundle-name@4.1.1:
     dependencies:
       run-applescript: 7.1.0
+
+  bwh-auth@0.6.0(lucide-react@1.65.0(@types/react@19.3.0)(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+    dependencies:
+      lucide-react: 1.65.0(@types/react@19.3.0)(react@19.3.1)
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
 
   bytes@3.1.2: {}
 

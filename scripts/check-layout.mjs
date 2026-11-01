@@ -58,6 +58,7 @@ const schedulesOnly = process.argv.includes('--expense-schedules');
 const expensesOnly = process.argv.includes('--expenses');
 const projectsOnly = process.argv.includes('--projects');
 const workspacesOnly = process.argv.includes('--workspaces');
+const credentialsOnly = process.argv.includes('--credentials');
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -446,6 +447,168 @@ try {
         expect(requests).toHaveLength(2);
     }
 
+    /**
+     * The grouped credential pickers (#582) with the real index, then with an
+     * oversized index: unbroken labels, ids and descriptions, an Admin group,
+     * and long saved credentials. Nothing is submitted.
+     */
+    async function checkCredentials(width) {
+        const section = page.locator('main');
+        await expect(
+            section.getByRole('heading', { name: 'API tokens' }),
+        ).toBeVisible();
+        await expect(
+            section.getByRole('button', { name: 'Read-only' }).first(),
+        ).toBeVisible();
+        await expect(
+            section.getByRole('button', { name: 'Create API token' }),
+        ).toBeDisabled();
+        await capture('credentials', 'real-index', width);
+
+        await section
+            .getByRole('button', { name: 'Read-only' })
+            .first()
+            .click();
+        await expect(
+            section.getByRole('button', { name: 'Read-only' }).first(),
+        ).toHaveAttribute('aria-pressed', 'true');
+        await section
+            .getByRole('button', { name: /^Adjust individual/ })
+            .first()
+            .click();
+        await capture('credentials', 'preset-and-admin-open', width);
+
+        const long = (label) => label.repeat(6);
+        const scopes = [];
+        const groupOf = (id, sensitive) => {
+            const ids = [1, 2, 3].map(
+                (n) => `${long(`synthetic${id}`)}:scope${n}`,
+            );
+
+            for (const scope of ids) {
+                scopes.push({
+                    id: scope,
+                    description: long('SyntheticScopeDescriptionWithoutBreaks'),
+                });
+            }
+
+            return {
+                id,
+                label: long(`SyntheticGroupLabel${id}`),
+                description: sensitive
+                    ? long('SyntheticAdminWarningWithoutBreaks')
+                    : null,
+                sensitive,
+                scopes: ids,
+            };
+        };
+        const groups = [groupOf('alpha', false), groupOf('admin', true)];
+        const index = {
+            scopes,
+            scope_groups: groups,
+            scope_presets: [
+                {
+                    id: 'long',
+                    label: long('SyntheticPresetLabel'),
+                    description: long(
+                        'SyntheticPresetDescriptionWithoutBreaks',
+                    ),
+                    scopes: groups[0].scopes,
+                },
+            ],
+            scope_implications: {
+                [groups[0].scopes[1]]: [groups[0].scopes[0]],
+            },
+            token_lifetimes: ['P30D', 'P90D', 'P365D'],
+            issue_token_href: '/account/api-credentials/tokens',
+            register_app_href: '/account/api-credentials/apps',
+            tokens: [
+                {
+                    id: 't-long',
+                    name: long('SyntheticTokenNameWithoutBreaks'),
+                    scopes: scopes.map((scope) => scope.id),
+                    created_at: null,
+                    expires_at: '2027-01-01T00:00:00Z',
+                    revoke_href: '/account/api-credentials/tokens/t-long',
+                },
+            ],
+            apps: [
+                {
+                    id: 'a'.repeat(36),
+                    name: long('SyntheticAppNameWithoutBreaks'),
+                    confidential: true,
+                    redirect_uris: [
+                        `https://${'z'.repeat(300)}.example.test/cb`,
+                    ],
+                    scopes: scopes.map((scope) => scope.id),
+                    created_at: null,
+                    delete_href: '/account/api-credentials/apps/a',
+                },
+            ],
+        };
+        const handler = (route) =>
+            route.request().method() === 'GET'
+                ? route.fulfill({
+                      status: 200,
+                      contentType: 'application/json',
+                      body: JSON.stringify({ data: index }),
+                  })
+                : route.continue();
+        await page.route('**/account/api-credentials', handler);
+        await page.reload();
+        await expect(page.getByText(groups[0].label).first()).toBeVisible();
+        await page
+            .getByRole('button', { name: /^Adjust individual/ })
+            .first()
+            .click();
+        await capture('credentials', 'oversized', width);
+
+        // The browser equivalent of horizontalOverflowRisks: nothing in the
+        // page may reach past the viewport unless a scroller of its own holds it.
+        const risks = await page.evaluate(() => {
+            const out = [];
+
+            for (const element of document.querySelectorAll('main *')) {
+                const box = element.getBoundingClientRect();
+
+                if (box.width === 0 || box.right <= window.innerWidth + 1) {
+                    continue;
+                }
+
+                let held = false;
+
+                for (
+                    let parent = element.parentElement;
+                    parent && parent.tagName !== 'BODY';
+                    parent = parent.parentElement
+                ) {
+                    const overflow = getComputedStyle(parent).overflowX;
+
+                    if (overflow === 'auto' || overflow === 'scroll') {
+                        held = true;
+                        break;
+                    }
+                }
+
+                if (!held) {
+                    out.push(
+                        `${element.tagName}.${String(element.className).slice(0, 60)}`,
+                    );
+                }
+            }
+
+            return out;
+        });
+
+        if (risks.length > 0) {
+            failures.push(
+                `credentials/oversized at ${width}px: ${risks.slice(0, 5).join('; ')}`,
+            );
+        }
+
+        await page.unroute('**/account/api-credentials', handler);
+    }
+
     async function capture(screen, state, width, measuredOnly = false) {
         await page.evaluate(() => document.fonts.ready);
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -526,64 +689,69 @@ try {
                         ? ['expenses']
                         : workspacesOnly
                           ? ['selector']
-                          : invoiceActionsOnly
-                            ? [
-                                  'invoice',
-                                  'invoice_review',
-                                  'draft_invoice',
-                                  'draft_time',
-                              ]
-                            : engagementOnly
-                              ? ['operations', 'agreement']
-                              : disputesOnly
-                                ? ['invoice', 'square_portal']
-                                : taskLookupsOnly
-                                  ? ['task_editor']
-                                  : tasksOnly
-                                    ? [
-                                          'task_list',
-                                          'task_project',
-                                          'task_editor',
-                                          'task_portal',
-                                      ]
-                                    : historyOnly
+                          : credentialsOnly
+                            ? ['mcp_setup']
+                            : invoiceActionsOnly
+                              ? [
+                                    'invoice',
+                                    'invoice_review',
+                                    'draft_invoice',
+                                    'draft_time',
+                                ]
+                              : engagementOnly
+                                ? ['operations', 'agreement']
+                                : disputesOnly
+                                  ? ['invoice', 'square_portal']
+                                  : taskLookupsOnly
+                                    ? ['task_editor']
+                                    : tasksOnly
                                       ? [
-                                            'history_index',
-                                            'history_discussion',
-                                            'history_invoice',
+                                            'task_list',
+                                            'task_project',
+                                            'task_editor',
+                                            'task_portal',
                                         ]
-                                      : portalOnly
-                                        ? ['settings']
-                                        : correctionOnly
-                                          ? ['invoice_review']
-                                          : squareOnly
-                                            ? [
-                                                  'square_explore',
-                                                  'square_invoice',
-                                                  'square_portal',
-                                              ]
-                                            : remindersOnly
-                                              ? ['reminder_invoice', 'settings']
-                                              : timeOnly
-                                                ? ['time', 'draft_time']
-                                                : backlogOnly
-                                                  ? ['agreement']
-                                                  : [
-                                                        'mcp_setup',
-                                                        'invoice',
-                                                        'invoice_review',
-                                                        'reminder_invoice',
-                                                        'settings',
-                                                        'draft_invoice',
-                                                        'draft_time',
-                                                        'proposal',
-                                                        'proposal_acceptance',
-                                                        'operations',
-                                                        'time',
-                                                        'expenses',
-                                                        'receipts',
-                                                        'expense_schedules',
-                                                    ]) {
+                                      : historyOnly
+                                        ? [
+                                              'history_index',
+                                              'history_discussion',
+                                              'history_invoice',
+                                          ]
+                                        : portalOnly
+                                          ? ['settings']
+                                          : correctionOnly
+                                            ? ['invoice_review']
+                                            : squareOnly
+                                              ? [
+                                                    'square_explore',
+                                                    'square_invoice',
+                                                    'square_portal',
+                                                ]
+                                              : remindersOnly
+                                                ? [
+                                                      'reminder_invoice',
+                                                      'settings',
+                                                  ]
+                                                : timeOnly
+                                                  ? ['time', 'draft_time']
+                                                  : backlogOnly
+                                                    ? ['agreement']
+                                                    : [
+                                                          'mcp_setup',
+                                                          'invoice',
+                                                          'invoice_review',
+                                                          'reminder_invoice',
+                                                          'settings',
+                                                          'draft_invoice',
+                                                          'draft_time',
+                                                          'proposal',
+                                                          'proposal_acceptance',
+                                                          'operations',
+                                                          'time',
+                                                          'expenses',
+                                                          'receipts',
+                                                          'expense_schedules',
+                                                      ]) {
             if (
                 resourceChromeOnly &&
                 !['invoice', 'proposal', 'proposal_acceptance'].includes(screen)
@@ -635,6 +803,12 @@ try {
                 }
 
                 await capture(screen, 'shared-shell', width);
+                continue;
+            }
+
+            if (credentialsOnly) {
+                await checkCredentials(width);
+
                 continue;
             }
 
@@ -3125,27 +3299,29 @@ try {
                     ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
                     : projectsOnly
                       ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
-                      : workspacesOnly
-                        ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
-                        : invoiceActionsOnly
-                          ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
-                          : disputesOnly
-                            ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
-                            : clientsOnly
-                              ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
-                              : tasksOnly
-                                ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                                : portalOnly
-                                  ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                                  : squareOnly
-                                    ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                                    : remindersOnly
-                                      ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                                      : backlogOnly
-                                        ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                                        : engagementOnly
-                                          ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                          : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+                      : credentialsOnly
+                        ? 'MCP setup credential forms (#582): grouped scope pickers with presets and the Admin group, from the real index and from an oversized one with unbroken labels, ids, descriptions and saved credentials, at every required width. Nothing is submitted.'
+                        : workspacesOnly
+                          ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
+                          : invoiceActionsOnly
+                            ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
+                            : disputesOnly
+                              ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                              : clientsOnly
+                                ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                                : tasksOnly
+                                  ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                                  : portalOnly
+                                    ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                                    : squareOnly
+                                      ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                                      : remindersOnly
+                                        ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                                        : backlogOnly
+                                          ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                                          : engagementOnly
+                                            ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
 
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',

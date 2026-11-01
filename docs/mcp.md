@@ -161,6 +161,76 @@ creating a task are recoverable; `invoices.issue` allocates approved time
 irreversibly and `invoices.send` puts a document in front of a paying client,
 so the two groups no longer turn on together.
 
+### Scope groups, presets and Admin (#582)
+
+The credential picker (personal API tokens and OAuth apps) and the OAuth consent
+screen show the 28 agent scopes in groups rather than one flat list. The catalog is
+`App\Support\AgentApi\AgentApiScopePresentation`, bound as the auth package's
+`ScopePresentation`; `AgentApiScopePresentationTest` pins every id, order and scope.
+It is presentation only: grants, tokens and OAuth clients still store explicit scope
+ids, and no endpoint accepts a group or preset id.
+
+| Group | Scopes |
+| --- | --- |
+| Account | `identity:read`, `mcp:use` (MCP connections only; REST credentials are never offered it) |
+| Projects & tasks | `projects:read`, `projects:write`, `tasks:read`, `tasks:write` |
+| Collaboration & files | `collaboration:read`, `collaboration:write`, `files:read` |
+| Time | `time:read`, `time:write` |
+| Clients & proposals | `clients:read`, `proposals:read` |
+| Billing & payments | `billing:read`, `billing:write`, `payments:read` |
+| Expenses & finance | `expenses:read`, `expenses:write`, `finance:read` |
+| Admin (sensitive) | `billing:deliver`, `payments:record`, `finance:reconcile`, `proposals:write`, `proposals:accept`, `time:approve`, `clients:write`, `files:write`, `workspaces:create` |
+
+A group shows only the scopes the surface offers, and is omitted when it has none.
+**Admin** collects every sensitive scope: sending invoices and proposals to clients,
+recording or reconciling money, accepting agreements, approving time and rates,
+changing clients, sharing files and creating workspaces. "Admin" is not an OAuth
+scope. Ticking it in the picker stores the explicit scopes, so a sensitive scope
+added later never reaches an existing grant without a new consent. On the consent
+screen an Admin scope appears in its own section with the group description and a
+warning that these permissions allow sensitive actions.
+
+Presets tick a routine set of scopes in one click, replacing the selection; the
+boxes stay editable. A preset is offered only where all its scopes are offered.
+
+| Preset | Scopes |
+| --- | --- |
+| Read-only | `identity:read` plus every `:read` scope, derived from the catalog so a new read scope joins it; listed in the order `identity:read`, `projects`, `tasks`, `collaboration`, `files`, `time`, `clients`, `proposals`, `billing`, `payments`, `expenses`, `finance`, then any newer read scope in catalog order |
+| Time logging | `identity:read`, `projects:read`, `tasks:read`, `time:read`, `time:write` |
+| Project work | Time logging plus `tasks:write`, `collaboration:read`, `collaboration:write`, `files:read` |
+| Invoice drafting | `identity:read`, `projects:read`, `clients:read`, `time:read`, `billing:read`, `billing:write`, `payments:read` |
+
+**Presets never include a sensitive scope.** The package validator and a unit test
+both refuse a preset containing an Admin scope; an agent that needs one is given it
+by ticking Admin, or the individual scope, deliberately.
+
+**Implications.** `AgentApiScopePresentation` also declares which scopes the picker
+ticks together. Ticking a scope ticks everything it needs, and unticking a scope
+unticks whatever needs it; presets and the Admin checkbox cascade the same way. Every
+preset is closed under the map (the package validator and a unit test check it).
+
+| Scope | Needs |
+| --- | --- |
+| `projects:write`, `tasks:write`, `collaboration:write`, `time:write`, `billing:write`, `expenses:write` | its own `:read` (`projects:read`, `tasks:read`, ...) |
+| `billing:deliver` | `billing:read` |
+| `payments:record` | `payments:read` |
+| `finance:reconcile` | `finance:read` |
+| `proposals:write`, `proposals:accept` | `proposals:read` |
+| `time:approve` | `time:read` |
+| `clients:write` | `clients:read` |
+| `files:write` | `files:read` |
+
+The credentials index carries the map as `scope_implications` (and
+`token_scope_implications`), limited to scopes that surface offers. It is a picker
+convenience only: the store endpoints still take explicit ids, add nothing and reject
+no set that lacks a requirement, and authorization never infers one scope from
+another, so no existing grant widens.
+
+The setup page reads the whole picker payload (scopes, groups, presets, implications,
+lists, action URLs) from the package's JSON index, `GET /account/api-credentials`,
+through bwh-auth's `ApiCredentialsSection`; the page props carry only the connector
+URLs and that index URL.
+
 ### Operator-issued agent tokens
 
 An operator with shell access on the host can issue a short-lived agent token
