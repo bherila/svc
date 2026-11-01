@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for scripts/deploy/cron-audit.sh: exactly one canonical SVC scheduler line, nothing
 # written, unrelated lines ignored and nothing from the crontab printed. When
-# SHARED_DEPLOY_ACTION_PATH names a checkout of the pinned shared action (CI always sets it),
+# SHARED_DEPLOY_ACTION_PATH names the pinned shared action tree (the `tooling` sub-action output) (CI always sets it),
 # the action's own installer is run against the same fake crontab to prove its output is the
 # line this audit accepts, that a reinstall changes nothing, that legacy lines are replaced and
 # that other applications' lines survive.
@@ -158,13 +158,13 @@ echo 'SVC cron audit tests passed.'
 
 action=${SHARED_DEPLOY_ACTION_PATH:-}
 if [ -z "$action" ]; then
-    [ -z "${CI:-}" ] || fail 'CI must set SHARED_DEPLOY_ACTION_PATH to the pinned shared action checkout'
+    [ -z "${CI:-}" ] || fail 'CI must set SHARED_DEPLOY_ACTION_PATH from the pinned `tooling` sub-action'
     echo 'SKIP: SHARED_DEPLOY_ACTION_PATH is unset; the pinned action installer contract was not run.'
     exit 0
 fi
 action=$(cd "$action" && pwd)
 [ -f "$action/scripts/prepare-cron-lines.sh" ] && [ -f "$action/scripts/install-cron.sh" ] \
-    || fail 'SHARED_DEPLOY_ACTION_PATH is not a shared deployment action checkout'
+    || fail 'SHARED_DEPLOY_ACTION_PATH is not a shared deployment action tree'
 
 # Exactly what the deploy job's inputs give the action: deploy-dir svc-laravel, cron-memory-limit 1G,
 # the default /dev/null scheduler log, and no cron-lines or extra-cron-lines.

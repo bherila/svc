@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-: "${SHARED_DEPLOY_ACTION_PATH:?checkout the workflow-pinned shared action}"
+: "${SHARED_DEPLOY_ACTION_PATH:?run the pinned shared tooling sub-action}"
 shared=$(cd "$SHARED_DEPLOY_ACTION_PATH" && pwd)
 php_binary=$(command -v php)
 fixture=$(mktemp -d)
