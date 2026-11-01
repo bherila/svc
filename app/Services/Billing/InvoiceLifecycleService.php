@@ -320,7 +320,9 @@ final class InvoiceLifecycleService
             // locks. Those are serialised on the agreement - which generation
             // and void hold while they change or read them - rather than left
             // to meet in whatever order two issues reach each other's rows.
-            $basisAgreement = $invoice->catch_up_basis === null ? null : $this->lockAgreementOf($invoice);
+            // A reissue also asks which later invoices were sized against this
+            // one's charge, so it takes the same lock.
+            $basisAgreement = $invoice->catch_up_basis === null && $invoice->reopened_at === null ? null : $this->lockAgreementOf($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
             // A caller's check of version or status belongs on this row, not on
             // the copy it read before asking: another request can issue the
@@ -384,6 +386,16 @@ final class InvoiceLifecycleService
                     throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
                 }
                 $this->draftCatchUpDependencies->assertSizedAgainstCurrentCharges($locked);
+            }
+            // A reopened invoice is an ordinary draft until it is issued again,
+            // and time edits can regenerate it meanwhile: a later invoice sized
+            // against its charge must still find that charge when it returns.
+            if ($locked->status === InvoiceStatus::Draft->value && $locked->reopened_at !== null) {
+                if (! $basisAgreement instanceof ClientAgreement
+                    || $basisAgreement->id !== (int) $locked->client_agreement_id) {
+                    throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+                $this->draftCatchUpDependencies->assertChargeUnchanged($locked);
             }
 
             // The credit pool's lock, straight after the invoice's and before
@@ -967,6 +979,16 @@ final class InvoiceLifecycleService
                     $locked->status,
                 ));
             }
+            // A billing schedule's invoice is composed from its line template, not
+            // by the retainer generator, and is not of the kind that generator
+            // owns even though it carries the cadence kind and an agreement.
+            if ($locked->client_billing_schedule_id !== null) {
+                throw new DomainException(sprintf(
+                    'Invoice %s was billed from a billing schedule, which cannot be regenerated, so it cannot be reopened. '
+                    .'Correct it in place or void it instead.',
+                    (string) $locked->invoice_number,
+                ));
+            }
             if ($locked->invoiceKindValue() !== InvoiceKind::CadencePeriod->value || $locked->client_agreement_id === null) {
                 throw new DomainException(sprintf(
                     'Only an issued cadence invoice generated for an agreement can be reopened, because only '
@@ -998,7 +1020,6 @@ final class InvoiceLifecycleService
             $owningWorkspace = Workspace::query()->whereKey($locked->workspace_id)->firstOrFail();
             $company = ClientCompany::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->client_company_id)->firstOrFail();
 
-            $chargeBefore = (float) ($locked->hours_billed_at_rate ?? 0);
             // Expense claims stay for the rebuild to re-decide; see releaseAllocations().
             $this->releaseAllocations($locked, releaseExpenses: false);
             $locked->forceFill([
@@ -1025,7 +1046,7 @@ final class InvoiceLifecycleService
             if ($regenerated?->id !== $draft->id || $draft->status !== InvoiceStatus::Draft->value) {
                 throw new LogicException('Regeneration rebuilt a different invoice than the one being reopened.');
             }
-            $this->draftCatchUpDependencies->assertChargeUnchanged($draft, $chargeBefore, (float) ($draft->hours_billed_at_rate ?? 0));
+            $this->draftCatchUpDependencies->assertChargeUnchanged($draft);
 
             $this->activities->record(
                 $owningWorkspace,

@@ -1046,11 +1046,15 @@ void's: "A paid invoice cannot be reopened.", and so on) - and refuses, with a
   client was told and are never superseded (corrections have no resolution
   state, so such an invoice cannot be reopened; void it if it must be replaced);
 - any invoice that is not an issued cadence invoice of an agreement, because
-  only those can be regenerated;
-- a regeneration whose catch-up charge would differ from the one a later live
-  invoice was sized against. Unlike a void, a reopen is not refused merely
-  because a later invoice relies on the charge: the invoice stays and keeps
-  charging, so it is refused only if the rebuild would change it.
+  only those can be regenerated, and an invoice billed from a billing schedule
+  (composed from its line template, not by the retainer generator);
+- a regeneration whose catch-up charge would differ from the one a later
+  charged invoice was sized against. Unlike a void, a reopen is not refused
+  merely because a later invoice relies on the charge: the invoice stays and
+  keeps charging, so it is refused only if the rebuild would change it. The
+  reopened invoice is an ordinary draft until it is issued, and time edits can
+  regenerate it meanwhile, so the same check runs again at the reissue: it is
+  refused until the invoice charges what that later invoice recorded.
 
 Under the agreement lock the allocations are released as a void releases them
 (`deferred_buydown` reservations remain excluded), the invoice becomes a draft

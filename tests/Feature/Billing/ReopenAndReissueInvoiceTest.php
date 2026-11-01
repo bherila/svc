@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Mail\InvoiceMail;
 use App\Models\ClientAgreement;
+use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
@@ -396,12 +397,65 @@ final class ReopenAndReissueInvoiceTest extends TestCase
             $this->lifecycle()->reopen($reissued->fresh(), 'Would change the charge', $this->workspace);
             $this->fail('February was sized against the old charge.');
         } catch (DomainException $refusal) {
-            $this->assertStringContainsString('regenerating this invoice', $refusal->getMessage());
+            $this->assertStringContainsString('but it now charges', $refusal->getMessage());
             $this->assertStringContainsString($february->invoice_number, $refusal->getMessage());
         }
         $this->assertSame($before, $this->snapshot($reissued->fresh()), 'The refusal rolled the reopen back');
         $this->assertSame('approved', $late->fresh()?->status);
         $this->assertSame('invoiced', $this->entryStatuses($reissued)->first());
+    }
+
+    /**
+     * A reopened invoice is an ordinary draft until it is issued again, and
+     * `invoices.add_time` or a time edit can regenerate it meanwhile. The
+     * charge a later invoice relied on is therefore checked again at the
+     * reissue, not only at the reopen.
+     */
+    public function test_a_reopened_invoice_whose_charge_changes_before_it_is_reissued_is_refused_until_it_charges_what_it_did(): void
+    {
+        $this->entry('2026-01-12', 1200);
+        $this->entry('2026-02-10', 600);
+        $january = $this->lifecycle()->issue($this->generate(), $this->workspace);
+        $february = app(ClientInvoicingService::class)->generateInvoice($this->company, Carbon::parse('2026-02-01'), Carbon::parse('2026-02-28'), $this->agreement);
+        $this->lifecycle()->issue($february, $this->workspace);
+
+        $reopened = $this->lifecycle()->reopen($january->fresh(), 'Re-measure only', $this->workspace);
+        $this->assertSame(1.0, (float) $reopened->hours_billed_at_rate);
+
+        // Time approved after the reopen, then the draft rebuilt as a time edit does.
+        $late = $this->entry('2026-01-25', 600);
+        $draft = app(ClientInvoicingService::class)->regenerateDraftInvoice($reopened->fresh());
+        $this->assertSame(11.0, (float) $draft?->hours_billed_at_rate, 'The fixture changed the charge');
+
+        try {
+            $this->lifecycle()->issue($reopened->fresh(), $this->workspace);
+            $this->fail('February was sized against the old charge.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString($february->invoice_number, $refusal->getMessage());
+            $this->assertStringContainsString('but it now charges', $refusal->getMessage());
+        }
+        $this->assertSame('draft', $reopened->fresh()?->status);
+
+        // Put the time back and the same reissue goes through.
+        $late->forceFill(['status' => 'draft'])->save();
+        $draft = app(ClientInvoicingService::class)->regenerateDraftInvoice($reopened->fresh());
+        $this->assertSame(1.0, (float) $draft?->hours_billed_at_rate);
+        $this->assertSame('issued', $this->lifecycle()->issue($reopened->fresh(), $this->workspace)->status);
+    }
+
+    public function test_a_billing_schedules_invoice_is_refused(): void
+    {
+        $this->entry('2026-01-12', 510);
+        $invoice = $this->lifecycle()->issue($this->generate(), $this->workspace);
+        $schedule = ClientBillingSchedule::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'client_agreement_id' => $this->agreement->id,
+            'cadence' => 'monthly', 'next_run_on' => '2026-04-01', 'due_days' => 30, 'currency' => 'USD', 'is_active' => true,
+            'line_template' => [['type' => 'service', 'description' => 'Synthetic service', 'quantity' => '1', 'unit_amount' => 10000]],
+        ]);
+        $invoice->forceFill(['client_billing_schedule_id' => $schedule->id])->save();
+
+        $this->assertRefused($invoice->fresh(), 'billed from a billing schedule');
+        $this->assertSame('issued', $invoice->fresh()?->status);
     }
 
     /** @return array<string, mixed> */

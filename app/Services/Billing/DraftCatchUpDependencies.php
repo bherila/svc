@@ -245,33 +245,39 @@ final class DraftCatchUpDependencies
     }
 
     /**
-     * Refuse a reopened invoice whose regenerated catch-up charge differs
-     * from the one a live later invoice was sized against.
+     * Refuse to leave a reopened invoice charging catch-up hours other than
+     * the ones a live later invoice was sized against.
      *
      * Reopening keeps the invoice, so unlike a void it does not take the
      * charge out of the ledger - and a later invoice sized against it stays
-     * right as long as the regenerated invoice charges the same hours. A
-     * different figure would leave that invoice billing debt that is no longer
-     * the debt left, so the reopen is refused and rolls back. Called inside the
-     * reopen transaction, after regeneration, under the agreement lock.
+     * right as long as the invoice charges the same hours when it is issued
+     * again. A different figure would leave that invoice billing debt that is
+     * no longer the debt left. The later invoices' recorded hours are the
+     * reference, so the question is the same whenever it is asked: at the
+     * reopen, once regeneration has rebuilt the draft, and again at the
+     * reissue, since a reopened invoice is an ordinary draft that time edits
+     * and `invoices.add_time` can regenerate before it is issued.
+     *
+     * Called under the agreement lock, with the invoice's own lock held.
      *
      * @infection-ignore-all The predicates and lock need the feature database and are covered by ReopenAndReissueInvoiceTest; CatchUpBasis::hoursFrom() is unit-tested.
      */
-    public function assertChargeUnchanged(ClientInvoice $invoice, float $before, float $after): void
+    public function assertChargeUnchanged(ClientInvoice $invoice): void
     {
-        if (round($before, 4) === round($after, 4)) {
-            return;
-        }
+        $current = (float) ($invoice->hours_billed_at_rate ?? 0);
 
-        foreach ($this->dependentsOn($invoice, includeZeroCharge: true) as ['invoice' => $dependent, 'hours' => $hours]) {
+        foreach ($this->dependentsOn($invoice, includeZeroCharge: true, chargedOnly: true) as ['invoice' => $dependent, 'hours' => $recorded]) {
+            if (round($recorded, 4) === round($current, 4)) {
+                continue;
+            }
+
             throw new DomainException(sprintf(
-                'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charges, '
-                .'but regenerating this invoice from the time approved now would charge %s. Reopening it would '
-                .'leave %s billing the wrong debt. Void or discard %s first, or correct this invoice in place '
-                .'where that is allowed, which keeps its charge.',
+                'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charged, '
+                .'but it now charges %s. Issuing it that way would leave %s billing the wrong debt. Void or '
+                .'discard %s first, or put the approved time back so this invoice charges what it did.',
                 $dependent->invoice_number,
-                self::hours($hours),
-                self::hours($after),
+                self::hours($recorded),
+                self::hours($current),
                 $dependent->invoice_number,
                 $dependent->invoice_number,
             ));
@@ -287,10 +293,12 @@ final class DraftCatchUpDependencies
      * `$includeZeroCharge` a later invoice whose window reaches this one's
      * period is a dependent too: it was sized on this invoice charging
      * nothing, and a charge that appears since leaves it wrong all the same.
+     * With `$chargedOnly` a later draft is not one: it re-measures the charge
+     * itself when it is issued, and is refused until regenerated.
      *
      * @return list<array{invoice: ClientInvoice, hours: float}>
      */
-    private function dependentsOn(ClientInvoice $invoice, bool $includeZeroCharge = false): array
+    private function dependentsOn(ClientInvoice $invoice, bool $includeZeroCharge = false, bool $chargedOnly = false): array
     {
         if ($invoice->client_agreement_id === null) {
             return [];
@@ -301,7 +309,7 @@ final class DraftCatchUpDependencies
             // Not narrowed to the company: the recorded window is the
             // ledger's, which reads the agreement's invoices whoever they name.
             ->where('client_agreement_id', $invoice->client_agreement_id)
-            ->whereIn('status', InvoiceStatus::live())
+            ->whereIn('status', $chargedOnly ? InvoiceStatus::charged() : InvoiceStatus::live())
             ->whereKeyNot($invoice->getKey())
             ->whereNotNull('catch_up_basis')
             ->orderBy('service_period_end')
