@@ -204,6 +204,33 @@ boxes stay editable. A preset is offered only where all its scopes are offered.
 both refuse a preset containing an Admin scope; an agent that needs one is given it
 by ticking Admin, or the individual scope, deliberately.
 
+**Implications.** `AgentApiScopePresentation` also declares which scopes the picker
+ticks together. Ticking a scope ticks everything it needs, and unticking a scope
+unticks whatever needs it; presets and the Admin checkbox cascade the same way. Every
+preset is closed under the map (the package validator and a unit test check it).
+
+| Scope | Needs |
+| --- | --- |
+| `projects:write`, `tasks:write`, `collaboration:write`, `time:write`, `billing:write`, `expenses:write` | its own `:read` (`projects:read`, `tasks:read`, ...) |
+| `billing:deliver` | `billing:read` |
+| `payments:record` | `payments:read` |
+| `finance:reconcile` | `finance:read` |
+| `proposals:write`, `proposals:accept` | `proposals:read` |
+| `time:approve` | `time:read` |
+| `clients:write` | `clients:read` |
+| `files:write` | `files:read` |
+
+The credentials index carries the map as `scope_implications` (and
+`token_scope_implications`), limited to scopes that surface offers. It is a picker
+convenience only: the store endpoints still take explicit ids, add nothing and reject
+no set that lacks a requirement, and authorization never infers one scope from
+another, so no existing grant widens.
+
+The setup page reads the whole picker payload (scopes, groups, presets, implications,
+lists, action URLs) from the package's JSON index, `GET /account/api-credentials`,
+through bwh-auth's `ApiCredentialsSection`; the page props carry only the connector
+URLs and that index URL.
+
 ### Operator-issued agent tokens
 
 An operator with shell access on the host can issue a short-lived agent token

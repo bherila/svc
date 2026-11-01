@@ -354,10 +354,17 @@ final class ApiCredentialTest extends TestCase
     /** @return array<string, mixed> */
     private function setupProps(): array
     {
-        return $this->actingAs($this->user)
+        $props = $this->actingAs($this->user)
             ->get("/workspaces/{$this->workspace->public_id}/mcp")
             ->assertOk()
             ->viewData('page')['props'];
+        // The page carries only the connector URLs and the index URL; the credential
+        // forms read everything else from the package's JSON index (#582).
+        $this->assertSame(['api_base_url', 'authorize_url', 'index_url', 'openapi_url', 'token_url'], collect(array_keys($props['rest']))->sort()->values()->all());
+        $index = $this->getJson($props['rest']['index_url'])->assertOk()->json('data');
+        $props['rest'] = [...$props['rest'], ...$index];
+
+        return $props;
     }
 
     private function configureSigningKeys(): void

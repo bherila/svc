@@ -2,6 +2,7 @@
 
 namespace App\Support\AgentApi;
 
+use BWH\Auth\OAuth\Credentials\DeclaresScopeImplications;
 use BWH\Auth\OAuth\Credentials\ScopeGroup;
 use BWH\Auth\OAuth\Credentials\ScopePresentation;
 use BWH\Auth\OAuth\Credentials\ScopePreset;
@@ -12,7 +13,7 @@ use BWH\Auth\OAuth\Credentials\ScopePreset;
  * is not an OAuth scope, and no preset may contain an Admin scope, so a future
  * sensitive scope never reaches an existing grant without a new consent.
  */
-final class AgentApiScopePresentation implements ScopePresentation
+final class AgentApiScopePresentation implements DeclaresScopeImplications, ScopePresentation
 {
     public const string ADMIN_DESCRIPTION = 'Send invoices and proposals to clients, record or reconcile money, accept agreements, approve time and rates, change clients, share files and create workspaces.';
 
@@ -127,6 +128,31 @@ final class AgentApiScopePresentation implements ScopePresentation
                     AgentApiScopes::PAYMENTS_READ,
                 ],
             ),
+        ];
+    }
+
+    /**
+     * Scopes the picker ticks together: a write scope needs its own read, and so
+     * does every Admin scope that acts on what that read shows. Presentation
+     * only; nothing here widens a stored grant.
+     */
+    public function implications(): array
+    {
+        return [
+            AgentApiScopes::PROJECTS_WRITE => [AgentApiScopes::PROJECTS_READ],
+            AgentApiScopes::TASKS_WRITE => [AgentApiScopes::TASKS_READ],
+            AgentApiScopes::COLLABORATION_WRITE => [AgentApiScopes::COLLABORATION_READ],
+            AgentApiScopes::TIME_WRITE => [AgentApiScopes::TIME_READ],
+            AgentApiScopes::BILLING_WRITE => [AgentApiScopes::BILLING_READ],
+            AgentApiScopes::EXPENSES_WRITE => [AgentApiScopes::EXPENSES_READ],
+            AgentApiScopes::BILLING_DELIVER => [AgentApiScopes::BILLING_READ],
+            AgentApiScopes::PAYMENTS_RECORD => [AgentApiScopes::PAYMENTS_READ],
+            AgentApiScopes::FINANCE_RECONCILE => [AgentApiScopes::FINANCE_READ],
+            AgentApiScopes::PROPOSALS_WRITE => [AgentApiScopes::PROPOSALS_READ],
+            AgentApiScopes::PROPOSALS_ACCEPT => [AgentApiScopes::PROPOSALS_READ],
+            AgentApiScopes::TIME_APPROVE => [AgentApiScopes::TIME_READ],
+            AgentApiScopes::CLIENTS_WRITE => [AgentApiScopes::CLIENTS_READ],
+            AgentApiScopes::FILES_WRITE => [AgentApiScopes::FILES_READ],
         ];
     }
 

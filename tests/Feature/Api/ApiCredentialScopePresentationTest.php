@@ -115,6 +115,29 @@ final class ApiCredentialScopePresentationTest extends TestCase
         }
     }
 
+    public function test_the_index_carries_the_implications_for_what_each_surface_offers(): void
+    {
+        $rest = $this->restProps();
+        $this->assertSame(['scope_implications', 'token_scope_implications'], array_values(array_intersect(['scope_implications', 'token_scope_implications'], array_keys($rest))));
+        $this->assertSame([AgentApiScopes::BILLING_READ], $rest['scope_implications'][AgentApiScopes::BILLING_WRITE]);
+        $this->assertSame([AgentApiScopes::FILES_READ], $rest['token_scope_implications'][AgentApiScopes::FILES_WRITE]);
+        $offered = array_column($rest['scopes'], 'id');
+        foreach ($rest['scope_implications'] as $scope => $required) {
+            $this->assertContains($scope, $offered);
+            $this->assertSame([], array_values(array_diff($required, $offered)));
+        }
+
+        // A surface that does not offer a requirement drops the entry.
+        $this->app->bind(GrantableScopes::class, static fn (): GrantableScopes => new class implements GrantableScopes
+        {
+            public function scopes(): array
+            {
+                return array_diff_key(AgentApiScopes::descriptions(), [AgentApiScopes::MCP_USE => 1, AgentApiScopes::BILLING_READ => 1]);
+            }
+        });
+        $this->assertArrayNotHasKey(AgentApiScopes::BILLING_WRITE, $this->restProps()['scope_implications']);
+    }
+
     public function test_the_store_endpoints_accept_only_explicit_scope_ids(): void
     {
         $this->actingAs($this->user);

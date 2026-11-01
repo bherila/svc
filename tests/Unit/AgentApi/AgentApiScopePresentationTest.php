@@ -4,6 +4,7 @@ namespace Tests\Unit\AgentApi;
 
 use App\Support\AgentApi\AgentApiScopePresentation;
 use App\Support\AgentApi\AgentApiScopes as S;
+use BWH\Auth\OAuth\Credentials\DeclaresScopeImplications;
 use BWH\Auth\OAuth\Credentials\ScopePresentation;
 use BWH\Auth\OAuth\Credentials\ScopePresentationValidator;
 use Tests\TestCase;
@@ -111,6 +112,38 @@ final class AgentApiScopePresentationTest extends TestCase
                 S::IDENTITY_READ, S::PROJECTS_READ, S::CLIENTS_READ, S::TIME_READ, S::BILLING_READ, S::BILLING_WRITE, S::PAYMENTS_READ,
             ]],
         ], $presets);
+    }
+
+    public function test_the_implications_are_pinned(): void
+    {
+        $this->assertSame([
+            S::PROJECTS_WRITE => [S::PROJECTS_READ],
+            S::TASKS_WRITE => [S::TASKS_READ],
+            S::COLLABORATION_WRITE => [S::COLLABORATION_READ],
+            S::TIME_WRITE => [S::TIME_READ],
+            S::BILLING_WRITE => [S::BILLING_READ],
+            S::EXPENSES_WRITE => [S::EXPENSES_READ],
+            S::BILLING_DELIVER => [S::BILLING_READ],
+            S::PAYMENTS_RECORD => [S::PAYMENTS_READ],
+            S::FINANCE_RECONCILE => [S::FINANCE_READ],
+            S::PROPOSALS_WRITE => [S::PROPOSALS_READ],
+            S::PROPOSALS_ACCEPT => [S::PROPOSALS_READ],
+            S::TIME_APPROVE => [S::TIME_READ],
+            S::CLIENTS_WRITE => [S::CLIENTS_READ],
+            S::FILES_WRITE => [S::FILES_READ],
+        ], $this->presentation->implications());
+    }
+
+    public function test_every_preset_is_closed_under_the_implications(): void
+    {
+        $this->assertInstanceOf(DeclaresScopeImplications::class, $this->app->make(ScopePresentation::class));
+        foreach ($this->presentation->presets() as $preset) {
+            foreach ($preset->scopes as $scope) {
+                foreach ($this->presentation->implications()[$scope] ?? [] as $required) {
+                    $this->assertContains($required, $preset->scopes, "Preset {$preset->id} has {$scope} without {$required}.");
+                }
+            }
+        }
     }
 
     public function test_the_package_validator_accepts_the_catalog(): void

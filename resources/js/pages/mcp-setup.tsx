@@ -1,7 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { useState } from 'react';
-import { ApiCredentials } from '@/components/api-credentials';
-import type { RestAccess } from '@/components/api-credentials';
+import { RestCredentials } from '@/components/rest-credentials';
+import type { RestLinks } from '@/components/rest-credentials';
 import { Button } from '@/components/ui/button';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 interface McpSetupProps {
     serverUrl: string;
     available: boolean;
-    rest: RestAccess;
+    rest: RestLinks;
 }
 
 function CopyBlock({ label, text }: { label: string; text: string }) {
@@ -221,12 +221,7 @@ export default function McpSetup({
                             invoice links to pay. MCP does not upload files.
                         </p>
                     </section>
-                    <ApiCredentials
-                        rest={rest}
-                        copy={(label, text) => (
-                            <CopyBlock key={label} label={label} text={text} />
-                        )}
-                    />
+                    <RestCredentials rest={rest} />
                     <section className="grid grid-cols-1 gap-4">
                         <h2 className="text-lg font-semibold">
                             Troubleshooting and disconnecting
