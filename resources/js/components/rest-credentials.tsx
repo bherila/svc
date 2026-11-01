@@ -105,17 +105,20 @@ export function RestCredentials({ rest }: { rest: RestLinks }) {
                 group labels and descriptions): overflow-wrap is inherited, and
                 min-w-0 lets its flex and grid children shrink to it. */}
             <div className="min-w-0 wrap-anywhere [&_*]:min-w-0">
-            <ApiCredentialsSection
-                indexUrl={rest.index_url}
-                components={components}
-                request={request}
-                links={[
-                    { label: 'OpenAPI document', url: rest.openapi_url },
-                    { label: 'API base URL', url: rest.api_base_url },
-                    { label: 'OAuth authorize URL', url: rest.authorize_url },
-                    { label: 'OAuth token URL', url: rest.token_url },
-                ]}
-            />
+                <ApiCredentialsSection
+                    indexUrl={rest.index_url}
+                    components={components}
+                    request={request}
+                    links={[
+                        { label: 'OpenAPI document', url: rest.openapi_url },
+                        { label: 'API base URL', url: rest.api_base_url },
+                        {
+                            label: 'OAuth authorize URL',
+                            url: rest.authorize_url,
+                        },
+                        { label: 'OAuth token URL', url: rest.token_url },
+                    ]}
+                />
             </div>
         </section>
     );

@@ -50,9 +50,12 @@ function server(data: Record<string, unknown>, created?: unknown) {
         });
 
         return Promise.resolve(
-            new Response(JSON.stringify({ data: created ?? { revoked: true } }), {
-                status: 201,
-            }),
+            new Response(
+                JSON.stringify({ data: created ?? { revoked: true } }),
+                {
+                    status: 201,
+                },
+            ),
         );
     });
     vi.stubGlobal('fetch', mock);
@@ -109,10 +112,16 @@ describe('REST credentials section', () => {
         render(<RestCredentials rest={links} />);
 
         expect(await screen.findByText('API tokens')).toBeInTheDocument();
-        expect((await screen.findAllByText('Billing & payments')).length).toBeGreaterThan(0);
+        expect(
+            (await screen.findAllByText('Billing & payments')).length,
+        ).toBeGreaterThan(0);
         expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
-        expect(screen.getAllByRole('button', { name: 'Read-only' })).not.toHaveLength(0);
-        expect(screen.getAllByText('Send invoices to clients.').length).toBeGreaterThan(0);
+        expect(
+            screen.getAllByRole('button', { name: 'Read-only' }),
+        ).not.toHaveLength(0);
+        expect(
+            screen.getAllByText('Send invoices to clients.').length,
+        ).toBeGreaterThan(0);
     });
 
     it('posts explicit scope ids only, with the implied read ticked', async () => {
@@ -132,11 +141,20 @@ describe('REST credentials section', () => {
         const user = userEvent.setup();
         const { container } = render(<RestCredentials rest={links} />);
 
-        await user.type(await screen.findByLabelText('Token name'), 'Synthetic connector');
-        await user.click(screen.getAllByRole('button', { name: 'Read-only' })[0]);
-        await user.click(screen.getByRole('button', { name: 'Create API token' }));
+        await user.type(
+            await screen.findByLabelText('Token name'),
+            'Synthetic connector',
+        );
+        await user.click(
+            screen.getAllByRole('button', { name: 'Read-only' })[0],
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Create API token' }),
+        );
 
-        expect(await screen.findByText(/will not be shown again/i)).toBeInTheDocument();
+        expect(
+            await screen.findByText(/will not be shown again/i),
+        ).toBeInTheDocument();
         expect(calls).toHaveLength(1);
         expect(calls[0].url).toBe('/account/api-credentials/tokens');
         expect(calls[0].body).toMatchObject({
@@ -168,18 +186,28 @@ describe('REST credentials section', () => {
         );
         render(<RestCredentials rest={links} />);
 
-        expect(await screen.findByText('Token billing group')).toBeInTheDocument();
+        expect(
+            await screen.findByText('Token billing group'),
+        ).toBeInTheDocument();
         // The OAuth-app form still uses the scope_* payload.
-        expect(screen.getAllByText('Billing & payments').length).toBeGreaterThan(0);
-        const tokenForm = screen.getByLabelText('Token name').closest('form') as HTMLElement;
-        expect(within(tokenForm).queryByRole('button', { name: 'Read-only' })).toBeNull();
+        expect(
+            screen.getAllByText('Billing & payments').length,
+        ).toBeGreaterThan(0);
+        const tokenForm = screen
+            .getByLabelText('Token name')
+            .closest('form') as HTMLElement;
+        expect(
+            within(tokenForm).queryByRole('button', { name: 'Read-only' }),
+        ).toBeNull();
     });
 
     it('falls back to the flat list without groups', async () => {
         server(index());
         render(<RestCredentials rest={links} />);
 
-        expect((await screen.findAllByLabelText(/billing:read/)).length).toBe(2);
+        expect((await screen.findAllByLabelText(/billing:read/)).length).toBe(
+            2,
+        );
         expect(screen.queryByRole('button', { name: 'Read-only' })).toBeNull();
     });
 
@@ -214,9 +242,16 @@ describe('REST credentials section', () => {
         const user = userEvent.setup();
         render(<RestCredentials rest={links} />);
 
-        expect(await screen.findByText(/billing:read, time:read/)).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Create API token' })).toBeNull();
+        expect(
+            await screen.findByText(/billing:read, time:read/),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByRole('button', { name: 'Create API token' }),
+        ).toBeNull();
         await user.click(screen.getByRole('button', { name: /Revoke/ }));
-        expect(calls[0]).toMatchObject({ method: 'DELETE', url: '/account/api-credentials/tokens/t-1' });
+        expect(calls[0]).toMatchObject({
+            method: 'DELETE',
+            url: '/account/api-credentials/tokens/t-1',
+        });
     });
 });
