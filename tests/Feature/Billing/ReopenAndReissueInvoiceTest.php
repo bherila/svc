@@ -458,6 +458,29 @@ final class ReopenAndReissueInvoiceTest extends TestCase
         $this->assertSame('issued', $invoice->fresh()?->status);
     }
 
+    public function test_the_returned_relations_are_bounded_to_the_workspace(): void
+    {
+        $this->entry('2026-01-12', 510);
+        $invoice = $this->lifecycle()->issue($this->generate(), $this->workspace);
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = strtolower(str_replace(['"', '`'], '', $query->sql));
+        });
+
+        $reopened = $this->lifecycle()->reopen($invoice, 'Stale application', $this->workspace);
+
+        $this->assertTrue($reopened->relationLoaded('lines'));
+        $this->assertTrue($reopened->relationLoaded('clientCompany'));
+        $this->assertSame($this->company->id, $reopened->clientCompany?->id);
+        // The last two reads are the relations the result carries.
+        $loaded = array_slice($queries, -2);
+        $this->assertStringContainsString('from client_invoice_lines', $loaded[0]);
+        $this->assertStringContainsString('from client_companies', $loaded[1]);
+        foreach ($loaded as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql, 'A relation loaded for the result names the workspace: '.$sql);
+        }
+    }
+
     /** @return array<string, mixed> */
     private function snapshot(ClientInvoice $invoice): array
     {

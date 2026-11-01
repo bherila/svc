@@ -1062,7 +1062,13 @@ final class InvoiceLifecycleService
                 occurrence: 'revision-'.$draft->document_revision,
             );
 
-            return $draft->refresh()->load(['lines', 'clientCompany']);
+            // Each relation bounded by the workspace explicitly, as updateDraft()
+            // does: a legacy row stamped to another tenant is not loaded through
+            // this invoice.
+            return $draft->refresh()->load([
+                'lines' => fn ($query) => $query->where('workspace_id', $draft->workspace_id),
+                'clientCompany' => fn ($query) => $query->where('workspace_id', $draft->workspace_id),
+            ]);
         });
     }
 
