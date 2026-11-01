@@ -25,7 +25,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "types:check": "tsc --noEmit",
-    "api:types": "pnpm --package=openapi-typescript@7.13.0 --package=typescript@npm:@typescript/typescript6@6.0.2 dlx openapi-typescript public/openapi/svc-agent-v1.json -o resources/js/types/api.generated.ts && prettier --write resources/js/types/api.generated.ts",
+    "api:types": "pnpm --filter @bherila/svc-api-types exec openapi-typescript \"$PWD/public/openapi/svc-agent-v1.json\" -o \"$PWD/resources/js/types/api.generated.ts\" && prettier --write resources/js/types/api.generated.ts",
     "api:types:check": "pnpm run api:types && git diff --exit-code -- resources/js/types/api.generated.ts",
     "test:layout": "node scripts/check-layout.mjs"
   },

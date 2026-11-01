@@ -1,5 +1,6 @@
 packages:
   - '.'
+  - 'tools/api-types'
 
 # Keep per-worktree node_modules as links into pnpm's shared virtual store.
 enableGlobalVirtualStore: true
