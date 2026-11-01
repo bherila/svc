@@ -993,12 +993,17 @@ final class InvoiceLifecycleService
             }
             $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
 
+            // Read from the tenant, as issue() does, rather than through the
+            // nullable relations.
+            $owningWorkspace = Workspace::query()->whereKey($locked->workspace_id)->firstOrFail();
+            $company = ClientCompany::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->client_company_id)->firstOrFail();
+
             $chargeBefore = (float) ($locked->hours_billed_at_rate ?? 0);
             // Expense claims stay for the rebuild to re-decide; see releaseAllocations().
             $this->releaseAllocations($locked, releaseExpenses: false);
             $locked->forceFill([
                 'status' => InvoiceStatus::Draft->value,
-                'reopened_at' => $this->clock->now($locked->workspace)->utc(),
+                'reopened_at' => $this->clock->now($owningWorkspace)->utc(),
                 'reopen_reason' => $reason,
                 'is_visible_to_client' => false,
                 // As a void cancels it. The delivery rows stay as the record of
@@ -1023,8 +1028,8 @@ final class InvoiceLifecycleService
             $this->draftCatchUpDependencies->assertChargeUnchanged($draft, $chargeBefore, (float) ($draft->hours_billed_at_rate ?? 0));
 
             $this->activities->record(
-                $locked->workspace,
-                $locked->clientCompany,
+                $owningWorkspace,
+                $company,
                 'invoice.reopened',
                 $draft,
                 [
@@ -1036,7 +1041,7 @@ final class InvoiceLifecycleService
                 occurrence: 'revision-'.$draft->document_revision,
             );
 
-            return $draft->fresh(['lines', 'clientCompany']);
+            return $draft->refresh()->load(['lines', 'clientCompany']);
         });
     }
 
