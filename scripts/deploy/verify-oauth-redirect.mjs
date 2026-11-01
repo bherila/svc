@@ -9,7 +9,7 @@ try {
     if (
         redirect.length === 0 ||
         redirect.length > 16384 ||
-        [...redirect].some(
+        Array.from(redirect).some(
             (character) =>
                 character.codePointAt(0) <= 32 ||
                 character.codePointAt(0) === 127,

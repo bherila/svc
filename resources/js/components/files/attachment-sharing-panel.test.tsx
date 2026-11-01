@@ -666,8 +666,9 @@ describe('attachment sharing panel', () => {
         fireEvent.click(screen.getByLabelText('Visible to client'));
         await screen.findByRole('alert');
         const firstKey = (
-            vi.mocked(fetch).mock.calls[0][1]?.headers as Record<string, string>
-        )['Idempotency-Key'];
+            vi.mocked(fetch).mock.calls[0][1]?.headers as
+                Record<string, string> | undefined
+        )?.['Idempotency-Key'];
         vi.mocked(fetch).mockResolvedValue(
             new Response(
                 JSON.stringify({ message: 'Synthetic version conflict' }),
@@ -678,11 +679,9 @@ describe('attachment sharing panel', () => {
         await screen.findByText('Synthetic version conflict');
         expect(
             (
-                vi.mocked(fetch).mock.calls[1][1]?.headers as Record<
-                    string,
-                    string
-                >
-            )['Idempotency-Key'],
+                vi.mocked(fetch).mock.calls[1][1]?.headers as
+                    Record<string, string> | undefined
+            )?.['Idempotency-Key'],
         ).toBe(firstKey);
         expect(screen.getByLabelText('Visible to client')).toBeDisabled();
         expect(
