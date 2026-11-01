@@ -281,6 +281,7 @@ final class InvoiceLifecycleService
             }
             $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
             $this->draftCatchUpDependencies->assertDiscardable($locked);
+            $this->assertReopenedChargeNotRelied($locked);
 
             $this->releaseAllocations($locked);
             $locked->forceFill([
@@ -896,6 +897,7 @@ final class InvoiceLifecycleService
             $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
             if ($locked->status === InvoiceStatus::Draft->value) {
                 $this->draftCatchUpDependencies->assertDiscardable($locked);
+                $this->assertReopenedChargeNotRelied($locked);
             } else {
                 // An issued invoice a later one was sized against: voiding it
                 // takes its charge out of the ledger that later one relied on.
@@ -1070,6 +1072,21 @@ final class InvoiceLifecycleService
                 'clientCompany' => fn ($query) => $query->where('workspace_id', $draft->workspace_id),
             ]);
         });
+    }
+
+    /**
+     * A reopened invoice was issued, and a later invoice may have been sized
+     * against the charge it recorded then. Discarding or voiding it as a draft
+     * removes that charge, which `assertDiscardable()` cannot see once time
+     * edits have regenerated the draft down to no catch-up, so the recorded
+     * dependencies are asked directly: the same refusal as voiding the issued
+     * invoice would have met.
+     */
+    private function assertReopenedChargeNotRelied(ClientInvoice $locked): void
+    {
+        if ($locked->reopened_at !== null) {
+            $this->draftCatchUpDependencies->assertVoidable($locked);
+        }
     }
 
     /**

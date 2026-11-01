@@ -443,6 +443,51 @@ final class ReopenAndReissueInvoiceTest extends TestCase
         $this->assertSame('issued', $this->lifecycle()->issue($reopened->fresh(), $this->workspace)->status);
     }
 
+    /**
+     * Reopening, returning the time to draft and regenerating down to no
+     * catch-up must not make the invoice discardable or voidable while a later
+     * issued invoice still relies on the charge it recorded.
+     */
+    public function test_a_reopened_invoice_cannot_be_discarded_or_voided_while_a_later_invoice_relies_on_its_recorded_charge(): void
+    {
+        $this->entry('2026-01-12', 1200);
+        $this->entry('2026-02-10', 600);
+        $january = $this->lifecycle()->issue($this->generate(), $this->workspace);
+        $february = app(ClientInvoicingService::class)->generateInvoice($this->company, Carbon::parse('2026-02-01'), Carbon::parse('2026-02-28'), $this->agreement);
+        $this->lifecycle()->issue($february, $this->workspace);
+        $reopened = $this->lifecycle()->reopen($january->fresh(), 'Re-measure only', $this->workspace);
+
+        // Time edits shrink the draft's catch-up to nothing.
+        ClientTimeEntry::query()->where('worked_on', '2026-01-12')->update(['minutes' => 300]);
+        $draft = app(ClientInvoicingService::class)->regenerateDraftInvoice($reopened->fresh());
+        $this->assertSame(0.0, (float) $draft?->hours_billed_at_rate, 'The fixture removed the catch-up');
+
+        foreach (['discard', 'void'] as $cancel) {
+            try {
+                $cancel === 'discard'
+                    ? $this->lifecycle()->discardDraft($reopened->fresh(), $this->workspace, 'Cancel it')
+                    : $this->lifecycle()->void($reopened->fresh(), $this->workspace, 'Cancel it');
+                $this->fail("A {$cancel} must be refused while February relies on the recorded charge.");
+            } catch (DomainException $refusal) {
+                $this->assertStringContainsString($february->invoice_number, $refusal->getMessage());
+                $this->assertStringContainsString('covers later work', $refusal->getMessage());
+            }
+            $this->assertSame('draft', $reopened->fresh()?->status);
+        }
+
+        // And the reissue is refused too: it would charge nothing.
+        try {
+            $this->lifecycle()->issue($reopened->fresh(), $this->workspace);
+            $this->fail('The reissue must be refused.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('but it now charges', $refusal->getMessage());
+        }
+
+        // Once February is out of the way the cancellation goes through.
+        $this->lifecycle()->void($february->fresh(), $this->workspace);
+        $this->assertSame('void', $this->lifecycle()->discardDraft($reopened->fresh(), $this->workspace, 'Cancel it')->status);
+    }
+
     public function test_a_billing_schedules_invoice_is_refused(): void
     {
         $this->entry('2026-01-12', 510);
