@@ -27,7 +27,7 @@ if (unexpected.length > 0) {
 
 const missing = readdirSync('resources/js/pages', { recursive: true })
     .filter((file) => file.endsWith('.tsx') && !isTest.test(file))
-    .filter((file) => !manifest[`resources/js/pages/${file}`]);
+    .filter((file) => !manifest[`resources/js/pages/${String(file)}`]);
 
 if (missing.length > 0) {
     throw new Error(

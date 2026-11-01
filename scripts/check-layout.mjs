@@ -1424,6 +1424,7 @@ try {
                 await capture(screen, 'profile-unknown-change', width);
                 await page.evaluate(() => {
                     window.__svcHistoryRestored = false;
+                    // oxlint-disable-next-line typescript/unbound-method -- restored and re-applied with the right `this` below
                     const originalPush = window.history.pushState;
                     window.history.pushState = function (...args) {
                         window.history.pushState = originalPush;

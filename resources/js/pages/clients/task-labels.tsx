@@ -45,7 +45,7 @@ function LabelNameForm({
     } | null>(null);
     const mutation = usePlanningMutation(refreshCatalog);
     const name = draft?.name ?? label?.name ?? '';
-    const length = [...name].length;
+    const length = Array.from(name).length;
 
     return (
         <form

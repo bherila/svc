@@ -47,7 +47,7 @@ throw new Error('No trusted main push CI run exists for the pinned SHA.')
 
   // Include previous attempts of this exact run: deployment failure is not a CI gate failure.
   const run = runs[0]
-  let jobs = []
+  const jobs = []
   let expectedCount
 
   for (let page = 1; page <= 5; page += 1) {

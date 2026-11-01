@@ -1,0 +1,10 @@
+{
+  "name": "@bherila/svc-api-types",
+  "private": true,
+  "type": "module",
+  "description": "Isolated TypeScript 6 install for openapi-typescript, which needs the TypeScript compiler API that TypeScript 7 does not provide. Used only by `pnpm run api:types` in the repo root.",
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}
