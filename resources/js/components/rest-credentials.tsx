@@ -1,12 +1,11 @@
 import { ApiCredentialsSection } from 'bwh-auth';
 import type {
     ApiCredentialRequest,
-    AuthButtonComponentProps,
     AuthComponentInput,
     AuthContainerComponentProps,
 } from 'bwh-auth';
 import { Badge } from '@/components/ui/badge';
-import { Button as BaseButton } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
     Card,
     CardContent,
@@ -27,19 +26,6 @@ function Alert({ className, ...props }: AuthContainerComponentProps) {
             role="note"
             className={cn(
                 'rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm wrap-anywhere text-amber-800 dark:text-amber-300',
-                className,
-            )}
-            {...props}
-        />
-    );
-}
-
-/** Presets and the Admin disclosure carry long labels: let the button grow rather than spill over its neighbours. */
-function Button({ className, ...props }: AuthButtonComponentProps) {
-    return (
-        <BaseButton
-            className={cn(
-                'h-auto min-h-8 py-1.5 text-left whitespace-normal',
                 className,
             )}
             {...props}
@@ -101,25 +87,21 @@ export function RestCredentials({ rest }: { rest: RestLinks }) {
                 register an OAuth app (for apps that sign you in) or create an
                 API token (for apps that ask for a key).
             </p>
-            {/* The section's markup does not break unbroken runs (long scope ids,
-                group labels and descriptions): overflow-wrap is inherited, and
-                min-w-0 lets its flex and grid children shrink to it. */}
-            <div className="min-w-0 wrap-anywhere [&_*]:min-w-0">
-                <ApiCredentialsSection
-                    indexUrl={rest.index_url}
-                    components={components}
-                    request={request}
-                    links={[
-                        { label: 'OpenAPI document', url: rest.openapi_url },
-                        { label: 'API base URL', url: rest.api_base_url },
-                        {
-                            label: 'OAuth authorize URL',
-                            url: rest.authorize_url,
-                        },
-                        { label: 'OAuth token URL', url: rest.token_url },
-                    ]}
-                />
-            </div>
+            <ApiCredentialsSection
+                layout="columns"
+                indexUrl={rest.index_url}
+                components={components}
+                request={request}
+                links={[
+                    { label: 'OpenAPI document', url: rest.openapi_url },
+                    { label: 'API base URL', url: rest.api_base_url },
+                    {
+                        label: 'OAuth authorize URL',
+                        url: rest.authorize_url,
+                    },
+                    { label: 'OAuth token URL', url: rest.token_url },
+                ]}
+            />
         </section>
     );
 }
