@@ -368,7 +368,7 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing.audit_unplaceable_invoices`,
 `billing.audit_undated_collectible_invoices`, and
 `billing.audit_missing_billed_overage`,
-`billing.audit_opening_rollover`, `billing.preflight_schedule_generation`, and
+`billing.preflight_schedule_generation`, and
 `billing.audit_unlinked_proposal_agreements`. While Square is configured, managers also
 see the read-only `square.*` pass-through tools described under
 [Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
@@ -519,7 +519,6 @@ resolves authenticated context, validates its DTO, and maps the result.
 | `billing.audit_unplaceable_invoices`              | `svc:billing:audit-unplaceable-invoices`; `AgentBillingAuditReadService` over `UnplaceableInvoiceAuditor`                 | `billing:read`; manager; workspace-scoped audit                                     | No record identifiers or raw amounts beyond aggregate, per-workspace totals; no pagination                                                                                      | `mcp.read.billing.audit_unplaceable_invoices`; aggregate/redaction and authorization tests                            |
 | `billing.audit_undated_collectible_invoices`      | `svc:billing:audit-undated-collectible-invoices`; `AgentBillingAuditReadService` over `UndatedCollectibleInvoiceAuditor`  | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts and bounded per-currency integer balances only; no record identifiers                                                                                          | `mcp.read.billing.audit_undated_collectible_invoices`; aggregate/redaction and authorization tests                    |
 | `billing.audit_missing_billed_overage`            | `svc:billing:audit-missing-billed-overage`; `AgentBillingAuditReadService` over `MissingBilledOverageAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts only; no record identifiers or raw models                                                                                                                      | `mcp.read.billing.audit_missing_billed_overage`; aggregate/redaction and authorization tests                          |
-| `billing.audit_opening_rollover` (deprecated, #500) | `svc:billing:audit-opening-rollover`; `AgentBillingAuditReadService` over the shared `OpeningRolloverAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts and capacity minutes only; immutable DTO cannot carry record identifiers                                                                                       | `mcp.read.billing.audit_opening_rollover`; CLI parity, aggregate/redaction, authorization, and tenant-isolation tests |
 | `billing.preflight_schedule_generation`           | `svc:billing:preflight-schedule-generation`; `AgentBillingAuditReadService` over `ScheduleGenerationPreflight`            | `billing:read`; manager; the caller's workspace only                                | Counts per refusal reason and schedule defect, through the workspace's today, at most 60 periods per schedule and 5 calls per ten minutes; `complete` false when a backlog was not fully examined | `mcp.read.billing.preflight_schedule_generation`; parity and tenant-isolation tests                                   |
 | `billing.audit_unlinked_proposal_agreements`      | `svc:engagement:audit-unlinked-proposal-agreements`; `AgentBillingAuditReadService` over `UnlinkedProposalAgreementAuditor` | `billing:read`; manager; the caller's workspace only                              | Counts only; nothing is repaired or guessed                                                                                                                                     | `mcp.read.billing.audit_unlinked_proposal_agreements`; parity and tenant-isolation tests                              |
 | Duplicate-time diagnostics                        | No checked-in workflow/service establishes the grouping key                                                               | Deferred from read GA                                                               | Not implemented: a canonical application query, grouping contract, bounded DTO, and privacy review must exist before MCP can adapt it                                           | No flag or release cohort                                                                                             |
@@ -552,9 +551,19 @@ removal issue, and that one entry marks every door:
 
 The operation is removed only by its removal issue, after the deprecation window.
 
-| Deprecated                                        | Since | Removal | Replacement |
-| ------------------------------------------------- | ----- | ------- | ----------- |
-| `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | None: the #134 repair it sized is done |
+| Deprecated | Since | Removal | Removal date | Replacement |
+| ---------- | ----- | ------- | ------------ | ----------- |
+
+There are no currently deprecated operations.
+
+### Removed
+
+| Operation | Deprecated in | Removed in | Date |
+| --------- | ------------- | ---------- | ---- |
+| `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | 2026-11-01 |
+
+The spent opening-rollover audit has no replacement. Opening rollover remains a
+billing-ledger concept.
 
 Every feature-test HTTP exchange under `/api/v1` now checks the published
 OpenAPI contract through `Tests\TestCase`: accepted requests validate their
@@ -622,7 +631,7 @@ workflow is outside the read-GA authorization:
 | Agreement list/get with derived terms          | Implemented; manager-only `agreements.list` / `agreements.get`                                                                                           |
 | Signed monthly capacity ledger                 | Implemented; manager-only bounded `capacity_ledger.get` over `InvoiceLedgerBuilder`, with the agreement's deferred backlog (#366), on REST and MCP          |
 | Duplicate-time diagnostics                     | Deferred: no checked-in canonical query or privacy-reviewed grouping contract exists. It will not be inferred from raw time rows.                        |
-| Read-only `svc:billing:audit-*` operations     | Implemented as six aggregate-only, manager-scoped tools, including `billing.audit_opening_rollover` and `billing.preflight_schedule_generation`, over the same auditors used by their CLI workflows. Each is a `GET /workspaces/{workspace}/billing-audits/...` REST operation in the OpenAPI document, and its MCP tool reaches it through that route (#459), so the scope, the manager check, the preflight's 60-period cap and its 5-per-ten-minutes workspace budget apply to both. `svc:billing:audit-overpayment-credit` takes `--workspace=` and is not yet exposed |
+| Read-only `svc:billing:audit-*` operations | Implemented as five aggregate-only, manager-scoped tools, including `billing.preflight_schedule_generation`, over the same auditors used by their CLI workflows. Each is a `GET /workspaces/{workspace}/billing-audits/...` REST operation in the OpenAPI document, and its MCP tool reaches it through that route (#459), so scope, manager checks and preflight budgets apply to both. `svc:billing:audit-overpayment-credit` takes `--workspace=` and is not yet exposed |
 | Billing-schedule visibility                    | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get`                                                                             |
 | Imported-duplicate maintenance preview/execute | Obsolete for #187 after #196 retired the importer; no maintenance write is authorized                                                                    |
 | One-workspace-per-session binding              | Per-call authorized selection is the accepted v1 contract; any pinned-session replacement requires a future versioned migration                          |
@@ -1442,7 +1451,6 @@ manager, and both `AGENT_API_WRITES_ENABLED` and
 | `billing.audit_unplaceable_invoices` | `GET /billing-audits/unplaceable-invoices` | `billing:read` |
 | `billing.audit_undated_collectible_invoices` | `GET /billing-audits/undated-collectible-invoices` | `billing:read` |
 | `billing.audit_missing_billed_overage` | `GET /billing-audits/missing-billed-overage` | `billing:read` |
-| `billing.audit_opening_rollover` | `GET /billing-audits/opening-rollover` | `billing:read` |
 | `billing.preflight_schedule_generation` | `GET /billing-audits/schedule-generation-preflight` | `billing:read` |
 | `billing.audit_unlinked_proposal_agreements` | `GET /billing-audits/unlinked-proposal-agreements` | `billing:read` |
 
@@ -1724,7 +1732,9 @@ cancels, refunds or marks anything paid in Square.
 - **Shapes.** Responses are allow-listed projections (`SquarePresenter`), not
   Square's raw objects. Card fingerprints, BINs, expiry dates, stored-card ids,
   receipt links, version tokens, addresses and notes are never returned; a
-  stored card on an invoice appears only as `card_on_file`. Money is
+  stored card on an invoice appears only as `card_on_file`. Payment card summaries
+  expose `card_brand`, `card_type` and `last_4`, never full card numbers or
+  card-on-file/payment-method credentials. Money is
   `{amount, currency}` in minor units. Every invoice carries `series_key` - the
   six-digit prefix every invoice of a recurring `NNNNNN-R-NNNN` series shares
   - and `series_occurrence` (the suffix); both are null for a one-off. A
