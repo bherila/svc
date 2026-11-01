@@ -31,7 +31,7 @@ jobs:
       PILOT_DEPLOY: ${{ inputs.deploy }}
       PILOT_OPERATOR_SHA: ${{ inputs.expected_sha }}
       PILOT_APPLICATION_SHA: ${{ github.sha }}
-      PILOT_TOOLING_SHA: 57aacf3e6f7c1972e1fd0f09eb459c85635900e7
+      PILOT_TOOLING_SHA: 5798879af588e2c786357b69b314d89932b75803
       PILOT_CI_WORKFLOW: tests.yml
       PILOT_CI_GATE: ci
       PILOT_DEPLOY_DIR: ${{ vars.PILOT_DEPLOY_DIR }}
@@ -86,22 +86,14 @@ jobs:
           test "$(git rev-parse HEAD)" = "$PILOT_APPLICATION_SHA"
           node scripts/deploy/pilot/manifest.mjs
 
-      - name: Checkout the independently pinned deployment tooling
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: bherila/shared-cpanel-deployment
-          ref: 57aacf3e6f7c1972e1fd0f09eb459c85635900e7
-          path: .pilot-tooling
-          persist-credentials: false
-
       - name: Configure pilot-only SSH transport
-        env:
-          SSH_ALIAS: pilot-bootstrap
-          SSH_HOST_NAME: ${{ secrets.PILOT_SSH_HOST }}
-          SSH_USER_NAME: ${{ secrets.PILOT_SSH_USERNAME }}
-          SSH_PRIVATE_KEY: ${{ secrets.PILOT_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.PILOT_SSH_KNOWN_HOSTS }}
-        run: bash .pilot-tooling/scripts/configure-ssh.sh
+        uses: bherila/shared-cpanel-deployment/configure-ssh@5798879af588e2c786357b69b314d89932b75803 # v2.6.0
+        with:
+          alias: pilot-bootstrap
+          host: ${{ secrets.PILOT_SSH_HOST }}
+          username: ${{ secrets.PILOT_SSH_USERNAME }}
+          private-key: ${{ secrets.PILOT_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ secrets.PILOT_SSH_KNOWN_HOSTS }}
 
       - name: Recheck main before preparing the isolated target
         env:
@@ -113,7 +105,7 @@ jobs:
           ssh pilot-bootstrap "bash -s -- $(printf '%q ' "$PILOT_DEPLOY_DIR" "$PILOT_ENV_SOURCE" /usr/bin/php)" < scripts/deploy/pilot/prepare-host.sh
 
       - name: Publish the isolated native PHP release
-        uses: bherila/shared-cpanel-deployment@57aacf3e6f7c1972e1fd0f09eb459c85635900e7 # v2.4.0
+        uses: bherila/shared-cpanel-deployment@5798879af588e2c786357b69b314d89932b75803 # v2.6.0
         with:
           ssh-host: ${{ secrets.PILOT_SSH_HOST }}
           ssh-username: ${{ secrets.PILOT_SSH_USERNAME }}

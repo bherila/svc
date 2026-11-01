@@ -2,7 +2,7 @@
 # Exercise SVC's real preflight at the pinned action's failure/recovery boundary.
 set -euo pipefail
 repository=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-: "${SHARED_DEPLOY_ACTION_PATH:?checkout the workflow-pinned shared action}"
+: "${SHARED_DEPLOY_ACTION_PATH:?run the pinned shared tooling sub-action}"
 shared=$(cd "$SHARED_DEPLOY_ACTION_PATH" && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT

@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "7bd2209a380fd5d39e1cc058d4577f55",
+    "content-hash": "165efb45833c537c21b54756afc3ee24",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "dev-feat/scope-presentation",
+            "version": "v0.28.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth-laravel.git",
-                "reference": "c0c758e8ed6c0a30123e42a5ab368d5d9668e23a"
+                "reference": "d74e32767c7b7d64659f603ffb31009d308464f1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/c0c758e8ed6c0a30123e42a5ab368d5d9668e23a",
-                "reference": "c0c758e8ed6c0a30123e42a5ab368d5d9668e23a",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/d74e32767c7b7d64659f603ffb31009d308464f1",
+                "reference": "d74e32767c7b7d64659f603ffb31009d308464f1",
                 "shasum": ""
             },
             "require": {
@@ -67,7 +67,7 @@
                 "issues": "https://github.com/bherila/auth-laravel/issues",
                 "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-10-31T22:36:26+00:00"
+            "time": "2026-11-01T00:30:15+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",
@@ -13647,18 +13647,9 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [
-        {
-            "package": "bherila/auth-laravel",
-            "version": "dev-feat/scope-presentation",
-            "alias": "0.28.1",
-            "alias_normalized": "0.28.1.0"
-        }
-    ],
+    "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "bherila/auth-laravel": 20
-    },
+    "stability-flags": {},
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {

@@ -44,13 +44,10 @@ jobs:
           persist-credentials: false
 
       # The same pinned commit as the deploy job's `uses:`; DeploymentSafetyTest keeps them equal.
-      - name: Checkout the pinned shared deployment action
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: bherila/shared-cpanel-deployment
-          ref: 5f635730a4ddbac1d10c2a031ac0b4a102066fe2
-          path: .shared-cpanel-deployment
-          persist-credentials: false
+      # `tooling` is a sub-action, not the main deployment action: this job still never deploys.
+      - name: Resolve the pinned shared deployment tooling
+        id: tooling
+        uses: bherila/shared-cpanel-deployment/tooling@5798879af588e2c786357b69b314d89932b75803 # v2.6.0
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -58,18 +55,18 @@ jobs:
           node-version: '24'
 
       - name: Configure SSH
-        env:
-          SSH_ALIAS: svc-diagnostic
-          SSH_HOST_NAME: ${{ secrets.SSH_HOST }}
-          SSH_USER_NAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-        run: bash .shared-cpanel-deployment/scripts/configure-ssh.sh
+        uses: bherila/shared-cpanel-deployment/configure-ssh@5798879af588e2c786357b69b314d89932b75803 # v2.6.0
+        with:
+          alias: svc-diagnostic
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
 
       - name: Run read-only runtime, cron and asset audits
         env:
           DIAG_SSH_TARGET: svc-diagnostic
           DIAG_RELEASE_ID: ${{ inputs.release_id }}
           DIAG_COMMIT: ${{ inputs.commit }}
-          DIAG_AUDIT_SCRIPT: .shared-cpanel-deployment/scripts/operational-audit.sh
+          DIAG_AUDIT_SCRIPT: ${{ steps.tooling.outputs.path }}/scripts/operational-audit.sh
         run: bash scripts/deploy/diagnose-live.sh

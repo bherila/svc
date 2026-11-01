@@ -32,7 +32,7 @@ use Laravel\Sanctum\HasApiTokens;
  * only after authorization, and serializing them would put one tenant's
  * numeric ids into another surface's JSON.
  */
-#[Fillable(['public_id', 'name', 'email', 'password', 'oauth_provider', 'oauth_subject'])]
+#[Fillable(['public_id', 'name', 'email', 'password'])]
 #[Hidden([
     'id', 'password', 'remember_token', 'oauth_provider', 'oauth_subject',
     'last_workspace_id', 'last_client_company_id',
