@@ -31,12 +31,6 @@ final class AgentMcpBillingAuditTools
     }
 
     /** @return array<string, mixed> */
-    public function openingRollover(#[Schema(format: 'uuid')] string $workspace_id): array
-    {
-        return $this->rest->call('billing.audit_opening_rollover', ['workspace' => $workspace_id]);
-    }
-
-    /** @return array<string, mixed> */
     public function scheduleGenerationPreflight(#[Schema(format: 'uuid')] string $workspace_id): array
     {
         return $this->rest->call('billing.preflight_schedule_generation', ['workspace' => $workspace_id]);

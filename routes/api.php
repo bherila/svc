@@ -267,7 +267,6 @@ Route::prefix('v1')
             'billing.audit_unplaceable_invoices' => 'unplaceableInvoices',
             'billing.audit_undated_collectible_invoices' => 'undatedCollectibleInvoices',
             'billing.audit_missing_billed_overage' => 'missingBilledOverage',
-            'billing.audit_opening_rollover' => 'openingRollover',
             'billing.preflight_schedule_generation' => 'scheduleGenerationPreflight',
             'billing.audit_unlinked_proposal_agreements' => 'unlinkedProposalAgreements',
         ] as $operationId => $action) {

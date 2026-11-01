@@ -44,11 +44,6 @@ final class AgentBillingAuditController extends Controller
         return $this->data($this->audits->missingBilledOverage($this->principal($request), $workspace));
     }
 
-    public function openingRollover(Request $request, Workspace $workspace): JsonResponse
-    {
-        return $this->data($this->audits->openingRollover($this->principal($request), $workspace));
-    }
-
     public function scheduleGenerationPreflight(Request $request, Workspace $workspace): JsonResponse
     {
         return $this->data($this->audits->scheduleGenerationPreflight($this->principal($request), $workspace));

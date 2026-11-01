@@ -167,14 +167,6 @@ final class AgentInlineSchemas
                 'on_an_agreement_of_those' => ['type' => 'integer', 'minimum' => 0],
                 'agreements_affected' => ['type' => 'integer', 'minimum' => 0],
             ],
-            'billing.audit_opening_rollover' => [
-                'agreements' => ['type' => 'integer', 'minimum' => 0],
-                'with_initial_rollover' => ['type' => 'integer', 'minimum' => 0],
-                'legacy_monthly_of_those' => ['type' => 'integer', 'minimum' => 0],
-                'affected' => ['type' => 'integer', 'minimum' => 0],
-                'capacity_at_stake_minutes' => ['type' => 'integer', 'minimum' => 0],
-                'longest_rollover_months' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 120],
-            ],
             'billing.preflight_schedule_generation' => [
                 'schedules' => ['type' => 'integer', 'minimum' => 0],
                 'schedules_due' => ['type' => 'integer', 'minimum' => 0],

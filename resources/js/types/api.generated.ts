@@ -244,28 +244,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace}/billing-audits/opening-rollover': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @deprecated
-         * @description Workspace managers only. Aggregate counts of the workspace's agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.
-         *
-         *     Deprecated: This audit sized the opening-rollover repair (#134), which is done. It will be removed after its deprecation window; see https://github.com/bherila/svc/issues/500. Nothing replaces it.
-         */
-        get: operations['billing.audit_opening_rollover'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     '/workspaces/{workspace}/billing-audits/undated-collectible-invoices': {
         parameters: {
             query?: never;
@@ -4422,17 +4400,6 @@ export interface components {
             parent_version: string;
             next_href: string | null;
         };
-        OpeningRolloverAudit: {
-            agreements: number;
-            with_initial_rollover: number;
-            legacy_monthly_of_those: number;
-            affected: number;
-            capacity_at_stake_minutes: number;
-            longest_rollover_months: number;
-        };
-        OpeningRolloverAuditResponse: {
-            data: components['schemas']['OpeningRolloverAudit'];
-        };
         PaginationMeta: {
             next_cursor: string | null;
         };
@@ -7086,65 +7053,6 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['MissingBilledOverageAuditResponse'];
-                };
-            };
-            /** @description Not signed in, or the token is missing, expired or revoked. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['Error'];
-                };
-            };
-            /** @description The token lacks billing:read. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['Error'];
-                };
-            };
-            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['Error'];
-                };
-            };
-            /** @description Too many requests (retry after Retry-After). */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['Error'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'billing.audit_opening_rollover': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Aggregate counts for the workspace */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['OpeningRolloverAuditResponse'];
                 };
             };
             /** @description Not signed in, or the token is missing, expired or revoked. */

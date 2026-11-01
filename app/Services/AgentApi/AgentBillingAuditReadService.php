@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\MissingBilledOverageAuditor;
-use App\Services\Billing\OpeningRolloverAuditor;
 use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Services\Billing\UndatedCollectibleInvoiceAuditor;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
@@ -44,7 +43,6 @@ final class AgentBillingAuditReadService
         private readonly UnplaceableInvoiceAuditor $unplaceable,
         private readonly UndatedCollectibleInvoiceAuditor $undatedCollectible,
         private readonly MissingBilledOverageAuditor $missingBilledOverage,
-        private readonly OpeningRolloverAuditor $openingRollover,
         private readonly ScheduleGenerationPreflight $schedulePreflight,
         private readonly UnlinkedProposalAgreementAuditor $unlinkedProposalAgreements,
         private readonly RateLimiter $limiter,
@@ -83,14 +81,6 @@ final class AgentBillingAuditReadService
         $this->requireManager($user, $workspace);
 
         return $this->missingBilledOverage->count($workspace)->toArray();
-    }
-
-    /** @return array<string, int> */
-    public function openingRollover(User|AgentPrincipal $user, Workspace $workspace): array
-    {
-        $this->requireManager($user, $workspace);
-
-        return $this->openingRollover->count($workspace)->toArray();
     }
 
     /**
