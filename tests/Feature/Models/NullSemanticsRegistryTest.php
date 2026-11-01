@@ -21,6 +21,7 @@ use Tests\Feature\Billing\InvoiceHoursStatementTest;
 use Tests\Feature\Billing\InvoiceLineComposerTest;
 use Tests\Feature\Billing\InvoiceReviewDeliveryTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
+use Tests\Feature\Billing\ReopenAndReissueInvoiceTest;
 use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
 use Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest;
 use Tests\Feature\Billing\RetainerDrawConsistencyTest;
@@ -220,6 +221,8 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+        'client_invoices.reissued_at => covered_by:Tests\Feature\Billing\ReopenAndReissueInvoiceTest::test_a_delivery_row_and_the_client_documents_say_it_was_reissued',
+        'client_invoices.reopened_at => covered_by:Tests\Feature\Billing\ReopenAndReissueInvoiceTest::test_an_issued_invoice_with_stale_application_lines_is_reopened_regenerated_and_reissued_under_its_number',
         'client_invoices.scheduled_issue_date => covered_by:Tests\Feature\AgentApi\AgentInvoiceOperationsParityTest::test_audit_flags_a_draft_whose_scheduled_issue_date_has_passed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_of_this_schedule_with_no_period_end_is_refused',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
@@ -301,6 +304,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.negative_hours_balance',
         'client_invoices.notes',
         'client_invoices.paid_on',
+        'client_invoices.reopen_reason',
         'client_invoices.retainer_hours_included',
         'client_invoices.rollover_hours_used',
         'client_invoices.starting_negative_hours',
@@ -520,6 +524,19 @@ final class NullSemanticsRegistryTest extends TestCase
             // Null is no plan (#381): the stale-draft audit flags a draft on a
             // passed due date or a passed scheduled issue date, and a null on
             // either never makes a draft stale by itself.
+            // A null reopen is the first issue: its revision starts at 1 and its
+            // activity is `invoice.issued`, not a reissue (#594).
+            'reopened_at' => [
+                'covered_by' => ReopenAndReissueInvoiceTest::class,
+                'method' => 'test_an_issued_invoice_with_stale_application_lines_is_reopened_regenerated_and_reissued_under_its_number',
+            ],
+            // A null reissue is an invoice still on its first issue, whose
+            // subject line and email say nothing of a reissue.
+            'reissued_at' => [
+                'covered_by' => ReopenAndReissueInvoiceTest::class,
+                'method' => 'test_a_delivery_row_and_the_client_documents_say_it_was_reissued',
+            ],
+            'reopen_reason' => 'PENDING-AUDIT',
             'scheduled_issue_date' => [
                 'covered_by' => AgentInvoiceOperationsParityTest::class,
                 'method' => 'test_audit_flags_a_draft_whose_scheduled_issue_date_has_passed',

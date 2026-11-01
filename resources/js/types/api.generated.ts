@@ -1471,6 +1471,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoices/{invoice}/reopen': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner/admin reopen of an issued, unpaid cadence invoice so it can be reissued under the same invoice number (#594). Requires confirm: true, the current version and a reason (kept on the invoice and in the client history). The invoice returns to a draft in the same transaction that regenerates it from the time approved now: its time returns to approved and the regenerated draft consumes it again, and the automatic delivery is cancelled as a void cancels it. Issue it again with invoices.issue; that is a reissue, which keeps the number, records an invoice.reissued event beside the original invoice.issued and invoice.reopened, and tells the client in the email and PDF. Refused with 422 for a paid invoice, a pending or unreadable-status payment or a client delivery in flight (the messages void uses), an invoice Square collects (unlink it first with invoices.square_unlink), an invoice corrected in place, an invoice billed from a billing schedule, an invoice that is not an issued cadence invoice, and a reopen whose regenerated catch-up charge would differ from the one a later invoice was sized against (invoices.issue refuses the reissue too while the charge differs). A stale version is a 409. Requires both outer workflow and invoice write flags. */
+        post: operations['invoices.reopen'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices/{invoice}/send': {
         parameters: {
             query?: never;
@@ -4193,6 +4210,12 @@ export interface components {
         };
         InvoiceRemindersResponse: {
             data: components['schemas']['InvoiceReminders'];
+        };
+        InvoiceReopenRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            reason: string;
         };
         InvoiceSendMutation: {
             id: components['schemas']['Uuid'];
@@ -11965,6 +11988,36 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceReminderResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.reopen': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceReopenRequest'];
+            };
+        };
+        responses: {
+            /** @description Invoice reopened as a regenerated draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
                 };
             };
             default: components['responses']['Error'];

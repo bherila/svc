@@ -38,7 +38,7 @@ final class InvoiceMail extends Mailable
         $subject = $this->subjectLine === null ? '' : trim($this->subjectLine);
 
         return new Envelope(
-            subject: $subject === '' ? 'Invoice '.$this->invoice->invoice_number : $subject,
+            subject: $subject === '' ? 'Invoice '.$this->invoice->invoice_number.($this->invoice->reissued_at !== null ? ' (reissued)' : '') : $subject,
         );
     }
 

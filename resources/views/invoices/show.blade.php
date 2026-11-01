@@ -79,6 +79,9 @@
 </tr></table>
 <p class="wrap"><strong>Bill to:</strong> {{ $invoice->clientCompany->name }}</p>
 <p class="muted">Issue date: {{ optional($invoice->issue_date)->format('Y-m-d') }} &nbsp; Due: {{ optional($invoice->due_date)->format('Y-m-d') }}</p>
+@if ($invoice->reissued_at !== null)
+<p class="muted">Reissued {{ $invoice->reissued_at->format('Y-m-d') }} under the same invoice number; this replaces the earlier version.</p>
+@endif
 <p class="muted">Service period: {{ optional($invoice->service_period_start)->format('Y-m-d') }} – {{ optional($invoice->service_period_end)->format('Y-m-d') }}</p>
 <table>
     <thead><tr><th>Description</th><th>Type</th><th class="right">Quantity</th><th class="right">Unit</th><th class="right">Tax</th><th class="right">Total</th></tr></thead>

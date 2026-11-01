@@ -1240,6 +1240,17 @@
             "mcp.switch:invoices.reminders.list"
         ]
     },
+    "invoices.reopen": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.reopen"
+        ]
+    },
     "invoices.send": {
         "scopes": [
             "billing:deliver"

@@ -358,6 +358,9 @@ two lines has to become two rows.
   `agreement.created`,
   `agreement.updated`, `agreement.activated`, `agreement.signed`,
   `invoice.generated`, `invoice.updated`, `invoice.issued`,
+  `invoice.reopened`, `invoice.reissued` (an issued invoice taken back to a
+  draft and issued again under its own number: see
+  [Reopen and reissue](billing.md#reopen-and-reissue)),
   `invoice.marked_paid`, `invoice.voided` (which a discarded draft also
   records), `invoice.payment_received`, `invoice.payment_failed`,
   `invoice.payment_canceled`, `invoice.payment_disputed`,

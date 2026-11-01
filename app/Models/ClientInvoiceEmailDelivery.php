@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $origin
  * @property int $invoice_revision
  * @property int $attempt_number
+ * @property bool $is_reissue
  * @property string|null $idempotency_key
  * @property list<string> $recipients
  * @property list<string> $bcc
@@ -36,7 +37,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read Workspace|null $workspace
  */
 #[Fillable([
-    'workspace_id', 'client_invoice_id', 'origin', 'invoice_revision', 'attempt_number', 'idempotency_key',
+    'workspace_id', 'client_invoice_id', 'origin', 'invoice_revision', 'attempt_number', 'is_reissue', 'idempotency_key',
     'recipients', 'bcc', 'subject', 'body', 'status',
     'provider_message_reference', 'provider_status', 'provider_status_at',
     'error_summary', 'queued_at', 'claimed_at', 'sent_at', 'failed_at', 'next_attempt_at',
@@ -49,6 +50,7 @@ class ClientInvoiceEmailDelivery extends Model implements WorkspaceOwned
     protected function casts(): array
     {
         return [
+            'is_reissue' => 'boolean',
             'recipients' => EmailAddressList::class,
             'bcc' => EmailAddressList::class,
             'queued_at' => 'datetime',

@@ -24,6 +24,9 @@ use RuntimeException;
  * @property CarbonImmutable|null $issue_date
  * @property CarbonImmutable|null $due_date
  * @property CarbonImmutable|null $scheduled_issue_date
+ * @property CarbonImmutable|null $reopened_at
+ * @property string|null $reopen_reason
+ * @property CarbonImmutable|null $reissued_at
  * @property CarbonImmutable|null $service_period_start
  * @property CarbonImmutable|null $service_period_end
  * @property string|null $invoice_kind
@@ -55,6 +58,8 @@ use RuntimeException;
     'invoice_number', 'status', 'document_revision', 'issue_date', 'due_date', 'service_period_start',
     'service_period_end', 'currency', 'subtotal_amount', 'tax_amount', 'total_amount',
     'paid_amount', 'balance_amount', 'notes', 'void_reason', 'is_visible_to_client', 'issued_at', 'voided_at',
+    // Reopened for reissue under the same number (#594).
+    'reopened_at', 'reopen_reason', 'reissued_at',
     // Restored ledger detail. These have casts but had no place in the fillable
     // list, so every generator write was silently discarded before reaching the
     // row - the same fault that hid the recurring-item quantity and the invoice
@@ -70,13 +75,16 @@ use RuntimeException;
     // stale-draft audit reads, never a trigger: nothing issues on it.
     'scheduled_issue_date',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'hours_statement', 'catch_up_basis'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'reopen_reason', 'hours_statement', 'catch_up_basis'])]
 class ClientInvoice extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     /** How long a void reason may be, on the screen and through `invoices.void` alike. */
     public const int VOID_REASON_MAX_LENGTH = 1000;
+
+    /** How long a reopen reason may be, on the screen and through `invoices.reopen` alike. */
+    public const int REOPEN_REASON_MAX_LENGTH = 1000;
 
     protected function casts(): array
     {
@@ -101,6 +109,8 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'catch_up_basis' => 'array',
             'issued_at' => 'datetime',
             'voided_at' => 'datetime',
+            'reopened_at' => 'datetime',
+            'reissued_at' => 'datetime',
             'automatic_delivery_due_at' => 'datetime',
             'automatic_delivery_held_at' => 'datetime',
             'document_revision' => 'integer',

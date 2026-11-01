@@ -173,6 +173,28 @@ final class AgentInvoiceMutationController extends Controller
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
 
+    /**
+     * Reopen an issued invoice for reissue under its own number (#594).
+     *
+     * The version is checked against the locked row inside the service, so a
+     * change committed while this request waited for the invoice is a 409
+     * rather than a reopen of an invoice the caller never read.
+     */
+    public function reopen(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceLifecycleService $lifecycle, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentMutationExecutor $mutations): JsonResponse
+    {
+        $context = $contexts->from($request);
+        $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.reopen', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $lifecycle): array {
+            $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
+            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:'.ClientInvoice::REOPEN_REASON_MAX_LENGTH], 'confirm' => ['required', new ExplicitConfirmation]]);
+            $record = $lifecycle->reopen($record, $data['reason'], $workspace, static fn (ClientInvoice $locked) => abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409));
+
+            return [$record->public_id];
+        }, fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403));
+        $record = $this->findInvoice($workspace, $ids[0] ?? null);
+
+        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
+    }
+
     public function send(Request $request, Workspace $workspace, string $invoice, AgentInvoiceOperations $operations, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts): JsonResponse
     {
         $context = $contexts->from($request);

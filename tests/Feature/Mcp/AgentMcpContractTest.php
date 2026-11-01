@@ -291,6 +291,7 @@ final class AgentMcpContractTest extends TestCase
             'invoices.preview_period' => ['billing:read'],
             'invoices.release_delivery' => ['billing:deliver', 'billing:read'],
             'invoices.reminders.list' => ['billing:read'],
+            'invoices.reopen' => ['billing:write'],
             'invoices.send' => ['billing:deliver'],
             'invoices.send_reminder' => ['billing:write', 'billing:read'],
             'invoices.square_candidates' => ['billing:read'],

@@ -440,8 +440,8 @@ final class AgentMcpServerFactory
         if ($this->hasTools($available, ['time_entries.log', 'time_entries.approve'])) {
             $mode .= ' When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape.';
         }
-        if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.correct', 'agreements.activate', 'agreements.terminate', 'expense_schedules.generate', 'invoices.release_delivery', 'invoices.generate_period'], array_keys($available)) !== []) {
-            $mode .= ' Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft.';
+        if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.reopen', 'invoices.correct', 'agreements.activate', 'agreements.terminate', 'expense_schedules.generate', 'invoices.release_delivery', 'invoices.generate_period'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft.';
         }
         if (isset($available['billing_schedules.generate'])) {
             $mode .= ' Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery.';
