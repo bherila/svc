@@ -13,7 +13,7 @@ behind their nested cutovers.
 The operations v1 release lets authorized users view projects, tasks, time,
 invoices, and received payments. Its feature-gated write catalog manages tasks,
 draft time, time approval, invoice draft creation/update/discard, invoice
-issue/send/void workflows, and recording money already received. Project creation,
+issue/send/void/reopen workflows, and recording money already received. Project creation,
 archival, and deletion remain website actions. Generic attachment metadata/download access and uploads, and workspace creation,
 have separate scopes and nested deployment cutovers described below. Payment
 collection, initiation, refunds, card data, and provider identifiers are out
@@ -36,10 +36,10 @@ The core read catalog includes `context.get`, `operations.summary`, `projects.li
 `invoices.get`, and `payments.list`. When the explicit write cutover flag is
 enabled, the additional tools
 are `tasks.create`, `tasks.update`, `time_entries.log`, `time_entries.update`,
-`time_entries.delete`, and `time_entries.approve`. The eight invoice write tools —
+`time_entries.delete`, and `time_entries.approve`. The nine invoice write tools —
 `invoices.create_draft`, `invoices.update_draft`, `invoices.update_details`,
 `invoices.discard_draft`, `invoices.issue`, `invoices.send`, `invoices.correct`,
-and `invoices.void` — additionally require
+`invoices.reopen`, and `invoices.void` — additionally require
 `AGENT_API_INVOICE_WRITES_ENABLED`, a second cutover nested inside the first, so
 that agent-assisted time approval does not arrive with agent-initiated invoice
 delivery attached. `payments.record` requires `payments:record`, workspace owner/admin

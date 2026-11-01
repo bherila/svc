@@ -10311,6 +10311,71 @@
                 "x-mcp-tool": "invoices.send_reminder"
             }
         },
+        "/workspaces/{workspace}/invoices/{invoice}/reopen": {
+            "post": {
+                "operationId": "invoices.reopen",
+                "description": "Owner/admin reopen of an issued, unpaid cadence invoice so it can be reissued under the same invoice number (#594). Requires confirm: true, the current version and a reason (kept on the invoice and in the client history). The invoice returns to a draft in the same transaction that regenerates it from the time approved now: its time returns to approved and the regenerated draft consumes it again, and the automatic delivery is cancelled as a void cancels it. Issue it again with invoices.issue; that is a reissue, which keeps the number, records an invoice.reissued event beside the original invoice.issued and invoice.reopened, and tells the client in the email and PDF. Refused with 422 for a paid invoice, a pending or unreadable-status payment or a client delivery in flight (the messages void uses), an invoice Square collects (unlink it first with invoices.square_unlink), an invoice corrected in place, an invoice that is not an issued cadence invoice, and a reopen whose regenerated catch-up charge would differ from the one a later invoice was sized against. A stale version is a 409. Requires both outer workflow and invoice write flags.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceReopenRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Invoice reopened as a regenerated draft",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "invoices.reopen",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.reopen"
+            }
+        },
         "/workspaces/{workspace}/invoices/{invoice}/send": {
             "post": {
                 "operationId": "invoices.send",
@@ -23941,6 +24006,29 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/InvoiceReminders"
+                    }
+                }
+            },
+            "InvoiceReopenRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm",
+                    "reason"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
                     }
                 }
             },

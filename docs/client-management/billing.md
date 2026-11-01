@@ -150,6 +150,33 @@ through (`CatchUpBasis`). Two guards read it:
   invoice with an agreement, not only cadence ones, since the ledger reads
   every kind.
 
+### Reopen and reissue
+
+A cadence draft snapshots its time application when it is generated, and issue
+re-measures priced charges but not the $0 retainer-application lines, so time
+approved after generation can leave an issued invoice with correct totals and
+stale application lines. `InvoiceLifecycleService::reopen()` (#594) is the
+remedy that keeps the invoice number, where void and regenerate does not and is
+refused once a later invoice was sized against the charge.
+
+- **Reopen** applies void's guards (nothing paid, no pending or unreadable
+  payment, no delivery in flight), releases the allocations under the agreement
+  lock exactly as void does, returns the invoice to a draft with `reopened_at`
+  and a required reason, cancels its automatic delivery as void does, and
+  regenerates it with `ClientInvoicingService::regenerateDraftInvoice()` in the
+  same transaction. The time returns to `approved` and the regenerated draft
+  consumes it again.
+- It is **refused** for an invoice Square collects (unlink it first), one
+  corrected in place, a kind that cannot be regenerated, and a regeneration that
+  would change the catch-up charge a live later invoice recorded
+  (`DraftCatchUpDependencies::assertChargeUnchanged()`).
+- **Reissue** is the ordinary `issue()`. The document revision advances,
+  `reissued_at` is set, the delivery, email, subject and PDF say it was
+  reissued under the same number, and the client history reads
+  `invoice.issued` -> `invoice.reopened` -> `invoice.reissued`
+  (`ReopenAndReissueInvoiceTest`). The invoice screen offers Reopen beside Void
+  on an issued cadence invoice and the ordinary Issue once it is a draft again.
+
 Invoices generated before the column existed, and every kind the monthly
 generator does not write (the non-monthly path, which does not read the
 billed-overage ledger, clears it), record none: they issue and void exactly as

@@ -128,6 +128,8 @@ final class CalendarDateCastTablesTest extends TestCase
                 'catch_up_basis' => 'array',
                 'issued_at' => 'datetime',
                 'voided_at' => 'datetime',
+                'reopened_at' => 'datetime',
+                'reissued_at' => 'datetime',
                 'automatic_delivery_due_at' => 'datetime',
                 'automatic_delivery_held_at' => 'datetime',
                 'document_revision' => 'integer',

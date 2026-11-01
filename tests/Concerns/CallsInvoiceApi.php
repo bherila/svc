@@ -20,7 +20,7 @@ trait CallsInvoiceApi
     protected function invoiceApi(User $actor, Workspace $workspace, ClientInvoice $invoice, string $operation, array $body = [], ?string $key = null): TestResponse
     {
         $route = match ($operation) {
-            'issue' => 'invoices.issue', 'void' => 'invoices.void', 'correct' => 'invoices.correct',
+            'issue' => 'invoices.issue', 'void' => 'invoices.void', 'reopen' => 'invoices.reopen', 'correct' => 'invoices.correct',
             'send' => 'invoices.send', 'hold' => 'invoices.hold_delivery', 'release' => 'invoices.release_delivery',
         };
 

@@ -2,6 +2,7 @@
 
 namespace App\Services\Mcp;
 
+use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\ReadView;
@@ -619,6 +620,12 @@ final class AgentMcpWriteTools
     public function invoicesVoid(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 1000)] string $reason, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('invoices.void', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version', 'reason', 'confirm'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function invoicesReopen(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: ClientInvoice::REOPEN_REASON_MAX_LENGTH)] string $reason, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
+    {
+        return $this->rest->call('invoices.reopen', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
     /** @param list<array<string, mixed>> $line_template

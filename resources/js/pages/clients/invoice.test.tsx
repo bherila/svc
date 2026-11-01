@@ -546,6 +546,180 @@ describe('voiding an invoice', () => {
     });
 });
 
+describe('reopening an issued invoice for reissue', () => {
+    const reopenHref = '/api/v1/workspaces/w-1/invoices/invoice-1/reopen';
+
+    function withReopen(overrides: Partial<Props> = {}) {
+        return props({
+            actions: { ...props().actions, reopen: reopenHref },
+            ...overrides,
+        });
+    }
+
+    it('offers nothing when the server offers no reopen', () => {
+        render(<ClientInvoiceDetail {...props()} />);
+
+        expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
+    });
+
+    it('requires a reason, confirms, and sends both with the version it was opened on', async () => {
+        render(<ClientInvoiceDetail {...withReopen()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+        const dialog = screen.getByRole('alertdialog');
+        expect(
+            within(dialog).getByText('Reopen this invoice?'),
+        ).toBeInTheDocument();
+        const confirm = within(dialog).getByRole('button', { name: 'Reopen' });
+        expect(confirm).toBeDisabled();
+
+        fireEvent.change(within(dialog).getByLabelText('Reason'), {
+            target: { value: ' Late approvals missed the application ' },
+        });
+        expect(confirm).toBeEnabled();
+        fireEvent.click(confirm);
+
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        expect(apiRequests()).toEqual([
+            {
+                url: reopenHref,
+                method: 'POST',
+                body: {
+                    expected_version: '0'.repeat(64),
+                    confirm: true,
+                    reason: 'Late approvals missed the application',
+                },
+            },
+        ]);
+    });
+
+    it('offers void and reopen side by side without crossing their reasons', async () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    actions: {
+                        ...props().actions,
+                        reopen: reopenHref,
+                        void: '/api/v1/workspaces/w-1/invoices/invoice-1/void',
+                    },
+                })}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+        fireEvent.change(screen.getByLabelText('Reason'), {
+            target: { value: 'Reopen reason' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        await vi.waitFor(() =>
+            expect(screen.queryByRole('alertdialog')).toBeNull(),
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Void' }));
+        expect(screen.getByText('Void this invoice?')).toBeInTheDocument();
+        expect(screen.getByLabelText('Reason')).toHaveValue('');
+    });
+
+    it("shows the server's refusal in the dialog and leaves it open", async () => {
+        requestFetch.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    message: 'A paid invoice cannot be reopened.',
+                }),
+                { status: 422 },
+            ),
+        );
+        render(<ClientInvoiceDetail {...withReopen()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+        const dialog = screen.getByRole('alertdialog');
+        fireEvent.change(within(dialog).getByLabelText('Reason'), {
+            target: { value: 'Synthetic reopen reason' },
+        });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Reopen' }));
+
+        expect(
+            await within(dialog).findByText(
+                'A paid invoice cannot be reopened.',
+            ),
+        ).toBeInTheDocument();
+        expect(dialog).toBeInTheDocument();
+        expect(inertia.reload).not.toHaveBeenCalled();
+    });
+
+    it('keeps the confirmation mounted and non-cancellable after an uncertain handoff', async () => {
+        requestFetch.mockRejectedValueOnce(
+            new TypeError('Synthetic lost response'),
+        );
+        render(<ClientInvoiceDetail {...withReopen()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+        const dialog = await screen.findByRole('alertdialog');
+        fireEvent.change(within(dialog).getByLabelText('Reason'), {
+            target: { value: 'Synthetic reopen reason' },
+        });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Reopen' }));
+
+        await within(dialog).findByRole('button', {
+            name: 'Check original request',
+        });
+        expect(
+            within(dialog).getByRole('button', { name: 'Cancel' }),
+        ).toBeDisabled();
+        expect(within(dialog).getByLabelText('Reason')).toBeDisabled();
+    });
+
+    it('says a reopened draft was reopened, why, and offers the ordinary issue', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    actions: {
+                        ...props().actions,
+                        issue: '/api/v1/workspaces/w-1/invoices/invoice-1/issue',
+                    },
+                    invoice: { ...props().invoice, status: 'draft' },
+                    reopen: {
+                        reopened_at: '2026-09-01T12:00:00Z',
+                        reason: 'Late approvals missed the application',
+                        reissued_at: null,
+                    },
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent(/Reopened/);
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'Reason: Late approvals missed the application',
+        );
+        expect(screen.getByRole('button', { name: 'Issue' })).toBeEnabled();
+        expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
+    });
+
+    it('says a reissued invoice was reissued under the same number', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    reopen: {
+                        reopened_at: '2026-09-01T12:00:00Z',
+                        reason: 'Late approvals missed the application',
+                        reissued_at: '2026-09-02T12:00:00Z',
+                    },
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent(
+            /Reissued .* under the same number, after being reopened/,
+        );
+    });
+
+    it('shows no reopen note for an invoice that was never reopened', () => {
+        render(<ClientInvoiceDetail {...props()} />);
+
+        expect(screen.queryByRole('status')).toBeNull();
+    });
+});
+
 describe('reviewing and correcting an issued invoice', () => {
     it('uses server-supplied correction capabilities and posts a revisioned audit request', async () => {
         render(

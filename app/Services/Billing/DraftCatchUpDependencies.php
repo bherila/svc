@@ -229,8 +229,71 @@ final class DraftCatchUpDependencies
      */
     public function assertVoidable(ClientInvoice $invoice): void
     {
-        if ($invoice->client_agreement_id === null) {
+        foreach ($this->dependentsOn($invoice) as ['invoice' => $dependent, 'hours' => $hours]) {
+            $undo = in_array($dependent->status, [InvoiceStatus::Paid->value, InvoiceStatus::PartiallyPaid->value, InvoiceStatus::Disputed->value], true)
+                ? "{$dependent->invoice_number} has taken payment and cannot be voided, so neither can this while it stands."
+                : "Void or discard {$dependent->invoice_number} first.";
+            throw new DomainException(sprintf(
+                'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charges; '
+                .'voided, that debt would be billed by neither. %s To change only this invoice\'s wording or an '
+                .'operator-authored line, correct it in place where that is allowed, which keeps its charge.',
+                $dependent->invoice_number,
+                self::hours($hours),
+                $undo,
+            ));
+        }
+    }
+
+    /**
+     * Refuse a reopened invoice whose regenerated catch-up charge differs
+     * from the one a live later invoice was sized against.
+     *
+     * Reopening keeps the invoice, so unlike a void it does not take the
+     * charge out of the ledger - and a later invoice sized against it stays
+     * right as long as the regenerated invoice charges the same hours. A
+     * different figure would leave that invoice billing debt that is no longer
+     * the debt left, so the reopen is refused and rolls back. Called inside the
+     * reopen transaction, after regeneration, under the agreement lock.
+     *
+     * @infection-ignore-all The predicates and lock need the feature database and are covered by ReopenAndReissueInvoiceTest; CatchUpBasis::hoursFrom() is unit-tested.
+     */
+    public function assertChargeUnchanged(ClientInvoice $invoice, float $before, float $after): void
+    {
+        if (round($before, 4) === round($after, 4)) {
             return;
+        }
+
+        foreach ($this->dependentsOn($invoice, includeZeroCharge: true) as ['invoice' => $dependent, 'hours' => $hours]) {
+            throw new DomainException(sprintf(
+                'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charges, '
+                .'but regenerating this invoice from the time approved now would charge %s. Reopening it would '
+                .'leave %s billing the wrong debt. Void or discard %s first, or correct this invoice in place '
+                .'where that is allowed, which keeps its charge.',
+                $dependent->invoice_number,
+                self::hours($hours),
+                self::hours($after),
+                $dependent->invoice_number,
+                $dependent->invoice_number,
+            ));
+        }
+    }
+
+    /**
+     * The live later invoices whose recorded basis includes this invoice's
+     * charge, with the hours each recorded. A locking read, after the
+     * agreement lock, for the reason given in assertDiscardable().
+     *
+     * A basis records only charges of more than zero hours, so with
+     * `$includeZeroCharge` a later invoice whose window reaches this one's
+     * period is a dependent too: it was sized on this invoice charging
+     * nothing, and a charge that appears since leaves it wrong all the same.
+     *
+     * @return list<array{invoice: ClientInvoice, hours: float}>
+     */
+    private function dependentsOn(ClientInvoice $invoice, bool $includeZeroCharge = false): array
+    {
+        if ($invoice->client_agreement_id === null) {
+            return [];
         }
 
         $dependents = ClientInvoice::query()
@@ -246,23 +309,20 @@ final class DraftCatchUpDependencies
             ->tap(Locks::forUpdate())
             ->get(['id', 'invoice_number', 'status', 'catch_up_basis']);
 
+        $relied = [];
         foreach ($dependents as $dependent) {
-            $hours = CatchUpBasis::fromArray($dependent->catch_up_basis)?->hoursFrom((int) $invoice->id) ?? 0.0;
-            if ($hours === 0.0) {
-                continue;
+            $basis = CatchUpBasis::fromArray($dependent->catch_up_basis);
+            $hours = $basis?->hoursFrom((int) $invoice->id) ?? 0.0;
+            $windowReaches = $includeZeroCharge
+                && $basis instanceof CatchUpBasis
+                && $invoice->service_period_end !== null
+                && $invoice->service_period_end->toDateString() <= $basis->through;
+            if ($hours !== 0.0 || $windowReaches) {
+                $relied[] = ['invoice' => $dependent, 'hours' => $hours];
             }
-            $undo = in_array($dependent->status, [InvoiceStatus::Paid->value, InvoiceStatus::PartiallyPaid->value, InvoiceStatus::Disputed->value], true)
-                ? "{$dependent->invoice_number} has taken payment and cannot be voided, so neither can this while it stands."
-                : "Void or discard {$dependent->invoice_number} first.";
-            throw new DomainException(sprintf(
-                'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charges; '
-                .'voided, that debt would be billed by neither. %s To change only this invoice\'s wording or an '
-                .'operator-authored line, correct it in place where that is allowed, which keeps its charge.',
-                $dependent->invoice_number,
-                self::hours($hours),
-                $undo,
-            ));
         }
+
+        return $relied;
     }
 
     /**

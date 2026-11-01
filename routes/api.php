@@ -337,6 +337,8 @@ Route::prefix('v1')
             ->whereUuid('invoice');
         $workspaceOperation('invoices.void', [AgentInvoiceMutationController::class, 'void'])
             ->whereUuid('invoice');
+        $workspaceOperation('invoices.reopen', [AgentInvoiceMutationController::class, 'reopen'])
+            ->whereUuid('invoice');
 
         // SVC's side of Square (#438): links, the client's customer and the
         // billed-in-Square marker. Nothing behind these routes calls Square.
