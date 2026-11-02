@@ -37,6 +37,8 @@ const actionTitles: Record<string, string> = {
     'invoice.updated': 'Invoice updated',
     'invoice.details_updated': 'Invoice details updated',
     'invoice.issued': 'Invoice issued',
+    'invoice.reopened': 'Invoice reopened',
+    'invoice.reissued': 'Invoice reissued',
     'invoice.corrected': 'Invoice corrected',
     'invoice.automatic_delivery_held': 'Automatic delivery held',
     'invoice.automatic_delivery_released': 'Automatic delivery released',
@@ -70,6 +72,9 @@ const meaningfulActions = new Set([
     'agreement.signed',
     'agreement.transitioned',
     'invoice.issued',
+    // The issue, reopen and reissue of one invoice read as one history.
+    'invoice.reopened',
+    'invoice.reissued',
     // A draft's due date moves what the client is told they owe and when.
     'invoice.details_updated',
     'invoice.corrected',
@@ -113,6 +118,7 @@ const greenActions = new Set([
 ]);
 const blueActions = new Set([
     'invoice.issued',
+    'invoice.reissued',
     'agreement.created',
     'agreement.activated',
     'payment_method.default_changed',
@@ -213,6 +219,14 @@ function subtitleFor(
 
     if (action === 'invoice.details_updated') {
         return invoiceDetailsSubtitle(payload);
+    }
+
+    if (
+        action === 'invoice.reopened' &&
+        typeof payload.reason === 'string' &&
+        payload.reason !== ''
+    ) {
+        return `Reason: ${payload.reason}`;
     }
 
     const imported = payload.external_payload;

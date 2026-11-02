@@ -282,7 +282,9 @@ final class InvoiceEmailService
     /** The subject an operator starts from. */
     public function defaultSubject(ClientInvoice $invoice): string
     {
-        return 'Invoice '.$invoice->invoice_number;
+        // A reissue says so (#594): the client already holds the first issue
+        // of this number, and a plain subject reads as a duplicate.
+        return 'Invoice '.$invoice->invoice_number.($invoice->reissued_at !== null ? ' (reissued)' : '');
     }
 
     /**
@@ -419,6 +421,7 @@ final class InvoiceEmailService
                 'workspace_id' => $locked->workspace_id,
                 'origin' => 'automatic',
                 'invoice_revision' => $locked->document_revision,
+                'is_reissue' => $locked->reissued_at !== null,
                 'attempt_number' => $attempt,
                 'recipients' => $draft->recipients,
                 'bcc' => null,
@@ -556,6 +559,7 @@ final class InvoiceEmailService
                     'workspace_id' => $locked->workspace_id,
                     'origin' => $origin,
                     'invoice_revision' => $locked->document_revision,
+                    'is_reissue' => $locked->reissued_at !== null,
                     'attempt_number' => 1,
                     'idempotency_key' => $idempotencyKey,
                     'recipients' => $draft->recipients,

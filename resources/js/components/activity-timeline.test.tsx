@@ -387,4 +387,51 @@ describe('updated draft details', () => {
         ).toBeVisible();
         expect(screen.queryByText(/due date/)).toBeNull();
     });
+
+    it('reads an invoice issued, reopened and reissued as one history, newest first', () => {
+        const at = (day: number) => `2026-09-0${day}T12:00:00.000Z`;
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'reissued',
+                        action: 'invoice.reissued',
+                        actor_name: 'Synthetic Manager',
+                        payload: {
+                            invoice_kind: 'cadence_period',
+                            revision: 2,
+                        },
+                        created_at: at(3),
+                    },
+                    {
+                        id: 'reopened',
+                        action: 'invoice.reopened',
+                        actor_name: 'Synthetic Manager',
+                        payload: {
+                            invoice_kind: 'cadence_period',
+                            reason: 'Late approvals missed the application',
+                        },
+                        created_at: at(2),
+                    },
+                    {
+                        id: 'issued',
+                        action: 'invoice.issued',
+                        actor_name: 'Synthetic Manager',
+                        payload: { invoice_kind: 'cadence_period' },
+                        created_at: at(1),
+                    },
+                ]}
+            />,
+        );
+
+        expect(
+            screen
+                .getAllByRole('listitem')
+                .map((item) => item.querySelector('.font-medium')?.textContent),
+        ).toEqual(['Invoice reissued', 'Invoice reopened', 'Invoice issued']);
+        expect(
+            screen.getByText('Reason: Late approvals missed the application'),
+        ).toBeVisible();
+        expect(screen.queryByText(/system activity/)).toBeNull();
+    });
 });

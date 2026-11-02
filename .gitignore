@@ -1,7 +1,7 @@
 /.phpunit.cache
 /*.profraw
 /bootstrap/ssr
-/node_modules
+node_modules/
 /public/build
 /public/fonts-manifest.dev.json
 /public/hot

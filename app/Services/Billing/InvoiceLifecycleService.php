@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceCorrection;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Square\SquareCollectionGuard;
+use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceChangedDuringPaymentChange;
@@ -279,6 +281,7 @@ final class InvoiceLifecycleService
             }
             $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
             $this->draftCatchUpDependencies->assertDiscardable($locked);
+            $this->assertReopenedChargeNotRelied($locked);
 
             $this->releaseAllocations($locked);
             $locked->forceFill([
@@ -318,7 +321,9 @@ final class InvoiceLifecycleService
             // locks. Those are serialised on the agreement - which generation
             // and void hold while they change or read them - rather than left
             // to meet in whatever order two issues reach each other's rows.
-            $basisAgreement = $invoice->catch_up_basis === null ? null : $this->lockAgreementOf($invoice);
+            // A reissue also asks which later invoices were sized against this
+            // one's charge, so it takes the same lock.
+            $basisAgreement = $invoice->catch_up_basis === null && $invoice->reopened_at === null ? null : $this->lockAgreementOf($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
             // A caller's check of version or status belongs on this row, not on
             // the copy it read before asking: another request can issue the
@@ -382,6 +387,16 @@ final class InvoiceLifecycleService
                     throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
                 }
                 $this->draftCatchUpDependencies->assertSizedAgainstCurrentCharges($locked);
+            }
+            // A reopened invoice is an ordinary draft until it is issued again,
+            // and time edits can regenerate it meanwhile: a later invoice sized
+            // against its charge must still find that charge when it returns.
+            if ($locked->status === InvoiceStatus::Draft->value && $locked->reopened_at !== null) {
+                if (! $basisAgreement instanceof ClientAgreement
+                    || $basisAgreement->id !== (int) $locked->client_agreement_id) {
+                    throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+                $this->draftCatchUpDependencies->assertChargeUnchanged($locked);
             }
 
             // The credit pool's lock, straight after the invoice's and before
@@ -571,12 +586,21 @@ final class InvoiceLifecycleService
             // it (#438): the books stay complete and Square does the asking.
             $squareCollected = $automatic && $this->squareCollection()->isSquareCollected($locked);
 
+            // A draft that was reopened is being issued again under its number
+            // (#594). Its revision moves on rather than restarting, because
+            // deliveries and administrator notices are keyed by revision and
+            // the first issue's are still on the record: a restart would make
+            // the reissue look already delivered, and share its attempt count.
+            $reissue = $locked->reopened_at !== null;
+            $revision = $reissue ? $locked->document_revision + 1 : 1;
+
             $locked->forceFill([
                 'issue_date' => $issueDate,
                 'due_date' => $locked->due_date ?? $issueDate,
                 'issued_at' => $issuedAt,
                 'status' => 'issued',
-                'document_revision' => 1,
+                'document_revision' => $revision,
+                'reissued_at' => $reissue ? $issuedAt : $locked->reissued_at,
                 'is_visible_to_client' => true,
                 'balance_amount' => $locked->total_amount,
                 // The setting is snapped only on the first committed issue.
@@ -587,6 +611,8 @@ final class InvoiceLifecycleService
                 'automatic_delivery_due_at' => $automatic && ! $squareCollected
                     ? $issuedAt->setTimezone($owningWorkspace->timezone)->addDays($delayDays)->utc()
                     : null,
+                // The reopen's note described the cancelled delivery, not this one.
+                ...($reissue ? ['automatic_delivery_note' => null] : []),
                 ...($squareCollected ? ['automatic_delivery_note' => 'Square collects this invoice, so SVC does not email it to the client.'] : []),
             ])->save();
 
@@ -605,7 +631,7 @@ final class InvoiceLifecycleService
             $this->activities->record(
                 $owningWorkspace,
                 $company,
-                'invoice.issued',
+                $reissue ? 'invoice.reissued' : 'invoice.issued',
                 $locked,
                 [
                     'invoice_kind' => $locked->invoiceKindValue(),
@@ -613,7 +639,8 @@ final class InvoiceLifecycleService
                     'currency' => $locked->currency,
                     'automatic_delivery_status' => $locked->automatic_delivery_status,
                     'automatic_delivery_delay_days' => $locked->automatic_delivery_delay_days,
-                ],
+                ] + ($reissue ? ['revision' => $revision] : []),
+                occurrence: $reissue ? 'revision-'.$revision : null,
             );
 
             ($this->administratorNotifications ?? app(InvoiceAdministratorNotificationService::class))
@@ -865,52 +892,12 @@ final class InvoiceLifecycleService
                 return $locked;
             }
 
-            if ($locked->paid_amount > 0 || $locked->status === 'paid') {
-                throw new DomainException('A paid invoice cannot be voided.');
-            }
-
-            if ($locked->emailDeliveries()
-                ->where('workspace_id', $locked->workspace_id)
-                ->whereIn('status', ['pending', 'sending'])
-                ->exists()) {
-                throw new DomainException('Wait for the in-flight client delivery before voiding this invoice.');
-            }
-
-            // Before the pending check, because it is the same question asked
-            // of a row that cannot answer it. The check below is a positive
-            // filter, so a payment whose status this application cannot read is
-            // not seen as pending and does not block the void - and an
-            // in-flight payment is exactly what that guard exists to catch.
-            //
-            // Scoped to the invoice's own workspace. `payments()` is keyed on
-            // `client_invoice_id` alone, and `workspace_id` on the payment is
-            // unconstrained lineage that a legacy or repaired row can point
-            // elsewhere; without this, another tenant's payment could both
-            // block this void and have its public id read back in the refusal.
-            $unreadablePayment = $locked->payments()
-                ->where('workspace_id', $locked->workspace_id)
-                ->get(['public_id', 'status'])
-                ->first(fn (ClientInvoicePayment $payment): bool => $payment->hasUnreadableStatus());
-            if ($unreadablePayment !== null) {
-                throw new DomainException(
-                    'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'
-                    .(string) $unreadablePayment->status.'", so whether money is in flight against this '
-                    .'invoice cannot be established and it must not be voided. Classify or correct that '
-                    .'payment status first.'
-                );
-            }
-
-            $hasPendingPayments = $locked->payments()
-                ->where('workspace_id', $locked->workspace_id)
-                ->where('status', InvoicePaymentStatus::Pending->value)
-                ->exists();
-            if ($hasPendingPayments) {
-                throw new DomainException('Cancel or resolve pending payments before voiding this invoice.');
-            }
+            $this->assertNoMoneyOrDeliveryInFlight($locked, 'voided', 'voiding');
 
             $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
             if ($locked->status === InvoiceStatus::Draft->value) {
                 $this->draftCatchUpDependencies->assertDiscardable($locked);
+                $this->assertReopenedChargeNotRelied($locked);
             } else {
                 // An issued invoice a later one was sized against: voiding it
                 // takes its charge out of the ledger that later one relied on.
@@ -937,6 +924,222 @@ final class InvoiceLifecycleService
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
+    }
+
+    /**
+     * Reopen an issued, unpaid cadence invoice so it can be regenerated from
+     * the time approved now and issued again under the same number (#594).
+     *
+     * Void's guards, with the verbs changed: nothing paid, no payment that may
+     * still be in flight, no client delivery in flight. Beyond them this
+     * refuses what reopening could not keep right - an invoice Square collects
+     * (unlink it first), one corrected in place (the corrections are evidence
+     * of what the client was told, and reopening would rebuild the lines under
+     * them), and any kind the generator cannot rebuild.
+     *
+     * The allocations are released under the agreement lock exactly as a void
+     * releases them, and the draft is then rebuilt in the same transaction by
+     * {@see ClientInvoicingService::regenerateDraftInvoice()}. Releasing alone
+     * would leave a draft whose lines still describe time that is no longer
+     * attached to it, which issues cleanly and bills that time twice; so there
+     * is no committed state between "reopened" and "regenerated", and a
+     * regeneration that cannot proceed rolls the reopen back. Unlike a void it
+     * is not refused for a later invoice sized against this one's charge, since
+     * the invoice stays and keeps charging - unless the rebuild would change
+     * that charge ({@see DraftCatchUpDependencies::assertChargeUnchanged()}).
+     *
+     * The original issue stays in the activity history and the delivery rows;
+     * the automatic delivery is cancelled as a void cancels it, and `issue()`
+     * schedules a new one. The next `issue()` is a reissue.
+     *
+     * @param  (callable(ClientInvoice): void)|null  $assertLocked  a caller's precondition, asked of the
+     *                                                              locked row before anything else is decided
+     */
+    public function reopen(ClientInvoice $invoice, string $reason, ?Workspace $workspace = null, ?callable $assertLocked = null): ClientInvoice
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new DomainException('A reason is required to reopen an invoice.');
+        }
+        if (mb_strlen($reason) > ClientInvoice::REOPEN_REASON_MAX_LENGTH) {
+            throw new DomainException(sprintf('A reopen reason may be at most %d characters.', ClientInvoice::REOPEN_REASON_MAX_LENGTH));
+        }
+
+        return DB::transaction(function () use ($invoice, $reason, $workspace, $assertLocked): ClientInvoice {
+            BillingMaintenance::share($workspace->id ?? $invoice->workspace_id);
+            $this->lockAgreementOf($invoice);
+            $locked = $this->lockInvoice($invoice, $workspace);
+            if ($assertLocked !== null) {
+                $assertLocked($locked);
+            }
+
+            $this->assertNoMoneyOrDeliveryInFlight($locked, 'reopened', 'reopening');
+            if ($locked->status !== InvoiceStatus::Issued->value) {
+                throw new DomainException(sprintf(
+                    'Only an issued invoice can be reopened; invoice %s is %s.',
+                    (string) $locked->invoice_number,
+                    $locked->status,
+                ));
+            }
+            // A billing schedule's invoice is composed from its line template, not
+            // by the retainer generator, and is not of the kind that generator
+            // owns even though it carries the cadence kind and an agreement.
+            if ($locked->client_billing_schedule_id !== null) {
+                throw new DomainException(sprintf(
+                    'Invoice %s was billed from a billing schedule, which cannot be regenerated, so it cannot be reopened. '
+                    .'Correct it in place or void it instead.',
+                    (string) $locked->invoice_number,
+                ));
+            }
+            if ($locked->invoiceKindValue() !== InvoiceKind::CadencePeriod->value || $locked->client_agreement_id === null) {
+                throw new DomainException(sprintf(
+                    'Only an issued cadence invoice generated for an agreement can be reopened, because only '
+                    .'those can be regenerated; invoice %s is not one. Correct it in place or void it instead.',
+                    (string) $locked->invoice_number,
+                ));
+            }
+            if (ClientInvoiceCorrection::query()
+                ->where('workspace_id', $locked->workspace_id)
+                ->where('client_invoice_id', $locked->id)
+                ->exists()) {
+                throw new DomainException(sprintf(
+                    'Invoice %s has been corrected in place, and reopening it would rebuild the lines those '
+                    .'corrections changed. It cannot be reopened; void it instead if it must be replaced.',
+                    (string) $locked->invoice_number,
+                ));
+            }
+            if ($this->squareCollection()->isSquareCollected($locked)) {
+                throw new DomainException(
+                    app(SquareLinkRepository::class)->activeLink($locked) !== null
+                        ? sprintf('Invoice %s is linked to a Square invoice, which collects it, so it cannot be reopened. Unlink it from Square first (invoices.square_unlink), then reopen it.', (string) $locked->invoice_number)
+                        : sprintf('Invoice %s belongs to an agreement billed in Square, which collects it, so it cannot be reopened. Clear the agreement\'s Square marker first, then reopen it.', (string) $locked->invoice_number)
+                );
+            }
+            $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
+
+            // Read from the tenant, as issue() does, rather than through the
+            // nullable relations.
+            $owningWorkspace = Workspace::query()->whereKey($locked->workspace_id)->firstOrFail();
+            $company = ClientCompany::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->client_company_id)->firstOrFail();
+
+            // Expense claims stay for the rebuild to re-decide; see releaseAllocations().
+            $this->releaseAllocations($locked, releaseExpenses: false);
+            $locked->forceFill([
+                'status' => InvoiceStatus::Draft->value,
+                'reopened_at' => $this->clock->now($owningWorkspace)->utc(),
+                'reopen_reason' => $reason,
+                'is_visible_to_client' => false,
+                // As a void cancels it. The delivery rows stay as the record of
+                // what was sent; issuing again schedules a delivery afresh.
+                'automatic_delivery_status' => $locked->automatic_delivery_status === null ? null : 'cancelled',
+                'automatic_delivery_note' => $locked->automatic_delivery_status === null ? null : 'Invoice reopened for reissue.',
+            ])->save();
+
+            try {
+                $regenerated = app(ClientInvoicingService::class)->regenerateDraftInvoice($locked);
+            } catch (RuntimeException $exception) {
+                throw new DomainException(sprintf(
+                    'Invoice %s was not reopened because it could not be regenerated: %s',
+                    (string) $locked->invoice_number,
+                    $exception->getMessage(),
+                ), previous: $exception);
+            }
+            $draft = ClientInvoice::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->id)->firstOrFail();
+            if ($regenerated?->id !== $draft->id || $draft->status !== InvoiceStatus::Draft->value) {
+                throw new LogicException('Regeneration rebuilt a different invoice than the one being reopened.');
+            }
+            $this->draftCatchUpDependencies->assertChargeUnchanged($draft);
+
+            $this->activities->record(
+                $owningWorkspace,
+                $company,
+                'invoice.reopened',
+                $draft,
+                [
+                    'invoice_kind' => $draft->invoiceKindValue(),
+                    'previous_status' => InvoiceStatus::Issued->value,
+                    'reason' => $reason,
+                    'revision' => $draft->document_revision,
+                ],
+                occurrence: 'revision-'.$draft->document_revision,
+            );
+
+            // Each relation bounded by the workspace explicitly, as updateDraft()
+            // does: a legacy row stamped to another tenant is not loaded through
+            // this invoice.
+            return $draft->refresh()->load([
+                'lines' => fn ($query) => $query->where('workspace_id', $draft->workspace_id),
+                'clientCompany' => fn ($query) => $query->where('workspace_id', $draft->workspace_id),
+            ]);
+        });
+    }
+
+    /**
+     * A reopened invoice was issued, and a later invoice may have been sized
+     * against the charge it recorded then. Discarding or voiding it as a draft
+     * removes that charge, which `assertDiscardable()` cannot see once time
+     * edits have regenerated the draft down to no catch-up, so the recorded
+     * dependencies are asked directly: the same refusal as voiding the issued
+     * invoice would have met.
+     */
+    private function assertReopenedChargeNotRelied(ClientInvoice $locked): void
+    {
+        if ($locked->reopened_at !== null) {
+            $this->draftCatchUpDependencies->assertVoidable($locked);
+        }
+    }
+
+    /**
+     * The guards a void and a reopen share: money taken, a client delivery in
+     * flight, and a payment that may still be in flight. The verbs are the
+     * caller's so each refusal reads as the action being refused.
+     *
+     * Called on the locked invoice, under the agreement lock.
+     */
+    private function assertNoMoneyOrDeliveryInFlight(ClientInvoice $locked, string $past, string $gerund): void
+    {
+        if ($locked->paid_amount > 0 || $locked->status === 'paid') {
+            throw new DomainException('A paid invoice cannot be '.$past.'.');
+        }
+
+        if ($locked->emailDeliveries()
+            ->where('workspace_id', $locked->workspace_id)
+            ->whereIn('status', ['pending', 'sending'])
+            ->exists()) {
+            throw new DomainException('Wait for the in-flight client delivery before '.$gerund.' this invoice.');
+        }
+
+        // Before the pending check, because it is the same question asked
+        // of a row that cannot answer it. The check below is a positive
+        // filter, so a payment whose status this application cannot read is
+        // not seen as pending and does not block the void - and an
+        // in-flight payment is exactly what that guard exists to catch.
+        //
+        // Scoped to the invoice's own workspace. `payments()` is keyed on
+        // `client_invoice_id` alone, and `workspace_id` on the payment is
+        // unconstrained lineage that a legacy or repaired row can point
+        // elsewhere; without this, another tenant's payment could both
+        // block this void and have its public id read back in the refusal.
+        $unreadablePayment = $locked->payments()
+            ->where('workspace_id', $locked->workspace_id)
+            ->get(['public_id', 'status'])
+            ->first(fn (ClientInvoicePayment $payment): bool => $payment->hasUnreadableStatus());
+        if ($unreadablePayment !== null) {
+            throw new DomainException(
+                'Payment '.(string) $unreadablePayment->public_id.' carries the unrecognised status "'
+                .(string) $unreadablePayment->status.'", so whether money is in flight against this '
+                .'invoice cannot be established and it must not be '.$past.'. Classify or correct that '
+                .'payment status first.'
+            );
+        }
+
+        $hasPendingPayments = $locked->payments()
+            ->where('workspace_id', $locked->workspace_id)
+            ->where('status', InvoicePaymentStatus::Pending->value)
+            ->exists();
+        if ($hasPendingPayments) {
+            throw new DomainException('Cancel or resolve pending payments before '.$gerund.' this invoice.');
+        }
     }
 
     /**
@@ -1981,7 +2184,13 @@ final class InvoiceLifecycleService
         }
     }
 
-    private function releaseAllocations(ClientInvoice $invoice): void
+    /**
+     * @param  bool  $releaseExpenses  false when the invoice stays and is regenerated: its expense claims
+     *                                 are then kept for the rebuild to release and claim again, since
+     *                                 the expense lines are not a generated type and a released claim
+     *                                 would leave its line behind to be billed beside the new one
+     */
+    private function releaseAllocations(ClientInvoice $invoice, bool $releaseExpenses = true): void
     {
         // The invoice's own workspace, named on every statement below rather
         // than trusted to the ids. A line id, a pivot row and a task id are all
@@ -2063,7 +2272,9 @@ final class InvoiceLifecycleService
             ->whereIn('client_invoice_line_id', $lineIds)
             ->update(['client_invoice_line_id' => null]);
 
-        app(ExpenseInvoiceAllocations::class)->release($invoice);
+        if ($releaseExpenses) {
+            app(ExpenseInvoiceAllocations::class)->release($invoice);
+        }
     }
 
     private function lockInvoice(ClientInvoice $invoice, ?Workspace $workspace): ClientInvoice

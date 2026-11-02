@@ -229,28 +229,7 @@ final class DraftCatchUpDependencies
      */
     public function assertVoidable(ClientInvoice $invoice): void
     {
-        if ($invoice->client_agreement_id === null) {
-            return;
-        }
-
-        $dependents = ClientInvoice::query()
-            ->where('workspace_id', $invoice->workspace_id)
-            // Not narrowed to the company: the recorded window is the
-            // ledger's, which reads the agreement's invoices whoever they name.
-            ->where('client_agreement_id', $invoice->client_agreement_id)
-            ->whereIn('status', InvoiceStatus::live())
-            ->whereKeyNot($invoice->getKey())
-            ->whereNotNull('catch_up_basis')
-            ->orderBy('service_period_end')
-            ->orderBy('id')
-            ->tap(Locks::forUpdate())
-            ->get(['id', 'invoice_number', 'status', 'catch_up_basis']);
-
-        foreach ($dependents as $dependent) {
-            $hours = CatchUpBasis::fromArray($dependent->catch_up_basis)?->hoursFrom((int) $invoice->id) ?? 0.0;
-            if ($hours === 0.0) {
-                continue;
-            }
+        foreach ($this->dependentsOn($invoice) as ['invoice' => $dependent, 'hours' => $hours]) {
             $undo = in_array($dependent->status, [InvoiceStatus::Paid->value, InvoiceStatus::PartiallyPaid->value, InvoiceStatus::Disputed->value], true)
                 ? "{$dependent->invoice_number} has taken payment and cannot be voided, so neither can this while it stands."
                 : "Void or discard {$dependent->invoice_number} first.";
@@ -263,6 +242,95 @@ final class DraftCatchUpDependencies
                 $undo,
             ));
         }
+    }
+
+    /**
+     * Refuse to leave a reopened invoice charging catch-up hours other than
+     * the ones a live later invoice was sized against.
+     *
+     * Reopening keeps the invoice, so unlike a void it does not take the
+     * charge out of the ledger - and a later invoice sized against it stays
+     * right as long as the invoice charges the same hours when it is issued
+     * again. A different figure would leave that invoice billing debt that is
+     * no longer the debt left. The later invoices' recorded hours are the
+     * reference, so the question is the same whenever it is asked: at the
+     * reopen, once regeneration has rebuilt the draft, and again at the
+     * reissue, since a reopened invoice is an ordinary draft that time edits
+     * and `invoices.add_time` can regenerate before it is issued.
+     *
+     * Called under the agreement lock, with the invoice's own lock held.
+     *
+     * @infection-ignore-all The predicates and lock need the feature database and are covered by ReopenAndReissueInvoiceTest; CatchUpBasis::hoursFrom() is unit-tested.
+     */
+    public function assertChargeUnchanged(ClientInvoice $invoice): void
+    {
+        $current = (float) ($invoice->hours_billed_at_rate ?? 0);
+
+        foreach ($this->dependentsOn($invoice, includeZeroCharge: true, chargedOnly: true) as ['invoice' => $dependent, 'hours' => $recorded]) {
+            if (round($recorded, 4) === round($current, 4)) {
+                continue;
+            }
+
+            throw new DomainException(sprintf(
+                'Invoice %s covers later work and was sized against the %s catch-up hours this invoice charged, '
+                .'but it now charges %s. Issuing it that way would leave %s billing the wrong debt. Void or '
+                .'discard %s first, or put the approved time back so this invoice charges what it did.',
+                $dependent->invoice_number,
+                self::hours($recorded),
+                self::hours($current),
+                $dependent->invoice_number,
+                $dependent->invoice_number,
+            ));
+        }
+    }
+
+    /**
+     * The live later invoices whose recorded basis includes this invoice's
+     * charge, with the hours each recorded. A locking read, after the
+     * agreement lock, for the reason given in assertDiscardable().
+     *
+     * A basis records only charges of more than zero hours, so with
+     * `$includeZeroCharge` a later invoice whose window reaches this one's
+     * period is a dependent too: it was sized on this invoice charging
+     * nothing, and a charge that appears since leaves it wrong all the same.
+     * With `$chargedOnly` a later draft is not one: it re-measures the charge
+     * itself when it is issued, and is refused until regenerated.
+     *
+     * @return list<array{invoice: ClientInvoice, hours: float}>
+     */
+    private function dependentsOn(ClientInvoice $invoice, bool $includeZeroCharge = false, bool $chargedOnly = false): array
+    {
+        if ($invoice->client_agreement_id === null) {
+            return [];
+        }
+
+        $dependents = ClientInvoice::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            // Not narrowed to the company: the recorded window is the
+            // ledger's, which reads the agreement's invoices whoever they name.
+            ->where('client_agreement_id', $invoice->client_agreement_id)
+            ->whereIn('status', $chargedOnly ? InvoiceStatus::charged() : InvoiceStatus::live())
+            ->whereKeyNot($invoice->getKey())
+            ->whereNotNull('catch_up_basis')
+            ->orderBy('service_period_end')
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get(['id', 'invoice_number', 'status', 'catch_up_basis']);
+
+        $relied = [];
+        foreach ($dependents as $dependent) {
+            $basis = CatchUpBasis::fromArray($dependent->catch_up_basis);
+            $hours = $basis?->hoursFrom((int) $invoice->id) ?? 0.0;
+            $windowReaches = $includeZeroCharge
+                && $basis instanceof CatchUpBasis
+                && $invoice->service_period_end !== null
+                && $invoice->service_period_end->toDateString() <= $basis->through;
+            if ($hours !== 0.0 || $windowReaches) {
+                $relied[] = ['invoice' => $dependent, 'hours' => $hours];
+            }
+        }
+
+        return $relied;
     }
 
     /**

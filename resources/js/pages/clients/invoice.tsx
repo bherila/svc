@@ -2,22 +2,13 @@ import { Head, Link } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
 import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
+import { InvoiceReasonDialog } from '@/components/billing/invoice-reason-dialog';
 import { PaymentRemindersCard } from '@/components/billing/payment-reminders';
 import type { InvoiceRemindersState } from '@/components/billing/payment-reminders';
 import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
 import { SquareInvoiceCard } from '@/components/billing/square-link';
 import type { InvoiceSquareState } from '@/components/billing/square-link';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -146,9 +137,18 @@ type InvoiceActions = {
     send: string | null;
     payment: string | null;
     void: string | null;
+    /** Reopen an issued invoice for reissue under its own number. */
+    reopen?: string | null;
     correct?: string | null;
     hold_automatic?: string | null;
     release_automatic?: string | null;
+};
+
+/** What reopening left on the invoice, which a later reissue keeps. */
+type InvoiceReopenHistory = {
+    reopened_at: string | null;
+    reason: string | null;
+    reissued_at: string | null;
 };
 
 type AdministratorNotification = {
@@ -231,6 +231,7 @@ export default function ClientInvoiceDetail({
     timezone,
     square = null,
     payment_reminders: paymentReminders = null,
+    reopen = null,
 }: {
     attachment_panel?: AttachmentPanel | null;
     company: { id: string; name: string };
@@ -261,10 +262,14 @@ export default function ClientInvoiceDetail({
     square?: InvoiceSquareState | null;
     /** Payment reminders for this invoice; null for a viewer who cannot manage it. */
     payment_reminders?: InvoiceRemindersState | null;
+    /** Set once the invoice has been reopened for reissue; null for a viewer who cannot manage it. */
+    reopen?: InvoiceReopenHistory | null;
 }) {
     const [paying, setPaying] = useState(false);
     const [sending, setSending] = useState(false);
-    const [voiding, setVoiding] = useState(false);
+    // Which reason-and-confirm action is open. Void and reopen share one
+    // dialog, one reason and one baseline; the server decides what each refuses.
+    const [lifecycle, setLifecycle] = useState<'void' | 'reopen' | null>(null);
     const [correctingInvoice, setCorrectingInvoice] = useState(false);
     const [correctionReason, setCorrectionReason] = useState('');
     const [correctionDueDate, setCorrectionDueDate] = useState(
@@ -291,9 +296,9 @@ export default function ClientInvoiceDetail({
     // Why the date is being corrected. Required, as payments.correct requires
     // it: the reason is kept in the client history beside the change.
     const [correctedDateReason, setCorrectedDateReason] = useState('');
-    // Why the invoice is being voided, required as invoices.void requires it
-    // and kept on the invoice.
-    const [voidReason, setVoidReason] = useState('');
+    // Why the invoice is being voided or reopened, required as invoices.void
+    // and invoices.reopen require it and kept on the invoice.
+    const [lifecycleReason, setLifecycleReason] = useState('');
     const mutation = useInvoiceMutation();
     const busy = mutation.busy;
     const [notice, setNotice] = useState<string | null>(null);
@@ -319,7 +324,9 @@ export default function ClientInvoiceDetail({
         href: string;
         version: string;
     } | null>(null);
-    const voidBaseline = useRef<{ href: string; version: string } | null>(null);
+    const lifecycleBaseline = useRef<{ href: string; version: string } | null>(
+        null,
+    );
 
     const mutate = async (
         method: 'POST' | 'PATCH',
@@ -334,7 +341,7 @@ export default function ClientInvoiceDetail({
             () => {
                 setNotice(null);
                 setPaying(false);
-                setVoiding(false);
+                setLifecycle(null);
                 setCorrectingInvoice(false);
                 setCorrecting(null);
                 setEditingDates(false);
@@ -573,18 +580,35 @@ export default function ClientInvoiceDetail({
                                 Record payment
                             </Button>
                         )}
+                        {(actions.reopen ?? null) !== null && (
+                            <Button
+                                disabled={mutation.locked}
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    lifecycleBaseline.current = {
+                                        href: actions.reopen ?? '',
+                                        version,
+                                    };
+                                    setLifecycleReason('');
+                                    setLifecycle('reopen');
+                                }}
+                            >
+                                Reopen
+                            </Button>
+                        )}
                         {actions.void !== null && (
                             <Button
                                 disabled={mutation.locked}
                                 variant="destructive"
                                 size="sm"
                                 onClick={() => {
-                                    voidBaseline.current = {
+                                    lifecycleBaseline.current = {
                                         href: actions.void ?? '',
                                         version,
                                     };
-                                    setVoidReason('');
-                                    setVoiding(true);
+                                    setLifecycleReason('');
+                                    setLifecycle('void');
                                 }}
                             >
                                 Void
@@ -592,15 +616,16 @@ export default function ClientInvoiceDetail({
                         )}
                     </div>
 
-                    {(mutation.error ?? notice) !== null && !voiding && (
-                        <p
-                            role="alert"
-                            className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                        >
-                            {mutation.error ?? notice}
-                        </p>
-                    )}
-                    {mutation.locked && !voiding && (
+                    {(mutation.error ?? notice) !== null &&
+                        lifecycle === null && (
+                            <p
+                                role="alert"
+                                className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                            >
+                                {mutation.error ?? notice}
+                            </p>
+                        )}
+                    {mutation.locked && lifecycle === null && (
                         <Button
                             disabled={busy}
                             onClick={() => void mutation.retry()}
@@ -1028,6 +1053,22 @@ export default function ClientInvoiceDetail({
                         </form>
                     )}
                 </header>
+
+                {reopen !== null && reopen.reopened_at !== null && (
+                    <p
+                        role="status"
+                        className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm wrap-anywhere"
+                    >
+                        {invoice.status === 'draft'
+                            ? `Reopened ${formatTimestamp(reopen.reopened_at)}: regenerated from the time approved then. Issue it to reissue it under the same number.`
+                            : reopen.reissued_at !== null
+                              ? `Reissued ${formatTimestamp(reopen.reissued_at)} under the same number, after being reopened ${formatTimestamp(reopen.reopened_at)}.`
+                              : `Reopened ${formatTimestamp(reopen.reopened_at)}.`}
+                        {reopen.reason !== null &&
+                            reopen.reason !== '' &&
+                            ` Reason: ${reopen.reason}`}
+                    </p>
+                )}
 
                 {square !== null && <SquareInvoiceCard square={square} />}
 
@@ -1622,100 +1663,55 @@ export default function ClientInvoiceDetail({
                 email={email}
             />
 
-            <AlertDialog
-                open={voiding}
-                onOpenChange={(open: boolean) => {
-                    if (!mutation.isLocked()) {
-                        setVoiding(open);
+            <InvoiceReasonDialog
+                open={lifecycle !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setLifecycle(null);
                     }
                 }}
-            >
-                <AlertDialogContent className="grid-cols-1">
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Void this invoice?</AlertDialogTitle>
-                        <AlertDialogDescription className="wrap-anywhere">
+                mutation={mutation}
+                title={
+                    lifecycle === 'reopen'
+                        ? 'Reopen this invoice?'
+                        : 'Void this invoice?'
+                }
+                description={
+                    lifecycle === 'reopen' ? (
+                        <>
+                            {invoice.invoice_number ?? 'This invoice'} returns
+                            to a draft, regenerated from the time approved now.
+                            Issue it again to reissue it under the same number;
+                            the client is told it was reissued.
+                        </>
+                    ) : (
+                        <>
                             {invoice.invoice_number ?? 'This invoice'} stops
                             being collectible, and the work on it returns to
                             being unbilled.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <div className="grid grid-cols-1 gap-2">
-                        <Label htmlFor="void-reason">Reason</Label>
-                        <Textarea
-                            disabled={mutation.locked}
-                            id="void-reason"
-                            className="max-h-48 wrap-anywhere"
-                            maxLength={1000}
-                            value={voidReason}
-                            aria-describedby="void-reason-hint"
-                            onChange={(event) =>
-                                setVoidReason(event.target.value)
-                            }
-                        />
-                        <p
-                            id="void-reason-hint"
-                            className="text-xs text-muted-foreground"
-                        >
-                            Kept on the invoice, so anyone reading it later
-                            knows why it was voided.
-                        </p>
-                    </div>
-                    <AlertDialogFooter>
-                        {mutation.error !== null && (
-                            <p
-                                role="alert"
-                                className="wrap-anywhere text-destructive"
-                            >
-                                {mutation.error}
-                            </p>
-                        )}
-                        {mutation.locked && (
-                            <Button
-                                disabled={busy}
-                                onClick={() => void mutation.retry()}
-                            >
-                                {mutation.saved
-                                    ? 'Refresh saved result'
-                                    : 'Check original request'}
-                            </Button>
-                        )}
-                        <AlertDialogCancel
-                            disabled={mutation.locked}
-                            render={
-                                <Button
-                                    disabled={mutation.locked}
-                                    variant="outline"
-                                >
-                                    Cancel
-                                </Button>
-                            }
-                        />
-                        <AlertDialogAction
-                            render={
-                                <Button
-                                    variant="destructive"
-                                    disabled={
-                                        mutation.locked ||
-                                        voidReason.trim() === ''
-                                    }
-                                    onClick={() =>
-                                        post(
-                                            voidBaseline.current?.href ?? '',
-                                            {
-                                                confirm: true,
-                                                reason: voidReason.trim(),
-                                            },
-                                            voidBaseline.current?.version ?? '',
-                                        )
-                                    }
-                                >
-                                    Void
-                                </Button>
-                            }
-                        />
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                        </>
+                    )
+                }
+                reasonId={
+                    lifecycle === 'reopen' ? 'reopen-reason' : 'void-reason'
+                }
+                reasonHint={
+                    lifecycle === 'reopen'
+                        ? 'Kept on the invoice and in its history, so anyone reading it later knows why it was reopened.'
+                        : 'Kept on the invoice, so anyone reading it later knows why it was voided.'
+                }
+                reason={lifecycleReason}
+                onReasonChange={setLifecycleReason}
+                confirmLabel={lifecycle === 'reopen' ? 'Reopen' : 'Void'}
+                destructive={lifecycle !== 'reopen'}
+                onConfirm={(reason) =>
+                    post(
+                        lifecycleBaseline.current?.href ?? '',
+                        { confirm: true, reason },
+                        lifecycleBaseline.current?.version ?? '',
+                    )
+                }
+            />
         </WorkspaceShell>
     );
 }

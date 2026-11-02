@@ -125,9 +125,13 @@ jobs:
           retain-releases: '3'
           failure-policy: rollback
           recovery-release-id: ${{ vars.PILOT_RECOVERY_RELEASE_ID }}
-          env-values: DB_URL=
+          env-values: |
+            DB_URL=
+            DB_SOCKET=
           env-assert: |
             DB_URL=
+            DB_SOCKET=
+            DB_CONNECTION=mariadb
             PILOT_DEPLOYMENT=1
             APP_DEBUG=false
             MAIL_MAILER=log
@@ -139,5 +143,6 @@ jobs:
           install-cron: false
           preflight-script: scripts/deploy/pilot/preflight.sh
           quiesce-script: scripts/deploy/pilot/quiesce.sh
+          pre-migrate-script: scripts/deploy/pilot/pre-migrate.sh
           post-activate-script: scripts/deploy/pilot/post-activate.sh
           verification-script: scripts/deploy/pilot/verify-live.sh

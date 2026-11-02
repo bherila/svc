@@ -368,6 +368,14 @@ class ClientDirectoryController extends Controller
                     && $clientInvoice->automatic_delivery_due_at !== null
                     ? route('agent-api.v1.invoices.release_delivery', [$workspace, $clientInvoice->public_id], absolute: false)
                     : null,
+                // Reopening for reissue (#594): offered for an issued cadence
+                // invoice, the one place it can apply. Everything else it
+                // refuses - money taken, a delivery in flight, Square, a
+                // correction - is the service's to say when it is asked.
+                'reopen' => $manages
+                    && $status === InvoiceStatus::Issued->value
+                    && $clientInvoice->invoiceKindValue() === InvoiceKind::CadencePeriod->value
+                    ? route('agent-api.v1.invoices.reopen', [$workspace, $clientInvoice->public_id], absolute: false) : null,
                 // Voiding a paid invoice is a correction the service refuses,
                 // so it is not offered either.
                 'void' => $manages && in_array($status, [
@@ -392,6 +400,13 @@ class ClientDirectoryController extends Controller
                 ? $this->administratorNotificationOf($workspace, $clientInvoice)
                 : null,
             'invoice' => $this->invoicePayload($clientInvoice),
+            // What a reopen left on the invoice, for the screen to say so: operators only,
+            // since the reason is internal like a void's.
+            'reopen' => $manages && $clientInvoice->reopened_at !== null ? [
+                'reopened_at' => $clientInvoice->reopened_at->toISOString(),
+                'reason' => $clientInvoice->reopen_reason,
+                'reissued_at' => $clientInvoice->reissued_at?->toISOString(),
+            ] : null,
             // The link itself, through the API the website shares with agents.
             // Payment reminders (#438): whether one may be sent now and with
             // which link, the client's cadence, and every reminder sent.

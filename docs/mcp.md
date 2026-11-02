@@ -396,12 +396,12 @@ For `time_entries.log`, supplying `client_visible_description`
 without `is_visible_to_client` makes the entry client-visible by default; set
 `is_visible_to_client: false` to stage the client text privately. The broader
 write flag also retains a legacy compatibility
-registration for `time_entries.approve`. The eight invoice registrations -
+registration for `time_entries.approve`. The nine invoice registrations -
 `invoices.create_draft`, `invoices.update_draft`, `invoices.update_details`,
-`invoices.discard_draft`, `invoices.issue`, `invoices.send`, `invoices.correct`
-and `invoices.void` - require *both* that
+`invoices.discard_draft`, `invoices.issue`, `invoices.send`, `invoices.correct`,
+`invoices.reopen` and `invoices.void` - require *both* that
 flag and `AGENT_API_INVOICE_WRITES_ENABLED`, so enabling the broader flag alone
-registers `time_entries.approve` and no invoice tool. All eight enter the
+registers `time_entries.approve` and no invoice tool. All nine enter the
 versioned API through its REST routes, whose controllers are thin adapters:
 `invoices.issue` runs `IssueInvoiceAction` (see
 [Issuing an invoice](#issuing-an-invoice)), and `invoices.create_draft`,
@@ -1019,6 +1019,63 @@ existing line. The opaque version is compared on the locked row. The document
 revision advances, any automatic client delivery is held for explicit release,
 and the change is recorded as `invoice.corrected`. Paid, partially paid, sent
 and void invoices are refused: void and reissue those.
+
+### Reopening an invoice for reissue
+
+`invoices.reopen` (#594) takes an issued, unpaid cadence invoice back to a
+draft that keeps its invoice number, so that a snapshot made stale by time
+approved after it was built - the retainer application lines are not
+re-measured at issue - can be rebuilt and issued again without a void and a
+replacement number. It requires `billing:write`, a workspace owner/admin, both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_INVOICE_WRITES_ENABLED`, and the
+`invoices.reopen` MCP kill switch. It takes the `invoices.void` contract:
+`confirm: true`, the invoice's `expected_version` (compared on the locked row,
+so a change committed while the request waited is a 409), a required `reason`
+of at most 1000 characters, and an `idempotency_key`; the same receipt,
+transaction and replay rules apply. It is marked destructive, like void.
+
+Reopening takes void's guards with the verb changed - nothing paid, no pending
+or unreadable-status payment, no client delivery in flight (the messages are
+void's: "A paid invoice cannot be reopened.", and so on) - and refuses, with a
+422 naming the cause:
+
+- an invoice Square collects, linked or on a billed-in-Square agreement (unlink
+  it first with `invoices.square_unlink`; the series marker is cleared on the
+  agreement);
+- an invoice corrected in place, whose corrections are evidence of what the
+  client was told and are never superseded (corrections have no resolution
+  state, so such an invoice cannot be reopened; void it if it must be replaced);
+- any invoice that is not an issued cadence invoice of an agreement, because
+  only those can be regenerated, and an invoice billed from a billing schedule
+  (composed from its line template, not by the retainer generator);
+- a regeneration whose catch-up charge would differ from the one a later
+  charged invoice was sized against. Unlike a void, a reopen is not refused
+  merely because a later invoice relies on the charge: the invoice stays and
+  keeps charging, so it is refused only if the rebuild would change it. The
+  reopened invoice is an ordinary draft until it is issued, and time edits can
+  regenerate it meanwhile, so the same check runs again at the reissue: it is
+  refused until the invoice charges what that later invoice recorded.
+
+Under the agreement lock the allocations are released as a void releases them
+(`deferred_buydown` reservations remain excluded), the invoice becomes a draft
+with `reopened_at`, the reason and `invoice.reopened` in the client history, its
+automatic delivery is cancelled as a void cancels it, and
+`ClientInvoicingService::regenerateDraftInvoice()` rebuilds it from the time
+approved now, **in the same transaction**: releasing alone would leave a draft
+whose lines still describe time no longer attached to it, so there is no
+committed state between reopened and regenerated, and a regeneration that cannot
+proceed rolls the reopen back. The time returns to `approved` and the regenerated
+draft consumes it again; it becomes `invoiced` when the invoice is issued.
+
+Reissue is the plain `invoices.issue`, with the normal checks including charge
+re-measurement under the agreement lock. Because the invoice was reopened it is
+a reissue: its document revision advances rather than restarting (deliveries and
+administrator notices are keyed by revision, and the first issue's stay on the
+record), `reissued_at` is set, `invoice.reissued` is recorded beside the original
+`invoice.issued` and `invoice.reopened`, a new automatic delivery is scheduled
+by the company's settings, and the delivery (`is_reissue`), its default subject
+("Invoice N (reissued)"), the email and the PDF say it was reissued under the
+same number.
 
 ### Issuing an invoice
 
