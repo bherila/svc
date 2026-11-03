@@ -101,6 +101,67 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame([$last->id], $this->backlogIds());
     }
 
+    public function test_attach_takes_settled_work_out_of_the_hours_statement_the_client_is_sent(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $this->entry(240, '2026-04-01');
+        $this->entry(120, '2026-04-02');
+        // Offered by the backlog but after the host's work period, so the
+        // statement never counted it.
+        $this->entry(60, '2026-06-02');
+        $draft = $this->cadenceDraft();
+        $before = $draft->fresh()?->hoursStatement();
+        $this->assertNotNull($before);
+        $this->assertSame([6.0, 2], [$before->deferredBacklogHours, $before->deferredBacklogEntries]);
+
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 4]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
+
+        $after = $draft->fresh()?->hoursStatement();
+        $this->assertNotNull($after);
+        $this->assertSame([2.0, 1], [$after->deferredBacklogHours, $after->deferredBacklogEntries]);
+    }
+
+    public function test_settling_work_after_the_hosts_period_leaves_its_statement_alone(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $this->entry(240, '2026-04-01');
+        // The four-hour entry does not fit a one-hour target and is passed over,
+        // so this is what settles, and the statement never counted it.
+        $later = $this->entry(60, '2026-06-02');
+        $draft = $this->cadenceDraft();
+
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
+
+        $this->assertSame([$later->id], $host->lines()->where('type', 'deferred_buydown')->sole()->timeEntries()->pluck('client_time_entries.id')->all());
+        $statement = $draft->fresh()?->hoursStatement();
+        $this->assertNotNull($statement);
+        $this->assertSame([4.0, 1], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
+    }
+
+    public function test_attach_leaves_a_draft_without_a_statement_without_one(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $this->entry(60, '2026-04-01');
+        $draft = $this->cadenceDraft();
+        $draft->forceFill(['hours_statement' => null])->save();
+
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
+
+        $this->assertNull($draft->fresh()?->hours_statement);
+    }
+
     public function test_attach_records_what_it_changed_in_the_client_history(): void
     {
         $this->ordinary(600, '2026-04-10');

@@ -110,6 +110,7 @@ final class DeferredBuyDownAction
 
             if ($invoice !== null) {
                 $this->writeSettlementLines($invoice, $selection, $locked, $this->settlementLineDate($invoice, $workspace));
+                $this->removeSettledWorkFromStatement($invoice, $selection);
                 $invoice->recalculateTotals();
                 $this->activities->record($workspace, $company, 'invoice.updated', $invoice, [
                     'invoice_kind' => $invoice->invoiceKindValue(), 'total_amount' => $invoice->total_amount,
@@ -211,6 +212,29 @@ final class DeferredBuyDownAction
         return $invoice->service_period_end?->toDateString()
             ?? $invoice->issue_date?->toDateString()
             ?? $this->clock->today($workspace)->toDateString();
+    }
+
+    /**
+     * Take the settled work out of the host's stored hours statement.
+     *
+     * The statement is a snapshot that issue prints and does not rebuild, so it
+     * would go on telling the client this work is still waiting beside the
+     * charge for it. It counts only what was waiting at its own work-period end,
+     * so later entries the backlog also offered were never in it. Regenerating
+     * here instead would rebuild the charges too, and take the invoice lock back
+     * after the time locks already held. A draft with no readable statement has
+     * nothing to correct.
+     */
+    private function removeSettledWorkFromStatement(ClientInvoice $invoice, DeferredBuyDownSelection $selection): void
+    {
+        $statement = $invoice->hoursStatement();
+        if ($statement === null) {
+            return;
+        }
+
+        $reported = array_filter($selection->entries, static fn (ClientTimeEntry $entry): bool => $entry->worked_on->toDateString() <= $statement->workEnd);
+        $minutes = array_sum(array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->minutes, $reported));
+        $invoice->forceFill(['hours_statement' => $statement->toArrayWithDeferredSettled($minutes / 60, count($reported))]);
     }
 
     /** Write the settlement's priced lines and, when discounted, its adjustment. */
