@@ -143,7 +143,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
     {
         $this->entry(120, '2026-04-01');
         $billing = app(DeferredBuyDownAction::class);
-        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $request = DeferredBuyDownRequest::from(['hours' => 2]);
         $preview = $billing->preview($this->workspace, $this->agreement, $request);
         $settlement = $billing->create($this->workspace, $this->agreement, $request, $preview->version);
         $this->assertSame(InvoiceKind::DeferredBuyDown->value, $settlement->invoice_kind);
@@ -266,7 +266,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame([], $this->backlogIds());
 
         app(InvoiceLifecycleService::class)->void($issued, $this->workspace, 'Synthetic void');
-        $this->assertSame('approved', $entry->fresh()?->status);
+        $this->assertSame('approved', $entry->fresh()->status);
         $this->assertSame([$entry->id], $this->backlogIds());
     }
 
@@ -321,7 +321,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
             }
             $exit = Artisan::call($command, $arguments);
             $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-            $this->assertSame(0, $exit, json_encode($report));
+            $this->assertSame(0, $exit, (string) json_encode($report));
             if ($command === 'svc:billing:replay') {
                 $this->assertSame(0, $report['summary']['unexplained']);
             }

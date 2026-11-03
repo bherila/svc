@@ -200,7 +200,7 @@ final class DeferredBuyDownAction
      * `allocatedOn()`, exactly as it books deferred work the host applied.
      * A draft with no work period falls back to its issue date, then today.
      */
-    private function settlementLineDate(ClientInvoice $invoice, Workspace $workspace): ?string
+    private function settlementLineDate(ClientInvoice $invoice, Workspace $workspace): string
     {
         return $invoice->service_period_end?->toDateString()
             ?? $invoice->issue_date?->toDateString()
