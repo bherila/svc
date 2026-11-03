@@ -331,6 +331,31 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         }
     }
 
+    public function test_replay_accepts_an_issued_host_with_a_discounted_settlement(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $settled = $this->entry(60, '2026-04-01');
+        $this->entry(180, '2026-04-02');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1, 'discount_amount' => 1000, 'discount_reason' => 'Synthetic discount']);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft());
+        app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+        app(InvoiceLifecycleService::class)->issue($host->fresh() ?? $host, $this->workspace);
+        $backlog = $this->backlogIds();
+
+        $exit = Artisan::call('svc:billing:replay', ['--workspace' => $this->workspace->public_id, '--format' => 'json']);
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame(0, $exit, (string) json_encode($report));
+        $this->assertSame(0, $report['summary']['unexplained']);
+        $this->assertSame(0, $report['summary']['unexplained_divergence_minor']);
+        $this->assertNotContains($settled->id, $backlog, 'The settled entry is off the shelf');
+        $this->assertSame($backlog, $this->backlogIds(), 'Replay rolled back');
+        $this->assertSame('invoiced', $settled->fresh()?->status);
+    }
+
     public function test_rest_creation_with_an_invoice_id_attaches_instead_of_creating(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
