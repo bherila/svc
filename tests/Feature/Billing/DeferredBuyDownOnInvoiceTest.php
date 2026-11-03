@@ -510,6 +510,40 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertTrue($rows[$ordinary->public_id]['can_edit'], 'Other time on the same draft stays editable');
     }
 
+    public function test_an_invoice_in_another_workspace_cannot_host_a_settlement(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $entry = $this->entry(60, '2026-04-01');
+        $otherWorkspace = Workspace::query()->create(['name' => 'Synthetic other workspace', 'slug' => 'synthetic-other-workspace']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $otherWorkspace->id, 'name' => 'Synthetic foreign company', 'slug' => 'synthetic-foreign-company']);
+        $foreign = app(InvoiceLifecycleService::class)->createDraft($otherWorkspace, $otherCompany, [
+            'invoice_number' => 'SYNTHETIC-FOREIGN', 'currency' => 'USD', 'invoice_kind' => InvoiceKind::CadencePeriod->value,
+        ], []);
+        $this->actingAsMcp($this->owner, ['mcp:use', 'billing:read', 'billing:write']);
+        $base = '/api/v1/workspaces/'.$this->workspace->public_id.'/agreements/'.$this->agreement->public_id.'/deferred-backlog';
+        $preview = $this->getJson($base.'/preview?hours=1')->assertOk()->json('data');
+
+        $this->postJson($base.'/invoices', [
+            'hours' => 1, 'expected_backlog_version' => $preview['backlog_version'], 'invoice_id' => $foreign->public_id,
+        ], ['Idempotency-Key' => 'synthetic-buydown-foreign-host'])->assertNotFound();
+
+        $this->assertSame(0, $foreign->lines()->count());
+        $this->assertSame([$entry->id], $this->backlogIds(), 'A refused attach reserves nothing');
+
+        // The action refuses too, for a caller that resolved the invoice itself.
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        try {
+            $billing->create($this->workspace, $this->agreement, $request, $billing->preview($this->workspace, $this->agreement, $request)->version, $foreign);
+            $this->fail('A foreign invoice must be refused.');
+        } catch (HttpException $error) {
+            $this->assertSame(404, $error->getStatusCode());
+        }
+        $this->assertSame(0, $foreign->lines()->count());
+    }
+
     private function assertAttachRefused(ClientInvoice $target, string $message): void
     {
         $billing = app(DeferredBuyDownAction::class);
