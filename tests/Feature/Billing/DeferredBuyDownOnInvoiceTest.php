@@ -14,6 +14,7 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBacklogReader;
 use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\InvoiceKind;
 use Carbon\Carbon;
@@ -389,6 +390,77 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $issued = $lifecycle->issue($this->cadenceDraft(), $this->workspace);
 
         $this->assertSame('draft', $lifecycle->reopen($issued, 'Synthetic reopen', $this->workspace)->status);
+    }
+
+    /** Every door that changes an allocated entry reaches the same freeze. */
+    public function test_settled_time_on_a_host_cannot_be_edited_deleted_or_returned_to_draft(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $entry = $this->entry(60, '2026-04-01');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft());
+        $this->actingAsMcp($this->owner, ['mcp:use', 'time:read', 'time:write', 'time:approve', 'billing:read', 'billing:write']);
+        $url = '/api/v1/workspaces/'.$this->workspace->public_id.'/time-entries/'.$entry->public_id;
+        $version = AgentApiVersion::for($entry->fresh());
+
+        foreach ([
+            'edit' => ['PATCH', $url, ['expected_version' => $version, 'minutes' => 240]],
+            'delete' => ['DELETE', $url, ['expected_version' => $version]],
+            'unapprove' => ['POST', $url.'/unapprove', ['expected_version' => $version]],
+        ] as $door => [$method, $path, $body]) {
+            $this->json($method, $path, $body, ['Idempotency-Key' => 'synthetic-settled-'.$door])
+                ->assertConflict()->assertJsonPath('message', 'The time entry was not changed because this invoice settles it as deferred work. Void or discard the invoice to change it.');
+
+            $fresh = ClientTimeEntry::withTrashed()->whereKey($entry->id)->sole();
+            $this->assertSame(60, $fresh->minutes, $door);
+            $this->assertSame('approved', $fresh->status, $door);
+            $this->assertFalse($fresh->trashed(), $door);
+            $this->assertSame(110000, $host->fresh()?->total_amount, $door);
+        }
+    }
+
+    public function test_other_time_on_a_host_stays_editable_and_the_settlement_survives_the_rebuild(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        $this->ordinary(600, '2026-04-10');
+        $ordinary = $this->ordinary(600, '2026-05-10');
+        $this->entry(60, '2026-04-01');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft());
+        $line = $host->lines()->where('type', 'deferred_buydown')->sole();
+        $this->actingAsMcp($this->owner, ['mcp:use', 'time:read', 'time:write', 'billing:read', 'billing:write']);
+
+        $this->patchJson('/api/v1/workspaces/'.$this->workspace->public_id.'/time-entries/'.$ordinary->public_id,
+            ['expected_version' => AgentApiVersion::for($ordinary->fresh()), 'minutes' => 300],
+            ['Idempotency-Key' => 'synthetic-unsettled-edit'])->assertOk();
+
+        $this->assertSame(300, $ordinary->fresh()?->minutes);
+        $this->assertSame($line->id, $host->fresh()?->lines()->where('type', 'deferred_buydown')->sole()->id);
+    }
+
+    public function test_the_time_sheet_does_not_offer_to_edit_settled_time_on_a_host(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $ordinary = $this->ordinary(600, '2026-05-10');
+        $settled = $this->entry(60, '2026-05-01');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft());
+
+        $response = $this->actingAs($this->owner, 'web')
+            ->get('/workspaces/'.$this->workspace->public_id.'/clients/'.$this->company->public_id.'/time')
+            ->assertOk();
+        $rows = collect($response->viewData('page')['props']['months'])->flatMap(fn (array $month): array => $month['entries'])->keyBy('id');
+
+        $this->assertFalse($rows[$settled->public_id]['can_edit'], 'Settled time is frozen');
+        $this->assertTrue($rows[$ordinary->public_id]['can_edit'], 'Other time on the same draft stays editable');
     }
 
     private function assertAttachRefused(ClientInvoice $target, string $message): void

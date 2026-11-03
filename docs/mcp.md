@@ -1898,7 +1898,10 @@ nothing. No new invoice number is allocated, the host keeps its kind, cycle and
 work period, and the settlement lines are dated on the host's work-period end
 so a regeneration cannot widen the period it reconciles. Regenerating the host
 keeps the settlement lines and their claim; voiding or discarding the host
-releases the work exactly as voiding a settlement draft does.
+releases the work exactly as voiding a settlement draft does. An issued host
+cannot be reopened, and time it settles cannot be edited, deleted or unapproved
+(409) until the host is voided or discarded; other time on the host stays
+editable.
 
 `agreements.create` and `agreements.update` also accept the boolean
 `show_deferred_backlog_to_client`, and agreement reads report it. It defaults to

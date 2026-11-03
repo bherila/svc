@@ -26,6 +26,7 @@ use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
 use App\Support\Engagement\TimeSheetWindow;
 use Carbon\CarbonImmutable;
@@ -366,6 +367,7 @@ class TimeSheetController extends Controller
             ->whereIn('pivot.client_time_entry_id', $entries->modelKeys())
             ->select([
                 'pivot.client_time_entry_id as entry_id',
+                'client_invoice_lines.type as line_type',
                 'client_invoices.public_id as invoice_id',
                 'client_invoices.invoice_number as invoice_number',
                 'client_invoices.status as invoice_status',
@@ -407,6 +409,10 @@ class TimeSheetController extends Controller
                 InvoiceKind::Terminal => false,
                 null => false,
             };
+            // Settled work is frozen whichever kind of invoice carries it; see
+            // DraftInvoiceTimeRegenerator::isSettledOn().
+            $regenerable = $regenerable
+                && (string) $link->getAttribute('line_type') !== InvoiceLineType::DeferredBuyDown->value;
             $byEntry[(int) $link->getAttribute('entry_id')] = [
                 'id' => (string) $link->getAttribute('invoice_id'),
                 'number' => $link->getAttribute('invoice_number') === null
