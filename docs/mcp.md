@@ -1048,6 +1048,10 @@ void's: "A paid invoice cannot be reopened.", and so on) - and refuses, with a
 - any invoice that is not an issued cadence invoice of an agreement, because
   only those can be regenerated, and an invoice billed from a billing schedule
   (composed from its line template, not by the retainer generator);
+- an invoice carrying a deferred buy-down settlement, because regeneration keeps
+  the settlement line while the release takes away the time it bills, which
+  would charge for that work and also return it to the shelf (void it if it must
+  be replaced, which releases both);
 - a regeneration whose catch-up charge would differ from the one a later
   charged invoice was sized against. Unlike a void, a reopen is not refused
   merely because a later invoice relies on the charge: the invoice stays and
@@ -1885,6 +1889,19 @@ Idempotent replay returns the existing draft. Ordinary issue/send confirmations
 and Square collection ownership still apply. Void/discard releases the work,
 while unpaid issued work remains billed. The dedicated invoice kind is
 `deferred_buydown`; its system-only line type was reserved in #375.
+
+The optional `invoice_id` attaches the settlement to that existing invoice
+instead of creating one: the target must be a draft `cadence_period` invoice in
+the same workspace, for the same company and agreement — the reopened invoice
+being reissued is the intended host. Any other target is refused and reserves
+nothing. No new invoice number is allocated, the host keeps its kind, cycle and
+work period, and the settlement lines are dated on the host's work-period end
+so a regeneration cannot widen the period it reconciles. Regenerating the host
+keeps the settlement lines and their claim; voiding or discarding the host
+releases the work exactly as voiding a settlement draft does. An issued host
+cannot be reopened, and time it settles cannot be edited, deleted or unapproved
+(409) until the host is voided or discarded; other time on the host stays
+editable.
 
 `agreements.create` and `agreements.update` also accept the boolean
 `show_deferred_backlog_to_client`, and agreement reads report it. It defaults to

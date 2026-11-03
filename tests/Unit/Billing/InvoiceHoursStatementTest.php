@@ -60,6 +60,32 @@ final class InvoiceHoursStatementTest extends TestCase
         $this->assertNull($statement->retainerStart);
     }
 
+    public function test_settling_deferred_work_moves_only_the_backlog(): void
+    {
+        $statement = $this->statement();
+        $settled = $statement->toArrayWithDeferredSettled(2.0, 1);
+
+        $this->assertSame(3.0, $settled['deferredBacklogHours']);
+        $this->assertSame(0, $settled['deferredBacklogEntries']);
+        $this->assertSame(
+            array_diff_key($statement->toArray(), ['deferredBacklogHours' => true, 'deferredBacklogEntries' => true]),
+            array_diff_key($settled, ['deferredBacklogHours' => true, 'deferredBacklogEntries' => true]),
+        );
+    }
+
+    public function test_settled_hours_round_like_the_rest_of_the_statement(): void
+    {
+        $this->assertSame(4.6667, $this->statement()->toArrayWithDeferredSettled(1 / 3, 0)['deferredBacklogHours']);
+    }
+
+    public function test_settling_more_than_the_snapshot_saw_waiting_stops_at_zero(): void
+    {
+        $settled = $this->statement()->toArrayWithDeferredSettled(6.0, 3);
+
+        $this->assertSame(0.0, $settled['deferredBacklogHours']);
+        $this->assertSame(0, $settled['deferredBacklogEntries']);
+    }
+
     public function test_the_net_positions_are_retainer_plus_rollover_less_deficit(): void
     {
         $statement = $this->statement();

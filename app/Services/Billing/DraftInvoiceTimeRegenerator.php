@@ -6,8 +6,10 @@ use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -23,6 +25,11 @@ final class DraftInvoiceTimeRegenerator
     {
         abort_unless($invoice->workspace_id === $workspace->id, 404);
         abort_unless($invoice->status === 'draft', 409, 'Only time on a draft invoice can be changed.');
+        abort_if(
+            $this->isSettledOn($invoice, $workspace, $mutatedEntryId),
+            409,
+            'The time entry was not changed because this invoice settles it as deferred work. Void or discard the invoice to change it.',
+        );
 
         try {
             if ($invoice->invoiceKindValue() === InvoiceKind::AdHoc->value) {
@@ -85,6 +92,28 @@ final class DraftInvoiceTimeRegenerator
         } catch (DomainException|RuntimeException $exception) {
             abort(409, 'The time entry was not changed because its draft invoice could not be regenerated: '.$exception->getMessage());
         }
+    }
+
+    /**
+     * Whether a settlement line on this invoice bills the entry.
+     *
+     * A settlement line is priced when it is written and regeneration keeps it,
+     * so an edit would change the work while the invoice went on charging the
+     * old quantity. A settlement invoice refuses because its kind has no
+     * regeneration path; a cadence invoice has one, so this is asked of the line.
+     * Read from the pivot because the relation hides a soft-deleted entry, and
+     * deleting is one of the edits this refuses.
+     */
+    private function isSettledOn(ClientInvoice $invoice, Workspace $workspace, int $entryId): bool
+    {
+        return DB::table('client_invoice_line_time_entries as pivot')
+            ->join('client_invoice_lines as lines', 'lines.id', '=', 'pivot.client_invoice_line_id')
+            ->where('pivot.workspace_id', $workspace->id)
+            ->where('lines.workspace_id', $workspace->id)
+            ->where('lines.client_invoice_id', $invoice->id)
+            ->where('lines.type', InvoiceLineType::DeferredBuyDown->value)
+            ->where('pivot.client_time_entry_id', $entryId)
+            ->exists();
     }
 
     /**

@@ -181,6 +181,24 @@ final readonly class InvoiceHoursStatement
     }
 
     /**
+     * The stored statement once work it reported as waiting has been settled.
+     *
+     * Settled work leaves the backlog and takes no capacity, so nothing else
+     * moves. Floored at zero: a draft can settle more than its snapshot saw
+     * waiting when time was approved after it was generated.
+     *
+     * @return array<string, int|float|string|null>
+     */
+    public function toArrayWithDeferredSettled(float $hours, int $entries): array
+    {
+        return [
+            ...$this->toArray(),
+            'deferredBacklogHours' => max(0.0, round($this->deferredBacklogHours - $hours, 4)),
+            'deferredBacklogEntries' => max(0, $this->deferredBacklogEntries - $entries),
+        ];
+    }
+
+    /**
      * Read a stored statement, or nothing when it is absent or of another shape.
      *
      * Nothing rather than an exception: the statement explains an invoice, and

@@ -1030,9 +1030,25 @@ final class ReplayInvoicesCommand extends TextReportCommand
         }
         $retainedExpenseLineIds = $claims->pluck('client_invoice_line_id');
 
+        // A settlement attached to a cadence invoice is explicit history, as a
+        // settlement invoice is, and no generator will reproduce it. Its lines,
+        // its discount and its claims stay where they are, or the work would
+        // return to the shelf and the comparison would report the charge as a
+        // divergence. Regeneration keeps both line types.
+        $settlementHostIds = DB::table('client_invoice_lines')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_id', $invoiceIds)
+            ->where('type', InvoiceLineType::DeferredBuyDown->value)
+            ->pluck('client_invoice_id');
+        $releasedLineIds = $lineIds->diff(DB::table('client_invoice_lines')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_id', $settlementHostIds)
+            ->whereIn('type', [InvoiceLineType::DeferredBuyDown->value, InvoiceLineType::Adjustment->value])
+            ->pluck('id'));
+
         $entryIds = DB::table('client_invoice_line_time_entries')
             ->where('workspace_id', $workspaceId)
-            ->whereIn('client_invoice_line_id', $lineIds)
+            ->whereIn('client_invoice_line_id', $releasedLineIds)
             ->pluck('client_time_entry_id');
 
         if ($entryIds->isNotEmpty()) {
@@ -1047,15 +1063,15 @@ final class ReplayInvoicesCommand extends TextReportCommand
 
         DB::table('client_invoice_line_time_entries')
             ->where('workspace_id', $workspaceId)
-            ->whereIn('client_invoice_line_id', $lineIds)
+            ->whereIn('client_invoice_line_id', $releasedLineIds)
             ->delete();
         DB::table('client_tasks')
             ->where('workspace_id', $workspaceId)
-            ->whereIn('client_invoice_line_id', $lineIds)
+            ->whereIn('client_invoice_line_id', $releasedLineIds)
             ->update(['client_invoice_line_id' => null]);
         DB::table('client_invoice_lines')
             ->where('workspace_id', $workspaceId)
-            ->whereIn('id', $lineIds)
+            ->whereIn('id', $releasedLineIds)
             ->whereNotIn('id', $retainedExpenseLineIds)
             ->delete();
 

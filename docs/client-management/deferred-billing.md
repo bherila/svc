@@ -200,6 +200,32 @@ An optional discount is a separate negative `adjustment` with a required reason
 printed on the invoice. No rate is changed. The settlement is dated on the
 workspace's current day; original time and worked dates stay unchanged.
 
+Through the agent API and MCP create operation, the settlement may instead be
+attached to an existing invoice by passing its `invoice_id` — the case an
+operator reaches for when the settlement must land on an invoice already sent,
+reopened for reissue, rather than on a second document. The host must be a draft `cadence_period`
+invoice for the same company and agreement, without a billing schedule; an
+issued, ad-hoc, settlement or foreign invoice is refused and reserves nothing.
+No new invoice number is allocated and the host keeps its kind, cadence cycle
+and work period. The settlement lines are dated on the host's work-period end
+rather than the current day, so the host's generator — which widens a draft's
+service period to cover the dates its work lines carry — cannot pull the
+settlement into the next cycle's window, and the backlog trend books the
+settled hours in the host's work month, as it does for retainer-applied
+deferred work. Regenerating the host preserves the lines and their claim (the
+generator's replaceable line types exclude `deferred_buydown`), and voiding or
+discarding the host releases the reservations exactly as voiding a settlement
+draft does. Once issued, a host cannot be reopened: the release would take the
+time away from a settlement line that regeneration keeps, charging for the work
+and returning it to the shelf at once. Void it if it must be replaced. Time a
+host settles is frozen as a settlement invoice's is: a settlement line is priced
+when it is written, so editing, deleting or unapproving that entry is refused
+with a 409 until the host is voided or discarded, while other time on the host
+stays editable. The host's stored hours statement stops counting settled work as
+waiting, so the reissued document agrees with its charge, and a regeneration
+measures the same figures. The website's **Bill deferred work** flow still creates its own
+settlement invoice; attaching is an agent-surface capability for now.
+
 Void or draft discard releases the reservations back to the shelf. This differs
 from a void cadence period, whose period remains deliberately waived. An issued
 but unpaid settlement keeps its entries reserved; collection uses ordinary AR.

@@ -167,7 +167,8 @@ refused once a later invoice was sized against the charge.
   same transaction. The time returns to `approved` and the regenerated draft
   consumes it again.
 - It is **refused** for an invoice Square collects (unlink it first), one
-  corrected in place, a billing schedule's invoice, a kind that cannot be
+  corrected in place, one carrying a deferred buy-down settlement, a billing
+  schedule's invoice, a kind that cannot be
   regenerated, and a regeneration that would change the catch-up charge a later
   charged invoice recorded (`DraftCatchUpDependencies::assertChargeUnchanged()`).
   The same check runs again at the reissue, because the reopened invoice is an

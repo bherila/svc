@@ -22,7 +22,9 @@ final class AgentInlineSchemas
     public static function deferredBuyDownPreviewInput(): array
     {
         $schema = AgentApiResponseSchemaCatalog::schema('DeferredBuyDownCreateRequest');
-        unset($schema['properties']['expected_backlog_version']);
+        // A quote names no host invoice: the target is a creation-time choice,
+        // and the same version guards a settlement on either shape of draft.
+        unset($schema['properties']['expected_backlog_version'], $schema['properties']['invoice_id']);
         $schema['required'] = ['workspace_id', 'agreement_id'];
         $schema['properties'] = [
             'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
