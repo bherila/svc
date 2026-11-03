@@ -228,13 +228,17 @@ final class DeferredBuyDownAction
     private function removeSettledWorkFromStatement(ClientInvoice $invoice, DeferredBuyDownSelection $selection): void
     {
         $statement = $invoice->hoursStatement();
-        if ($statement === null) {
-            return;
+        if ($statement !== null) {
+            $reported = array_filter($selection->entries, static fn (ClientTimeEntry $entry): bool => $entry->worked_on->toDateString() <= $statement->workEnd);
+            $minutes = array_sum(array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->minutes, $reported));
+            $invoice->forceFill(['hours_statement' => $statement->toArrayWithDeferredSettled($minutes / 60, count($reported))]);
         }
 
-        $reported = array_filter($selection->entries, static fn (ClientTimeEntry $entry): bool => $entry->worked_on->toDateString() <= $statement->workEnd);
-        $minutes = array_sum(array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->minutes, $reported));
-        $invoice->forceFill(['hours_statement' => $statement->toArrayWithDeferredSettled($minutes / 60, count($reported))]);
+        $deferred = $invoice->deferredWorkSnapshot();
+        if ($deferred !== null) {
+            $ids = array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->id, $selection->entries);
+            $invoice->forceFill(['deferred_work_statement' => $deferred->withoutSettledEntries($ids)?->toArray()]);
+        }
     }
 
     /** Write the settlement's priced lines and, when discounted, its adjustment. */

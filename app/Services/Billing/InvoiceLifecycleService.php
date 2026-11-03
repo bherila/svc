@@ -162,6 +162,7 @@ final class InvoiceLifecycleService
                 // exist. The agent door reaches here only for an ad-hoc draft
                 // (#349); a generated one is regenerated, not edited.
                 'hours_statement' => null,
+                'deferred_work_statement' => null,
             ];
             foreach (['due_date', 'scheduled_issue_date', 'notes'] as $attribute) {
                 if (array_key_exists($attribute, $attributes)) {
