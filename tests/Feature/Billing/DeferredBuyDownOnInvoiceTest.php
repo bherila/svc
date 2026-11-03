@@ -436,6 +436,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->ordinary(600, '2026-05-10');
         $first = $this->entry(180, '2026-04-01');
         $second = $this->entry(60, '2026-04-02');
+        $remaining = $this->entry(60, '2026-04-03');
         $lifecycle = app(InvoiceLifecycleService::class);
         $billing = app(DeferredBuyDownAction::class);
         $request = DeferredBuyDownRequest::from(['hours' => 4, 'discount_amount' => 1000, 'discount_reason' => 'Synthetic discount']);
@@ -451,10 +452,10 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame(0, $reopened->lines()->where('type', 'adjustment')->count());
         $this->assertSame('approved', $first->fresh()?->status);
         $this->assertSame('approved', $second->fresh()?->status);
-        $this->assertEqualsCanonicalizing([$first->id, $second->id], $this->backlogIds());
+        $this->assertEqualsCanonicalizing([$first->id, $second->id, $remaining->id], $this->backlogIds());
         $statement = $reopened->hoursStatement();
         $this->assertNotNull($statement);
-        $this->assertSame([4.0, 2], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
+        $this->assertSame([5.0, 3], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
         $this->assertSame([
             'settled_deferred_entry_count' => 2,
             'unwound_amount' => 39000,
@@ -463,7 +464,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
             ->where('action', 'invoice.deferred_buydown_unwound')->sole()->payload);
         $beforeSettlement = $reopened->deferredWorkSnapshot();
         $this->assertNotNull($beforeSettlement);
-        $this->assertSame(4.0, $beforeSettlement->documentData()['total_hours']);
+        $this->assertSame(5.0, $beforeSettlement->documentData()['total_hours']);
 
         $preview = $billing->preview($this->workspace, $this->agreement, $request);
         $this->assertEqualsCanonicalizing([$first->id, $second->id], array_map(
@@ -473,7 +474,13 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $attached = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $reopened);
         $this->assertSame($issued->id, $attached->id);
         $this->assertSame(139000, $attached->total_amount);
-        $this->assertNull($attached->deferredWorkSnapshot());
+        $remainingSnapshot = $attached->deferredWorkSnapshot();
+        $this->assertNotNull($remainingSnapshot);
+        $this->assertSame([1, 1.0, '2026-04-03'], [
+            $remainingSnapshot->documentData()['entry_count'],
+            $remainingSnapshot->documentData()['total_hours'],
+            $remainingSnapshot->documentData()['oldest_worked_on'],
+        ]);
 
         $reissued = $lifecycle->issue($attached, $this->workspace);
         $this->assertSame($number, $reissued->invoice_number);
@@ -487,7 +494,8 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
             ->timeEntries()->pluck('client_time_entries.id')->all());
         $this->assertSame('invoiced', $first->fresh()?->status);
         $this->assertSame('invoiced', $second->fresh()?->status);
-        $this->assertSame([], $this->backlogIds());
+        $this->assertSame([$remaining->id], $this->backlogIds());
+        $this->assertSame($remainingSnapshot->toArray(), $reissued->deferredWorkSnapshot()?->toArray());
         $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $this->workspace->id)->count(), 'Still the one document the client was sent');
     }
 

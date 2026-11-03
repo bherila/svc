@@ -45,6 +45,16 @@ type PortalInvoice = {
     paid_amount: number;
     balance_amount: number;
     pdf_url: string;
+    deferred_work: {
+        entry_count: number;
+        total_hours: number;
+        oldest_worked_on: string;
+        entries: {
+            worked_on: string;
+            hours: number;
+            description: string | null;
+        }[];
+    } | null;
 };
 
 /**
@@ -257,6 +267,61 @@ export default function PortalInvoice({
                         </dl>
                     </CardContent>
                 </Card>
+                {invoice.deferred_work !== null && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Still deferred</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-3">
+                            <p className="text-sm text-muted-foreground">
+                                {invoice.deferred_work.entry_count}{' '}
+                                {invoice.deferred_work.entry_count === 1
+                                    ? 'entry'
+                                    : 'entries'}{' '}
+                                · {invoice.deferred_work.total_hours.toFixed(4)}{' '}
+                                hours · oldest worked date{' '}
+                                {formatDay(
+                                    invoice.deferred_work.oldest_worked_on,
+                                )}
+                            </p>
+                            <div className="overflow-x-auto">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Date</TableHead>
+                                            <TableHead className="min-w-64">
+                                                Work
+                                            </TableHead>
+                                            <TableHead>Hours</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {invoice.deferred_work.entries.map(
+                                            (entry, index) => (
+                                                <TableRow
+                                                    key={`${entry.worked_on}-${index}`}
+                                                >
+                                                    <TableCell>
+                                                        {formatDay(
+                                                            entry.worked_on,
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="max-w-0 whitespace-normal wrap-anywhere">
+                                                        {entry.description ??
+                                                            '—'}
+                                                    </TableCell>
+                                                    <TableCell className="tabular-nums">
+                                                        {entry.hours.toFixed(4)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ),
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
                 {attachment_panel && (
                     <AttachmentSharingPanel panel={attachment_panel} />
                 )}

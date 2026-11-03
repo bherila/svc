@@ -40,7 +40,7 @@ final class PortalReadProjectionTest extends TestCase
             'id' => 'SYN-INVOICE', 'invoice_number' => 'SYN-PUBLIC', 'status' => 'issued', 'total_amount' => 1500,
             'paid_amount' => 500, 'balance_amount' => 1000, 'currency' => 'EUR', 'issue_date' => '2026-10-28',
             'due_date' => '2026-11-28', 'service_period_start' => '2026-10-01', 'service_period_end' => '2026-10-31',
-            'subtotal_amount' => 1250, 'tax_amount' => 250,
+            'subtotal_amount' => 1250, 'tax_amount' => 250, 'deferred_work' => null,
         ], AgentInvoicePresenter::portalDetails($invoice));
         $this->assertSame(['id' => 'SYN-LINE', 'description' => 'Synthetic public work', 'unit_amount' => 1000,
             'total_amount' => 1125, 'quantity' => 1.125, 'hours' => 0.75, 'line_date' => '2026-10-28'], AgentInvoicePresenter::portalLine($line));

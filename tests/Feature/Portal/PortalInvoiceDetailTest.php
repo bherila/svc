@@ -65,6 +65,30 @@ final class PortalInvoiceDetailTest extends TestCase
                 ->where('lines.0.description', 'Synthetic consulting work'));
     }
 
+    public function test_a_client_sees_only_the_saved_deferred_work_snapshot(): void
+    {
+        $invoice = $this->invoice('SENT-DEFERRED-1', ['is_visible_to_client' => true, 'status' => 'issued']);
+        $invoice->forceFill(['deferred_work_statement' => [
+            'version' => 1,
+            'entries' => [
+                ['id' => 123456, 'workedOn' => '2026-04-01', 'minutes' => 60, 'description' => null],
+                ['id' => 123457, 'workedOn' => '2026-04-02', 'minutes' => 120, 'description' => 'Synthetic client-safe work'],
+            ],
+        ]])->save();
+
+        $this->actingAs($this->portalUser())
+            ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('invoice.deferred_work.entry_count', 2)
+                ->where('invoice.deferred_work.total_hours', 3.0)
+                ->where('invoice.deferred_work.oldest_worked_on', '2026-04-01')
+                ->where('invoice.deferred_work.entries.1.description', 'Synthetic client-safe work')
+                ->where('invoice.deferred_work.entries.0.description', null))
+            ->assertDontSee('123456')
+            ->assertDontSee('123457');
+    }
+
     /**
      * A draft is working arithmetic nobody has committed to.
      *
