@@ -1015,20 +1015,6 @@ final class InvoiceLifecycleService
                         : sprintf('Invoice %s belongs to an agreement billed in Square, which collects it, so it cannot be reopened. Clear the agreement\'s Square marker first, then reopen it.', (string) $locked->invoice_number)
                 );
             }
-            // A settlement line is not a generated type, so regeneration keeps
-            // it while the release below takes away the time it bills: the
-            // charge would stand with the work back on the shelf, to be billed
-            // again. Voiding releases both together.
-            if ($locked->lines()
-                ->where('workspace_id', $locked->workspace_id)
-                ->where('type', InvoiceLineType::DeferredBuyDown->value)
-                ->exists()) {
-                throw new DomainException(sprintf(
-                    'Invoice %s carries a deferred buy-down settlement, and reopening it would release the time those lines bill while keeping the charge. '
-                    .'It cannot be reopened; void it instead if it must be replaced.',
-                    (string) $locked->invoice_number,
-                ));
-            }
             $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
 
             // Read from the tenant, as issue() does, rather than through the
@@ -1036,8 +1022,38 @@ final class InvoiceLifecycleService
             $owningWorkspace = Workspace::query()->whereKey($locked->workspace_id)->firstOrFail();
             $company = ClientCompany::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->client_company_id)->firstOrFail();
 
+            $settlementLines = $locked->lines()
+                ->where('workspace_id', $locked->workspace_id)
+                ->where('type', InvoiceLineType::DeferredBuyDown->value)
+                ->get(['id', 'total_amount']);
+            $settlementLineIds = $settlementLines->modelKeys();
+            $settlementHistory = null;
+            if ($settlementLineIds !== []) {
+                $discountLines = $locked->lines()
+                    ->where('workspace_id', $locked->workspace_id)
+                    ->where('type', InvoiceLineType::Adjustment->value)
+                    ->where('sort_order', InvoiceLineType::DEFERRED_BUYDOWN_ADJUSTMENT_SORT_ORDER)
+                    ->get(['id', 'total_amount']);
+                $settlementHistory = [
+                    'settled_deferred_entry_count' => DB::table('client_invoice_line_time_entries')
+                        ->where('workspace_id', $locked->workspace_id)
+                        ->whereIn('client_invoice_line_id', $settlementLineIds)
+                        ->distinct()
+                        ->count('client_time_entry_id'),
+                    'unwound_amount' => (int) $settlementLines->sum('total_amount') + (int) $discountLines->sum('total_amount'),
+                    'currency' => $locked->currency,
+                ];
+                $settlementLineIds = [...$settlementLineIds, ...$discountLines->modelKeys()];
+            }
+
             // Expense claims stay for the rebuild to re-decide; see releaseAllocations().
             $this->releaseAllocations($locked, releaseExpenses: false);
+            if ($settlementLineIds !== []) {
+                $locked->lines()
+                    ->where('workspace_id', $locked->workspace_id)
+                    ->whereIn('id', $settlementLineIds)
+                    ->delete();
+            }
             $locked->forceFill([
                 'status' => InvoiceStatus::Draft->value,
                 'reopened_at' => $this->clock->now($owningWorkspace)->utc(),
@@ -1063,6 +1079,17 @@ final class InvoiceLifecycleService
                 throw new LogicException('Regeneration rebuilt a different invoice than the one being reopened.');
             }
             $this->draftCatchUpDependencies->assertChargeUnchanged($draft);
+
+            if ($settlementHistory !== null) {
+                $this->activities->record(
+                    $owningWorkspace,
+                    $company,
+                    'invoice.deferred_buydown_unwound',
+                    $draft,
+                    $settlementHistory,
+                    occurrence: 'revision-'.$draft->document_revision,
+                );
+            }
 
             $this->activities->record(
                 $owningWorkspace,

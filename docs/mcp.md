@@ -1057,10 +1057,6 @@ void's: "A paid invoice cannot be reopened.", and so on) - and refuses, with a
 - any invoice that is not an issued cadence invoice of an agreement, because
   only those can be regenerated, and an invoice billed from a billing schedule
   (composed from its line template, not by the retainer generator);
-- an invoice carrying a deferred buy-down settlement, because regeneration keeps
-  the settlement line while the release takes away the time it bills, which
-  would charge for that work and also return it to the shelf (void it if it must
-  be replaced, which releases both);
 - a regeneration whose catch-up charge would differ from the one a later
   charged invoice was sized against. Unlike a void, a reopen is not refused
   merely because a later invoice relies on the charge: the invoice stays and
@@ -1069,10 +1065,13 @@ void's: "A paid invoice cannot be reopened.", and so on) - and refuses, with a
   regenerate it meanwhile, so the same check runs again at the reissue: it is
   refused until the invoice charges what that later invoice recorded.
 
-Under the agreement lock the allocations are released as a void releases them
-(`deferred_buydown` reservations remain excluded), the invoice becomes a draft
-with `reopened_at`, the reason and `invoice.reopened` in the client history, its
-automatic delivery is cancelled as a void cancels it, and
+Under the agreement lock the allocations are released as a void releases them,
+including any deferred buy-down reservations. The settlement lines and their
+discount adjustments are removed before regeneration, so the regenerated hours
+statement reflects the returned backlog; `invoice.deferred_buydown_unwound`
+records the settled entry count and net amount in client history. The invoice
+becomes a draft with `reopened_at`, the reason and `invoice.reopened` in the
+client history, its automatic delivery is cancelled as a void cancels it, and
 `ClientInvoicingService::regenerateDraftInvoice()` rebuilds it from the time
 approved now, **in the same transaction**: releasing alone would leave a draft
 whose lines still describe time no longer attached to it, so there is no

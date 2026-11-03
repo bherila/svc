@@ -377,32 +377,57 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame([$entry->id], $this->backlogIds());
     }
 
-    public function test_a_reopened_invoice_carries_the_settlement_through_its_reissue(): void
+    public function test_reopening_unwinds_a_settlement_and_it_can_be_attached_and_billed_again_once(): void
     {
         $this->ordinary(600, '2026-04-10');
         $this->ordinary(600, '2026-05-10');
         $first = $this->entry(180, '2026-04-01');
         $second = $this->entry(60, '2026-04-02');
         $lifecycle = app(InvoiceLifecycleService::class);
-        $issued = $lifecycle->issue($this->cadenceDraft(), $this->workspace);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 4, 'discount_amount' => 1000, 'discount_reason' => 'Synthetic discount']);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft());
+        $issued = $lifecycle->issue($host, $this->workspace);
         $number = $issued->invoice_number;
 
-        $reopened = $lifecycle->reopen($issued, 'Synthetic settlement to add', $this->workspace);
+        $reopened = $lifecycle->reopen($issued, 'Correct the settlement', $this->workspace);
         $this->assertSame('draft', $reopened->status);
+        $this->assertSame(100000, $reopened->total_amount, 'Only cadence charges remain');
+        $this->assertSame(0, $reopened->lines()->where('type', 'deferred_buydown')->count());
+        $this->assertSame(0, $reopened->lines()->where('type', 'adjustment')->count());
+        $this->assertSame('approved', $first->fresh()?->status);
+        $this->assertSame('approved', $second->fresh()?->status);
+        $this->assertEqualsCanonicalizing([$first->id, $second->id], $this->backlogIds());
+        $statement = $reopened->hoursStatement();
+        $this->assertNotNull($statement);
+        $this->assertSame([4.0, 2], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
+        $this->assertSame([
+            'settled_deferred_entry_count' => 2,
+            'unwound_amount' => 39000,
+            'currency' => 'USD',
+        ], ClientCompanyActivity::query()->where('workspace_id', $this->workspace->id)
+            ->where('action', 'invoice.deferred_buydown_unwound')->sole()->payload);
 
-        $billing = app(DeferredBuyDownAction::class);
-        $request = DeferredBuyDownRequest::from(['hours' => 4]);
         $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $this->assertEqualsCanonicalizing([$first->id, $second->id], array_map(
+            static fn (ClientTimeEntry $entry): int => $entry->id,
+            $preview->selection->entries,
+        ));
         $attached = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $reopened);
         $this->assertSame($issued->id, $attached->id);
-        $this->assertSame(140000, $attached->total_amount);
+        $this->assertSame(139000, $attached->total_amount);
 
         $reissued = $lifecycle->issue($attached, $this->workspace);
         $this->assertSame($number, $reissued->invoice_number);
         $this->assertSame('issued', $reissued->status);
         $this->assertSame(2, $reissued->document_revision);
         $this->assertNotNull($reissued->reissued_at);
-        $this->assertSame(140000, $reissued->total_amount);
+        $this->assertSame(139000, $reissued->total_amount);
+        $this->assertSame(1, $reissued->lines()->where('type', 'deferred_buydown')->count());
+        $this->assertSame(1, $reissued->lines()->where('type', 'adjustment')->count());
+        $this->assertSame([$first->id, $second->id], $reissued->lines()->where('type', 'deferred_buydown')->sole()
+            ->timeEntries()->pluck('client_time_entries.id')->all());
         $this->assertSame('invoiced', $first->fresh()?->status);
         $this->assertSame('invoiced', $second->fresh()?->status);
         $this->assertSame([], $this->backlogIds());
@@ -486,7 +511,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         ], ['Idempotency-Key' => 'synthetic-buydown-missing-host'])->assertNotFound();
     }
 
-    public function test_an_issued_host_cannot_be_reopened_and_keeps_its_charge_and_claim(): void
+    public function test_a_paid_issued_host_with_a_settlement_still_cannot_be_reopened(): void
     {
         $this->ordinary(600, '2026-04-10');
         $this->ordinary(600, '2026-05-10');
@@ -496,17 +521,19 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $preview = $billing->preview($this->workspace, $this->agreement, $request);
         $lifecycle = app(InvoiceLifecycleService::class);
         $issued = $lifecycle->issue($billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft()), $this->workspace);
-
+        $lifecycle->applyPayment($issued, [
+            'amount' => 110000, 'currency' => 'USD', 'method' => 'ach', 'status' => 'succeeded', 'received_on' => '2026-06-15',
+        ], $this->workspace);
         try {
-            $lifecycle->reopen($issued, 'Synthetic second reopen', $this->workspace);
-            $this->fail('Reopening would keep the charge and put the work back on the shelf.');
+            $lifecycle->reopen($issued->fresh(), 'Synthetic paid settlement reopen', $this->workspace);
+            $this->fail('A paid invoice cannot be reopened, even when it carries a settlement.');
         } catch (DomainException $refusal) {
-            $this->assertStringContainsString('carries a deferred buy-down settlement', $refusal->getMessage());
+            $this->assertSame('A paid invoice cannot be reopened.', $refusal->getMessage());
         }
 
         $fresh = $issued->fresh();
         $this->assertNotNull($fresh);
-        $this->assertSame('issued', $fresh->status);
+        $this->assertSame('paid', $fresh->status);
         $this->assertSame(110000, $fresh->total_amount);
         $this->assertSame('invoiced', $entry->fresh()?->status);
         $this->assertSame([$entry->id], $fresh->lines()->where('type', 'deferred_buydown')->sole()->timeEntries()->pluck('client_time_entries.id')->all());
