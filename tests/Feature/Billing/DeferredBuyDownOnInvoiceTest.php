@@ -17,6 +17,7 @@ use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\DeferredBuyDownRequest;
+use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceKind;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -160,6 +161,28 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
 
         $this->assertNull($draft->fresh()?->hours_statement);
+    }
+
+    public function test_regenerating_a_host_reaches_the_statement_attaching_left_and_never_reads_as_termination(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $this->entry(240, '2026-04-01');
+        $this->entry(120, '2026-04-02');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 4]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft());
+        $attached = $host->fresh()?->hoursStatement();
+        $this->assertNotNull($attached);
+
+        $regenerated = app(ClientInvoicingService::class)->regenerateDraftInvoice($host->fresh())?->fresh()?->hoursStatement();
+
+        $this->assertNotNull($regenerated);
+        $this->assertSame(0.0, $regenerated->deferredBilledOnTerminationHours);
+        $this->assertEquals($attached->toArray(), $regenerated->toArray());
+        $labels = collect(InvoiceHoursStatementRows::for($regenerated))->flatMap(fn (array $section): array => array_column($section['rows'], 'label'));
+        $this->assertFalse($labels->contains(fn (string $label): bool => str_contains($label, 'termination')));
     }
 
     public function test_attach_records_what_it_changed_in_the_client_history(): void

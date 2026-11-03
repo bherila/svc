@@ -1614,6 +1614,11 @@ final class ClientInvoicingService
 
         foreach ($lines as $line) {
             $type = (string) $line->type;
+            // Settled outside the retainer: its work drew on no pool and was not
+            // billed on termination, whatever else this statement reconciles.
+            if ($type === InvoiceLineType::DeferredBuyDown->value) {
+                continue;
+            }
             if ($type === InvoiceLineType::CarriedDeferredApplied->value) {
                 $settled += (float) $line->hours;
             } elseif ($type === InvoiceLineType::CarriedDeferredBilled->value) {
