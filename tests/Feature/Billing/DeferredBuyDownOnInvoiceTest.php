@@ -87,7 +87,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertStringContainsString('Client-safe deferred work', $html);
         $this->assertStringNotContainsString('Synthetic deferred work', $html);
         $this->assertStringNotContainsString('Synthetic internal note', $html);
-        $this->assertLessThan(strpos($html, '2026-04-02'), strpos($html, '2026-04-01'));
+        $this->assertLessThan(strpos($html, '2026-04-02'), strrpos($html, '2026-04-01'));
     }
 
     public function test_cadence_document_hides_a_backlog_fully_applied_to_its_pool(): void

@@ -306,7 +306,7 @@ export default function PortalInvoice({
                                                             entry.worked_on,
                                                         )}
                                                     </TableCell>
-                                                    <TableCell className="max-w-0 whitespace-normal wrap-anywhere">
+                                                    <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                                         {entry.description ??
                                                             '—'}
                                                     </TableCell>
