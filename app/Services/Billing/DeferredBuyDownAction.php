@@ -63,10 +63,9 @@ final class DeferredBuyDownAction
     /**
      * Reserve the previewed selection, either on a new settlement invoice or,
      * when `$target` names one, on that existing cadence draft instead - the
-     * reopened-invoice case (#594): the settlement the client agreed to pay as
-     * an extra month lands on the invoice being reissued rather than on a
-     * second document. The target keeps its number, its kind and its cadence
-     * cycle; only its lines and totals change.
+     * reopened-invoice case (#594): the settlement lands on the invoice being
+     * reissued rather than on a second document. The target keeps its number,
+     * its kind and its cadence cycle; only its lines and totals change.
      */
     public function create(Workspace $workspace, ClientAgreement $agreement, DeferredBuyDownRequest $request, string $expectedVersion, ?ClientInvoice $target = null): ClientInvoice
     {

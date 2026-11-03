@@ -202,9 +202,8 @@ workspace's current day; original time and worked dates stay unchanged.
 
 Through the agent API and MCP create operation, the settlement may instead be
 attached to an existing invoice by passing its `invoice_id` — the case an
-operator reaches for when a client agreed to an extra month and the settlement
-must land on the invoice already sent for that month, reopened for reissue
-rather than on a second document. The host must be a draft `cadence_period`
+operator reaches for when the settlement must land on an invoice already sent,
+reopened for reissue, rather than on a second document. The host must be a draft `cadence_period`
 invoice for the same company and agreement, without a billing schedule; an
 issued, ad-hoc, settlement or foreign invoice is refused and reserves nothing.
 No new invoice number is allocated and the host keeps its kind, cadence cycle

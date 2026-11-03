@@ -28,8 +28,8 @@ use Tests\TestCase;
 
 /**
  * A settlement attached to an existing cadence draft instead of a settlement
- * invoice of its own: the reopened-invoice case (#594), where the extra month
- * a client agreed to pay must land on the invoice being reissued.
+ * invoice of its own: the reopened-invoice case (#594), where the settlement
+ * must land on the invoice being reissued.
  */
 final class DeferredBuyDownOnInvoiceTest extends TestCase
 {
@@ -303,7 +303,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $issued = $lifecycle->issue($this->cadenceDraft(), $this->workspace);
         $number = $issued->invoice_number;
 
-        $reopened = $lifecycle->reopen($issued, 'Synthetic extra month agreed', $this->workspace);
+        $reopened = $lifecycle->reopen($issued, 'Synthetic settlement to add', $this->workspace);
         $this->assertSame('draft', $reopened->status);
 
         $billing = app(DeferredBuyDownAction::class);
