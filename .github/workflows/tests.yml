@@ -506,31 +506,26 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
-          diff_status=0
-          git -c diff.renames=false diff --quiet --diff-filter=AM "$merge_base" "$HEAD_SHA" -- \
-            ':(glob)app/**/*.php' || diff_status=$?
-          if [ "$diff_status" -eq 0 ]; then
-            echo "required=false" >> "$GITHUB_OUTPUT"
-            echo "changed_count=0" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Mutation gate not applicable::No added, modified, or renamed PHP application source under app/ is present in this diff."
+          source scripts/mutation-scope.sh
+          mutation_scope "$BASE_SHA" "$HEAD_SHA"
+          {
+            echo "merge_base=$mutation_scope_base"
+            echo "required=$mutation_scope_required"
+            echo "changed_count=$mutation_scope_files"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$mutation_scope_required" = false ]; then
+            echo "::notice title=Mutation gate not applicable::No added or changed surviving PHP application lines under app/ (including deletion-only diffs)."
             {
               echo "### Mutation gate"
               echo
-              echo "Not run: this diff has no added, modified, or renamed PHP application source under \`app/\`."
-            } >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$diff_status" -eq 1 ]; then
-            changed_count=$(git -c diff.renames=false diff --name-only --diff-filter=AM "$merge_base" "$HEAD_SHA" -- ':(glob)app/**/*.php' | wc -l)
-            echo "required=true" >> "$GITHUB_OUTPUT"
-            echo "changed_count=$changed_count" >> "$GITHUB_OUTPUT"
-            {
-              echo "### Mutation gate"
-              echo
-              echo "Running changed-line mutation analysis for $changed_count PHP application source file(s)."
+              echo "Not applicable: no added or changed surviving PHP application lines under \`app/\` (including deletion-only diffs). No mutation summary or score is produced."
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            exit "$diff_status"
+            {
+              echo "### Mutation gate"
+              echo
+              echo "Running changed-line mutation analysis for $mutation_scope_files PHP application source file(s)."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Setup PHP with coverage

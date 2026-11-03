@@ -560,7 +560,7 @@ There are no currently deprecated operations.
 
 | Operation | Deprecated in | Removed in | Date |
 | --------- | ------------- | ---------- | ---- |
-| `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | 2026-11-01 |
+| `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | 2026-11-03 |
 
 The spent opening-rollover audit has no replacement. Opening rollover remains a
 billing-ledger concept.

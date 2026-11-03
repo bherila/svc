@@ -71,11 +71,26 @@ is explicit rather than inferred from file names.
 
 ## Honest empty results
 
-The workflow first detects added or modified `app/**/*.php` files. If there are
-none, it emits a GitHub notice and a job summary saying mutation testing was not
-applicable. If Infection analyzes PHP source but produces zero mutants, the
-summary says that explicitly too. Neither case is evidence that a test killed a
-behavioral change.
+The local runner and hosted workflow use the same `scripts/mutation-scope.sh`
+detector, comparing the merge base with the candidate. With rename detection
+disabled, it counts added/changed surviving lines in `app/**/*.php` rather than
+just modified files. Tool-only diffs and pure method/file deletions are explicitly
+**not applicable**: there are no surviving changed application lines for Infection
+to mutate. No summary or mutation score is fabricated. Deletion behavior is
+verified by regression tests, full suites and static checks instead of a
+changed-line mutation score.
+
+Additions, replacements, mixed additions/deletions and renamed/imported source
+still run the existing mutation and measurement gates. Binary application diffs
+are conservatively applicable because their surviving lines cannot be classified.
+Invalid Git comparisons, failed commands and malformed diff output fail closed.
+Synthetic scope tests exercise the shared detector through both the local runner
+and the hosted detection step, including filenames with spaces, tabs and newlines.
+
+If applicable source produces zero mutants, Infection must still write its
+zero-count summary and the job reports it explicitly. A missing summary remains a
+failure for every applicable diff. Neither N/A nor a zero-mutant result is evidence
+that a test killed a behavioral change.
 
 ## Advisory policy
 
