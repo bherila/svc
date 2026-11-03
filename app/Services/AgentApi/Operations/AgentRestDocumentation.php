@@ -552,7 +552,7 @@ final class AgentRestDocumentation
             ],
             'invoices.create_deferred_buydown' => [
                 'method' => 'POST', 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.',
+                'description' => 'Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.',
                 'parameters' => ['WorkspaceId', self::uuidPath('agreement'), 'IdempotencyKey'],
                 'request' => 'DeferredBuyDownCreateRequest', 'response' => 'InvoiceMutationResponse', 'response_description' => 'Reserved draft',
             ],

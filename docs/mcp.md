@@ -1886,6 +1886,16 @@ and Square collection ownership still apply. Void/discard releases the work,
 while unpaid issued work remains billed. The dedicated invoice kind is
 `deferred_buydown`; its system-only line type was reserved in #375.
 
+The optional `invoice_id` attaches the settlement to that existing invoice
+instead of creating one: the target must be a draft `cadence_period` invoice in
+the same workspace, for the same company and agreement — the reopened invoice
+being reissued is the intended host. Any other target is refused and reserves
+nothing. No new invoice number is allocated, the host keeps its kind, cycle and
+work period, and the settlement lines are dated on the host's work-period end
+so a regeneration cannot widen the period it reconciles. Regenerating the host
+keeps the settlement lines and their claim; voiding or discarding the host
+releases the work exactly as voiding a settlement draft does.
+
 `agreements.create` and `agreements.update` also accept the boolean
 `show_deferred_backlog_to_client`, and agreement reads report it. It defaults to
 false. Opting in shows the backlog on the existing visible agreement portal page,

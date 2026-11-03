@@ -25,14 +25,17 @@ final class AgentMcpDeferredBuyDownTools
         RequestContext $request,
     ): array {
         return $this->rest->call('invoices.create_deferred_buydown', ['workspace' => $workspace_id, 'agreement' => $agreement_id],
-            compact('expected_backlog_version') + $this->provided($request), $idempotency_key);
+            compact('expected_backlog_version') + $this->provided($request, ['hours', 'amount', 'round_up', 'discount_amount', 'discount_reason', 'invoice_id']), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
-    private function provided(RequestContext $request): array
+    /**
+     * @param  list<string>  $fields
+     * @return array<string, mixed>
+     */
+    private function provided(RequestContext $request, array $fields = ['hours', 'amount', 'round_up', 'discount_amount', 'discount_reason']): array
     {
         $values = [];
-        foreach (['hours', 'amount', 'round_up', 'discount_amount', 'discount_reason'] as $field) {
+        foreach ($fields as $field) {
             if ($this->arguments->has($request, $field)) {
                 $values[$field] = $this->arguments->value($request, $field, null);
             }
