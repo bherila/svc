@@ -221,7 +221,9 @@ and returning it to the shelf at once. Void it if it must be replaced. Time a
 host settles is frozen as a settlement invoice's is: a settlement line is priced
 when it is written, so editing, deleting or unapproving that entry is refused
 with a 409 until the host is voided or discarded, while other time on the host
-stays editable. The website's **Bill deferred work** flow still creates its own
+stays editable. The host's stored hours statement stops counting settled work as
+waiting, so the reissued document agrees with its charge, and a regeneration
+measures the same figures. The website's **Bill deferred work** flow still creates its own
 settlement invoice; attaching is an agent-surface capability for now.
 
 Void or draft discard releases the reservations back to the shelf. This differs
