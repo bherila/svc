@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Services\Activity\ClientActivityRecorder;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\TimeEntryAllocation;
 use App\Support\Billing\DeferredBuyDownRequest;
@@ -19,6 +20,7 @@ use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /** One reservation boundary for the website, REST, MCP and operator CLI. */
 final class DeferredBuyDownAction
@@ -28,6 +30,7 @@ final class DeferredBuyDownAction
         private readonly InvoiceLifecycleService $invoices,
         private readonly InvoiceNumberAllocator $numbers,
         private readonly WorkspaceClock $clock,
+        private readonly ClientActivityRecorder $activities,
     ) {}
 
     public function preview(Workspace $workspace, ClientAgreement $agreement, DeferredBuyDownRequest $request, ?string $expectedVersion = null): DeferredBuyDownSnapshot
@@ -109,6 +112,10 @@ final class DeferredBuyDownAction
             if ($invoice !== null) {
                 $this->writeSettlementLines($invoice, $selection, $locked, $this->settlementLineDate($invoice, $workspace));
                 $invoice->recalculateTotals();
+                $this->activities->record($workspace, $company, 'invoice.updated', $invoice, [
+                    'invoice_kind' => $invoice->invoiceKindValue(), 'total_amount' => $invoice->total_amount,
+                    'currency' => $invoice->currency, 'settled_deferred_entry_count' => count($ids),
+                ], occurrence: (string) Str::uuid());
 
                 return $invoice->load('lines', 'clientCompany');
             }

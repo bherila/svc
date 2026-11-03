@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -98,6 +99,27 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame(140000, $invoice->balance_amount);
         $this->assertSame(0.0, (float) $invoice->hours_billed_at_rate, 'A settlement consumes no retainer capacity and bills no catch-up');
         $this->assertSame([$last->id], $this->backlogIds());
+    }
+
+    public function test_attach_records_what_it_changed_in_the_client_history(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $this->entry(60, '2026-04-01');
+        $this->entry(60, '2026-04-02');
+        $draft = $this->cadenceDraft();
+        $before = ClientCompanyActivity::query()->where('workspace_id', $this->workspace->id)->count();
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 2]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
+
+        $activities = ClientCompanyActivity::query()->where('workspace_id', $this->workspace->id)->orderBy('id')->get();
+        $this->assertCount($before + 1, $activities);
+        $activity = $activities->last();
+        $this->assertSame('invoice.updated', $activity?->action);
+        $this->assertSame($draft->public_id, $activity?->subject_public_id);
+        $this->assertSame(['invoice_kind' => 'cadence_period', 'total_amount' => 120000, 'currency' => 'USD', 'settled_deferred_entry_count' => 2], $activity?->payload);
     }
 
     public function test_attach_with_a_discount_writes_the_same_adjustment_as_a_standalone_settlement(): void
