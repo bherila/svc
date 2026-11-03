@@ -9257,7 +9257,7 @@
         "/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices": {
             "post": {
                 "operationId": "invoices.create_deferred_buydown",
-                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
+                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
                 "security": [
                     {
                         "oauth2": [
@@ -20549,6 +20549,13 @@
                         "type": "string",
                         "minLength": 64,
                         "maxLength": 64
+                    },
+                    "invoice_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
                     }
                 },
                 "oneOf": [

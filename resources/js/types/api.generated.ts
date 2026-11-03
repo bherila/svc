@@ -3269,6 +3269,8 @@ export interface components {
             discount_amount: number;
             discount_reason?: string | null;
             expected_backlog_version: string;
+            /** Format: uuid */
+            invoice_id?: string | null;
         } & (unknown | unknown);
         DeferredBuyDownPreview: {
             backlog_version: string;
