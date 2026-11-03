@@ -216,7 +216,10 @@ settled hours in the host's work month, as it does for retainer-applied
 deferred work. Regenerating the host preserves the lines and their claim (the
 generator's replaceable line types exclude `deferred_buydown`), and voiding or
 discarding the host releases the reservations exactly as voiding a settlement
-draft does. The website's **Bill deferred work** flow still creates its own
+draft does. Once issued, a host cannot be reopened: the release would take the
+time away from a settlement line that regeneration keeps, charging for the work
+and returning it to the shelf at once. Void it if it must be replaced. The
+website's **Bill deferred work** flow still creates its own
 settlement invoice; attaching is an agent-surface capability for now.
 
 Void or draft discard releases the reservations back to the shelf. This differs

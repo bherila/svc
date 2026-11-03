@@ -354,6 +354,43 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         ], ['Idempotency-Key' => 'synthetic-buydown-missing-host'])->assertNotFound();
     }
 
+    public function test_an_issued_host_cannot_be_reopened_and_keeps_its_charge_and_claim(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $entry = $this->entry(60, '2026-04-01');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $issued = $lifecycle->issue($billing->create($this->workspace, $this->agreement, $request, $preview->version, $this->cadenceDraft()), $this->workspace);
+
+        try {
+            $lifecycle->reopen($issued, 'Synthetic second reopen', $this->workspace);
+            $this->fail('Reopening would keep the charge and put the work back on the shelf.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('carries a deferred buy-down settlement', $refusal->getMessage());
+        }
+
+        $fresh = $issued->fresh();
+        $this->assertNotNull($fresh);
+        $this->assertSame('issued', $fresh->status);
+        $this->assertSame(110000, $fresh->total_amount);
+        $this->assertSame('invoiced', $entry->fresh()?->status);
+        $this->assertSame([$entry->id], $fresh->lines()->where('type', 'deferred_buydown')->sole()->timeEntries()->pluck('client_time_entries.id')->all());
+        $this->assertSame([], $this->backlogIds(), 'The settled work must not return to the shelf to be billed again');
+    }
+
+    public function test_a_cadence_invoice_without_a_settlement_can_still_be_reopened(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $issued = $lifecycle->issue($this->cadenceDraft(), $this->workspace);
+
+        $this->assertSame('draft', $lifecycle->reopen($issued, 'Synthetic reopen', $this->workspace)->status);
+    }
+
     private function assertAttachRefused(ClientInvoice $target, string $message): void
     {
         $billing = app(DeferredBuyDownAction::class);

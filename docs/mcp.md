@@ -1048,6 +1048,10 @@ void's: "A paid invoice cannot be reopened.", and so on) - and refuses, with a
 - any invoice that is not an issued cadence invoice of an agreement, because
   only those can be regenerated, and an invoice billed from a billing schedule
   (composed from its line template, not by the retainer generator);
+- an invoice carrying a deferred buy-down settlement, because regeneration keeps
+  the settlement line while the release takes away the time it bills, which
+  would charge for that work and also return it to the shelf (void it if it must
+  be replaced, which releases both);
 - a regeneration whose catch-up charge would differ from the one a later
   charged invoice was sized against. Unlike a void, a reopen is not refused
   merely because a later invoice relies on the charge: the invoice stays and
