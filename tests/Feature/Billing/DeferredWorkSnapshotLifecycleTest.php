@@ -3,6 +3,7 @@
 namespace Tests\Feature\Billing;
 
 use App\Mail\InvoiceMail;
+use App\Mail\InvoicePaymentReminderMail;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
@@ -16,8 +17,11 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\Reminders\PaymentReminderService;
 use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\Billing\Reminders\PaymentReminderStatus;
+use App\Support\Billing\Reminders\PaymentReminderTrigger;
 use Carbon\Carbon;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -227,6 +231,14 @@ final class DeferredWorkSnapshotLifecycleTest extends TestCase
         $this->assertEqualsCanonicalizing($expected, $delivery->recipients);
         Mail::assertSent(InvoiceMail::class, 1);
         Mail::assertSent(InvoiceMail::class, fn (InvoiceMail $mail): bool => $mail->hasTo($wholeCompany->email)
+            && $mail->hasTo($limited->email) === $projectInvoice && $mail->hasTo($dualManager->email) === $projectInvoice);
+
+        $reminders = app(PaymentReminderService::class);
+        $claim = $reminders->register($this->workspace, $issued->fresh(), $this->owner, PaymentReminderTrigger::Website);
+        $reminder = $reminders->sendRegistered($this->workspace, $issued->fresh(), $claim->public_id);
+        $this->assertSame(PaymentReminderStatus::Sent, $reminder->status);
+        $this->assertEqualsCanonicalizing($expected, $reminder->recipients);
+        Mail::assertSent(InvoicePaymentReminderMail::class, fn (InvoicePaymentReminderMail $mail): bool => $mail->hasTo($wholeCompany->email)
             && $mail->hasTo($limited->email) === $projectInvoice && $mail->hasTo($dualManager->email) === $projectInvoice);
     }
 

@@ -65,6 +65,7 @@ final class PaymentReminderRepository
             ->where('workspace_id', $workspace->id)
             ->whereKey($invoice->client_company_id)
             ->first();
+        $invoice->setRelation('clientCompany', $company);
         // Bounded whatever the history: the automatic claims are at most one
         // per cadence step, and in flight is an existence check. A person may
         // remind as often as they decide to, and none of that is loaded here.
@@ -86,7 +87,7 @@ final class PaymentReminderRepository
             issueDate: $invoice->issue_date,
             dueDate: $invoice->due_date,
             now: $now,
-            recipients: $company === null ? [] : array_column($this->emails->suggestedRecipientsForCompany($company), 'email'),
+            recipients: $company === null ? [] : array_column($this->emails->suggestedRecipients($invoice), 'email'),
             square: $square,
             portalUrl: $square === null && $company !== null ? $this->portalUrl($company, $invoice) : null,
             cadenceEnabledAt: $enabledAt?->setTimezone($now->getTimezone()),
