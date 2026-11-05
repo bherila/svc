@@ -50,7 +50,7 @@ function assertRejected(redirect) {
     }
 }
 
-test('valid encoded authorization-code and S256 redirect passes silently', () => {
+await test('valid encoded authorization-code and S256 redirect passes silently', () => {
     const result = validate(valid.href);
     assert.equal(result.status, 0);
     assert.equal(result.stdout, '');
@@ -58,17 +58,17 @@ test('valid encoded authorization-code and S256 redirect passes silently', () =>
 });
 
 for (const key of Object.keys(parameters)) {
-    test(`missing ${key} is rejected`, () => {
+    await test(`missing ${key} is rejected`, () => {
         const url = new URL(valid);
         url.searchParams.delete(key);
         assertRejected(url.href);
     });
-    test(`empty ${key} is rejected`, () => {
+    await test(`empty ${key} is rejected`, () => {
         const url = new URL(valid);
         url.searchParams.set(key, '');
         assertRejected(url.href);
     });
-    test(`duplicate ${key} is rejected even with identical values`, () => {
+    await test(`duplicate ${key} is rejected even with identical values`, () => {
         const url = new URL(valid);
         url.searchParams.append(key, parameters[key]);
         assertRejected(url.href);
@@ -90,7 +90,7 @@ const invalidParameters = [
 ];
 
 for (const [index, [key, value]] of invalidParameters.entries()) {
-    test(`incorrect ${key} contract is rejected (${index})`, () => {
+    await test(`incorrect ${key} contract is rejected (${index})`, () => {
         const url = new URL(valid);
         url.searchParams.set(key, value);
         assertRejected(url.href);
@@ -113,16 +113,16 @@ const malformed = [
 ];
 
 for (const [index, redirect] of malformed.entries()) {
-    test(`malformed endpoint or query is rejected (${index})`, () => {
+    await test(`malformed endpoint or query is rejected (${index})`, () => {
         assertRejected(redirect);
     });
 }
 
-test('encoded duplicate query keys cannot bypass uniqueness checks', () => {
+await test('encoded duplicate query keys cannot bypass uniqueness checks', () => {
     assertRejected(`${valid.href}&%73tate=SYNTHETIC_STATE`);
 });
 
-test('live verification rejects an invalid contract before credential issuance', () => {
+await test('live verification rejects an invalid contract before credential issuance', () => {
     const fixture = mkdtempSync(path.join(tmpdir(), 'svc-oauth-redirect-'));
     const eventLog = path.join(fixture, 'events');
     const assetLog = path.join(fixture, 'assets');
