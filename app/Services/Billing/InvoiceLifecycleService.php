@@ -1040,7 +1040,10 @@ final class InvoiceLifecycleService
                         ->whereIn('client_invoice_line_id', $settlementLineIds)
                         ->distinct()
                         ->count('client_time_entry_id'),
-                    'unwound_amount' => (int) $settlementLines->sum('total_amount') + (int) $discountLines->sum('total_amount'),
+                    'unwound_amount' => $settlementLines->concat($discountLines)->reduce(
+                        static fn (int $total, ClientInvoiceLine $line): int => $total + $line->total_amount,
+                        0,
+                    ),
                     'currency' => $locked->currency,
                 ];
                 $settlementLineIds = [...$settlementLineIds, ...$discountLines->modelKeys()];
