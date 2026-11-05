@@ -5,7 +5,15 @@ import {
     screen,
     waitFor,
 } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    assert,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
 
 const inertia = vi.hoisted(() => ({ reload: vi.fn() }));
@@ -65,11 +73,15 @@ function outcome(status: string | null = 'sent', currentVersion = version) {
 }
 
 function requests() {
-    return requestFetch.mock.calls.map(([url, init]) => ({
-        url,
-        key: new Headers(init.headers).get('Idempotency-Key'),
-        body: JSON.parse(String(init.body)),
-    }));
+    return requestFetch.mock.calls.map(([url, init]) => {
+        assert(typeof init.body === 'string', 'Expected a JSON request body');
+
+        return {
+            url,
+            key: new Headers(init.headers).get('Idempotency-Key'),
+            body: JSON.parse(init.body),
+        };
+    });
 }
 
 beforeEach(() => {

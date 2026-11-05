@@ -1,6 +1,14 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    assert,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 import ClientInvoiceDetail from '@/pages/clients/invoice';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
@@ -31,11 +39,17 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+function jsonRequestBody(body: RequestInit['body']): unknown {
+    assert(typeof body === 'string', 'Expected a JSON request body');
+
+    return JSON.parse(body);
+}
+
 function apiRequests() {
     return requestFetch.mock.calls.map(([url, init]) => ({
         url,
         method: init.method,
-        body: JSON.parse(String(init.body)),
+        body: jsonRequestBody(init.body),
     }));
 }
 
@@ -943,11 +957,13 @@ describe('changing a draft due date through the API', () => {
 
     it('patches the details operation with the version and reloads the page', async () => {
         document.cookie = 'XSRF-TOKEN=synthetic%3Dtoken';
-        const fetchMock = vi.fn().mockResolvedValue(
-            new Response(JSON.stringify({ data: { id: 'invoice-1' } }), {
-                status: 200,
-            }),
-        );
+        const fetchMock = vi
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
+            .mockResolvedValue(
+                new Response(JSON.stringify({ data: { id: 'invoice-1' } }), {
+                    status: 200,
+                }),
+            );
         vi.stubGlobal('fetch', fetchMock);
         render(<ClientInvoiceDetail {...props(draft())} />);
 
@@ -958,25 +974,27 @@ describe('changing a draft due date through the API', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
 
         await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe(detailsUrl);
         expect(init.method).toBe('PATCH');
         expect(init.credentials).toBe('same-origin');
         const headers = init.headers as Record<string, string>;
         expect(headers['X-XSRF-TOKEN']).toBe('synthetic=token');
         expect(headers['Idempotency-Key']).toMatch(/\S+/);
-        expect(JSON.parse(String(init.body))).toEqual({
+        expect(jsonRequestBody(init.body)).toEqual({
             expected_version: '0'.repeat(64),
             due_date: '2026-10-15',
         });
     });
 
     it('sends only a changed scheduled issue date and shows it on the draft', async () => {
-        const fetchMock = vi.fn().mockResolvedValue(
-            new Response(JSON.stringify({ data: { id: 'invoice-1' } }), {
-                status: 200,
-            }),
-        );
+        const fetchMock = vi
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
+            .mockResolvedValue(
+                new Response(JSON.stringify({ data: { id: 'invoice-1' } }), {
+                    status: 200,
+                }),
+            );
         vi.stubGlobal('fetch', fetchMock);
         const scheduled = props(draft());
         render(
@@ -997,15 +1015,16 @@ describe('changing a draft due date through the API', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
 
         await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-        expect(JSON.parse(String(init.body))).toEqual({
+        const [, init] = fetchMock.mock.calls[0];
+        expect(jsonRequestBody(init.body)).toEqual({
             expected_version: '0'.repeat(64),
             scheduled_issue_date: null,
         });
     });
 
     it('closes an unchanged form without asking the server', () => {
-        const fetchMock = vi.fn();
+        const fetchMock =
+            vi.fn<(url: string, init: RequestInit) => Promise<Response>>();
         vi.stubGlobal('fetch', fetchMock);
         render(<ClientInvoiceDetail {...props(draft())} />);
 
@@ -1162,7 +1181,7 @@ describe('the Square link on an invoice', () => {
 
     it('links through the API with the invoice version and reloads', async () => {
         const fetchMock = vi
-            .fn()
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
             .mockResolvedValue(
                 new Response(JSON.stringify({ data: {} }), { status: 200 }),
             );
@@ -1184,10 +1203,10 @@ describe('the Square link on an invoice', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Link' }));
 
         await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe(linkUrl);
         expect(init.method).toBe('POST');
-        expect(JSON.parse(String(init.body))).toEqual({
+        expect(jsonRequestBody(init.body)).toEqual({
             confirm: true,
             expected_version: version,
             square_invoice_id: 'inv:0-fixture1',
@@ -1198,15 +1217,17 @@ describe('the Square link on an invoice', () => {
     });
 
     it('re-points an already linked invoice explicitly and reports a refusal', async () => {
-        const fetchMock = vi.fn().mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    message:
-                        'Square invoice 000002-R-0001 is already linked to invoice SYN-2. Unlink it there first.',
-                }),
-                { status: 409 },
-            ),
-        );
+        const fetchMock = vi
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
+            .mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        message:
+                            'Square invoice 000002-R-0001 is already linked to invoice SYN-2. Unlink it there first.',
+                    }),
+                    { status: 409 },
+                ),
+            );
         vi.stubGlobal('fetch', fetchMock);
         render(
             <ClientInvoiceDetail
@@ -1229,13 +1250,13 @@ describe('the Square link on an invoice', () => {
             await screen.findByText(/already linked to invoice SYN-2/),
         ).toBeVisible();
         expect(inertia.reload).not.toHaveBeenCalled();
-        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-        expect(JSON.parse(String(init.body)).replace).toBe(true);
+        const [, init] = fetchMock.mock.calls[0];
+        expect(jsonRequestBody(init.body)).toMatchObject({ replace: true });
     });
 
     it('unlinks only after confirmation', async () => {
         const fetchMock = vi
-            .fn()
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
             .mockResolvedValue(
                 new Response(JSON.stringify({ data: {} }), { status: 200 }),
             );
@@ -1254,10 +1275,10 @@ describe('the Square link on an invoice', () => {
         fireEvent.click(within(dialog).getByRole('button', { name: 'Unlink' }));
 
         await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe(linkUrl);
         expect(init.method).toBe('DELETE');
-        expect(JSON.parse(String(init.body))).toEqual({
+        expect(jsonRequestBody(init.body)).toEqual({
             expected_version: version,
             confirm: true,
         });
@@ -1309,7 +1330,7 @@ describe('retaining invoice writes until their outcome and refresh are known', (
         fireEvent.click(screen.getByRole('button', { name: 'Record' }));
         await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(1));
         expect(request(0).url).toBe(initial.actions.payment);
-        expect(JSON.parse(String(request(0).body))).toMatchObject({
+        expect(jsonRequestBody(request(0).body)).toMatchObject({
             expected_version: initial.version,
             currency: 'USD',
             amount: 4000,
@@ -1409,7 +1430,7 @@ describe('retaining invoice writes until their outcome and refresh are known', (
         fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
         await screen.findByRole('button', { name: 'Check original request' });
         expect(request(0).url).toBe('/original-date-url');
-        expect(JSON.parse(String(request(0).body))).toEqual({
+        expect(jsonRequestBody(request(0).body)).toEqual({
             expected_version: initial.version,
             due_date: '2026-11-30',
         });
@@ -1465,7 +1486,7 @@ describe('retaining invoice writes until their outcome and refresh are known', (
         );
         await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(1));
         expect(request(0).url).toBe('/original-correction');
-        expect(JSON.parse(String(request(0).body))).toMatchObject({
+        expect(jsonRequestBody(request(0).body)).toMatchObject({
             expected_version: initial.version,
             lines: [{ id: 'synthetic-line', description: 'Original work' }],
         });
@@ -1506,7 +1527,7 @@ describe('retaining invoice writes until their outcome and refresh are known', (
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
         await screen.findByRole('button', { name: 'Check original request' });
         expect(request(0).url).toBe('/original-payment-date');
-        expect(JSON.parse(String(request(0).body))).toMatchObject({
+        expect(jsonRequestBody(request(0).body)).toMatchObject({
             expected_version: 'original-payment-version',
             received_on: '2026-08-20',
             reason: 'Synthetic bank date',
@@ -1654,7 +1675,7 @@ describe('retaining invoice writes until their outcome and refresh are known', (
         fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
         await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
         expect(request(1).url).toBe('/second-send');
-        expect(JSON.parse(String(request(1).body))).toMatchObject({
+        expect(jsonRequestBody(request(1).body)).toMatchObject({
             expected_version: '9'.repeat(64),
             recipients: ['second@example.test'],
             subject: 'Second invoice',

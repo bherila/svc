@@ -1,7 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    assert,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 import ExpenseReceipts from '@/pages/clients/expense-receipts';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
@@ -94,8 +102,8 @@ describe('expense receipts', () => {
         );
         await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
         expect(vi.mocked(fetch).mock.calls[0][0]).toBe(file.delete_href);
-        expect(
-            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)),
-        ).toEqual({ confirm: true, ...file.deletion });
+        const body = vi.mocked(fetch).mock.calls[0][1]?.body;
+        assert(typeof body === 'string', 'Expected a JSON request body');
+        expect(JSON.parse(body)).toEqual({ confirm: true, ...file.deletion });
     });
 });

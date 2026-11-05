@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import {
     PaymentReminderCadenceCard,
     PaymentRemindersCard,
@@ -74,18 +74,20 @@ afterEach(() => {
 
 describe('payment reminders on an invoice', () => {
     it('sends through the API with the invoice version only after confirmation', async () => {
-        const fetchMock = vi.fn().mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    data: {
-                        status: 'sent',
-                        recipients: ['billing@reminders.example.test'],
-                        error_summary: null,
-                    },
-                }),
-                { status: 200 },
-            ),
-        );
+        const fetchMock = vi
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
+            .mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        data: {
+                            status: 'sent',
+                            recipients: ['billing@reminders.example.test'],
+                            error_summary: null,
+                        },
+                    }),
+                    { status: 200 },
+                ),
+            );
         vi.stubGlobal('fetch', fetchMock);
         render(<PaymentRemindersCard reminders={reminders()} />);
 
@@ -97,10 +99,11 @@ describe('payment reminders on an invoice', () => {
         );
 
         await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe(sendUrl);
         expect(init.method).toBe('POST');
-        expect(JSON.parse(String(init.body))).toEqual({
+        assert(typeof init.body === 'string', 'Expected a JSON request body');
+        expect(JSON.parse(init.body)).toEqual({
             expected_version: version,
             confirm: true,
         });
@@ -113,7 +116,7 @@ describe('payment reminders on an invoice', () => {
 
     it('retries a send whose answer was lost with the same idempotency key', async () => {
         const fetchMock = vi
-            .fn()
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
             .mockRejectedValueOnce(new TypeError('Failed to fetch'))
             .mockResolvedValueOnce(
                 new Response(
@@ -255,7 +258,7 @@ describe('the client reminder cadence', () => {
 
     it('switches the cadence through the API with the client version', async () => {
         const fetchMock = vi
-            .fn()
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
             .mockResolvedValue(
                 new Response(JSON.stringify({ data: {} }), { status: 200 }),
             );
@@ -269,12 +272,13 @@ describe('the client reminder cadence', () => {
         );
 
         await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const [url, init] = fetchMock.mock.calls[0];
         expect(url).toBe(
             '/api/v1/workspaces/w-1/clients/c-1/payment-reminders',
         );
         expect(init.method).toBe('PUT');
-        expect(JSON.parse(String(init.body))).toEqual({
+        assert(typeof init.body === 'string', 'Expected a JSON request body');
+        expect(JSON.parse(init.body)).toEqual({
             expected_version: version,
             enabled: true,
         });
