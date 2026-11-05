@@ -1164,6 +1164,15 @@ try {
                 }
             }
 
+            if (screen === 'square_portal') {
+                await expect(
+                    page.getByText('Still deferred', { exact: true }),
+                ).toBeVisible();
+                await expect(
+                    page.getByText(/3 entries · 4.0333 hours/),
+                ).toBeVisible();
+            }
+
             if (screen.startsWith('square_') && !disputesOnly) {
                 await expect(
                     page

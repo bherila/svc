@@ -26,9 +26,9 @@ final readonly class InvoiceDeferredWorkSnapshot
         foreach ($entries as $entry) {
             $description = $entry->client_visible_description;
             $rows[] = [
-                'id' => (int) $entry->id,
+                'id' => $entry->id,
                 'workedOn' => $entry->worked_on->toDateString(),
-                'minutes' => (int) $entry->minutes,
+                'minutes' => $entry->minutes,
                 'description' => $entry->is_visible_to_client === true
                     && is_string($description)
                     && trim($description) !== ''
@@ -69,7 +69,7 @@ final readonly class InvoiceDeferredWorkSnapshot
                 'id' => $entry['id'],
                 'workedOn' => $entry['workedOn'],
                 'minutes' => $entry['minutes'],
-                'description' => $entry['description'],
+                'description' => $entry['description'] ?? null,
             ];
         }
 
@@ -94,12 +94,12 @@ final readonly class InvoiceDeferredWorkSnapshot
         $entries = array_map(static fn (array $entry): array => [
             'worked_on' => $entry['workedOn'],
             'hours' => round($entry['minutes'] / 60, 4),
-            'description' => $entry['description'],
+            'description' => $entry['description'] ?? null,
         ], $this->entries);
 
         return [
             'entry_count' => count($entries),
-            'total_hours' => round(array_sum(array_column($entries, 'hours')), 4),
+            'total_hours' => round(array_sum(array_column($this->entries, 'minutes')) / 60, 4),
             'oldest_worked_on' => $entries[0]['worked_on'],
             'entries' => $entries,
         ];

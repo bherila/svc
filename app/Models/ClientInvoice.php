@@ -7,8 +7,8 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
-use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceDeferredWorkSnapshot;
+use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
@@ -72,7 +72,7 @@ use RuntimeException;
     'automatic_delivery_delay_days', 'automatic_delivery_due_at', 'automatic_delivery_held_at',
     'automatic_delivery_note',
     // What a generated monthly invoice was sized against; see CatchUpBasis.
-    'catch_up_basis',
+    'catch_up_basis', 'deferred_work_statement',
     // The day an operator plans to issue a draft (#381). A plan the
     // stale-draft audit reads, never a trigger: nothing issues on it.
     'scheduled_issue_date',

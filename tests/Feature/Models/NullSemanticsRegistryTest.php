@@ -14,6 +14,7 @@ use Tests\Feature\Billing\AgreementBillingRateResolverTest;
 use Tests\Feature\Billing\AllocationServiceTest;
 use Tests\Feature\Billing\BillingWorkflowTest;
 use Tests\Feature\Billing\CapacityAndScopeGuardsTest;
+use Tests\Feature\Billing\DeferredBuyDownOnInvoiceTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\EarlierDraftCatchUpTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
@@ -351,6 +352,10 @@ final class NullSemanticsRegistryTest extends TestCase
             'catch_up_basis' => [
                 'covered_by' => EarlierDraftCatchUpTest::class,
                 'method' => 'test_an_invoice_with_no_recorded_basis_is_treated_as_before',
+            ],
+            'deferred_work_statement' => [
+                'covered_by' => DeferredBuyDownOnInvoiceTest::class,
+                'method' => 'test_cadence_document_hides_a_backlog_fully_applied_to_its_pool',
             ],
             'hours_statement' => [
                 'covered_by' => InvoiceHoursStatementTest::class,

@@ -81,7 +81,7 @@ final class PortalInvoiceDetailTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('invoice.deferred_work.entry_count', 2)
-                ->where('invoice.deferred_work.total_hours', 3.0)
+                ->where('invoice.deferred_work.total_hours', 3)
                 ->where('invoice.deferred_work.oldest_worked_on', '2026-04-01')
                 ->where('invoice.deferred_work.entries.1.description', 'Synthetic client-safe work')
                 ->where('invoice.deferred_work.entries.0.description', null))
