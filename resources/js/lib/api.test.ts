@@ -24,7 +24,12 @@ describe('apiRequest refusals', () => {
             }),
         ).toMatchObject({ ok: true, data: { minutes: 90 } });
         const [destination, init] = vi.mocked(fetch).mock.calls[0];
-        const url = new URL(String(destination));
+
+        if (typeof destination !== 'string') {
+            throw new TypeError('Expected a finished URL string');
+        }
+
+        const url = new URL(destination);
         expect(url.pathname).toBe('/api/v1/finished');
         expect(Object.fromEntries(url.searchParams)).toEqual({
             existing: 'kept',
@@ -43,7 +48,12 @@ describe('apiRequest refusals', () => {
         const result = await apiRequest('POST', '/api/v1/example', body);
         expect(result.ok).toBe(true);
         const init = vi.mocked(fetch).mock.calls[0][1];
-        expect(JSON.parse(String(init?.body))).toEqual({
+
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected a JSON request body');
+        }
+
+        expect(JSON.parse(init.body)).toEqual({
             title: 'Synthetic hidden task',
         });
     });

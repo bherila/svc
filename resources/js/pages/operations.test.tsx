@@ -28,6 +28,14 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+function jsonRequestBody(body: RequestInit['body']): unknown {
+    if (typeof body !== 'string') {
+        throw new TypeError('Expected a JSON request body');
+    }
+
+    return JSON.parse(body);
+}
+
 /**
  * A stub that keeps the part of `useForm` this file is about: its lifetime.
  *
@@ -186,7 +194,7 @@ describe('agreement activation', () => {
             }),
         );
         expect(await screen.findByRole('alert')).toHaveTextContent(message);
-        expect(JSON.parse(String(requestFetch.mock.calls[0][1].body))).toEqual({
+        expect(jsonRequestBody(requestFetch.mock.calls[0][1].body)).toEqual({
             expected_version: 'a'.repeat(64),
             confirm: true,
         });
@@ -225,7 +233,7 @@ describe('issuing an invoice from operations', () => {
         expect(url).toBe(
             '/api/v1/workspaces/workspace-1/invoices/invoice-1/issue',
         );
-        expect(JSON.parse(String(first.body))).toEqual({
+        expect(jsonRequestBody(first.body)).toEqual({
             expected_version: '1'.repeat(64),
             confirm: true,
         });
@@ -329,7 +337,7 @@ describe('recording a payment from the operations screen', () => {
             RequestInit,
         ];
         expect(url).toBe('/api/v1/workspaces/workspace-1/payments');
-        expect(JSON.parse(String(request.body))).toEqual(
+        expect(jsonRequestBody(request.body)).toEqual(
             expect.objectContaining({
                 invoice_id: 'invoice-1',
                 expected_version: '1'.repeat(64),
