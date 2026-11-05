@@ -1672,7 +1672,8 @@ final class ClientInvoicingService
     /** Store the unallocated deferred entries remaining after this draft's lines were composed. */
     private function recordDeferredWorkSnapshot(ClientInvoice $invoice, ClientAgreement $agreement, ClientCompany $company): void
     {
-        $through = $this->deferredBacklogReader->segmentEnd($company->workspace, $agreement, $this->clock->today($company->workspace));
+        $workspace = $company->workspace ?? throw new RuntimeException('The client company has no workspace.');
+        $through = $this->deferredBacklogReader->segmentEnd($workspace, $agreement, $this->clock->today($workspace));
         $entries = ClientTimeEntry::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_company_id', $invoice->client_company_id)

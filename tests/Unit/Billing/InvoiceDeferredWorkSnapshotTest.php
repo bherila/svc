@@ -50,7 +50,8 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         $snapshot = InvoiceDeferredWorkSnapshot::fromEntries([$this->entry(1, '2026-05-01', 60), $this->entry(2, '2026-05-02', 120)]);
         self::assertNotNull($snapshot);
         self::assertSame($snapshot->toArray(), $snapshot->withoutSettledEntries([])?->toArray());
-        self::assertSame([2], array_column($snapshot->withoutSettledEntries([1, 999])?->toArray()['entries'] ?? [], 'id'));
+        self::assertSame([['id' => 2, 'workedOn' => '2026-05-02', 'minutes' => 120, 'description' => null]],
+            $snapshot->withoutSettledEntries([1, 999])?->toArray()['entries']);
         self::assertNull($snapshot->withoutSettledEntries([1, 2]));
         self::assertNull(InvoiceDeferredWorkSnapshot::fromEntries([]));
         self::assertNull(InvoiceDeferredWorkSnapshot::fromArray(['version' => 1, 'entries' => []]));
@@ -58,9 +59,12 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
 
     public function test_missing_optional_description_reads_as_null_without_a_warning(): void
     {
-        self::assertSame(null, InvoiceDeferredWorkSnapshot::fromArray(['version' => 1, 'entries' => [
+        $snapshot = InvoiceDeferredWorkSnapshot::fromArray(['version' => 1, 'entries' => [
             ['id' => 1, 'workedOn' => '2026-05-01', 'minutes' => 0],
-        ]])?->documentData()['entries'][0]['description']);
+        ]]);
+        self::assertNotNull($snapshot);
+        self::assertSame(['entry_count' => 1, 'total_hours' => 0.0, 'oldest_worked_on' => '2026-05-01',
+            'entries' => [['worked_on' => '2026-05-01', 'hours' => 0.0, 'description' => null]]], $snapshot->documentData());
     }
 
     #[DataProvider('invalidSnapshots')]
