@@ -105,7 +105,7 @@ it('retains a known saved result until refresh succeeds and retries only its rea
             },
         },
     });
-    act(() => document.dispatchEvent(navigation));
+    await act(() => document.dispatchEvent(navigation));
     expect(navigation.defaultPrevented).toBe(false);
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
@@ -183,7 +183,7 @@ it('blocks native navigation and browser history while retaining the original in
             },
         },
     });
-    act(() => document.dispatchEvent(navigation));
+    await act(() => document.dispatchEvent(navigation));
     expect(navigation.defaultPrevented).toBe(true);
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
@@ -193,7 +193,7 @@ it('blocks native navigation and browser history while retaining the original in
         '',
         '/synthetic-older-page',
     );
-    act(() =>
+    await act(() =>
         window.dispatchEvent(
             new PopStateEvent('popstate', { state: { synthetic: 'older' } }),
         ),

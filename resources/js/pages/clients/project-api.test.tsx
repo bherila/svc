@@ -78,7 +78,7 @@ const props = {
     assignable: [{ id: 'member-1', name: 'Synthetic Member' }],
     portal: { members: [], add_url: '/synthetic/portal' },
 };
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock = vi.fn<typeof fetch>();
 function respond(status: number, body: unknown) {
     fetchMock.mockResolvedValueOnce(
         new Response(JSON.stringify(body), {
@@ -88,17 +88,23 @@ function respond(status: number, body: unknown) {
     );
 }
 function request(index = 0) {
-    const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[index];
+
+    if (typeof init?.body !== 'string') {
+        throw new TypeError('Expected a JSON request body');
+    }
+
+    const body: unknown = JSON.parse(init.body);
 
     return {
         url,
         method: init.method,
-        body: JSON.parse(String(init.body)),
-        key: (init.headers as Record<string, string>)['Idempotency-Key'],
+        body,
+        key: new Headers(init.headers).get('Idempotency-Key'),
     };
 }
 beforeEach(() => {
-    fetchMock = vi.fn();
+    fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
     inertia.reload.mockReset().mockImplementation((options) => {
         options.onSuccess?.();
@@ -327,7 +333,7 @@ describe('project settings API mutations', () => {
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save project' }));
         await waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        expect(request(1).body.name).toBe('Corrected project');
+        expect(request(1).body).toMatchObject({ name: 'Corrected project' });
         expect(request(1).key).not.toBe(request(0).key);
     });
     it('keeps an uncertain edit latched through a later validation refusal', async () => {

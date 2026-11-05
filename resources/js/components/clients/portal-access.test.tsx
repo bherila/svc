@@ -21,7 +21,7 @@ vi.mock('@inertiajs/react', () => ({
 
 const api = '/api/v1/workspaces/workspace-1/clients/client-1';
 const version = 'a'.repeat(64);
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock = vi.fn<typeof fetch>();
 
 function respond(...answers: [number, unknown][]) {
     for (const [status, body] of answers) {
@@ -35,19 +35,25 @@ function respond(...answers: [number, unknown][]) {
 }
 
 function request(index = 0) {
-    const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[index];
+
+    if (typeof init?.body !== 'string') {
+        throw new TypeError('Expected a JSON request body');
+    }
+
+    const body: unknown = JSON.parse(init.body);
 
     return {
         url,
         method: init.method,
-        body: JSON.parse(String(init.body)) as Record<string, unknown>,
-        key: (init.headers as Record<string, string>)['Idempotency-Key'],
+        body,
+        key: new Headers(init.headers).get('Idempotency-Key'),
     };
 }
 
 beforeEach(() => {
     inertia.reload.mockClear();
-    fetchMock = vi.fn();
+    fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
 });
 

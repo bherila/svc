@@ -54,6 +54,14 @@ function respond(body: unknown, status = 200) {
     );
 }
 
+function jsonRequestBody(body: RequestInit['body']): unknown {
+    if (typeof body !== 'string') {
+        throw new TypeError('Expected a JSON request body');
+    }
+
+    return JSON.parse(body);
+}
+
 describe('attachment sharing panel', () => {
     it('renders the authorized initial seed without a request and hides absent controls', () => {
         vi.stubGlobal('fetch', vi.fn());
@@ -100,7 +108,7 @@ describe('attachment sharing panel', () => {
             'The parent is not currently visible to clients.',
         );
         expect(
-            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)),
+            jsonRequestBody(vi.mocked(fetch).mock.calls[0][1]?.body),
         ).toEqual({
             is_visible_to_client: true,
             expected_version: 'v'.repeat(64),
@@ -114,7 +122,7 @@ describe('attachment sharing panel', () => {
         );
         await waitFor(() => expect(reload).toHaveBeenCalled());
         expect(
-            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)),
+            jsonRequestBody(vi.mocked(fetch).mock.calls[0][1]?.body),
         ).toEqual({
             confirm: true,
             expected_version: 'n'.repeat(64),
@@ -155,9 +163,7 @@ describe('attachment sharing panel', () => {
             screen.getByLabelText('Upload a file').closest('form')!,
         );
         await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-        expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe(
-            '/synthetic/upload',
-        );
+        expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/synthetic/upload');
         const body = vi.mocked(fetch).mock.calls[1][1]?.body as FormData;
         expect(body.get('file')).toBe(file);
         expect(body.get('expected_version')).toBe('p'.repeat(64));
@@ -181,9 +187,7 @@ describe('attachment sharing panel', () => {
         await screen.findByRole('link', {
             name: 'Synthetic continuation file',
         });
-        expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain(
-            '/synthetic/next',
-        );
+        expect(vi.mocked(fetch).mock.calls[0][0]).toContain('/synthetic/next');
         expect(
             screen.queryByRole('button', { name: 'Load more files' }),
         ).not.toBeInTheDocument();
@@ -654,7 +658,7 @@ describe('attachment sharing panel', () => {
         );
         await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
         expect(
-            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)),
+            jsonRequestBody(vi.mocked(fetch).mock.calls[0][1]?.body),
         ).toEqual({ expected_version: 'v'.repeat(64), confirm: true });
     });
     it('keeps a lost-answer sharing retry latched after a later conflict', async () => {
@@ -950,7 +954,7 @@ describe('attachment sharing panel', () => {
                 ).toBeVisible(),
             );
             const second = vi.mocked(fetch).mock.calls[0][1]!;
-            expect(JSON.parse(String(second.body))).toEqual({
+            expect(jsonRequestBody(second.body)).toEqual({
                 confirm: true,
                 expected_version: 'v'.repeat(64),
                 expected_parent_version: 'q'.repeat(64),
@@ -1173,9 +1177,8 @@ describe('attachment sharing panel', () => {
         fireEvent.click(screen.getByLabelText('Visible to client'));
         await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
         expect(
-            JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))
-                .expected_parent_version,
-        ).toBe('q'.repeat(64));
+            jsonRequestBody(vi.mocked(fetch).mock.calls[0][1]?.body),
+        ).toMatchObject({ expected_parent_version: 'q'.repeat(64) });
     });
 
     it('ignores continuation results from a prior authorized seed', async () => {

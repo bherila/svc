@@ -58,12 +58,12 @@ const healthy = {
     [`/build/${css}`]: { type: 'text/css', body: 'body{}' },
 };
 
-test('accepts a page whose hashed assets are served with the right types', async () => {
+await test('accepts a page whose hashed assets are served with the right types', async () => {
     const result = await audit({ routes: healthy });
     assert.equal(result.code, 0, result.stderr);
 });
 
-test('rejects a missing hashed asset served as an HTML 404', async () => {
+await test('rejects a missing hashed asset served as an HTML 404', async () => {
     const routes = { ...healthy };
     delete routes[`/build/${js}`];
     const result = await audit({ routes });
@@ -71,7 +71,7 @@ test('rejects a missing hashed asset served as an HTML 404', async () => {
     assert.match(result.stderr, /HTTP 404/u);
 });
 
-test('rejects a wrong MIME type', async () => {
+await test('rejects a wrong MIME type', async () => {
     const result = await audit({
         routes: { ...healthy, [`/build/${css}`]: { type: 'text/html', body: 'body{}' } },
     });
@@ -79,7 +79,7 @@ test('rejects a wrong MIME type', async () => {
     assert.match(result.stderr, /wrong MIME/u);
 });
 
-test('rejects a redirected asset instead of following it', async () => {
+await test('rejects a redirected asset instead of following it', async () => {
     const result = await audit({
         routes: {
             ...healthy,
@@ -90,7 +90,7 @@ test('rejects a redirected asset instead of following it', async () => {
     assert.match(result.stderr, /HTTP 302/u);
 });
 
-test('rejects identity drift: the page references a different build', async () => {
+await test('rejects identity drift: the page references a different build', async () => {
     const result = await audit({
         routes: { ...healthy, '/': { type: 'text/html', body: page.replaceAll('Ab12Cd34', 'Old00000') } },
     });
@@ -98,7 +98,7 @@ test('rejects identity drift: the page references a different build', async () =
     assert.match(result.stderr, /not this release/u);
 });
 
-test('rejects a manifest entry that is not content-hashed', async () => {
+await test('rejects a manifest entry that is not content-hashed', async () => {
     const result = await audit({
         routes: healthy,
         files: { 'resources/js/app.tsx': { file: 'assets/app.js', isEntry: true, css: [css] } },
@@ -107,7 +107,7 @@ test('rejects a manifest entry that is not content-hashed', async () => {
     assert.match(result.stderr, /not a content-hashed/u);
 });
 
-test('failure output never echoes response bodies', async () => {
+await test('failure output never echoes response bodies', async () => {
     const result = await audit({
         routes: { ...healthy, [`/build/${js}`]: { status: 500, type: 'text/plain', body: 'SECRET_BODY' } },
     });

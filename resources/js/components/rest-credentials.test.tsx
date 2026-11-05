@@ -43,10 +43,16 @@ function server(data: Record<string, unknown>, created?: unknown) {
             );
         }
 
+        const body = init?.body;
+
+        if (typeof body !== 'string') {
+            throw new TypeError('Expected a JSON request body');
+        }
+
         calls.push({
             method,
             url,
-            body: JSON.parse(String(init?.body ?? 'null')),
+            body: JSON.parse(body),
         });
 
         return Promise.resolve(

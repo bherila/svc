@@ -9,7 +9,9 @@ const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 installUnknownWriteHistoryGuard();
 
-createInertiaApp({
+// Inertia owns mounting through setup; this entrypoint has no continuation
+// that needs the bootstrap result. Startup failures still reach the browser.
+void createInertiaApp({
     resolve: (name) =>
         resolvePageComponent<ResolvedComponent>(
             `./pages/${name}.tsx`,

@@ -179,7 +179,8 @@ export function AgreementTitle({
             className="grid w-full grid-cols-1 gap-2"
             onSubmit={(event) => {
                 event.preventDefault();
-                save();
+
+                return save();
             }}
         >
             <div className="flex flex-wrap items-center gap-2">
@@ -369,7 +370,8 @@ export function AgreementTermsForm({
             className="grid grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                submit();
+
+                return submit();
             }}
         >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

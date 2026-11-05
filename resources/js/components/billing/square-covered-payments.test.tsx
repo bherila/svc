@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, assert, expect, it, vi } from 'vitest';
 import { SquareCoveredPayments } from '@/components/billing/square-covered-payments';
 import type { ApiSchema } from '@/lib/api';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
@@ -47,7 +47,7 @@ afterEach(() => {
 
 it('reviews first and sends explicit confirmation with both captured versions to the finished URL', async () => {
     const fetchMock = vi
-        .fn()
+        .fn<(url: string, init: RequestInit) => Promise<Response>>()
         .mockResolvedValueOnce(response(review()))
         .mockResolvedValueOnce(response({ payment_id: 'synthetic-record' }));
     vi.stubGlobal('fetch', fetchMock);
@@ -65,9 +65,10 @@ it('reviews first and sends explicit confirmation with both captured versions to
     expect(fetchMock).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Confirm recording' }));
     await vi.waitFor(() => expect(refreshed).toHaveBeenCalledOnce());
-    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe(recordUrl);
-    expect(JSON.parse(String(init.body))).toEqual({
+    assert(typeof init.body === 'string', 'Expected a JSON request body');
+    expect(JSON.parse(init.body)).toEqual({
         expected_version: version,
         reviewed_version: 'b'.repeat(64),
         confirm: true,
@@ -88,7 +89,7 @@ it('shows refused payments without offering a record action', async () => {
 
 it('requires a fresh review when the invoice or provider facts changed', async () => {
     const fetchMock = vi
-        .fn()
+        .fn<(url: string, init: RequestInit) => Promise<Response>>()
         .mockResolvedValueOnce(response(review()))
         .mockResolvedValueOnce(
             new Response(
@@ -117,7 +118,7 @@ it('requires a fresh review when the invoice or provider facts changed', async (
 
 it('keeps one receipt key when retrying after a lost response', async () => {
     const fetchMock = vi
-        .fn()
+        .fn<(url: string, init: RequestInit) => Promise<Response>>()
         .mockResolvedValueOnce(response(review()))
         .mockRejectedValueOnce(new Error('Synthetic lost response'))
         .mockResolvedValueOnce(response({ payment_id: 'synthetic-record' }));
@@ -133,8 +134,8 @@ it('keeps one receipt key when retrying after a lost response', async () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Confirm recording' }));
     await vi.waitFor(() => expect(refreshed).toHaveBeenCalledOnce());
-    const first = fetchMock.mock.calls[1][1] as RequestInit;
-    const retry = fetchMock.mock.calls[2][1] as RequestInit;
+    const first = fetchMock.mock.calls[1][1];
+    const retry = fetchMock.mock.calls[2][1];
     expect(first.headers).toEqual(retry.headers);
     expect(first.body).toEqual(retry.body);
 });
