@@ -2,21 +2,27 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Mail\InvoiceMail;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceDocumentService;
+use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use Carbon\Carbon;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
@@ -157,6 +163,71 @@ final class DeferredWorkSnapshotLifecycleTest extends TestCase
         $this->assertSame($before, $fresh?->deferred_work_statement);
         $this->assertSame([$wanted->id], array_column($fresh?->deferredWorkSnapshot()?->entries ?? [], 'id'));
         $this->assertStringNotContainsString('Synthetic foreign project text', app(InvoiceDocumentService::class)->html($fresh)->render());
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function invoiceProjectScopes(): iterable
+    {
+        yield 'company-wide invoice' => [false];
+        yield 'granted-project invoice' => [true];
+    }
+
+    #[DataProvider('invoiceProjectScopes')]
+    public function test_automatic_recipients_follow_strict_invoice_grants_in_one_query(bool $projectInvoice): void
+    {
+        Mail::fake();
+        $this->company->forceFill(['billing_email' => null, 'automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
+        $this->project->forceFill(['is_visible_to_client' => true])->save();
+        if ($projectInvoice) {
+            $this->agreement->update(['client_project_id' => $this->project->id]);
+        }
+        $limited = User::factory()->create(['email' => 'scoped-recipient@example.test']);
+        $wholeCompany = User::factory()->create(['email' => 'company-recipient@example.test']);
+        $dualManager = User::factory()->create(['email' => 'dual-recipient@example.test']);
+        $this->workspace->memberships()->create(['user_id' => $dualManager->id, 'role' => 'admin']);
+        foreach ([$limited, $dualManager, $wholeCompany] as $user) {
+            $this->company->portalUsers()->attach($user->id, [
+                'workspace_id' => $this->workspace->id,
+                'role' => 'client',
+                'access_scope' => $user->is($wholeCompany) ? ClientCompanyMembership::SCOPE_COMPANY : ClientCompanyMembership::SCOPE_PROJECTS,
+            ]);
+            $membership = ClientCompanyMembership::query()->where('workspace_id', $this->workspace->id)
+                ->where('client_company_id', $this->company->id)->where('user_id', $user->id)->sole();
+            $membership->scopedProjects()->attach($this->project->id, ['workspace_id' => $this->workspace->id]);
+        }
+        $draft = $this->draft();
+        $deferred = $this->entry('2026-04-01', 60, description: 'Synthetic deferred PDF disclosure');
+        if (! $projectInvoice) {
+            $otherProject = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Synthetic ungranted project']);
+            $deferred->update(['client_project_id' => $otherProject->id]);
+        }
+        $issued = app(InvoiceLifecycleService::class)->issue($draft, $this->workspace);
+        $policy = app(PortalInvoiceQuery::class);
+        $this->assertSame($projectInvoice, $policy->strictlyVisibleInWorkspace($this->workspace, $limited)->whereKey($issued->id)->exists());
+        $this->assertSame($projectInvoice, $policy->strictlyVisibleInWorkspace($this->workspace, $dualManager)->whereKey($issued->id)->exists());
+        $this->assertSame('Synthetic deferred PDF disclosure', $issued->deferredWorkSnapshot()?->entries[0]['description']);
+        $email = app(InvoiceEmailService::class);
+        $this->assertTrue($issued->relationLoaded('clientCompany'));
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $suggestions = $email->suggestedRecipients($issued);
+            $queries = DB::getQueryLog();
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        $this->assertCount(1, $queries, 'Recipient eligibility stays in a bounded query, rather than one policy query per person.');
+        $expected = $projectInvoice ? [$limited->email, $dualManager->email, $wholeCompany->email] : [$wholeCompany->email];
+        $this->assertEqualsCanonicalizing($expected, array_column($suggestions, 'email'));
+
+        $delivery = $email->sendAutomatic($issued);
+
+        $this->assertNotNull($delivery);
+        $this->assertEqualsCanonicalizing($expected, $delivery->recipients);
+        Mail::assertSent(InvoiceMail::class, 1);
+        Mail::assertSent(InvoiceMail::class, fn (InvoiceMail $mail): bool => $mail->hasTo($wholeCompany->email)
+            && $mail->hasTo($limited->email) === $projectInvoice && $mail->hasTo($dualManager->email) === $projectInvoice);
     }
 
     private function draft(): ClientInvoice
