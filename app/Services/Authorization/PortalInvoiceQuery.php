@@ -9,6 +9,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Billing\InvoiceStatus;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -19,14 +20,14 @@ final class PortalInvoiceQuery
     /** @return Builder<ClientInvoice> */
     public function visibleTo(ClientCompany $company, ?User $viewer): Builder
     {
-        return $this->visible($company->workspace_id, $viewer)
+        return $this->visible($company->workspace_id, $viewer?->id)
             ->where('client_company_id', $company->id);
     }
 
     /** @return Builder<ClientInvoice> */
     public function visibleInWorkspace(Workspace $workspace, User|AgentPrincipal $viewer): Builder
     {
-        return $this->visible($workspace->id, $viewer);
+        return $this->visible($workspace->id, $viewer->id);
     }
 
     /** Exact Portal grants, including for a dual workspace manager. Existing preview callers retain their policy.
@@ -34,7 +35,21 @@ final class PortalInvoiceQuery
      */
     public function strictlyVisibleInWorkspace(Workspace $workspace, User|AgentPrincipal $viewer): Builder
     {
-        return $this->visible($workspace->id, $viewer, false);
+        return $this->visible($workspace->id, $viewer->id, false);
+    }
+
+    /**
+     * Correlate an outer recipient users query with this invoice's strict
+     * portal grants. Composed with whereExists, this checks every recipient in
+     * one query and never admits a workspace manager through preview access.
+     *
+     * @return Builder<ClientInvoice>
+     */
+    public function visibleToRecipientUsers(ClientInvoice $invoice): Builder
+    {
+        return $this->visible($invoice->workspace_id, DB::raw('users.id'), false)
+            ->where('client_company_id', $invoice->client_company_id)
+            ->whereKey($invoice->id);
     }
 
     /**
@@ -44,14 +59,14 @@ final class PortalInvoiceQuery
      *
      * @return Builder<ClientInvoice>
      */
-    private function visible(int $workspaceId, User|AgentPrincipal|null $viewer, bool $managerPreview = true): Builder
+    private function visible(int $workspaceId, int|Expression|null $viewerId, bool $managerPreview = true): Builder
     {
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspaceId)
             ->where('is_visible_to_client', true)
             ->whereIn('status', InvoiceStatus::charged());
 
-        if ($viewer === null) {
+        if ($viewerId === null) {
             return $invoices->whereRaw('1 = 0');
         }
 
@@ -59,14 +74,14 @@ final class PortalInvoiceQuery
             ->whereExists(fn (QueryBuilder $manager): QueryBuilder => $manager
                 ->select(DB::raw('1'))->from('workspace_memberships')
                 ->whereColumn('workspace_memberships.workspace_id', 'client_invoices.workspace_id')
-                ->where('workspace_memberships.user_id', $viewer->id)
+                ->where('workspace_memberships.user_id', $viewerId)
                 ->whereIn('workspace_memberships.role', ['owner', 'admin'])
                 ->when(! $managerPreview, fn (QueryBuilder $query): QueryBuilder => $query->whereRaw('1 = 0')))
             ->orWhereExists(fn (QueryBuilder $membership): QueryBuilder => $membership
                 ->select(DB::raw('1'))->from('client_company_memberships')
                 ->whereColumn('client_company_memberships.workspace_id', 'client_invoices.workspace_id')
                 ->whereColumn('client_company_memberships.client_company_id', 'client_invoices.client_company_id')
-                ->where('client_company_memberships.user_id', $viewer->id)
+                ->where('client_company_memberships.user_id', $viewerId)
                 ->where(fn (QueryBuilder $scope): QueryBuilder => $scope
                     // Preserve the existing portal interpretation: only the
                     // explicit projects scope narrows a company membership.

@@ -8,6 +8,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\Workspace;
+use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\Mail\InvoiceMailSender;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\WorkspaceAuthorization;
@@ -69,6 +70,7 @@ final class InvoiceEmailService
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly InvoiceDocumentService $documents,
         private readonly InvoiceMailSender $mail,
+        private readonly PortalInvoiceQuery $portalInvoices,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ?SquareCollectionGuard $squareCollection = null,
     ) {}
@@ -219,10 +221,10 @@ final class InvoiceEmailService
     /**
      * Which addresses an invoice would go to if nobody said otherwise.
      *
-     * The company's billing address first, then every portal user of the
-     * company. Offered as suggestions rather than imposed: the compose screen
-     * shows them and the operator decides, because the right recipient for one
-     * invoice is not always the address on the client record.
+     * The company's billing address first, then portal users whose grants
+     * permit this invoice. Offered as suggestions rather than imposed: the
+     * compose screen shows them and the operator decides, because the right
+     * recipient is not always the address on the client record.
      *
      * @return list<array{email: string, label: string}>
      */
@@ -234,7 +236,7 @@ final class InvoiceEmailService
             return [];
         }
 
-        return $this->suggestedRecipientsForCompany($company);
+        return $this->recipientSuggestions($company, invoice: $invoice);
     }
 
     /**
@@ -245,7 +247,16 @@ final class InvoiceEmailService
         ?string $billingEmail = null,
         bool $billingEmailProvided = false,
     ): array {
+        return $this->recipientSuggestions($company, $billingEmail, $billingEmailProvided);
+    }
 
+    /** @return list<array{email: string, label: string}> */
+    private function recipientSuggestions(
+        ClientCompany $company,
+        ?string $billingEmail = null,
+        bool $billingEmailProvided = false,
+        ?ClientInvoice $invoice = null,
+    ): array {
         $suggestions = [];
         // A list of the addresses already offered rather than a map to `true`.
         // `isset()` never looks at the value, so the flag could be anything and
@@ -260,7 +271,12 @@ final class InvoiceEmailService
             $seen[] = strtolower($billing);
         }
 
-        foreach ($company->portalUsers()->wherePivot('workspace_id', $company->workspace_id)->get() as $user) {
+        $portalUsers = $company->portalUsers()->wherePivot('workspace_id', $company->workspace_id);
+        if ($invoice !== null) {
+            $portalUsers->whereExists($this->portalInvoices->visibleToRecipientUsers($invoice)->selectRaw('1')->toBase());
+        }
+
+        foreach ($portalUsers->get() as $user) {
             $address = trim($user->email);
             $key = strtolower($address);
 
