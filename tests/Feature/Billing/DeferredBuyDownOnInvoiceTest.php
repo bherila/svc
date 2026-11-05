@@ -224,6 +224,58 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         ]);
     }
 
+    public function test_attaching_work_approved_after_generation_does_not_subtract_other_waiting_work_from_the_statement(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $waiting = $this->entry(240, '2026-04-01');
+        $draft = $this->cadenceDraft();
+        $snapshot = $draft->deferredWorkSnapshot();
+        $this->assertNotNull($snapshot);
+        $this->assertSame([$waiting->id], array_column($snapshot->entries, 'id'));
+
+        // The larger entry does not fit. This newly approved, backdated hour
+        // is selected instead, but was never counted in the draft's statement.
+        $newlyApproved = $this->entry(60, '2026-04-02');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
+
+        $this->assertSame([$newlyApproved->id], $host->lines()->where('type', 'deferred_buydown')->sole()
+            ->timeEntries()->pluck('client_time_entries.id')->all());
+        $statement = $host->hoursStatement();
+        $this->assertNotNull($statement);
+        $this->assertSame([4.0, 1], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
+        $this->assertSame($snapshot->toArray(), $host->deferredWorkSnapshot()?->toArray());
+        $this->assertSame(4.0, $snapshot->documentData()['total_hours'], 'The captured snapshot is immutable');
+        $this->assertSame(110000, $host->total_amount, 'The same hour is charged exactly once');
+        $this->assertSame(0, $waiting->invoiceLines()->count());
+        $this->assertSame([$waiting->id], $this->backlogIds());
+    }
+
+    public function test_attaching_a_settlement_preserves_the_legacy_hours_statement_fallback(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $this->entry(240, '2026-04-01');
+        $waiting = $this->entry(120, '2026-04-02');
+        $draft = $this->cadenceDraft();
+        $draft->forceFill(['deferred_work_statement' => null])->save();
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 4]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+
+        $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
+
+        $statement = $host->hoursStatement();
+        $this->assertNotNull($statement);
+        $this->assertSame([2.0, 1], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
+        $this->assertNull($host->deferred_work_statement);
+        $this->assertSame(140000, $host->total_amount);
+        $this->assertSame([$waiting->id], $this->backlogIds());
+    }
+
     public function test_settling_work_after_the_hosts_period_leaves_its_statement_alone(): void
     {
         $this->ordinary(600, '2026-04-10');

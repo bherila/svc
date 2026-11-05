@@ -14,6 +14,24 @@ use PHPUnit\Framework\TestCase;
 
 final class DeferredBuyDownOperationContractTest extends TestCase
 {
+    public function test_reopen_advertises_settlement_unwind_instead_of_refusing_an_attached_settlement(): void
+    {
+        $previous = Container::getInstance();
+        new Application(dirname(__DIR__, 3));
+        AgentApiResponseSchemaCatalog::flush();
+        try {
+            $operation = (new AgentOperationCatalog)->registry()->find('invoices.reopen');
+            $this->assertNotNull($operation);
+            $this->assertStringNotContainsString('one carrying a deferred buy-down settlement', $operation->description);
+            $this->assertStringContainsString('releases its reserved entries', $operation->description);
+            $this->assertStringContainsString('removes the settlement and its discount adjustment', $operation->description);
+            $this->assertStringContainsString('a fresh buy-down can be attached', $operation->description);
+        } finally {
+            AgentApiResponseSchemaCatalog::flush();
+            Container::setInstance($previous);
+        }
+    }
+
     public function test_the_preview_is_manager_only_and_the_write_requires_idempotency_and_a_backlog_version(): void
     {
         $previous = Container::getInstance();

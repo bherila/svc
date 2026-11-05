@@ -565,6 +565,11 @@ final class InvoiceLifecycleService
                 throw new DomainException('The invoice client does not belong to this workspace.');
             }
             $locked->setRelation('clientCompany', $company);
+            // A draft's itemised deferred remainder is provisional until this
+            // issue. Refresh only the document snapshot, after the tenant and
+            // credit locks above, so late approvals and newly private wording
+            // are reflected without rebuilding any charge or allocation.
+            app(ClientInvoicingService::class)->refreshDeferredWorkSnapshotAtIssue($locked);
             if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
                 // After every lock, so a transaction this method owns builds the
                 // ledger through a snapshot that starts after all of them.
