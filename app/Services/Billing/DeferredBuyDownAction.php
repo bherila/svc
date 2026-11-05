@@ -227,16 +227,24 @@ final class DeferredBuyDownAction
      */
     private function removeSettledWorkFromStatement(ClientInvoice $invoice, DeferredBuyDownSelection $selection): void
     {
+        $ids = array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->id, $selection->entries);
+        $settled = array_fill_keys($ids, true);
+        $deferred = $invoice->deferredWorkSnapshot();
         $statement = $invoice->hoursStatement();
         if ($statement !== null) {
-            $reported = array_filter($selection->entries, static fn (ClientTimeEntry $entry): bool => $entry->worked_on->toDateString() <= $statement->workEnd);
-            $minutes = array_sum(array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->minutes, $reported));
+            // A later approval was never part of this stored total. Use the
+            // recorded membership and minutes where available, so settling it
+            // cannot subtract another entry's waiting hours. Legacy drafts
+            // without an itemized snapshot retain the work-date fallback.
+            $recorded = $deferred?->entries ?? array_map(static fn (ClientTimeEntry $entry): array => [
+                'id' => $entry->id, 'workedOn' => $entry->worked_on->toDateString(), 'minutes' => (int) $entry->minutes,
+            ], $selection->entries);
+            $reported = array_filter($recorded, static fn (array $entry): bool => isset($settled[$entry['id']]) && $entry['workedOn'] <= $statement->workEnd);
+            $minutes = array_sum(array_column($reported, 'minutes'));
             $invoice->forceFill(['hours_statement' => $statement->toArrayWithDeferredSettled($minutes / 60, count($reported))]);
         }
 
-        $deferred = $invoice->deferredWorkSnapshot();
         if ($deferred !== null) {
-            $ids = array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->id, $selection->entries);
             $invoice->forceFill(['deferred_work_statement' => $deferred->withoutSettledEntries($ids)?->toArray()]);
         }
     }

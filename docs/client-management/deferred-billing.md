@@ -16,13 +16,12 @@ Allocation ownership requires the line, pivot and invoice to belong to the
 entry's workspace. A settlement has no capacity date: its hourly price pays for
 the work independently of every retainer pool.
 
-`deferred_buydown` is reserved for the forthcoming buy-down writer (#366).
-Manual invoice, agent and billing-template inputs refuse it. It is excluded
-from the cadence generator's replaceable line types, so a cadence rebuild
-cannot release its reservation. The first slice established the accounting
-rule using synthetic test allocations and the second reports the backlog (see
-[Deferred backlog](#deferred-backlog)); settlement creation, its void/delete
-lifecycle and portal visibility are subsequent slices of #366.
+`deferred_buydown` is reserved for the settlement writer described under
+[Voluntary settlement](#voluntary-settlement-of-deferred-work). Manual invoice,
+agent and billing-template line inputs refuse it. The cadence generator excludes
+it from replaceable line types, so ordinary regeneration preserves its claim.
+Explicit void, discard and settlement-aware reopen release those claims through
+the invoice lifecycle.
 
 ## What it does
 
@@ -215,16 +214,29 @@ settled hours in the host's work month, as it does for retainer-applied
 deferred work. Regenerating the host preserves the lines and their claim (the
 generator's replaceable line types exclude `deferred_buydown`), and voiding or
 discarding the host releases the reservations exactly as voiding a settlement
-draft does. Once issued, a host cannot be reopened: the release would take the
-time away from a settlement line that regeneration keeps, charging for the work
-and returning it to the shelf at once. Void it if it must be replaced. Time a
-host settles is frozen as a settlement invoice's is: a settlement line is priced
-when it is written, so editing, deleting or unapproving that entry is refused
-with a 409 until the host is voided or discarded, while other time on the host
-stays editable. The host's stored hours statement stops counting settled work as
-waiting, so the reissued document agrees with its charge, and a regeneration
-measures the same figures. The website's **Bill deferred work** flow still creates its own
-settlement invoice; attaching is an agent-surface capability for now.
+draft does.
+
+An issued cadence host may be reopened under the ordinary unpaid-invoice guards
+(#600). Reopen atomically releases settlement reservations, removes the
+`deferred_buydown` lines and their settlement-discount adjustments, and regenerates
+a plain cadence draft under the same number. Its stored hours and deferred-work
+snapshots reflect the post-unwind backlog. Client history records the unwound
+entry count and amount alongside the reopen event. A fresh preview and attachment
+may settle the work again before reissue; a draft never inherits a settlement
+charge from its previous issued life. Standalone `deferred_buydown` invoices remain
+ineligible for reopen.
+
+Time a host settles is frozen as a settlement invoice's is: a settlement line is
+priced when it is written, so editing, deleting or unapproving that entry is refused
+with a 409 until its claim is released by void, discard or the host's reopen.
+Other time on the host stays editable. Attaching removes settled work from the
+stored summaries; when an itemized snapshot exists, only entries and minutes
+recorded there are deducted from the hours statement. Settling work approved after
+generation cannot erase a different entry's waiting hours. Legacy drafts without
+an itemized snapshot retain the existing work-date fallback: their aggregate
+statement does not identify historical entry membership. The website's **Bill
+deferred work** flow still creates its own settlement invoice; attaching is an
+agent-surface capability for now.
 
 Void or draft discard releases the reservations back to the shelf. This differs
 from a void cadence period, whose period remains deliberately waived. An issued
