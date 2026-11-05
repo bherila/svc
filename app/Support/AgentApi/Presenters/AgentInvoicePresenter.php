@@ -37,6 +37,7 @@ final class AgentInvoicePresenter
         return self::summary($invoice) + self::servicePeriod($invoice) + [
             'subtotal_amount' => $invoice->subtotal_amount,
             'tax_amount' => $invoice->tax_amount,
+            'deferred_work' => $invoice->deferredWorkSnapshot()?->documentData(),
         ];
     }
 

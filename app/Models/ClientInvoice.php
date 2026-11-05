@@ -7,6 +7,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Billing\InvoiceDeferredWorkSnapshot;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
@@ -51,6 +52,7 @@ use RuntimeException;
  * @property numeric-string|null $starting_unused_hours
  * @property numeric-string|null $starting_negative_hours
  * @property array<string, mixed>|null $hours_statement
+ * @property array<string, mixed>|null $deferred_work_statement
  * @property array<string, mixed>|null $catch_up_basis
  */
 #[Fillable([
@@ -70,12 +72,12 @@ use RuntimeException;
     'automatic_delivery_delay_days', 'automatic_delivery_due_at', 'automatic_delivery_held_at',
     'automatic_delivery_note',
     // What a generated monthly invoice was sized against; see CatchUpBasis.
-    'catch_up_basis',
+    'catch_up_basis', 'deferred_work_statement',
     // The day an operator plans to issue a draft (#381). A plan the
     // stale-draft audit reads, never a trigger: nothing issues on it.
     'scheduled_issue_date',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'reopen_reason', 'hours_statement', 'catch_up_basis'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'reopen_reason', 'hours_statement', 'deferred_work_statement', 'catch_up_basis'])]
 class ClientInvoice extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -106,6 +108,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'starting_unused_hours' => 'decimal:4',
             'starting_negative_hours' => 'decimal:4',
             'hours_statement' => 'array',
+            'deferred_work_statement' => 'array',
             'catch_up_basis' => 'array',
             'issued_at' => 'datetime',
             'voided_at' => 'datetime',
@@ -195,6 +198,12 @@ class ClientInvoice extends Model implements WorkspaceOwned
     public function hoursStatement(): ?InvoiceHoursStatement
     {
         return InvoiceHoursStatement::fromArray($this->hours_statement);
+    }
+
+    /** The still-deferred work snapshot this invoice was generated with. */
+    public function deferredWorkSnapshot(): ?InvoiceDeferredWorkSnapshot
+    {
+        return InvoiceDeferredWorkSnapshot::fromArray($this->deferred_work_statement);
     }
 
     /** Classification, defaulting to the ordinary full-cycle invoice. */

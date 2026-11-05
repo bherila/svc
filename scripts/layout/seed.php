@@ -320,7 +320,14 @@ $squareInvoice = $service->issue($service->createDraft($workspace, $company, [
     'type' => 'adjustment', 'description' => $description,
     'quantity' => '1', 'unit_amount' => 12_345, 'tax_amount' => 0, 'sort_order' => 1,
 ]]), $workspace);
-$squareInvoice->forceFill(['is_visible_to_client' => true])->save();
+$squareInvoice->forceFill([
+    'is_visible_to_client' => true,
+    'deferred_work_statement' => ['version' => 1, 'entries' => [
+        ['id' => 1, 'workedOn' => '2026-04-01', 'minutes' => 1, 'description' => null],
+        ['id' => 2, 'workedOn' => '2026-04-02', 'minutes' => 61, 'description' => str_repeat('SyntheticDeferredWork', 40)],
+        ['id' => 3, 'workedOn' => '2026-04-03', 'minutes' => 180, 'description' => str_repeat('Synthetic deferred work description. ', 16)],
+    ]],
+])->save();
 config([
     'services.square.access_token' => 'synthetic-square-layout-token',
     'services.square.environment' => 'sandbox',

@@ -14,11 +14,13 @@ use App\Models\WorkspaceMembership;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBacklogReader;
 use App\Services\Billing\DeferredBuyDownAction;
+use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineDetail;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -58,6 +60,92 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->agreement = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
             'title' => 'Synthetic retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-04-01',
             'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000]);
+    }
+
+    public function test_cadence_document_lists_the_remaining_deferred_entries_oldest_first(): void
+    {
+        $this->ordinary(600, '2026-05-10');
+        $oldest = $this->entry(120, '2026-04-01');
+        $visible = $this->entry(180, '2026-04-02');
+        $visible->forceFill([
+            'description' => 'Synthetic internal note',
+            'is_visible_to_client' => true,
+            'client_visible_description' => 'Client-safe deferred work',
+        ])->save();
+
+        $invoice = $this->cadenceDraft();
+        $snapshot = $invoice->fresh()?->deferredWorkSnapshot();
+        $this->assertNotNull($snapshot);
+        $this->assertSame([$oldest->id, $visible->id], array_column($snapshot->toArray()['entries'], 'id'));
+        $this->assertSame(5.0, $snapshot->documentData()['total_hours']);
+
+        $html = app(InvoiceDocumentService::class)->html($invoice, InvoiceLineDetail::CLIENT)->render();
+        $this->assertStringContainsString('Still deferred', $html);
+        $this->assertStringContainsString('2 entries', $html);
+        $this->assertStringContainsString('5.0000 hours', $html);
+        $this->assertStringContainsString('oldest worked date 2026-04-01', $html);
+        $this->assertStringContainsString('Client-safe deferred work', $html);
+        $this->assertStringNotContainsString('Synthetic deferred work', $html);
+        $this->assertStringNotContainsString('Synthetic internal note', $html);
+        $this->assertLessThan(strpos($html, '2026-04-02'), strrpos($html, '2026-04-01'));
+    }
+
+    public function test_the_deferred_snapshot_excludes_other_tenants_clients_and_projects(): void
+    {
+        $this->agreement->update(['client_project_id' => $this->project->id]);
+        $this->ordinary(600, '2026-05-10');
+        $wanted = $this->entry(120, '2026-04-01');
+        $wanted->update(['is_visible_to_client' => true, 'client_visible_description' => 'Intended synthetic work']);
+        $foreignWorkspace = Workspace::query()->create(['name' => 'Foreign synthetic workspace', 'slug' => 'foreign-snapshot']);
+        $foreignCompany = ClientCompany::query()->create(['workspace_id' => $foreignWorkspace->id, 'name' => 'Foreign synthetic client', 'slug' => 'foreign-snapshot']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $this->workspace->id, 'name' => 'Other synthetic client', 'slug' => 'other-snapshot']);
+        foreach ([[$foreignWorkspace, $foreignCompany], [$this->workspace, $otherCompany], [$this->workspace, $this->company]] as [$workspace, $company]) {
+            $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Other synthetic project']);
+            $competing = $wanted->replicate(['public_id']);
+            $competing->fill(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+                'client_visible_description' => 'Excluded synthetic work']);
+            $competing->save();
+        }
+        $invoice = $this->cadenceDraft();
+        $this->assertSame([$wanted->id], array_column($invoice->deferredWorkSnapshot()?->toArray()['entries'] ?? [], 'id'));
+        $html = app(InvoiceDocumentService::class)->html($invoice, InvoiceLineDetail::CLIENT)->render();
+        $this->assertStringContainsString('Intended synthetic work', $html);
+        $this->assertStringNotContainsString('Excluded synthetic work', $html);
+    }
+
+    public function test_the_snapshot_stops_at_the_successor_handover(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $wanted = $this->entry(120, '2026-04-01');
+        $this->entry(60, '2026-06-01');
+        ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'title' => 'Synthetic successor', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-06-01',
+            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 15000]);
+        $invoice = app(ClientInvoicingService::class)->generateInvoice($this->company, Carbon::parse('2026-04-01'), Carbon::parse('2026-04-30'), $this->agreement);
+        $this->assertSame([$wanted->id], array_column($invoice->deferredWorkSnapshot()?->toArray()['entries'] ?? [], 'id'));
+    }
+
+    public function test_the_snapshot_stops_at_termination_even_without_a_successor(): void
+    {
+        $this->ordinary(600, '2026-05-10');
+        $wanted = $this->entry(120, '2026-04-01');
+        $this->entry(60, '2026-06-06');
+        $this->agreement->update(['ends_on' => '2026-06-05']);
+        $invoice = $this->cadenceDraft();
+        $this->assertSame([$wanted->id], array_column($invoice->deferredWorkSnapshot()?->toArray()['entries'] ?? [], 'id'));
+    }
+
+    public function test_cadence_document_hides_a_backlog_fully_applied_to_its_pool(): void
+    {
+        $this->entry(60, '2026-05-05');
+
+        $invoice = $this->cadenceDraft();
+
+        $this->assertNull($invoice->fresh()?->deferredWorkSnapshot());
+        $this->assertStringNotContainsString(
+            'Still deferred',
+            app(InvoiceDocumentService::class)->html($invoice, InvoiceLineDetail::CLIENT)->render(),
+        );
     }
 
     public function test_attach_reserves_the_selection_on_the_cadence_draft_and_shrinks_the_backlog(): void
@@ -115,6 +203,9 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $before = $draft->fresh()?->hoursStatement();
         $this->assertNotNull($before);
         $this->assertSame([6.0, 2], [$before->deferredBacklogHours, $before->deferredBacklogEntries]);
+        $deferredBefore = $draft->fresh()?->deferredWorkSnapshot();
+        $this->assertNotNull($deferredBefore);
+        $this->assertSame(7.0, $deferredBefore->documentData()['total_hours']);
 
         $billing = app(DeferredBuyDownAction::class);
         $request = DeferredBuyDownRequest::from(['hours' => 4]);
@@ -124,6 +215,13 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $after = $draft->fresh()?->hoursStatement();
         $this->assertNotNull($after);
         $this->assertSame([2.0, 1], [$after->deferredBacklogHours, $after->deferredBacklogEntries]);
+        $deferredAfter = $draft->fresh()?->deferredWorkSnapshot();
+        $this->assertNotNull($deferredAfter);
+        $this->assertSame([2, 3.0, '2026-04-02'], [
+            $deferredAfter->documentData()['entry_count'],
+            $deferredAfter->documentData()['total_hours'],
+            $deferredAfter->documentData()['oldest_worked_on'],
+        ]);
     }
 
     public function test_settling_work_after_the_hosts_period_leaves_its_statement_alone(): void
@@ -383,6 +481,7 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->ordinary(600, '2026-05-10');
         $first = $this->entry(180, '2026-04-01');
         $second = $this->entry(60, '2026-04-02');
+        $remaining = $this->entry(60, '2026-04-03');
         $lifecycle = app(InvoiceLifecycleService::class);
         $billing = app(DeferredBuyDownAction::class);
         $request = DeferredBuyDownRequest::from(['hours' => 4, 'discount_amount' => 1000, 'discount_reason' => 'Synthetic discount']);
@@ -398,16 +497,19 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame(0, $reopened->lines()->where('type', 'adjustment')->count());
         $this->assertSame('approved', $first->fresh()?->status);
         $this->assertSame('approved', $second->fresh()?->status);
-        $this->assertEqualsCanonicalizing([$first->id, $second->id], $this->backlogIds());
+        $this->assertEqualsCanonicalizing([$first->id, $second->id, $remaining->id], $this->backlogIds());
         $statement = $reopened->hoursStatement();
         $this->assertNotNull($statement);
-        $this->assertSame([4.0, 2], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
+        $this->assertSame([5.0, 3], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
         $this->assertSame([
             'settled_deferred_entry_count' => 2,
             'unwound_amount' => 39000,
             'currency' => 'USD',
         ], ClientCompanyActivity::query()->where('workspace_id', $this->workspace->id)
             ->where('action', 'invoice.deferred_buydown_unwound')->sole()->payload);
+        $beforeSettlement = $reopened->deferredWorkSnapshot();
+        $this->assertNotNull($beforeSettlement);
+        $this->assertSame(5.0, $beforeSettlement->documentData()['total_hours']);
 
         $preview = $billing->preview($this->workspace, $this->agreement, $request);
         $this->assertEqualsCanonicalizing([$first->id, $second->id], array_map(
@@ -417,6 +519,13 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $attached = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $reopened);
         $this->assertSame($issued->id, $attached->id);
         $this->assertSame(139000, $attached->total_amount);
+        $remainingSnapshot = $attached->deferredWorkSnapshot();
+        $this->assertNotNull($remainingSnapshot);
+        $this->assertSame([1, 1.0, '2026-04-03'], [
+            $remainingSnapshot->documentData()['entry_count'],
+            $remainingSnapshot->documentData()['total_hours'],
+            $remainingSnapshot->documentData()['oldest_worked_on'],
+        ]);
 
         $reissued = $lifecycle->issue($attached, $this->workspace);
         $this->assertSame($number, $reissued->invoice_number);
@@ -430,7 +539,8 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
             ->timeEntries()->pluck('client_time_entries.id')->all());
         $this->assertSame('invoiced', $first->fresh()?->status);
         $this->assertSame('invoiced', $second->fresh()?->status);
-        $this->assertSame([], $this->backlogIds());
+        $this->assertSame([$remaining->id], $this->backlogIds());
+        $this->assertSame($remainingSnapshot->toArray(), $reissued->deferredWorkSnapshot()?->toArray());
         $this->assertSame(1, ClientInvoice::query()->where('workspace_id', $this->workspace->id)->count(), 'Still the one document the client was sent');
     }
 

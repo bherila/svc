@@ -14,6 +14,7 @@ use Tests\Feature\Billing\AgreementBillingRateResolverTest;
 use Tests\Feature\Billing\AllocationServiceTest;
 use Tests\Feature\Billing\BillingWorkflowTest;
 use Tests\Feature\Billing\CapacityAndScopeGuardsTest;
+use Tests\Feature\Billing\DeferredBuyDownOnInvoiceTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\EarlierDraftCatchUpTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
@@ -216,6 +217,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.due_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_cadence_generation_refuses_when_an_earlier_invoice_is_unknown',
         'client_invoices.hours_billed_at_rate => covered_by:Tests\Feature\Billing\UnknownBilledOverageRefusalTest::test_interim_attribution_refuses_when_a_charged_interim_invoice_is_unknown',
+        'client_invoices.deferred_work_statement => covered_by:Tests\Feature\Billing\DeferredBuyDownOnInvoiceTest::test_cadence_document_hides_a_backlog_fully_applied_to_its_pool',
         'client_invoices.hours_statement => covered_by:Tests\Feature\Billing\InvoiceHoursStatementTest::test_an_invoice_without_a_statement_prints_without_one',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_ad_hoc_invoice_sharing_the_period_does_not_block_the_schedule',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
@@ -351,6 +353,10 @@ final class NullSemanticsRegistryTest extends TestCase
             'catch_up_basis' => [
                 'covered_by' => EarlierDraftCatchUpTest::class,
                 'method' => 'test_an_invoice_with_no_recorded_basis_is_treated_as_before',
+            ],
+            'deferred_work_statement' => [
+                'covered_by' => DeferredBuyDownOnInvoiceTest::class,
+                'method' => 'test_cadence_document_hides_a_backlog_fully_applied_to_its_pool',
             ],
             'hours_statement' => [
                 'covered_by' => InvoiceHoursStatementTest::class,

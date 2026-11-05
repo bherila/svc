@@ -123,6 +123,27 @@
     </div>
 @endif
 
+@if (! empty($deferredWork))
+    <div class="appendix new-page">
+        <h2>Still deferred</h2>
+        <p class="muted">{{ $deferredWork['entry_count'] }} {{ $deferredWork['entry_count'] === 1 ? 'entry' : 'entries' }}
+            · {{ number_format($deferredWork['total_hours'], 4) }} hours
+            · oldest worked date {{ $deferredWork['oldest_worked_on'] }}</p>
+        <table>
+            <thead><tr><th class="date">Date</th><th>Work</th><th class="hours">Hours</th></tr></thead>
+            <tbody>
+            @foreach ($deferredWork['entries'] as $item)
+                <tr>
+                    <td class="date">{{ $item['worked_on'] }}</td>
+                    <td>{{ $item['description'] ?? '' }}</td>
+                    <td class="hours">{{ number_format($item['hours'], 4) }}</td>
+                </tr>
+            @endforeach
+            </tbody>
+        </table>
+    </div>
+@endif
+
 {{-- The appendix: the time entries behind each line.
      `$detail` is keyed by line public id and holds only lines with work behind
      them; a retainer sold for the coming cycle is a charge, not a record of

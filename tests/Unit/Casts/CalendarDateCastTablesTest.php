@@ -125,6 +125,7 @@ final class CalendarDateCastTablesTest extends TestCase
                 'starting_unused_hours' => 'decimal:4',
                 'starting_negative_hours' => 'decimal:4',
                 'hours_statement' => 'array',
+                'deferred_work_statement' => 'array',
                 'catch_up_basis' => 'array',
                 'issued_at' => 'datetime',
                 'voided_at' => 'datetime',

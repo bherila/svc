@@ -28,6 +28,7 @@ function props(): ComponentProps<typeof PortalInvoice> {
             paid_amount: 0,
             balance_amount: 12_345,
             pdf_url: '/invoices/invoice-fixture/pdf',
+            deferred_work: null,
         },
         lines: [],
         line_detail: {},
@@ -55,5 +56,38 @@ describe('a linked portal invoice', () => {
         expect(
             screen.queryByRole('link', { name: 'View or pay in Square' }),
         ).toBeNull();
+    });
+
+    it('shows the remaining deferred entries when the server supplies a snapshot', () => {
+        render(
+            <PortalInvoice
+                {...props()}
+                invoice={{
+                    ...props().invoice,
+                    deferred_work: {
+                        entry_count: 2,
+                        total_hours: 3,
+                        oldest_worked_on: '2026-04-01',
+                        entries: [
+                            {
+                                worked_on: '2026-04-01',
+                                hours: 1,
+                                description: null,
+                            },
+                            {
+                                worked_on: '2026-04-02',
+                                hours: 2,
+                                description: 'Client-safe work',
+                            },
+                        ],
+                    },
+                }}
+            />,
+        );
+
+        expect(screen.getByText('Still deferred')).toBeVisible();
+        expect(screen.getByText(/2 entries/)).toBeVisible();
+        expect(screen.getByText('Client-safe work')).toBeVisible();
+        expect(screen.getByText('—')).toBeVisible();
     });
 });

@@ -21,6 +21,7 @@ use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\CarriedDeferredLine;
 use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\HoursQuantity;
+use App\Support\Billing\InvoiceDeferredWorkSnapshot;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -145,6 +146,7 @@ final class ClientInvoicingService
         private readonly ExpenseInvoiceAllocations $expenseAllocations = new ExpenseInvoiceAllocations,
         private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
         private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository,
+        private readonly DeferredBacklogReader $deferredBacklogReader = new DeferredBacklogReader,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
@@ -1157,6 +1159,7 @@ final class ClientInvoicingService
                 // The pool this correction's work was allocated against.
                 availableBeforeHours: $availableBeforeRange,
             ));
+            $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
 
             // Credit is applied last so it lands against the final figure rather
             // than against a subtotal that later lines then increase.
@@ -1462,6 +1465,7 @@ final class ClientInvoicingService
                 // The non-monthly path always sells its cycle.
                 retainerSoldBy: null,
             ));
+            $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
 
             $invoice->update([
                 'retainer_hours_included' => $retainerHours,
@@ -1663,6 +1667,26 @@ final class ClientInvoicingService
     private function recordHoursStatement(ClientInvoice $invoice, InvoiceHoursStatement $statement): void
     {
         $invoice->forceFill(['hours_statement' => $statement->toArray()])->save();
+    }
+
+    /** Store the unallocated deferred entries remaining after this draft's lines were composed. */
+    private function recordDeferredWorkSnapshot(ClientInvoice $invoice, ClientAgreement $agreement, ClientCompany $company): void
+    {
+        $workspace = $company->workspace ?? throw new RuntimeException('The client company has no workspace.');
+        $through = $this->deferredBacklogReader->segmentEnd($workspace, $agreement, $this->clock->today($workspace));
+        $entries = ClientTimeEntry::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_company_id', $invoice->client_company_id)
+            ->awaitingDeferredBilling()
+            ->billableForInvoicing()
+            ->forAgreementScope($agreement)
+            ->where('worked_on', '<=', $through->toDateString())
+            ->orderBy('worked_on')
+            ->orderBy('id')
+            ->get();
+
+        $snapshot = InvoiceDeferredWorkSnapshot::fromEntries($entries);
+        $invoice->forceFill(['deferred_work_statement' => $snapshot?->toArray()])->save();
     }
 
     /**
