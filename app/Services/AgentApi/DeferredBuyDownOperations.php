@@ -36,10 +36,20 @@ final class DeferredBuyDownOperations
         $this->authorize($actor, $workspace);
         $ids = $this->mutations->run($actor, $workspace, $client, 'invoices.create_deferred_buydown', $key,
             ['agreement_id' => $agreement, 'body' => $body], function () use ($workspace, $agreement, $body): array {
-                $this->closed($body, [...self::FIELDS, 'expected_backlog_version']);
-                $version = Validator::make($body, ['expected_backlog_version' => ['required', 'string', 'size:64']])->validate();
+                $this->closed($body, [...self::FIELDS, 'expected_backlog_version', 'invoice_id']);
+                $version = Validator::make($body, [
+                    'expected_backlog_version' => ['required', 'string', 'size:64'],
+                    // The optional host for an on-invoice settlement: an
+                    // existing cadence draft in this workspace, most often one
+                    // a reopen returned for reissue. Absent, a new settlement
+                    // invoice is created as before.
+                    'invoice_id' => ['sometimes', 'nullable', 'uuid'],
+                ])->validate();
+                $target = isset($version['invoice_id'])
+                    ? ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $version['invoice_id'])->firstOrFail()
+                    : null;
                 $invoice = $this->billing->create($workspace, $this->agreement($workspace, $agreement),
-                    DeferredBuyDownRequest::from(Arr::only($body, self::FIELDS)), $version['expected_backlog_version']);
+                    DeferredBuyDownRequest::from(Arr::only($body, self::FIELDS)), $version['expected_backlog_version'], $target);
 
                 return [$invoice->public_id];
             }, fn (array $ids) => $this->authorize($actor, $workspace));

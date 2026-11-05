@@ -71,8 +71,6 @@ rather than disappearing from the calculation.
 in hours. `InvoiceLedgerBuilder::withOpeningRollover()` grants it in the month
 before the recorded agreement start, subject to the agreement's ordinary
 rollover expiry. The period-retainer ledger path returns before that grant.
-See [Audit Opening Rollover](cli.md#audit-opening-rollover) for the read-only
-population check; historical audit counts do not describe a current database.
 
 ### Minimum Availability Rule (Catch-up Billing)
 
@@ -167,7 +165,8 @@ refused once a later invoice was sized against the charge.
   same transaction. The time returns to `approved` and the regenerated draft
   consumes it again.
 - It is **refused** for an invoice Square collects (unlink it first), one
-  corrected in place, a billing schedule's invoice, a kind that cannot be
+  corrected in place, one carrying a deferred buy-down settlement, a billing
+  schedule's invoice, a kind that cannot be
   regenerated, and a regeneration that would change the catch-up charge a later
   charged invoice recorded (`DraftCatchUpDependencies::assertChargeUnchanged()`).
   The same check runs again at the reissue, because the reopened invoice is an

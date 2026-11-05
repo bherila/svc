@@ -26,18 +26,14 @@ summary=storage/framework/cache/infection-diff/summary.json
 # A leftover summary from an earlier run must not be mistaken for this one.
 rm -f "$summary"
 
-# Match the hosted gate and infection.diff.json5: scripts, tests and views are
-# not application mutation sources. Do not turn an invalid Git comparison or
-# an Infection run that measured nothing into a successful application gate.
-scope_base=$(git merge-base "$mutation_base" HEAD)
-scope_status=0
-git -c diff.renames=false diff --quiet --diff-filter=AM "$scope_base" HEAD -- \
-    ':(glob)app/**/*.php' || scope_status=$?
-if [ "$scope_status" -eq 0 ]; then
-    echo 'Mutation gate not applicable: no added, modified or renamed PHP application source under app/.'
+# Both entry points use surviving added/changed lines, not file status. A pure
+# deletion has nothing for Infection's changed-line filter to mutate.
+# shellcheck source=scripts/mutation-scope.sh
+source "$(dirname "${BASH_SOURCE[0]}")/mutation-scope.sh"
+mutation_scope "$mutation_base" HEAD
+if [ "$mutation_scope_required" = false ]; then
+    echo 'Mutation gate not applicable: no added or changed surviving PHP application lines under app/ (including deletion-only diffs).'
     exit 0
-elif [ "$scope_status" -ne 1 ]; then
-    exit "$scope_status"
 fi
 
 # Infection's exit code judges the score; the gate judges whether anything was

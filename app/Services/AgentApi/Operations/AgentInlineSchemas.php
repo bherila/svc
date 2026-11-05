@@ -22,7 +22,9 @@ final class AgentInlineSchemas
     public static function deferredBuyDownPreviewInput(): array
     {
         $schema = AgentApiResponseSchemaCatalog::schema('DeferredBuyDownCreateRequest');
-        unset($schema['properties']['expected_backlog_version']);
+        // A quote names no host invoice: the target is a creation-time choice,
+        // and the same version guards a settlement on either shape of draft.
+        unset($schema['properties']['expected_backlog_version'], $schema['properties']['invoice_id']);
         $schema['required'] = ['workspace_id', 'agreement_id'];
         $schema['properties'] = [
             'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
@@ -166,14 +168,6 @@ final class AgentInlineSchemas
                 'charged_of_those' => ['type' => 'integer', 'minimum' => 0],
                 'on_an_agreement_of_those' => ['type' => 'integer', 'minimum' => 0],
                 'agreements_affected' => ['type' => 'integer', 'minimum' => 0],
-            ],
-            'billing.audit_opening_rollover' => [
-                'agreements' => ['type' => 'integer', 'minimum' => 0],
-                'with_initial_rollover' => ['type' => 'integer', 'minimum' => 0],
-                'legacy_monthly_of_those' => ['type' => 'integer', 'minimum' => 0],
-                'affected' => ['type' => 'integer', 'minimum' => 0],
-                'capacity_at_stake_minutes' => ['type' => 'integer', 'minimum' => 0],
-                'longest_rollover_months' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 120],
             ],
             'billing.preflight_schedule_generation' => [
                 'schedules' => ['type' => 'integer', 'minimum' => 0],

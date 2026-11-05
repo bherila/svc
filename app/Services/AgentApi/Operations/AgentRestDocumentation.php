@@ -198,13 +198,6 @@ final class AgentRestDocumentation
     ];
 
     /**
-     * Why the opening-rollover audit is deprecated and where its removal is
-     * tracked (#460). The same text marks the REST operation, the MCP tool and
-     * `svc:billing:audit-opening-rollover`, so every door says the same thing.
-     */
-    public const OPENING_ROLLOVER_DEPRECATION = 'This audit sized the opening-rollover repair (#134), which is done. It will be removed after its deprecation window; see https://github.com/bherila/svc/issues/500. Nothing replaces it.';
-
-    /**
      * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, deprecation?: string}>
      */
     private static function collaborationOperations(): array
@@ -492,16 +485,6 @@ final class AgentRestDocumentation
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['audit'],
             ],
-            'billing.audit_opening_rollover' => [
-                'method' => 'GET',
-                'scopes' => ['billing:read'],
-                'description' => 'Workspace managers only. Aggregate counts of the workspace\'s agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.',
-                'parameters' => ['WorkspaceId'],
-                'response' => 'OpeningRolloverAuditResponse',
-                'response_description' => 'Aggregate counts for the workspace',
-                'errors' => self::BILLING_AUDIT_ERRORS['audit'],
-                'deprecation' => self::OPENING_ROLLOVER_DEPRECATION,
-            ],
             'billing.audit_undated_collectible_invoices' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],
@@ -552,7 +535,7 @@ final class AgentRestDocumentation
             ],
             'invoices.create_deferred_buydown' => [
                 'method' => 'POST', 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.',
+                'description' => 'Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.',
                 'parameters' => ['WorkspaceId', self::uuidPath('agreement'), 'IdempotencyKey'],
                 'request' => 'DeferredBuyDownCreateRequest', 'response' => 'InvoiceMutationResponse', 'response_description' => 'Reserved draft',
             ],
@@ -1273,7 +1256,7 @@ final class AgentRestDocumentation
             'invoices.reopen' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write'],
-                'description' => 'Owner/admin reopen of an issued, unpaid cadence invoice so it can be reissued under the same invoice number (#594). Requires confirm: true, the current version and a reason (kept on the invoice and in the client history). The invoice returns to a draft in the same transaction that regenerates it from the time approved now: its time returns to approved and the regenerated draft consumes it again, and the automatic delivery is cancelled as a void cancels it. Issue it again with invoices.issue; that is a reissue, which keeps the number, records an invoice.reissued event beside the original invoice.issued and invoice.reopened, and tells the client in the email and PDF. Refused with 422 for a paid invoice, a pending or unreadable-status payment or a client delivery in flight (the messages void uses), an invoice Square collects (unlink it first with invoices.square_unlink), an invoice corrected in place, an invoice billed from a billing schedule, an invoice that is not an issued cadence invoice, and a reopen whose regenerated catch-up charge would differ from the one a later invoice was sized against (invoices.issue refuses the reissue too while the charge differs). A stale version is a 409. Requires both outer workflow and invoice write flags.',
+                'description' => 'Owner/admin reopen of an issued, unpaid cadence invoice so it can be reissued under the same invoice number (#594). Requires confirm: true, the current version and a reason (kept on the invoice and in the client history). The invoice returns to a draft in the same transaction that regenerates it from the time approved now: its time returns to approved and the regenerated draft consumes it again, and the automatic delivery is cancelled as a void cancels it. Issue it again with invoices.issue; that is a reissue, which keeps the number, records an invoice.reissued event beside the original invoice.issued and invoice.reopened, and tells the client in the email and PDF. Refused with 422 for a paid invoice, a pending or unreadable-status payment or a client delivery in flight (the messages void uses), an invoice Square collects (unlink it first with invoices.square_unlink), an invoice corrected in place, an invoice carrying a deferred buy-down settlement, an invoice billed from a billing schedule, an invoice that is not an issued cadence invoice, and a reopen whose regenerated catch-up charge would differ from the one a later invoice was sized against (invoices.issue refuses the reissue too while the charge differs). A stale version is a 409. Requires both outer workflow and invoice write flags.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceReopenRequest',
                 'response' => 'InvoiceMutationResponse',

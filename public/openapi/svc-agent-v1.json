@@ -1423,88 +1423,6 @@
                 "x-mcp-tool": "billing.audit_missing_billed_overage"
             }
         },
-        "/workspaces/{workspace}/billing-audits/opening-rollover": {
-            "get": {
-                "operationId": "billing.audit_opening_rollover",
-                "description": "Workspace managers only. Aggregate counts of the workspace's agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.\n\nDeprecated: This audit sized the opening-rollover repair (#134), which is done. It will be removed after its deprecation window; see https://github.com/bherila/svc/issues/500. Nothing replaces it.",
-                "deprecated": true,
-                "security": [
-                    {
-                        "oauth2": [
-                            "billing:read"
-                        ]
-                    },
-                    {
-                        "apiToken": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "$ref": "#/components/parameters/WorkspaceId"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Aggregate counts for the workspace",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/OpeningRolloverAuditResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Not signed in, or the token is missing, expired or revoked.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/Error"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "The token lacks billing:read.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/Error"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/Error"
-                                }
-                            }
-                        }
-                    },
-                    "429": {
-                        "description": "Too many requests (retry after Retry-After).",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/Error"
-                                }
-                            }
-                        }
-                    },
-                    "default": {
-                        "$ref": "#/components/responses/Error"
-                    }
-                },
-                "x-agent-effect": "read",
-                "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "billing.audit_opening_rollover",
-                "x-svc-flags": [],
-                "x-mcp-tool": "billing.audit_opening_rollover"
-            }
-        },
         "/workspaces/{workspace}/billing-audits/undated-collectible-invoices": {
             "get": {
                 "operationId": "billing.audit_undated_collectible_invoices",
@@ -9257,7 +9175,7 @@
         "/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices": {
             "post": {
                 "operationId": "invoices.create_deferred_buydown",
-                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
+                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
                 "security": [
                     {
                         "oauth2": [
@@ -10314,7 +10232,7 @@
         "/workspaces/{workspace}/invoices/{invoice}/reopen": {
             "post": {
                 "operationId": "invoices.reopen",
-                "description": "Owner/admin reopen of an issued, unpaid cadence invoice so it can be reissued under the same invoice number (#594). Requires confirm: true, the current version and a reason (kept on the invoice and in the client history). The invoice returns to a draft in the same transaction that regenerates it from the time approved now: its time returns to approved and the regenerated draft consumes it again, and the automatic delivery is cancelled as a void cancels it. Issue it again with invoices.issue; that is a reissue, which keeps the number, records an invoice.reissued event beside the original invoice.issued and invoice.reopened, and tells the client in the email and PDF. Refused with 422 for a paid invoice, a pending or unreadable-status payment or a client delivery in flight (the messages void uses), an invoice Square collects (unlink it first with invoices.square_unlink), an invoice corrected in place, an invoice billed from a billing schedule, an invoice that is not an issued cadence invoice, and a reopen whose regenerated catch-up charge would differ from the one a later invoice was sized against (invoices.issue refuses the reissue too while the charge differs). A stale version is a 409. Requires both outer workflow and invoice write flags.",
+                "description": "Owner/admin reopen of an issued, unpaid cadence invoice so it can be reissued under the same invoice number (#594). Requires confirm: true, the current version and a reason (kept on the invoice and in the client history). The invoice returns to a draft in the same transaction that regenerates it from the time approved now: its time returns to approved and the regenerated draft consumes it again, and the automatic delivery is cancelled as a void cancels it. Issue it again with invoices.issue; that is a reissue, which keeps the number, records an invoice.reissued event beside the original invoice.issued and invoice.reopened, and tells the client in the email and PDF. Refused with 422 for a paid invoice, a pending or unreadable-status payment or a client delivery in flight (the messages void uses), an invoice Square collects (unlink it first with invoices.square_unlink), an invoice corrected in place, an invoice carrying a deferred buy-down settlement, an invoice billed from a billing schedule, an invoice that is not an issued cadence invoice, and a reopen whose regenerated catch-up charge would differ from the one a later invoice was sized against (invoices.issue refuses the reissue too while the charge differs). A stale version is a 409. Requires both outer workflow and invoice write flags.",
                 "security": [
                     {
                         "oauth2": [
@@ -20549,6 +20467,13 @@
                         "type": "string",
                         "minLength": 64,
                         "maxLength": 64
+                    },
+                    "invoice_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
                     }
                 },
                 "oneOf": [
@@ -24774,57 +24699,6 @@
                             "string",
                             "null"
                         ]
-                    }
-                }
-            },
-            "OpeningRolloverAudit": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                    "agreements",
-                    "with_initial_rollover",
-                    "legacy_monthly_of_those",
-                    "affected",
-                    "capacity_at_stake_minutes",
-                    "longest_rollover_months"
-                ],
-                "properties": {
-                    "agreements": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "with_initial_rollover": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "legacy_monthly_of_those": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "affected": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "capacity_at_stake_minutes": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "longest_rollover_months": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 120
-                    }
-                }
-            },
-            "OpeningRolloverAuditResponse": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                    "data"
-                ],
-                "properties": {
-                    "data": {
-                        "$ref": "#/components/schemas/OpeningRolloverAudit"
                     }
                 }
             },

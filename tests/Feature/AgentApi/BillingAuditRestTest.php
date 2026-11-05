@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentBillingAuditReadService;
 use App\Services\Billing\MissingBilledOverageAuditor;
-use App\Services\Billing\OpeningRolloverAuditor;
 use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Services\Billing\UndatedCollectibleInvoiceAuditor;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
@@ -47,7 +46,6 @@ final class BillingAuditRestTest extends TestCase
         yield 'unplaceable invoices' => ['billing.audit_unplaceable_invoices', 'unplaceable-invoices', static fn (Workspace $workspace): array => app(UnplaceableInvoiceAuditor::class)->count($workspace)->toArray()];
         yield 'undated collectible invoices' => ['billing.audit_undated_collectible_invoices', 'undated-collectible-invoices', static fn (Workspace $workspace): array => app(UndatedCollectibleInvoiceAuditor::class)->count($workspace)->toArray()];
         yield 'missing billed overage' => ['billing.audit_missing_billed_overage', 'missing-billed-overage', static fn (Workspace $workspace): array => app(MissingBilledOverageAuditor::class)->count($workspace)->toArray()];
-        yield 'opening rollover' => ['billing.audit_opening_rollover', 'opening-rollover', static fn (Workspace $workspace): array => app(OpeningRolloverAuditor::class)->count($workspace)->toArray()];
         yield 'schedule generation preflight' => ['billing.preflight_schedule_generation', 'schedule-generation-preflight', static fn (Workspace $workspace): array => app(ScheduleGenerationPreflight::class)->run($workspace, periodCap: AgentBillingAuditReadService::PREFLIGHT_PERIOD_CAP)->toArray()];
         yield 'unlinked proposal agreements' => ['billing.audit_unlinked_proposal_agreements', 'unlinked-proposal-agreements', static fn (Workspace $workspace): array => app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->toArray()];
     }
@@ -83,6 +81,22 @@ final class BillingAuditRestTest extends TestCase
 
         $this->actingAsMcp($owner, ['identity:read']);
         $this->getJson($this->url($mine, $segment))->assertForbidden();
+    }
+
+    public function test_the_removed_opening_rollover_route_has_the_unknown_route_shape_for_a_member(): void
+    {
+        [$workspace] = $this->workspace('removed-audit');
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        $this->actingAsMcp($member, self::SCOPES);
+
+        $unknown = $this->getJson($this->url($workspace, 'synthetic-missing-audit'))->assertNotFound();
+        $removed = $this->getJson($this->url($workspace, 'opening-rollover'))->assertNotFound();
+        $this->assertSame($unknown->headers->get('Content-Type'), $removed->headers->get('Content-Type'));
+        $this->assertSame(
+            str_replace('synthetic-missing-audit', 'opening-rollover', (string) $unknown->getContent()),
+            $removed->getContent(),
+        );
     }
 
     public function test_the_two_workspaces_differ_so_isolation_is_observable(): void

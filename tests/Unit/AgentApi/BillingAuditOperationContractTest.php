@@ -29,7 +29,6 @@ final class BillingAuditOperationContractTest extends TestCase
         'billing.audit_unplaceable_invoices' => ['billing-audits.unplaceable-invoices', '/workspaces/{workspace}/billing-audits/unplaceable-invoices', 'unplaceableInvoices', 'UnplaceableInvoiceAuditResponse'],
         'billing.audit_undated_collectible_invoices' => ['billing-audits.undated-collectible-invoices', '/workspaces/{workspace}/billing-audits/undated-collectible-invoices', 'undatedCollectibleInvoices', 'UndatedCollectibleInvoiceAuditResponse'],
         'billing.audit_missing_billed_overage' => ['billing-audits.missing-billed-overage', '/workspaces/{workspace}/billing-audits/missing-billed-overage', 'missingBilledOverage', 'MissingBilledOverageAuditResponse'],
-        'billing.audit_opening_rollover' => ['billing-audits.opening-rollover', '/workspaces/{workspace}/billing-audits/opening-rollover', 'openingRollover', 'OpeningRolloverAuditResponse'],
         'billing.preflight_schedule_generation' => ['billing-audits.schedule-generation-preflight', '/workspaces/{workspace}/billing-audits/schedule-generation-preflight', 'scheduleGenerationPreflight', 'ScheduleGenerationPreflightResponse'],
         'billing.audit_unlinked_proposal_agreements' => ['billing-audits.unlinked-proposal-agreements', '/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements', 'unlinkedProposalAgreements', 'UnlinkedProposalAgreementAuditResponse'],
     ];
@@ -68,35 +67,6 @@ final class BillingAuditOperationContractTest extends TestCase
                 $this->assertSame(['x-svc-flags' => [], 'x-mcp-tool' => $id], $operation->extensions, $id);
                 $this->assertSame([401, 403, 404, 429], array_keys($documented['errors']), $id);
                 $this->assertStringStartsWith('Workspace managers only.', $documented['description'], $id);
-            }
-        });
-    }
-
-    /**
-     * The opening-rollover audit is deprecated before it is removed (#460,
-     * removal #500), and marked so on every door: the OpenAPI flag and
-     * description, and the MCP tool description. No other audit is.
-     */
-    public function test_only_the_opening_rollover_audit_is_deprecated_and_every_door_says_so(): void
-    {
-        $paths = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR)['paths'];
-        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($paths): void {
-            foreach (self::AUDITS as $id => [, $path]) {
-                $operation = $catalog->registry()->find($id);
-                $documented = $paths[$path]['get'];
-                $this->assertSame($id, $documented['operationId'], $id);
-                if ($id !== 'billing.audit_opening_rollover') {
-                    $this->assertNull($operation?->deprecation, $id);
-                    $this->assertArrayNotHasKey('deprecated', $documented, $id);
-                    $this->assertStringNotContainsString('Deprecated', $operation->description ?? '', $id);
-
-                    continue;
-                }
-                $this->assertSame(AgentRestDocumentation::OPENING_ROLLOVER_DEPRECATION, $operation?->deprecation);
-                $this->assertTrue($documented['deprecated'] ?? false);
-                $this->assertStringEndsWith('Deprecated: '.AgentRestDocumentation::OPENING_ROLLOVER_DEPRECATION, $documented['description']);
-                $this->assertStringEndsWith('Deprecated: '.AgentRestDocumentation::OPENING_ROLLOVER_DEPRECATION, $operation->description);
-                $this->assertStringContainsString('https://github.com/bherila/svc/issues/500', AgentRestDocumentation::OPENING_ROLLOVER_DEPRECATION);
             }
         });
     }

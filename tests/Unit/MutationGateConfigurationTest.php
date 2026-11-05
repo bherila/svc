@@ -46,10 +46,18 @@ final class MutationGateConfigurationTest extends TestCase
         $workflow = file_get_contents(base_path('.github/workflows/tests.yml'));
 
         $this->assertIsString($workflow);
-        $this->assertStringContainsString("':(glob)app/**/*.php'", $workflow);
+        $detector = (string) file_get_contents(base_path('scripts/mutation-scope.sh'));
+        $runner = (string) file_get_contents(base_path('scripts/run-mutation-diff.sh'));
+        $this->assertStringContainsString("':(glob)app/**/*.php'", $detector);
         $this->assertStringContainsString('ref: ${{ github.event.pull_request.head.sha }}', $workflow);
-        $this->assertStringContainsString('merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")', $workflow);
-        $this->assertStringContainsString('git -c diff.renames=false diff', $workflow);
+        $this->assertStringContainsString('source scripts/mutation-scope.sh', $workflow);
+        $this->assertStringContainsString('mutation_scope "$BASE_SHA" "$HEAD_SHA"', $workflow);
+        $this->assertStringContainsString('mutation-scope.sh', $runner);
+        $this->assertStringContainsString('mutation_scope "$mutation_base" HEAD', $runner);
+        $this->assertStringContainsString('git -c diff.renames=false diff', $detector);
+        $this->assertSame(1, preg_match('/      - name: Detect mutation-tested changes\n(.*?)      - name: Setup PHP with coverage/s', $workflow, $detection));
+        $this->assertStringNotContainsString('git diff', $detection[1]);
+        $this->assertStringContainsString('timeout-minutes: 45', $workflow);
         $this->assertStringContainsString('MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}', $workflow);
         $this->assertStringContainsString('.stats.coveredCodeMsi // .coveredCodeMutationScoreIndicator', $workflow);
         $this->assertStringContainsString('Mutation gate not applicable', $workflow);

@@ -1015,6 +1015,20 @@ final class InvoiceLifecycleService
                         : sprintf('Invoice %s belongs to an agreement billed in Square, which collects it, so it cannot be reopened. Clear the agreement\'s Square marker first, then reopen it.', (string) $locked->invoice_number)
                 );
             }
+            // A settlement line is not a generated type, so regeneration keeps
+            // it while the release below takes away the time it bills: the
+            // charge would stand with the work back on the shelf, to be billed
+            // again. Voiding releases both together.
+            if ($locked->lines()
+                ->where('workspace_id', $locked->workspace_id)
+                ->where('type', InvoiceLineType::DeferredBuyDown->value)
+                ->exists()) {
+                throw new DomainException(sprintf(
+                    'Invoice %s carries a deferred buy-down settlement, and reopening it would release the time those lines bill while keeping the charge. '
+                    .'It cannot be reopened; void it instead if it must be replaced.',
+                    (string) $locked->invoice_number,
+                ));
+            }
             $this->assertLockedAgreementIsTheInvoices($invoice, $locked);
 
             // Read from the tenant, as issue() does, rather than through the
