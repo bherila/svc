@@ -236,7 +236,7 @@ final class DeferredBuyDownAction
             // recorded membership and minutes where available, so settling it
             // cannot subtract another entry's waiting hours. Legacy drafts
             // without an itemized snapshot retain the work-date fallback.
-            $recorded = $deferred?->entries ?? array_map(static fn (ClientTimeEntry $entry): array => [
+            $recorded = $deferred->entries ?? array_map(static fn (ClientTimeEntry $entry): array => [
                 'id' => $entry->id, 'workedOn' => $entry->worked_on->toDateString(), 'minutes' => (int) $entry->minutes,
             ], $selection->entries);
             $reported = array_filter($recorded, static fn (array $entry): bool => isset($settled[$entry['id']]) && $entry['workedOn'] <= $statement->workEnd);
