@@ -372,6 +372,7 @@ final class InvoiceEmailService
 
             $successful = $locked->emailDeliveries()
                 ->where('workspace_id', $locked->workspace_id)
+                ->where('invoice_revision', $locked->document_revision)
                 ->where('status', 'sent')
                 ->exists();
             if ($successful) {
