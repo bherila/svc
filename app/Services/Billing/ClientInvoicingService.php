@@ -1669,6 +1669,33 @@ final class ClientInvoicingService
         $invoice->forceFill(['hours_statement' => $statement->toArray()])->save();
     }
 
+    /**
+     * Freeze current document facts when a cadence draft is issued, without
+     * regenerating its charges or allocating any further work. Generation's
+     * snapshot can predate new approvals or a client's visibility decision.
+     * Legacy drafts without a matching agreement retain their existing facts.
+     */
+    public function refreshDeferredWorkSnapshotAtIssue(ClientInvoice $invoice): void
+    {
+        if ($invoice->invoice_kind !== InvoiceKind::CadencePeriod->value || $invoice->client_agreement_id === null) {
+            return;
+        }
+        $agreement = ClientAgreement::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_company_id', $invoice->client_company_id)
+            ->whereKey($invoice->client_agreement_id)
+            ->first();
+        if (! $agreement instanceof ClientAgreement) {
+            return;
+        }
+        $company = ClientCompany::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->whereKey($invoice->client_company_id)
+            ->firstOrFail();
+        $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+        $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
+    }
+
     /** Store the unallocated deferred entries remaining after this draft's lines were composed. */
     private function recordDeferredWorkSnapshot(ClientInvoice $invoice, ClientAgreement $agreement, ClientCompany $company): void
     {
