@@ -1,2 +1,4 @@
 resources/js/components/ui/*
 resources/views/mail/*
+# Preserve the upstream stylesheet bytes recorded in its adjacent README.md.
+resources/css/vendor/shadcn/tailwind.css
