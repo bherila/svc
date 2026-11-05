@@ -10,6 +10,8 @@ namespace App\Support\Billing;
  */
 enum InvoiceLineType: string
 {
+    public const int DEFERRED_BUYDOWN_ADJUSTMENT_SORT_ORDER = 10000;
+
     case Retainer = 'retainer';
     case PriorMonthRetainer = 'prior_month_retainer';
     case PriorMonthBillable = 'prior_month_billable';
@@ -27,7 +29,7 @@ enum InvoiceLineType: string
     case CarriedDeferredApplied = 'carried_deferred_applied';
     case CarriedDeferredBilled = 'carried_deferred_billed';
     // An explicit hourly settlement consumes none of the retainer's capacity.
-    // Reserved for the forthcoming buy-down writer; manual input is refused.
+    // Manual input is refused.
     case DeferredBuyDown = 'deferred_buydown';
 
     /** @return list<string> */

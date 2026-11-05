@@ -165,12 +165,15 @@ refused once a later invoice was sized against the charge.
   same transaction. The time returns to `approved` and the regenerated draft
   consumes it again.
 - It is **refused** for an invoice Square collects (unlink it first), one
-  corrected in place, one carrying a deferred buy-down settlement, a billing
-  schedule's invoice, a kind that cannot be
+  corrected in place, a billing schedule's invoice, a kind that cannot be
   regenerated, and a regeneration that would change the catch-up charge a later
   charged invoice recorded (`DraftCatchUpDependencies::assertChargeUnchanged()`).
-  The same check runs again at the reissue, because the reopened invoice is an
-  ordinary draft that time edits can regenerate before it is issued.
+  A deferred buy-down settlement is unwound during reopen: its reserved entries
+  return to the shelf, its settlement and discount lines are removed, the hours
+  statement is refreshed, and `invoice.deferred_buydown_unwound` records the
+  entry count and net amount. The same charge check runs again at the reissue,
+  because the reopened invoice is an ordinary draft that time edits can
+  regenerate before it is issued.
 - **Reissue** is the ordinary `issue()`. The document revision advances,
   `reissued_at` is set, the delivery, email, subject and PDF say it was
   reissued under the same number, and the client history reads

@@ -252,7 +252,7 @@ final class DeferredBuyDownAction
             $invoice->lines()->create(['workspace_id' => $invoice->workspace_id, 'client_agreement_id' => $invoice->client_agreement_id, 'type' => InvoiceLineType::Adjustment->value,
                 'description' => $selection->request->discountReason, 'quantity' => 1,
                 'unit_amount' => -$selection->request->discount, 'tax_amount' => 0, 'total_amount' => -$selection->request->discount, 'line_date' => $lineDate,
-                'sort_order' => 10000]);
+                'sort_order' => InvoiceLineType::DEFERRED_BUYDOWN_ADJUSTMENT_SORT_ORDER]);
         }
     }
 
