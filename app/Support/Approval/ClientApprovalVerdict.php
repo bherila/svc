@@ -19,7 +19,7 @@ enum ClientApprovalVerdict: string
     case Disputed = 'disputed';
 
     /**
-     * @param  string|null  $source  `portal` or `payment`; anything else is unread
+     * @param  string|null  $source  `portal`, `reviewer` or `payment`; anything else is unread
      * @param  bool  $invoicePaid  whether an invoice carrying the row is paid in full now
      */
     public static function judge(?string $source, bool $approved, bool $disputed, bool $invoicePaid): self
@@ -34,7 +34,7 @@ enum ClientApprovalVerdict: string
         }
 
         return match ($source) {
-            ClientApprovalSource::Portal->value => self::Approved,
+            ClientApprovalSource::Portal->value, ClientApprovalSource::Reviewer->value => self::Approved,
             ClientApprovalSource::Payment->value => $invoicePaid ? self::ApprovedByPayment : self::Pending,
             default => self::Pending,
         };

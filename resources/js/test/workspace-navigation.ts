@@ -72,6 +72,8 @@ export function workspaceNavigation(
         operations_href: '/workspaces/workspace-1/operations',
         payments_href: '/workspaces/workspace-1/payments',
         shared_projects_href: '/workspaces/workspace-1/shared-projects',
+        reviewers_href: '/workspaces/workspace-1/reviewers',
+        approvals_href: null,
         ...overrides,
     };
 }

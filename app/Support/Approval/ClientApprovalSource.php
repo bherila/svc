@@ -12,4 +12,11 @@ enum ClientApprovalSource: string
 
     /** The invoice carrying it was paid in full. Stands while that stays true. */
     case Payment = 'payment';
+
+    /**
+     * A person approved it through a reviewer grant: the provider's own say-so
+     * that this person may vouch for its hours and expenses (UX overhaul 7d).
+     * Stands until a person changes it, like a portal approval.
+     */
+    case Reviewer = 'reviewer';
 }

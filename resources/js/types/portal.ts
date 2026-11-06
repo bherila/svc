@@ -162,6 +162,9 @@ export type PortalApprovalResult =
     | { kind: 'approved'; time: number; expenses: number; skipped_own: number }
     | { kind: 'disputed' };
 
+/** A decision's result on the cross-workspace page, tagged with the block it was made in. */
+export type KeyedApprovalResult = PortalApprovalResult & { key: string };
+
 export type PortalHomeProps = {
     company: { id: string; name: string };
     balance: PortalBalance;
@@ -194,4 +197,6 @@ export type PortalHomeProps = {
     };
     to_approve: PortalToApprove | null;
     approval_result: PortalApprovalResult | null;
+    /** Everything waiting across providers, when that is more than this client; else null. */
+    approvals_href: string | null;
 };

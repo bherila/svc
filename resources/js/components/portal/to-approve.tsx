@@ -1,8 +1,14 @@
-import { router, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { CheckIcon, MessageSquareWarningIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useDurationStyle } from '@/hooks/use-duration-style';
@@ -67,9 +73,24 @@ export function approvalMessage(result: PortalApprovalResult): string {
 export function ToApprove({
     data,
     result,
+    title = 'To approve',
+    caption = null,
+    errorKey = 'approval',
+    allHref = null,
+    empty = 'Nothing is waiting. Hours and expenses your provider has billed you for appear here until you approve or dispute them, or pay the invoice they are on.',
 }: {
     data: PortalToApprove;
     result: PortalApprovalResult | null;
+    /** The card's heading; the cross-workspace page names the provider here. */
+    title?: string;
+    /** One line under the heading, such as whose client this is. */
+    caption?: string | null;
+    /** Which validation error is this card's, when several cards share a page. */
+    errorKey?: string;
+    /** Where everything waiting for this person is, when it is more than this card. */
+    allHref?: string | null;
+    /** What an empty card says. */
+    empty?: string;
 }) {
     const style = useDurationStyle();
     const errors = usePage().props.errors as Record<string, string> | undefined;
@@ -107,7 +128,12 @@ export function ToApprove({
     return (
         <Card data-slot="to-approve">
             <CardHeader>
-                <CardTitle>To approve</CardTitle>
+                <CardTitle className="wrap-anywhere">{title}</CardTitle>
+                {caption !== null && (
+                    <CardDescription className="wrap-anywhere">
+                        {caption}
+                    </CardDescription>
+                )}
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-4">
                 {result !== null && (
@@ -118,20 +144,16 @@ export function ToApprove({
                         {approvalMessage(result)}
                     </p>
                 )}
-                {errors?.approval !== undefined && (
+                {errors?.[errorKey] !== undefined && (
                     <p
                         role="alert"
                         className="text-sm font-medium wrap-anywhere text-destructive"
                     >
-                        {errors.approval}
+                        {errors[errorKey]}
                     </p>
                 )}
                 {data.groups.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                        Nothing is waiting. Hours and expenses your provider has
-                        billed you for appear here until you approve or dispute
-                        them, or pay the invoice they are on.
-                    </p>
+                    <p className="text-sm text-muted-foreground">{empty}</p>
                 ) : (
                     data.groups.map((group) => (
                         <Group
@@ -153,6 +175,16 @@ export function ToApprove({
                     <p className="text-xs text-muted-foreground">
                         These are the oldest rows. Approve or dispute them to
                         see the rest.
+                    </p>
+                )}
+                {allHref !== null && (
+                    <p className="text-sm">
+                        <Link
+                            href={allHref}
+                            className="underline underline-offset-4"
+                        >
+                            Everything waiting for you
+                        </Link>
                     </p>
                 )}
             </CardContent>

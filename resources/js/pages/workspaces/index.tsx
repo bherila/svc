@@ -245,11 +245,14 @@ export default function WorkspaceSelector({
     workspaces,
     create_url: createUrl,
     shared_project_invitations: sharedInvitations = [],
+    approvals_href: approvalsHref = null,
 }: {
     create_url: string;
     workspaces: WorkspaceChoice[];
     /** Invitations to take part in another workspace's project, addressed to this person. */
     shared_project_invitations?: SharedProjectInvitation[];
+    /** Where everything waiting for this person to approve is, when anything could be. */
+    approvals_href?: string | null;
 }) {
     const [creating, setCreating] = useState(false);
 
@@ -302,6 +305,17 @@ export default function WorkspaceSelector({
                             ))}
                         </ul>
                     </section>
+                )}
+
+                {approvalsHref !== null && (
+                    <p className="mt-6 text-sm" data-test="approvals-link">
+                        <Link
+                            href={approvalsHref}
+                            className="underline underline-offset-4"
+                        >
+                            Hours and expenses waiting for your approval
+                        </Link>
+                    </p>
                 )}
 
                 {workspaces.length === 0 ? (
