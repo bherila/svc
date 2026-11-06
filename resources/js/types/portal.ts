@@ -34,7 +34,10 @@ export type PortalLastPayment = {
 };
 
 export type PortalPay = {
-    /** The invoice's hosted payment page; null when it has none. */
+    /**
+     * Where Pay goes: the invoice page's pay section, or Square's hosted
+     * page; null when the invoice can be paid in neither.
+     */
     href: string | null;
     /** The invoice's own page in the portal. */
     invoice_href: string | null;
