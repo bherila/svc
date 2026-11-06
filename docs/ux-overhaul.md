@@ -856,6 +856,34 @@ Settled by the product owner before a period away:
   - **Cross-client Invoices, Time and Finance pages:** owners and admins
     only.
   - **Members' workspace navigation:** Dashboard and Clients.
+- **2026-11-06, slice 12: invoice document calls.**
+  - **Golden facts:** the existing #614 golden tests pass unchanged against the
+    new template, and a parity test renders invoices through a frozen copy of
+    the old template (`tests/Support/Billing/Legacy`) and the new document and
+    compares every printed fact. Delete the copy and that test one release
+    after the new document ships.
+  - **Not printed today, so not lost:** the old template had no payment
+    instructions and no void notice. The document adds a pay-online line (a
+    portal URL, only for a collectible invoice the client can see) and a void
+    notice with its date.
+  - **Grouping:** a stored line type that is not an `InvoiceLineType` case
+    prints under "Adjustments and credits" rather than vanishing. Lines are
+    grouped by section, so their order is by section and then sort order.
+  - **Proforma:** built from the period preview inside its rolled-back
+    transaction, for the client's audience, with no number, for the current
+    cadence period of each active recurring agreement. An already-invoiced
+    period, or a billing rule that cannot price it, is said in one sentence
+    instead of a document. Appendix B (receipts) is not drawn yet.
+  - **Portal rail:** approve or dispute hours is not offered, because
+    client approval (slice 8) has not landed.
+  - **Stripe:** the browser confirms the payment with Stripe.js, loaded when
+    the client asks to pay. Card payment is offered only when the deployment's
+    publishable key (`services.stripe.publishable_key`) is known to belong to
+    the account that creates the intent: the workspace has no connection and
+    the environment may serve it, or its connection is, or borrows, the
+    environment one. A workspace on a key of its own gets no card option
+    (Square's page still shows). A per-connection publishable key is the
+    follow-up that lifts this.
 - **2026-11-06, #617: mutation gate.** The mutation job can show success
   while the score is under its 82% threshold. Before every merge, the actual
   counts in the log are read.

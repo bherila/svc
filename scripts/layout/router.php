@@ -80,7 +80,7 @@ Auth::onceUsingId(match (true) {
     // The member who is not a manager reads My work as themselves.
     isset($fixture['my_work']) && $requestPath === $fixture['my_work'] => $fixture['work_member_id'],
     // The client contact reads the portal as the client.
-    in_array($requestPath, array_filter([$fixture['square_portal'], $fixture['task_portal'], $fixture['portal_home'] ?? null]), true) => $fixture['square_portal_user_id'],
+    in_array($requestPath, array_filter([$fixture['square_portal'], $fixture['task_portal'], $fixture['portal_home'] ?? null, $fixture['document_portal'] ?? null]), true) => $fixture['square_portal_user_id'],
     default => $fixture['user_id'],
 });
 $app->handleRequest(Request::capture());

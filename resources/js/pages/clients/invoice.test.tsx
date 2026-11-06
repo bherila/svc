@@ -10,6 +10,7 @@ import {
     vi,
 } from 'vitest';
 import ClientInvoiceDetail from '@/pages/clients/invoice';
+import { documentFixture } from '@/test/invoice-document-fixtures';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
 
@@ -92,7 +93,7 @@ function props(overrides: Partial<Props> = {}): Props {
             balance_amount: 10000,
         },
         lines: [],
-        line_detail: {},
+        document: documentFixture({ audience: 'operator' }),
         payments: [],
         // West of UTC, so the browser's UTC day and the workspace's differ for
         // part of every evening.

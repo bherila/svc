@@ -80,6 +80,7 @@ const credentialsOnly = process.argv.includes('--credentials');
 const paymentsOnly = process.argv.includes('--payments');
 const revenueOnly = process.argv.includes('--revenue');
 const workPortalOnly = process.argv.includes('--work-portal');
+const invoiceDocumentOnly = process.argv.includes('--invoice-document');
 const revenueScreens = new Set([
     'dashboard',
     'workspace_clients',
@@ -201,6 +202,11 @@ try {
         SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
         SVC_LAYOUT_REVENUE: revenueOnly ? '1' : '0',
         SVC_LAYOUT_WORK_PORTAL: workPortalOnly ? '1' : '0',
+        SVC_LAYOUT_INVOICE_DOCUMENT: invoiceDocumentOnly ? '1' : '0',
+        // The portal offers card payment only where the deployment can confirm one.
+        STRIPE_PUBLISHABLE_KEY: invoiceDocumentOnly
+            ? 'pk_test_layout_synthetic'
+            : '',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -528,6 +534,57 @@ try {
 
     // Workspace payment connections: every state, with unbroken names, the
     // masked key and a validation refusal. No processor is ever asked.
+    /**
+     * The invoice document, in light and dark and as printed: the sheet follows
+     * the app theme, "Show as printed" turns it to paper, and nothing runs
+     * sideways at any width. The page's own pay controls are asserted where they
+     * exist, and a proforma has none.
+     */
+    async function checkInvoiceDocument(screen, width) {
+        const sheet = page.locator('article[data-surface]');
+        await expect(sheet).toBeVisible();
+        await expect(sheet).toHaveAttribute('data-surface', 'screen');
+
+        if (screen === 'document_portal') {
+            await expect(
+                page.getByRole('button', { name: 'Pay by card', exact: true }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('link', { name: 'Download PDF', exact: true }),
+            ).toBeVisible();
+        }
+
+        if (screen === 'document_proforma') {
+            await expect(
+                page.getByRole('note').filter({ hasText: /PROFORMA/ }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('button', { name: /pay/i }),
+            ).toHaveCount(0);
+        }
+
+        await capture(screen, 'light', width);
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.reload();
+        await expect(sheet).toBeVisible();
+        await expect(page.locator('html')).toHaveClass(/dark/);
+        await capture(screen, 'dark', width);
+        const toggle = page.getByRole('button', {
+            name: 'Show as printed',
+            exact: true,
+        });
+        await expect(toggle).toBeVisible();
+        await toggle.click();
+        await expect(sheet).toHaveClass(/invoice-paper/);
+        expect(
+            await sheet.evaluate(
+                (element) => getComputedStyle(element).colorScheme,
+            ),
+        ).toBe('light');
+        await capture(screen, 'dark-printed', width);
+        await page.emulateMedia({ colorScheme: 'light' });
+    }
+
     async function checkPayments(width) {
         const fullKey = `rk_live_${'synthetic'.repeat(6)}a1b2`;
         const states = [
@@ -778,46 +835,79 @@ try {
             await expect(
                 page.getByRole('heading', { name: 'My work', level: 1 }),
             ).toBeVisible();
-            await expect(page.getByRole('region', { name: 'Overdue' })).toBeVisible();
+            await expect(
+                page.getByRole('region', { name: 'Overdue' }),
+            ).toBeVisible();
             await expect(
                 page.getByRole('combobox', { name: /^Status of / }).first(),
             ).toBeVisible();
             await expect(
-                page.getByRole('link', { name: 'My work', exact: true }).first(),
-            ).toHaveAttribute('aria-current', 'page').catch(() => undefined);
+                page
+                    .getByRole('link', { name: 'My work', exact: true })
+                    .first(),
+            )
+                .toHaveAttribute('aria-current', 'page')
+                .catch(() => undefined);
             const body = await page.locator('body').innerText();
 
-            for (const forbidden of ['987654', '765432', '9,876', '7,654', 'Invoices', 'Finance', 'Revenue']) {
+            for (const forbidden of [
+                '987654',
+                '765432',
+                '9,876',
+                '7,654',
+                'Invoices',
+                'Finance',
+                'Revenue',
+            ]) {
                 if (body.includes(forbidden)) {
-                    failures.push(`my_work at ${width}px prints "${forbidden}".`);
+                    failures.push(
+                        `my_work at ${width}px prints "${forbidden}".`,
+                    );
                 }
             }
 
             // The raw stored status never reaches a reader.
             for (const raw of ['in_progress', 'invoiced_', 'billing_']) {
                 if (body.includes(raw)) {
-                    failures.push(`my_work at ${width}px prints the stored value "${raw}".`);
+                    failures.push(
+                        `my_work at ${width}px prints the stored value "${raw}".`,
+                    );
                 }
             }
         }
 
         if (screen === 'portal_home') {
-            await expect(page.locator('[data-slot="card-title"]', { hasText: 'Balance' })).toBeVisible();
             await expect(
-                page.getByRole('link', { name: /^Pay .*, invoice PAY-SYNTHETIC/ }),
-            ).toHaveAttribute('href', 'https://squareupsandbox.com/pay-invoice/inv_fixture_pay');
+                page.locator('[data-slot="card-title"]', {
+                    hasText: 'Balance',
+                }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('link', {
+                    name: /^Pay .*, invoice PAY-SYNTHETIC/,
+                }),
+            ).toHaveAttribute(
+                'href',
+                'https://squareupsandbox.com/pay-invoice/inv_fixture_pay',
+            );
             await expect(
                 page.getByRole('region', { name: 'Next invoice (estimate)' }),
             ).toBeVisible();
-            await expect(page.getByText(/is still deferred|of work is still deferred/)).toBeVisible();
+            await expect(
+                page.getByText(/is still deferred|of work is still deferred/),
+            ).toBeVisible();
             // "To approve" (slice 8): the contact holds the permission, so the
             // section is there with this month and last month, hours as time and
             // never as money, and no receipt.
             const toApprove = page.locator('[data-slot="to-approve"]');
             await expect(toApprove).toBeVisible();
-            await expect(toApprove.locator('[data-slot="card-title"]')).toHaveText('To approve');
+            await expect(
+                toApprove.locator('[data-slot="card-title"]'),
+            ).toHaveText('To approve');
             await expect(toApprove.getByRole('region')).toHaveCount(2);
-            const approveButtons = toApprove.getByRole('button', { name: /^Approve .* from / });
+            const approveButtons = toApprove.getByRole('button', {
+                name: /^Approve .* from /,
+            });
             await expect(approveButtons).toHaveCount(2);
             // A checkmark icon on every approve control, and never a filled one:
             // the page's one filled button is Pay.
@@ -825,22 +915,41 @@ try {
                 await expect(button.locator('svg.lucide-check')).toHaveCount(1);
                 await expect(button).not.toHaveClass(/bg-primary/);
             }
-            for (const summary of await toApprove.getByText(/^Show the \d+ rows?$/).all()) {
+            for (const summary of await toApprove
+                .getByText(/^Show the \d+ rows?$/)
+                .all()) {
                 await summary.click();
             }
-            await expect(toApprove.getByRole('button', { name: /^Approve Synthetic last month/ }).first()).toBeVisible();
-            await expect(toApprove.getByText(/Your note: Synthetic dispute note/)).toBeVisible();
+            await expect(
+                toApprove
+                    .getByRole('button', {
+                        name: /^Approve Synthetic last month/,
+                    })
+                    .first(),
+            ).toBeVisible();
+            await expect(
+                toApprove.getByText(/Your note: Synthetic dispute note/),
+            ).toBeVisible();
             await expect(toApprove).not.toContainText(/987654|9,876/);
             // The dispute form open, with a note that will not break.
-            await toApprove.getByRole('button', { name: /^Dispute Synthetic last month/ }).first().click();
+            await toApprove
+                .getByRole('button', { name: /^Dispute Synthetic last month/ })
+                .first()
+                .click();
             await toApprove
                 .getByLabel('Note for your provider (optional)')
                 .fill('SyntheticDisputeNote'.repeat(12));
             const body = await page.locator('body').innerText();
 
-            for (const forbidden of ['987654', 'Synthetic internal note', 'subcontractor']) {
+            for (const forbidden of [
+                '987654',
+                'Synthetic internal note',
+                'subcontractor',
+            ]) {
                 if (body.toLowerCase().includes(forbidden.toLowerCase())) {
-                    failures.push(`portal_home at ${width}px prints "${forbidden}".`);
+                    failures.push(
+                        `portal_home at ${width}px prints "${forbidden}".`,
+                    );
                 }
             }
         }
@@ -856,7 +965,9 @@ try {
             await expect(
                 page.locator('[data-slot="revenue-chart-table"]'),
             ).toBeAttached();
-            await expect(page.locator('.recharts-surface').first()).toBeVisible();
+            await expect(
+                page.locator('.recharts-surface').first(),
+            ).toBeVisible();
         }
 
         if (screen === 'workspace_clients') {
@@ -870,7 +981,11 @@ try {
 
         if (screen === 'client_overview') {
             await expect(
-                page.locator('[data-slot="this-period"] [data-slot="retainer-meter"]').first(),
+                page
+                    .locator(
+                        '[data-slot="this-period"] [data-slot="retainer-meter"]',
+                    )
+                    .first(),
             ).toBeVisible();
         }
     }
@@ -892,7 +1007,9 @@ try {
         }
 
         if (screen === 'workspace_clients') {
-            await page.getByRole('searchbox', { name: 'Search clients' }).fill('Synthetic');
+            await page
+                .getByRole('searchbox', { name: 'Search clients' })
+                .fill('Synthetic');
             await page.waitForLoadState('networkidle');
             await capture(screen, 'searched', width, false);
         }
@@ -1005,107 +1122,112 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of paymentsOnly
-            ? ['payments']
-            : workPortalOnly
-            ? ['my_work', 'portal_home']
-            : invoiceSendOnly
-            ? ['invoice']
-            : invoiceHistoryOnly
-              ? ['draft_time']
-              : invoiceRecoveryOnly
-                ? [
-                      'invoice',
-                      'operations',
-                      'draft_time',
-                      'time',
-                      'draft_invoice',
-                      'invoice_review',
-                  ]
-                : receiptsOnly
-                  ? ['receipts']
-                  : projectsOnly
-                    ? ['settings']
-                    : schedulesOnly
-                      ? ['expense_schedules']
-                      : expensesOnly
-                        ? ['expenses']
-                        : workspacesOnly
-                          ? ['selector']
-                          : credentialsOnly
-                            ? ['mcp_setup']
-                            : invoiceActionsOnly
-                              ? [
-                                    'invoice',
-                                    'invoice_review',
-                                    'draft_invoice',
-                                    'draft_time',
-                                ]
-                              : engagementOnly
-                                ? ['operations', 'agreement']
-                                : disputesOnly
-                                  ? ['invoice', 'square_portal']
-                                  : taskLookupsOnly
-                                    ? ['task_editor']
-                                    : tasksOnly
-                                      ? [
-                                            'task_list',
-                                            'task_project',
-                                            'task_editor',
-                                            'task_portal',
-                                        ]
-                                      : historyOnly
-                                        ? [
-                                              'history_index',
-                                              'history_discussion',
-                                              'history_invoice',
-                                          ]
-                                        : portalOnly
-                                          ? ['settings']
-                                          : correctionOnly
-                                            ? ['invoice_review']
-                                            : squareOnly
+        for (const screen of invoiceDocumentOnly
+            ? ['document_invoice', 'document_portal', 'document_proforma']
+            : paymentsOnly
+              ? ['payments']
+              : workPortalOnly
+                ? ['my_work', 'portal_home']
+                : invoiceSendOnly
+                  ? ['invoice']
+                  : invoiceHistoryOnly
+                    ? ['draft_time']
+                    : invoiceRecoveryOnly
+                      ? [
+                            'invoice',
+                            'operations',
+                            'draft_time',
+                            'time',
+                            'draft_invoice',
+                            'invoice_review',
+                        ]
+                      : receiptsOnly
+                        ? ['receipts']
+                        : projectsOnly
+                          ? ['settings']
+                          : schedulesOnly
+                            ? ['expense_schedules']
+                            : expensesOnly
+                              ? ['expenses']
+                              : workspacesOnly
+                                ? ['selector']
+                                : credentialsOnly
+                                  ? ['mcp_setup']
+                                  : invoiceActionsOnly
+                                    ? [
+                                          'invoice',
+                                          'invoice_review',
+                                          'draft_invoice',
+                                          'draft_time',
+                                      ]
+                                    : engagementOnly
+                                      ? ['operations', 'agreement']
+                                      : disputesOnly
+                                        ? ['invoice', 'square_portal']
+                                        : taskLookupsOnly
+                                          ? ['task_editor']
+                                          : tasksOnly
+                                            ? [
+                                                  'task_list',
+                                                  'task_project',
+                                                  'task_editor',
+                                                  'task_portal',
+                                              ]
+                                            : historyOnly
                                               ? [
-                                                    'square_explore',
-                                                    'square_invoice',
-                                                    'square_portal',
+                                                    'history_index',
+                                                    'history_discussion',
+                                                    'history_invoice',
                                                 ]
-                                              : remindersOnly
-                                                ? [
-                                                      'reminder_invoice',
-                                                      'settings',
-                                                  ]
-                                                : revenueOnly
-                                                  ? [
-                                                        'dashboard',
-                                                        'workspace_clients',
-                                                        'client_overview',
-                                                    ]
-                                                  : timeOnly
-                                                  ? ['time', 'draft_time']
-                                                  : backlogOnly
-                                                    ? ['agreement']
-                                                    : [
-                                                          'mcp_setup',
-                                                          'invoice',
-                                                          'invoice_review',
-                                                          'reminder_invoice',
-                                                          'settings',
-                                                          'draft_invoice',
-                                                          'draft_time',
-                                                          'proposal',
-                                                          'proposal_acceptance',
-                                                          'operations',
-                                                          'dashboard',
-                                                          'workspace_clients',
-                                                          'workspace_invoices',
-                                                          'workspace_time',
-                                                          'workspace_finance',
-                                                          'time',
-                                                          'expenses',
-                                                          'receipts',
-                                                          'expense_schedules',
-                                                      ]) {
+                                              : portalOnly
+                                                ? ['settings']
+                                                : correctionOnly
+                                                  ? ['invoice_review']
+                                                  : squareOnly
+                                                    ? [
+                                                          'square_explore',
+                                                          'square_invoice',
+                                                          'square_portal',
+                                                      ]
+                                                    : remindersOnly
+                                                      ? [
+                                                            'reminder_invoice',
+                                                            'settings',
+                                                        ]
+                                                      : revenueOnly
+                                                        ? [
+                                                              'dashboard',
+                                                              'workspace_clients',
+                                                              'client_overview',
+                                                          ]
+                                                        : timeOnly
+                                                          ? [
+                                                                'time',
+                                                                'draft_time',
+                                                            ]
+                                                          : backlogOnly
+                                                            ? ['agreement']
+                                                            : [
+                                                                  'mcp_setup',
+                                                                  'invoice',
+                                                                  'invoice_review',
+                                                                  'reminder_invoice',
+                                                                  'settings',
+                                                                  'draft_invoice',
+                                                                  'draft_time',
+                                                                  'proposal',
+                                                                  'proposal_acceptance',
+                                                                  'operations',
+                                                                  'dashboard',
+                                                                  'workspace_clients',
+                                                                  'workspace_invoices',
+                                                                  'workspace_time',
+                                                                  'workspace_finance',
+                                                                  'time',
+                                                                  'expenses',
+                                                                  'receipts',
+                                                                  'expense_schedules',
+                                                              ]) {
             if (
                 resourceChromeOnly &&
                 !['invoice', 'proposal', 'proposal_acceptance'].includes(screen)
@@ -1131,6 +1253,12 @@ try {
 
                     throw error;
                 });
+
+            if (invoiceDocumentOnly) {
+                await checkInvoiceDocument(screen, width);
+
+                continue;
+            }
 
             if (resourceChromeOnly) {
                 await expect(
@@ -3679,36 +3807,36 @@ try {
             paymentsOnly
                 ? 'Workspace payment connections (disconnected, Stripe connected with the masked key, Square connected, a reused connection and a validation refusal) with unbroken workspace, account and location names, at every required width. No processor is asked.'
                 : resourceChromeOnly
-                ? 'Synthetic invoice and native/portal proposal screens use the shared shell without page-owned back links, at every required width. Interactive proposal signing remains visible; no writes are submitted.'
-                : invoiceSendOnly
-                  ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
-                  : receiptsOnly
-                    ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
-                    : projectsOnly
-                      ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
-                      : credentialsOnly
-                        ? 'MCP setup credential forms (#582): grouped scope pickers with presets and the Admin group, from the real index and from an oversized one with unbroken labels, ids, descriptions and saved credentials, at every required width. Nothing is submitted.'
-                        : workspacesOnly
-                          ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
-                          : invoiceActionsOnly
-                            ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
-                            : disputesOnly
-                              ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
-                              : clientsOnly
-                                ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
-                                : tasksOnly
-                                  ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
-                                  : portalOnly
-                                    ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                                    : squareOnly
-                                      ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                                      : remindersOnly
-                                        ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                                        : backlogOnly
-                                          ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                                          : engagementOnly
-                                            ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/operations/dashboard/time/expenses are asserted.',
+                  ? 'Synthetic invoice and native/portal proposal screens use the shared shell without page-owned back links, at every required width. Interactive proposal signing remains visible; no writes are submitted.'
+                  : invoiceSendOnly
+                    ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
+                    : receiptsOnly
+                      ? 'Private expense receipts and confirmed removal at every required width; real signed session API upload and versioned deletion against the disposable database.'
+                      : projectsOnly
+                        ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
+                        : credentialsOnly
+                          ? 'MCP setup credential forms (#582): grouped scope pickers with presets and the Admin group, from the real index and from an oversized one with unbroken labels, ids, descriptions and saved credentials, at every required width. Nothing is submitted.'
+                          : workspacesOnly
+                            ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
+                            : invoiceActionsOnly
+                              ? 'Synthetic invoice bookkeeping and time allocation, plus invoice email composition and unresolved-delivery recovery with oversized reserved-domain addresses and notes, at every required width. Mail outcome is a synthetic browser adapter; real after-commit delivery is proved by InvoiceSendOutcomeTest.'
+                              : disputesOnly
+                                ? 'Synthetic partially disputed operator invoice with a record-payment form and a disputed Square-linked client copy with collection links withheld at every required width.'
+                                : clientsOnly
+                                  ? 'Synthetic client settings, contact restoration through the session-authenticated API, archive confirmation and create-client dialog, plus portal controls at every required width.'
+                                  : tasksOnly
+                                    ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                                    : portalOnly
+                                      ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                                      : squareOnly
+                                        ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                                        : remindersOnly
+                                          ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                                          : backlogOnly
+                                            ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                                            : engagementOnly
+                                              ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
+                                              : 'Synthetic local fixtures only. Invoice review/settings/proposal/operations/dashboard/time/expenses are asserted.',
 
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | UI consistency / axe | Screenshot |',
