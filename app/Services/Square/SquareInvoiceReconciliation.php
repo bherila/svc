@@ -135,7 +135,7 @@ final class SquareInvoiceReconciliation
     /** @return array{ClientInvoice, InvoiceSquareLink} */
     private function linked(Workspace $workspace, string $invoiceId): array
     {
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
         $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $invoiceId)->firstOrFail();

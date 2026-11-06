@@ -29,7 +29,7 @@ final class SquareExploreController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 401);
         abort_unless($access->isWorkspaceManager($user, $workspace), 403);
-        abort_unless(SquareConfiguration::fromConfig()->servesWorkspace($workspace), 404);
+        abort_unless(SquareConfiguration::for($workspace)->isConfigured(), 404);
 
         $requested = [];
         foreach (self::FILTERS as $filter) {

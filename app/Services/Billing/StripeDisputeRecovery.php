@@ -74,7 +74,7 @@ final class StripeDisputeRecovery
         try {
             for ($page = 0; $page < self::MAX_PAGES; $page++) {
                 $budget?->consume();
-                $response = $this->gateway->client()->disputes->all($params)->toArray();
+                $response = $this->gateway->client($workspace)->disputes->all($params)->toArray();
                 $records = $response['data'] ?? null;
                 if (! is_array($records) || ! array_is_list($records) || count($records) > self::PAGE_SIZE
                     || ! is_bool($response['has_more'] ?? null)) {

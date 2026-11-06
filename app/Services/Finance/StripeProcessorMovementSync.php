@@ -11,6 +11,7 @@ use App\Support\Finance\ProcessorReadBudget;
 use DomainException;
 use SensitiveParameter;
 use Stripe\Exception\ExceptionInterface;
+use Stripe\StripeClient;
 
 /**
  * Actual balance entries for one recorded payment, independent of payout dates.
@@ -34,23 +35,23 @@ final class StripeProcessorMovementSync
             // This also establishes the owned payment's identity before HTTP.
             // Reuse its complete dispute read rather than requesting it twice.
             $snapshot = $this->disputes->read($workspace, $paymentId, $budget);
-            $client = $this->gateway->client();
+            $client = $this->gateway->client($workspace);
             $budget->consume();
             $account = $client->accounts->retrieve()->toArray();
             $namespaceId = $account['id'] ?? null;
-            $mode = $this->gateway->mode();
+            $mode = $this->gateway->mode($workspace);
             if (! is_string($namespaceId) || preg_match('/^acct_[A-Za-z0-9_]{1,200}$/D', $namespaceId) !== 1
                 || ! in_array($mode, ['test', 'live'], true)) {
                 throw self::incomplete();
             }
             $accountKey = $mode.':'.$namespaceId;
             $filter = str_starts_with($snapshot->providerIdentifier, 'pi_') ? 'payment_intent' : 'charge';
-            $refunds = $this->refunds([$filter => $snapshot->providerIdentifier], $budget);
+            $refunds = $this->refunds($client, [$filter => $snapshot->providerIdentifier], $budget);
             $facts = [];
             foreach ($refunds as $refund) {
                 foreach ([false, true] as $failure) {
                     $pointer = $refund[$failure ? 'failure_balance_transaction' : 'balance_transaction'] ?? null;
-                    $entry = $this->entry($pointer, $budget);
+                    $entry = $this->entry($client, $pointer, $budget);
                     $fact = StripeProcessorMovementFacts::refund($refund, $entry, $failure);
                     if ($fact !== null) {
                         $facts[] = $fact;
@@ -71,7 +72,7 @@ final class StripeProcessorMovementSync
                     }
                 }
                 foreach ($entries as $entry) {
-                    $fact = StripeProcessorMovementFacts::dispute($dispute, $this->entry($entry, $budget));
+                    $fact = StripeProcessorMovementFacts::dispute($dispute, $this->entry($client, $entry, $budget));
                     if ($fact === null) {
                         throw self::incomplete();
                     }
@@ -107,7 +108,7 @@ final class StripeProcessorMovementSync
      * @param  array{charge?: string, payment_intent?: string}  $filter
      * @return list<array<string, mixed>>
      */
-    private function refunds(#[SensitiveParameter] array $filter, ProcessorReadBudget $budget): array
+    private function refunds(StripeClient $client, #[SensitiveParameter] array $filter, ProcessorReadBudget $budget): array
     {
         $result = [];
         $seen = [];
@@ -118,7 +119,7 @@ final class StripeProcessorMovementSync
                 $input['starting_after'] = $cursor;
             }
             $budget->consume();
-            $response = $this->gateway->client()->refunds->all($input)->toArray();
+            $response = $client->refunds->all($input)->toArray();
             $rows = $response['data'] ?? null;
             $more = $response['has_more'] ?? null;
             if (! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || ! is_bool($more)
@@ -142,7 +143,7 @@ final class StripeProcessorMovementSync
     }
 
     /** @return array<string, mixed>|null */
-    private function entry(#[SensitiveParameter] mixed $pointer, ProcessorReadBudget $budget): ?array
+    private function entry(StripeClient $client, #[SensitiveParameter] mixed $pointer, ProcessorReadBudget $budget): ?array
     {
         if ($pointer === null) {
             return null;
@@ -156,7 +157,7 @@ final class StripeProcessorMovementSync
 
         $budget->consume();
 
-        return $this->gateway->client()->balanceTransactions->retrieve($pointer)->toArray();
+        return $client->balanceTransactions->retrieve($pointer)->toArray();
     }
 
     private static function incomplete(): StripeEventMustBeRetried

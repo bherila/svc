@@ -25,7 +25,7 @@ final class SquareInvoicePage
     /** @return array{url: string, square_invoice_number: string, square_status: string, synced_at: string|null}|null */
     public function forInvoice(Workspace $workspace, ClientInvoice $invoice): ?array
     {
-        if ($invoice->workspace_id !== $workspace->id || ! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if ($invoice->workspace_id !== $workspace->id || ! SquareConfiguration::for($workspace)->isConfigured()) {
             return null;
         }
         $link = $this->links->activeLink($invoice);

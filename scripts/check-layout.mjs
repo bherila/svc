@@ -74,6 +74,7 @@ const expensesOnly = process.argv.includes('--expenses');
 const projectsOnly = process.argv.includes('--projects');
 const workspacesOnly = process.argv.includes('--workspaces');
 const credentialsOnly = process.argv.includes('--credentials');
+const paymentsOnly = process.argv.includes('--payments');
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -184,6 +185,7 @@ try {
         TASK_PLANNING_DETAILS_ENABLED: taskLookupsOnly ? 'true' : 'false',
         SVC_LAYOUT_PROJECTS: projectsOnly ? '1' : '0',
         SVC_LAYOUT_WORKSPACES: workspacesOnly ? '1' : '0',
+        SVC_LAYOUT_PAYMENTS: paymentsOnly ? '1' : '0',
         SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
         SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
@@ -467,6 +469,134 @@ try {
      * oversized index: unbroken labels, ids and descriptions, an Admin group,
      * and long saved credentials. Nothing is submitted.
      */
+    // The browser equivalent of horizontalOverflowRisks: nothing in main may
+    // reach past the viewport unless a scroller of its own holds it.
+    async function assertNoOverflowRisks(label, width) {
+        const risks = await page.evaluate(() => {
+            const out = [];
+
+            for (const element of document.querySelectorAll('main *')) {
+                const box = element.getBoundingClientRect();
+
+                if (box.width === 0 || box.right <= window.innerWidth + 1) {
+                    continue;
+                }
+
+                let held = false;
+
+                for (
+                    let parent = element.parentElement;
+                    parent && parent.tagName !== 'BODY';
+                    parent = parent.parentElement
+                ) {
+                    const overflow = getComputedStyle(parent).overflowX;
+
+                    if (overflow === 'auto' || overflow === 'scroll') {
+                        held = true;
+                        break;
+                    }
+                }
+
+                if (!held) {
+                    out.push(
+                        `${element.tagName}.${String(element.className).slice(0, 60)}`,
+                    );
+                }
+            }
+
+            return out;
+        });
+
+        if (risks.length > 0) {
+            failures.push(
+                `${label} at ${width}px: ${risks.slice(0, 5).join('; ')}`,
+            );
+        }
+    }
+
+    // Workspace payment connections: every state, with unbroken names, the
+    // masked key and a validation refusal. No processor is ever asked.
+    async function checkPayments(width) {
+        const fullKey = `rk_live_${'synthetic'.repeat(6)}a1b2`;
+        const states = [
+            ['disconnected', 'payments'],
+            ['stripe-connected', 'payments_stripe'],
+            ['square-connected', 'payments_square'],
+            ['reused', 'payments_reused'],
+        ];
+
+        for (const [state, key] of states) {
+            await page.goto(origin + fixture[key]);
+            await expect(
+                page.locator('main').getByRole('heading', {
+                    name: 'Payment connections',
+                }),
+            ).toBeVisible();
+
+            if (state === 'disconnected') {
+                await expect(
+                    page.getByLabel('Stripe restricted key'),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Square access token'),
+                ).toBeVisible();
+            } else if (state === 'stripe-connected') {
+                await expect(
+                    page.locator('[data-test="payment-stripe-hint"]'),
+                ).toHaveText('rk_live_…a1b2');
+            } else if (state === 'square-connected') {
+                await expect(
+                    page.locator('[data-test="payment-square-hint"]'),
+                ).toHaveText('…wxyz');
+                await expect(page.getByText('L'.repeat(64))).toBeVisible();
+            } else {
+                await expect(page.getByText('Shared from')).toBeVisible();
+            }
+
+            // The key never reaches the browser, only its masked hint.
+            expect(await page.content()).not.toContain(fullKey);
+            await capture('payments', state, width);
+            await assertNoOverflowRisks(`payments/${state}`, width);
+        }
+
+        // The reuse list, open, with its unbroken workspace names.
+        await page.goto(origin + fixture.payments);
+        await page.locator('#stripe-reuse').click();
+        await expect(
+            page.getByRole('listbox').getByRole('option').first(),
+        ).toBeVisible();
+        // The popup closes when the page is resized for a full-page capture, so
+        // measure it where it is and take a viewport screenshot of it.
+        const popup = await page.getByRole('listbox').boundingBox();
+
+        if (!popup || popup.x < 0 || popup.x + popup.width > width) {
+            failures.push(
+                `payments/reuse-open at ${width}px: the reuse list reaches outside the viewport.`,
+            );
+        }
+
+        await page.screenshot({
+            path: path.join(artifacts, `payments-reuse-open-${width}.png`),
+            animations: 'disabled',
+        });
+        await assertNoOverflowRisks('payments/reuse-open', width);
+        await page.keyboard.press('Escape');
+
+        await page.goto(origin + fixture.payments);
+        await page
+            .getByLabel('Stripe restricted key')
+            .fill(`pk_live_${'x'.repeat(48)}`);
+        await page
+            .locator('[data-test="payment-stripe"]')
+            .getByRole('button', { name: 'Connect', exact: true })
+            .click();
+        await expect(
+            page.locator('[data-test="payment-stripe"]').getByRole('alert'),
+        ).toBeVisible();
+        await capture('payments', 'validation-error', width);
+        await assertNoOverflowRisks('payments/validation-error', width);
+    }
+
     async function checkCredentials(width) {
         const section = page.locator('main');
         await expect(
@@ -731,7 +861,9 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of invoiceSendOnly
+        for (const screen of paymentsOnly
+            ? ['payments']
+            : invoiceSendOnly
             ? ['invoice']
             : invoiceHistoryOnly
               ? ['draft_time']
@@ -878,6 +1010,12 @@ try {
 
             if (credentialsOnly) {
                 await checkCredentials(width);
+
+                continue;
+            }
+
+            if (paymentsOnly) {
+                await checkPayments(width);
 
                 continue;
             }
@@ -3371,7 +3509,9 @@ try {
         [
             '# Browser layout evidence',
             '',
-            resourceChromeOnly
+            paymentsOnly
+                ? 'Workspace payment connections (disconnected, Stripe connected with the masked key, Square connected, a reused connection and a validation refusal) with unbroken workspace, account and location names, at every required width. No processor is asked.'
+                : resourceChromeOnly
                 ? 'Synthetic invoice and native/portal proposal screens use the shared shell without page-owned back links, at every required width. Interactive proposal signing remains visible; no writes are submitted.'
                 : invoiceSendOnly
                   ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
