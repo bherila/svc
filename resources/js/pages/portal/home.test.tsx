@@ -158,6 +158,7 @@ function props(overrides: Partial<PortalHomeProps> = {}): PortalHomeProps {
         },
         to_approve: null,
         approval_result: null,
+        approvals_href: null,
         ...overrides,
     };
 }

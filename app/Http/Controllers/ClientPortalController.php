@@ -23,6 +23,7 @@ use App\Services\Collaboration\CollaborationAccess;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentSharingNativeView;
+use App\Services\Review\ReviewerGrants;
 use App\Services\Tasks\TaskVisibility;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
@@ -73,7 +74,7 @@ class ClientPortalController extends Controller
      * a client the less their own screen told them. This is bounded, and every
      * section links to the module holding the rest.
      */
-    public function show(Request $request, ClientCompany $clientCompany, PortalClientHomeQuery $home, PortalOverviewQuery $overview, PortalApprovalQueue $approvals): Response
+    public function show(Request $request, ClientCompany $clientCompany, PortalClientHomeQuery $home, PortalOverviewQuery $overview, PortalApprovalQueue $approvals, ReviewerGrants $grants): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
@@ -89,6 +90,10 @@ class ClientPortalController extends Controller
             // section is not rendered at all rather than shown disabled.
             'to_approve' => $approvals->for($clientCompany, $viewer),
             'approval_result' => session('approval_result'),
+            // Everything waiting across providers, when a grant or another client's portal says there could be more.
+            'approvals_href' => $grants->approvalsAvailable($viewer)
+                ? route('approvals.index', absolute: false)
+                : null,
         ]);
     }
 

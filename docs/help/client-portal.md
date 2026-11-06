@@ -24,6 +24,8 @@ If you are your provider's billing contact, or you were given the permission, th
 
 Paying an invoice in full also approves the hours and expenses on it. That approval lasts only while the invoice stays paid: a refund takes it back. Something you approved or disputed yourself is never changed by a payment.
 
+If a provider gave you reviewer access, or you are a billing contact of more than one client, the To approve card links to a single list of everything waiting, one card for each provider.
+
 You cannot approve your own work. If you also work for your provider, your own hours and expenses stay in the list for someone else to approve.
 
 Hours show as time only, with no rate. Receipts are not shown here.

@@ -122,6 +122,13 @@ final class WorkspaceNavigationFactory
             paymentsHref: $manages ? route('workspaces.payments', $workspace, absolute: false) : null,
             // Projects this workspace hosts for other workspaces, and ones it takes part in.
             sharedProjectsHref: $isMember ? route('shared-projects.index', $workspace, absolute: false) : null,
+            // Who outside the team may vouch for this workspace's hours. Managers only.
+            reviewersHref: $manages ? route('workspaces.reviewers', $workspace, absolute: false) : null,
+            // Everything waiting for this person across providers. Read from the portal
+            // memberships already loaded above, so the shell pays no query for it; a
+            // reviewer with no membership anywhere reaches the list from the workspace
+            // selector instead.
+            approvalsHref: $portalIds === [] ? null : route('approvals.index', absolute: false),
         );
     }
 

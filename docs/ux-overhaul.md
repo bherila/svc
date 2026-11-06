@@ -940,6 +940,33 @@ Settled by the product owner before a period away:
   - **Open tasks** are ordered as before; the schema has no "waiting on the
     client" flag. "To approve" is not drawn (slice 8).
 
+- **2026-11-06, slice 10: reviewer grants and the cross-workspace queue.**
+  - **What a grant is:** the provider's explicit, revocable, audited permission for
+    a person or a workspace to *approve or dispute* one client's hours and
+    expenses. Review marks (submitted, reviewed, flagged) wait for slice 11; a
+    reviewer's dispute with a note is today's flag.
+  - **Scope:** one client of the granting workspace, optionally one project.
+  - **Grantee:** a contact of that client, matched by the address on the record,
+    or a workspace that shares a project with the granter, reached through its
+    owners and admins. Read live on every request.
+  - **Who a grant never reaches:** the granting workspace's own staff, and anyone
+    holding a portal membership of that client. A membership decides alone
+    (an explicit no stays a no), and the same rows never appear twice.
+  - **What a reviewer sees:** the portal queue's rows (date, time, the client-facing
+    description, project, an expense's amount) with no invoice link, rate or
+    internal note. Only rows the provider has marked ready to bill are on offer, as
+    in slice 8; Other Eng's own time is on the list once someone else in its
+    workspace has approved it, until slice 11 adds submission.
+  - **Where an approval lands:** the provider's own rows, stamped as the reviewer's
+    with source `reviewer`; it stands like a person's portal approval and a paid
+    invoice leaves it alone.
+  - **Audit:** granting, revoking, every view that discloses rows (a count, never
+    content) and every decision are written to the granting workspace's access history.
+  - **Revocation:** the grant is read again as the first statement of the deciding
+    transaction. No lock is taken on the grant table.
+  - **Browser-only:** none of it is an agent operation, so there is no REST or MCP
+    surface; the four routes are named exceptions in `WebApiParityTest`.
+
 #### Owner decisions, 2026-11-06 evening
 
 Answers the owner gave in an interview on 2026-11-06.

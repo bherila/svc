@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
+use App\Models\ReviewerGrant;
 use App\Models\User;
 use App\Services\Approval\PortalApprovalAuthority;
 use App\Services\Authorization\PortalAccess;
@@ -25,8 +26,8 @@ use Illuminate\Support\Collection;
  * vendor - the workspace they are billed by - and calendar month. Built from
  * this one client's rows in this one workspace: two bounded queries, however
  * many entries there are, with the invoice behind each loaded in one more.
- * Fanning out over every workspace a person belongs to is the next slice; this
- * class takes the company so that slice can call it once per membership.
+ * Fanning out over every workspace a person belongs to calls this once per
+ * membership (and once per reviewer grant); see {@see CrossWorkspaceApprovalQueue}.
  *
  * What it leaves out, deliberately:
  *
@@ -61,15 +62,57 @@ final class PortalApprovalQueue
      */
     public function for(ClientCompany $company, User $viewer): ?array
     {
+        return $this->forCompany(
+            $company,
+            $viewer,
+            route('portal.approvals.approve', $company, absolute: false),
+            route('portal.approvals.dispute', $company, absolute: false),
+        );
+    }
+
+    /**
+     * The same queue, posting to the given URLs; null when this person may not
+     * approve for this client through a portal membership.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function forCompany(ClientCompany $company, User $viewer, string $approveHref, string $disputeHref): ?array
+    {
         if (! $this->authority->may($company, $viewer)) {
             return null;
         }
 
-        $scope = $this->access->visibleProjectIds($company, $viewer);
+        return $this->build($company, $this->access->visibleProjectIds($company, $viewer), (string) ($company->workspace->name ?? ''), $approveHref, $disputeHref, true);
+    }
+
+    /**
+     * What a reviewer grant shows: this one client's rows in the granting
+     * workspace, narrowed to the grant's project when it names one, with no
+     * invoice link anywhere. The reviewer holds no portal access, so an invoice
+     * is not theirs to open and its number is not theirs to read.
+     *
+     * The caller has already established that the grant reaches the viewer;
+     * this reads only what the grant names.
+     *
+     * @return array<string, mixed>
+     */
+    public function forGrant(ReviewerGrant $grant, string $approveHref, string $disputeHref): array
+    {
+        $company = $grant->company;
+        abort_if($company === null, 404);
+
+        return $this->build($company, $grant->projectScope(), (string) ($grant->granterWorkspace->name ?? ''), $approveHref, $disputeHref, false);
+    }
+
+    /**
+     * @param  list<int>|null  $scope
+     * @return array<string, mixed>
+     */
+    private function build(ClientCompany $company, ?array $scope, string $vendor, string $approveHref, string $disputeHref, bool $showInvoices): array
+    {
         $time = $this->timeRows($company, $scope);
         $expenses = $this->expenseRows($company, $scope);
 
-        $vendor = (string) ($company->workspace->name ?? '');
         $groups = [];
         foreach ($time as $entry) {
             $key = ApprovalPeriod::containing($entry->worked_on->toDateString())->key();
@@ -89,12 +132,12 @@ final class PortalApprovalQueue
             if ($period === null) {
                 continue;
             }
-            $presented[] = $this->group($company, $vendor, $period, $rows['hours'], $rows['expenses']);
+            $presented[] = $this->group($company, $vendor, $period, $rows['hours'], $rows['expenses'], $showInvoices);
         }
 
         return [
-            'approve_href' => route('portal.approvals.approve', $company, absolute: false),
-            'dispute_href' => route('portal.approvals.dispute', $company, absolute: false),
+            'approve_href' => $approveHref,
+            'dispute_href' => $disputeHref,
             'groups' => $presented,
             'truncated' => $time->count() >= self::TIME_LIMIT || $expenses->count() >= self::EXPENSE_LIMIT,
         ];
@@ -223,7 +266,7 @@ final class PortalApprovalQueue
      * @param  list<ClientExpense>  $expenses
      * @return array<string, mixed>
      */
-    private function group(ClientCompany $company, string $vendor, ApprovalPeriod $period, array $hours, array $expenses): array
+    private function group(ClientCompany $company, string $vendor, ApprovalPeriod $period, array $hours, array $expenses, bool $showInvoices): array
     {
         $pendingHours = array_values(array_filter($hours, fn (ClientTimeEntry $e): bool => $this->verdictOfTime($e)->awaitsClient()));
         $pendingExpenses = array_values(array_filter($expenses, fn (ClientExpense $e): bool => $this->verdictOfExpense($e)->awaitsClient()));
@@ -237,7 +280,7 @@ final class PortalApprovalQueue
             'hours' => [
                 'minutes' => array_sum(array_map(fn (ClientTimeEntry $e): int => $e->minutes, $pendingHours)),
                 'pending_count' => count($pendingHours),
-                'entries' => array_map(fn (ClientTimeEntry $e): array => $this->hourRow($company, $e), $hours),
+                'entries' => array_map(fn (ClientTimeEntry $e): array => $this->hourRow($company, $e, $showInvoices), $hours),
             ],
             'expenses' => [
                 'pending_count' => count($pendingExpenses),
@@ -245,13 +288,13 @@ final class PortalApprovalQueue
                 // would be a number nobody is billed.
                 'amount' => count($currencies) === 1 ? array_sum(array_map(fn (ClientExpense $e): int => $e->amount, $pendingExpenses)) : null,
                 'currency' => count($currencies) === 1 ? $currencies[0] : null,
-                'items' => array_map(fn (ClientExpense $e): array => $this->expenseRow($company, $e), $expenses),
+                'items' => array_map(fn (ClientExpense $e): array => $this->expenseRow($company, $e, $showInvoices), $expenses),
             ],
         ];
     }
 
     /** @return array<string, mixed> */
-    private function hourRow(ClientCompany $company, ClientTimeEntry $entry): array
+    private function hourRow(ClientCompany $company, ClientTimeEntry $entry, bool $showInvoices): array
     {
         $verdict = $this->verdictOfTime($entry);
 
@@ -264,12 +307,12 @@ final class PortalApprovalQueue
             'project' => $entry->project?->name,
             'state' => $verdict->value,
             'dispute_note' => $verdict === ClientApprovalVerdict::Disputed ? $entry->client_dispute_note : null,
-            'invoice' => $this->invoiceOf($company, $entry->invoiceLines->map->invoice->filter()->first()),
+            'invoice' => $showInvoices ? $this->invoiceOf($company, $entry->invoiceLines->map->invoice->filter()->first()) : null,
         ];
     }
 
     /** @return array<string, mixed> */
-    private function expenseRow(ClientCompany $company, ClientExpense $expense): array
+    private function expenseRow(ClientCompany $company, ClientExpense $expense, bool $showInvoices): array
     {
         $verdict = $this->verdictOfExpense($expense);
 
@@ -282,7 +325,7 @@ final class PortalApprovalQueue
             'project' => $expense->project?->name,
             'state' => $verdict->value,
             'dispute_note' => $verdict === ClientApprovalVerdict::Disputed ? $expense->client_dispute_note : null,
-            'invoice' => $this->invoiceOf($company, $expense->invoiceLine?->invoice),
+            'invoice' => $showInvoices ? $this->invoiceOf($company, $expense->invoiceLine?->invoice) : null,
         ];
     }
 

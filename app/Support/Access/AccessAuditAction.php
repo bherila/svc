@@ -35,4 +35,14 @@ enum AccessAuditAction: string
     /** A participant pointed (or stopped pointing) one of its own projects at the share. */
     case SharedProjectLinked = 'shared_project.linked';
     case SharedProjectUnlinked = 'shared_project.unlinked';
+
+    /** A provider workspace let a person or a workspace review one client's hours and expenses. */
+    case ReviewerGranted = 'reviewer_grant.granted';
+    case ReviewerRevoked = 'reviewer_grant.revoked';
+    /** A reviewer opened the queue and was shown rows through a grant. Recorded in the granting workspace. */
+    case ReviewerRead = 'reviewer_grant.read';
+    /** A reviewer approved rows through a grant. Recorded in the granting workspace. */
+    case ReviewerApproved = 'reviewer_grant.approved';
+    /** A reviewer disputed a row through a grant. Recorded in the granting workspace. */
+    case ReviewerDisputed = 'reviewer_grant.disputed';
 }

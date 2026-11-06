@@ -377,3 +377,17 @@ name the participant workspace that wrote or was assigned, and
 `client_projects.shared_participation_id` points at the participation a
 participant's own project works against. None of them can grant access: every read
 re-resolves the participation, so a stale value shows nothing.
+
+## Reviewer grants belong to the granting workspace and are read from the other side
+
+`reviewer_grants` (UX overhaul slice 10) is written by one workspace and read by the
+person it names, so like the shared-project tables it has no `workspace_id`;
+`TenantForeignKeyInventoryTest` does not list it. It names `granter_workspace_id`
+and is reached only through `ReviewerGrants`. The schema enforces that the client
+and the optional project belong to the granter:
+`(granter_workspace_id, client_company_id)` and `(granter_workspace_id, client_project_id)`
+are composite keys onto `client_companies(workspace_id, id)` and
+`client_projects(workspace_id, id)` (`revgr_granter_company_fk`,
+`revgr_granter_project_fk`). `reviewer_workspace_id` points at a workspace, not at a
+tenant-owned row, and can grant nothing by itself: every read re-decides from the
+live facts.

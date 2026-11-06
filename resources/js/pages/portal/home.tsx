@@ -323,6 +323,7 @@ export default function PortalHome({
     links,
     to_approve: toApprove,
     approval_result: approvalResult,
+    approvals_href: approvalsHref,
 }: PortalHomeProps) {
     const style = useDurationStyle();
 
@@ -369,7 +370,11 @@ export default function PortalHome({
                 </div>
 
                 {toApprove !== null && (
-                    <ToApprove data={toApprove} result={approvalResult} />
+                    <ToApprove
+                        data={toApprove}
+                        result={approvalResult}
+                        allHref={approvalsHref}
+                    />
                 )}
 
                 <Section

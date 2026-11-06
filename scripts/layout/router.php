@@ -83,6 +83,8 @@ $app = require __DIR__.'/bootstrap.php';
 Auth::onceUsingId(match (true) {
     // The member who is not a manager reads My work as themselves.
     isset($fixture['my_work']) && $requestPath === $fixture['my_work'] => $fixture['work_member_id'],
+    // The reviewer reads the cross-provider queue as themselves.
+    isset($fixture['reviewer_queue']) && $requestPath === $fixture['reviewer_queue'] => $fixture['reviewer_user_id'],
     // A participant reads the shared project from their own workspace.
     isset($fixture['shared_participant']) && $requestPath === $fixture['shared_participant'] => $fixture['shared_participant_user_id'],
     // The invitee reads the invitation addressed to them.

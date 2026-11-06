@@ -33,7 +33,7 @@ import type {
 } from '@/types/shared-projects';
 
 /** Confirm, then send one browser-only change and refresh what the server says is true. */
-function ConfirmedAction({
+export function ConfirmedAction({
     open,
     onOpenChange,
     title,
@@ -55,8 +55,10 @@ function ConfirmedAction({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>{title}</AlertDialogTitle>
-                    <AlertDialogDescription>
+                    <AlertDialogTitle className="wrap-anywhere">
+                        {title}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="wrap-anywhere">
                         {description}
                     </AlertDialogDescription>
                 </AlertDialogHeader>

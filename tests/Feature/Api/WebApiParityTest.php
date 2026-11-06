@@ -30,6 +30,8 @@ final class WebApiParityTest extends TestCase
         'mcp.credentials.connections.update' => 'deliberate:an MCP connection\'s tool-list setting is changed only by the signed-in person who owns it',
         'mcp.credentials.tokens.update' => 'deliberate:an MCP token\'s tool-list setting is changed only by the signed-in person who owns it',
         'clients.manage' => 'web-only:redirect',
+        'workspaces.reviewers.destroy' => 'deliberate:review access is taken back only by a signed-in owner or admin of the workspace that gave it',
+        'workspaces.reviewers.store' => 'deliberate:letting someone outside the business vouch for its hours is given only by a signed-in owner or admin',
         'workspaces.payments.destroy' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
         'workspaces.payments.reuse' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
         'workspaces.payments.store' => 'deliberate:payment keys are entered only by a signed-in owner or admin',
@@ -40,6 +42,8 @@ final class WebApiParityTest extends TestCase
         'svc.billing.stripe.workspace-webhook' => 'web-only:inbound webhook',
         'svc.billing.square.webhook' => 'web-only:inbound webhook',
         'svc.billing.square.workspace-webhook' => 'web-only:inbound webhook',
+        'approvals.approve' => 'deliberate:a person approving the hours and expenses they pay for, or were given review access to, is an interactive decision in the browser; the reviewer holds no agent credential and nothing here is an agent operation',
+        'approvals.dispute' => 'deliberate:a person disputing a row, with a note, is an interactive decision in the browser; the reviewer holds no agent credential and nothing here is an agent operation',
         'portal.approvals.approve' => 'deliberate:a client contact approving the hours and expenses they pay for is an interactive decision by the payer in the portal, which holds no agent credential',
         'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
         // Sharing a project crosses a workspace boundary, so only a signed-in

@@ -19,6 +19,14 @@ final class ClientApprovalVerdictTest extends TestCase
         $this->assertSame(ClientApprovalVerdict::Approved, ClientApprovalVerdict::judge('portal', true, false, true));
     }
 
+    public function test_a_reviewers_approval_stands_like_a_persons_whatever_the_invoice(): void
+    {
+        $this->assertSame(ClientApprovalVerdict::Approved, ClientApprovalVerdict::judge('reviewer', true, false, false));
+        $this->assertSame(ClientApprovalVerdict::Approved, ClientApprovalVerdict::judge('reviewer', true, false, true));
+        $this->assertSame(ClientApprovalVerdict::Pending, ClientApprovalVerdict::judge('reviewer', false, false, false));
+        $this->assertSame(ClientApprovalVerdict::Disputed, ClientApprovalVerdict::judge('reviewer', true, true, false));
+    }
+
     public function test_a_payment_approval_holds_only_while_the_invoice_is_paid(): void
     {
         $this->assertSame(ClientApprovalVerdict::ApprovedByPayment, ClientApprovalVerdict::judge('payment', true, false, true));
