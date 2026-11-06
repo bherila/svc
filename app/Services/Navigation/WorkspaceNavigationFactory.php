@@ -7,7 +7,6 @@ use App\Models\ClientCompanyMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
-use App\Services\Review\ReviewerGrants;
 use App\Services\Square\SquareConfiguration;
 use App\Support\Navigation\ClientModuleDestinations;
 use App\Support\Navigation\ClientNavigationOption;
@@ -38,10 +37,7 @@ use Illuminate\Support\Facades\Gate;
  */
 final class WorkspaceNavigationFactory
 {
-    public function __construct(
-        private readonly ProjectAccess $projectAccess,
-        private readonly ReviewerGrants $reviewerGrants,
-    ) {}
+    public function __construct(private readonly ProjectAccess $projectAccess) {}
 
     public function for(Workspace $workspace, User $user, ?ClientCompany $current): WorkspaceNavigation
     {
@@ -128,11 +124,11 @@ final class WorkspaceNavigationFactory
             sharedProjectsHref: $isMember ? route('shared-projects.index', $workspace, absolute: false) : null,
             // Who outside the team may vouch for this workspace's hours. Managers only.
             reviewersHref: $manages ? route('workspaces.reviewers', $workspace, absolute: false) : null,
-            // Everything waiting for this person across providers, when a grant or
-            // more than one client's portal says there could be.
-            approvalsHref: $this->reviewerGrants->approvalsAvailable($user)
-                ? route('approvals.index', absolute: false)
-                : null,
+            // Everything waiting for this person across providers. Read from the portal
+            // memberships already loaded above, so the shell pays no query for it; a
+            // reviewer with no membership anywhere reaches the list from the workspace
+            // selector instead.
+            approvalsHref: $portalIds === [] ? null : route('approvals.index', absolute: false),
         );
     }
 
