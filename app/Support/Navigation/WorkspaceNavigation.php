@@ -42,6 +42,10 @@ final class WorkspaceNavigation
         public readonly ?string $sharedProjectsHref = null,
         public readonly ?string $reviewersHref = null,
         public readonly ?string $approvalsHref = null,
+        public readonly ?string $submissionsHref = null,
+        public readonly ?string $timesheetHref = null,
+        public readonly bool $light = false,
+        public readonly ?string $fullWorkspaceUrl = null,
     ) {}
 
     /** The option the viewer is standing in, or null outside one. */
@@ -75,6 +79,10 @@ final class WorkspaceNavigation
      *     shared_projects_href: string|null,
      *     reviewers_href: string|null,
      *     approvals_href: string|null,
+     *     submissions_href: string|null,
+     *     timesheet_href: string|null,
+     *     light: bool,
+     *     full_workspace_url: string|null,
      * }
      */
     public function toArray(): array
@@ -100,6 +108,10 @@ final class WorkspaceNavigation
             'shared_projects_href' => $this->sharedProjectsHref,
             'reviewers_href' => $this->reviewersHref,
             'approvals_href' => $this->approvalsHref,
+            'submissions_href' => $this->submissionsHref,
+            'timesheet_href' => $this->timesheetHref,
+            'light' => $this->light,
+            'full_workspace_url' => $this->fullWorkspaceUrl,
         ];
     }
 }

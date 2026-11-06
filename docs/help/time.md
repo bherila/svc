@@ -18,7 +18,7 @@ Draft time is yours alone. It is not counted anywhere until you send it on.
 
 ## What Submitted means
 
-Submitted time is waiting for the business to review it. You can no longer change it.
+Submitted time is waiting for the business, or a reviewer the business named, to look at it. You can no longer change it until you withdraw it. See [submitting hours and expenses](help:submitting-hours) for how.
 
 ## What Reviewed means
 

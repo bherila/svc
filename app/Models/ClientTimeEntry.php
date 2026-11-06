@@ -10,6 +10,7 @@ use App\Models\Concerns\IncrementsAgentRevision;
 use App\Support\Billing\DeferredWorkDisposition;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\Submission\SubmissionRules;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -45,6 +46,8 @@ use LogicException;
  * @property CarbonImmutable|null $client_disputed_at
  * @property int|null $client_disputed_by_user_id
  * @property string|null $client_dispute_note
+ * @property CarbonImmutable|null $submitted_at
+ * @property int|null $submitted_by_user_id
  * @property SubcontractorBillingMode|null $subcontractor_billing_mode
  * @property int $lock_version
  */
@@ -55,8 +58,9 @@ use LogicException;
     'subcontractor_cost_metadata',
     'client_approved_at', 'client_approved_by_user_id', 'client_approval_source',
     'client_disputed_at', 'client_disputed_by_user_id', 'client_dispute_note',
+    'submitted_at', 'submitted_by_user_id',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'submitted_by_user_id'])]
 class ClientTimeEntry extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
@@ -73,6 +77,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             'approved_at' => 'immutable_datetime',
             'client_approved_at' => 'immutable_datetime',
             'client_disputed_at' => 'immutable_datetime',
+            'submitted_at' => 'immutable_datetime',
             'subcontractor_billing_mode' => SubcontractorBillingMode::class,
             'subcontractor_cost_amount' => 'integer',
             'subcontractor_cost_metadata' => 'array',
@@ -129,6 +134,21 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
         // ledger rebuild forget the work it has already billed, inflating
         // rollover and understating the next overage.
         return $query->whereIn('status', ['approved', 'invoiced']);
+    }
+
+    /**
+     * Time on a reviewer's or client's "To approve" by its status alone:
+     * everything the provider has marked ready to bill, and any draft its
+     * author has submitted. A draft nobody submitted is not on offer.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOnOffer(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $offer): Builder => $offer
+            ->whereIn('status', SubmissionRules::readyStatuses())
+            ->orWhere(fn (Builder $draft): Builder => $draft->where('status', SubmissionRules::DRAFT)->whereNotNull('submitted_at')));
     }
 
     /**

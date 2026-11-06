@@ -135,6 +135,22 @@ export function AccountMenu({
                         Reviewers
                     </DropdownMenuItem>
                 )}
+                {navigation?.submissions_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.submissions_href} />}
+                        data-test="account-submissions"
+                    >
+                        Submit for review
+                    </DropdownMenuItem>
+                )}
+                {navigation?.timesheet_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.timesheet_href} />}
+                        data-test="account-timesheet"
+                    >
+                        Approved timesheet
+                    </DropdownMenuItem>
+                )}
                 {navigation?.approvals_href && (
                     <DropdownMenuItem
                         render={<Link href={navigation.approvals_href} />}

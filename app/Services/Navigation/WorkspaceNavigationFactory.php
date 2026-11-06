@@ -13,6 +13,7 @@ use App\Support\Navigation\ClientNavigationOption;
 use App\Support\Navigation\WorkspaceDestinations;
 use App\Support\Navigation\WorkspaceNavigation;
 use App\Support\Navigation\WorkspaceNavigationPermissions;
+use App\Support\Workspaces\WorkspaceEdition;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Gate;
 
@@ -55,6 +56,8 @@ final class WorkspaceNavigationFactory
         $portalIds = $this->portalCompanyIds($workspace, $user);
 
         $companies = $this->companies($workspace, $operatorIds, $portalIds);
+        // Read from the workspace row already in hand: the shell gains no query for it.
+        $edition = WorkspaceEdition::of($workspace->getAttribute('edition'));
 
         $options = [];
 
@@ -65,7 +68,7 @@ final class WorkspaceNavigationFactory
                 id: (string) $company->public_id,
                 name: (string) $company->name,
                 destinations: $isOperator
-                    ? $this->operatorDestinations($workspace, $company, $manages)
+                    ? $this->operatorDestinations($workspace, $company, $manages, $edition)
                     : $this->portalDestinations($company),
             );
         }
@@ -113,7 +116,7 @@ final class WorkspaceNavigationFactory
             squareHref: $manages && self::mayHaveSquare($workspace) && SquareConfiguration::for($workspace)->isConfigured() ? route('square.explore', $workspace, absolute: false) : null,
             historyHref: $manages ? route('history.index', $workspace, absolute: false) : null,
             createClientUrl: $manages ? route('agent-api.v1.clients.store', $workspace, absolute: false) : null,
-            workspaceDestinations: $this->workspaceDestinations($workspace, $isMember, $manages),
+            workspaceDestinations: $this->workspaceDestinations($workspace, $isMember, $manages, $edition),
             taskLabelsHref: $isMember ? route('tasks.planning.labels.page', $workspace, absolute: false) : null,
             // The classic tools page, for the members who could always open it.
             operationsHref: $isMember ? route('workspaces.operations', $workspace, absolute: false) : null,
@@ -129,6 +132,12 @@ final class WorkspaceNavigationFactory
             // reviewer with no membership anywhere reaches the list from the workspace
             // selector instead.
             approvalsHref: $portalIds === [] ? null : route('approvals.index', absolute: false),
+            // A member's own hours and expenses for the month, and what a reviewer approved of them.
+            submissionsHref: $isMember ? route('workspaces.submissions', $workspace, absolute: false) : null,
+            timesheetHref: $isMember ? route('workspaces.timesheet', $workspace, absolute: false) : null,
+            light: $edition->isLight(),
+            // The one way out of a light workspace; its owner's choice alone.
+            fullWorkspaceUrl: $edition->isLight() && $manages ? route('workspaces.edition.full', $workspace, absolute: false) : null,
         );
     }
 
@@ -142,18 +151,24 @@ final class WorkspaceNavigationFactory
      * portal user is not a workspace member and has no workspace tier at all:
      * every destination is null.
      */
-    private function workspaceDestinations(Workspace $workspace, bool $isMember, bool $manages): WorkspaceDestinations
+    private function workspaceDestinations(Workspace $workspace, bool $isMember, bool $manages, WorkspaceEdition $edition): WorkspaceDestinations
     {
+        // A light workspace has no revenue, invoices or finance to show: those are
+        // off until its owner turns the full workspace on (docs/ux-overhaul.md 7e).
+        $billing = $edition->offersBilling();
+
         return new WorkspaceDestinations(
-            dashboard: $isMember ? route('workspaces.dashboard', $workspace, absolute: false) : null,
+            dashboard: $isMember && $billing ? route('workspaces.dashboard', $workspace, absolute: false) : null,
             clients: $isMember ? route('clients.index', $workspace, absolute: false) : null,
-            invoices: $manages ? route('workspaces.invoices', $workspace, absolute: false) : null,
-            time: $manages ? route('workspaces.time', $workspace, absolute: false) : null,
-            finance: $manages ? route('workspaces.finance', $workspace, absolute: false) : null,
+            invoices: $manages && $billing ? route('workspaces.invoices', $workspace, absolute: false) : null,
+            time: $manages && $billing ? route('workspaces.time', $workspace, absolute: false) : null,
+            finance: $manages && $billing ? route('workspaces.finance', $workspace, absolute: false) : null,
             // Members who do not run the workspace: their own tasks, time and
             // logging, with no billing anywhere on it. An owner or admin has the
             // Dashboard and the cross-client Time list instead.
-            myWork: $isMember && ! $manages ? route('workspaces.my-work', $workspace, absolute: false) : null,
+            myWork: $isMember && (! $manages || $edition->isLight()) ? route('workspaces.my-work', $workspace, absolute: false) : null,
+            submissions: $isMember && $edition->isLight() ? route('workspaces.submissions', $workspace, absolute: false) : null,
+            timesheet: $isMember && $edition->isLight() ? route('workspaces.timesheet', $workspace, absolute: false) : null,
         );
     }
 
@@ -201,7 +216,7 @@ final class WorkspaceNavigationFactory
         return $query->whereIn('id', $ids)->get();
     }
 
-    private function operatorDestinations(Workspace $workspace, ClientCompany $company, bool $manages): ClientModuleDestinations
+    private function operatorDestinations(Workspace $workspace, ClientCompany $company, bool $manages, WorkspaceEdition $edition): ClientModuleDestinations
     {
         $parameters = [$workspace, $company];
         $home = route('clients.show', $parameters, absolute: false);
@@ -209,8 +224,8 @@ final class WorkspaceNavigationFactory
         return new ClientModuleDestinations(
             home: $home,
             // The engagement tools: proposals, agreements and billing schedules.
-            agreements: route('clients.agreements', $parameters, absolute: false),
-            invoices: route('clients.invoices', $parameters, absolute: false),
+            agreements: $edition->offersBilling() ? route('clients.agreements', $parameters, absolute: false) : null,
+            invoices: $edition->offersBilling() ? route('clients.invoices', $parameters, absolute: false) : null,
             time: route('clients.time', $parameters, absolute: false),
             tasks: route('clients.tasks', $parameters, absolute: false),
             // The same gate Client Home applies to its own files link.

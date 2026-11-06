@@ -7,6 +7,7 @@ use App\Models\ClientExpense;
 use App\Models\ClientTimeEntry;
 use App\Models\ReviewerGrant;
 use App\Models\User;
+use App\Models\WorkspaceMembership;
 use App\Queries\Approval\PortalApprovalQueue;
 use App\Services\Access\AccessAuditLog;
 use App\Services\Authorization\PortalAccess;
@@ -17,6 +18,7 @@ use App\Support\Approval\ApprovalPeriod;
 use App\Support\Approval\ClientApprovalSource;
 use App\Support\Approval\SelfApproval;
 use App\Support\Concurrency\Locks;
+use App\Support\Submission\SubmissionRules;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -145,11 +147,12 @@ final class ClientApprovals
             $time = $this->resolveTime($company, $scope, $period, $timeIds, $explicit);
             $expenses = $this->resolveExpenses($company, $scope, $period, $expenseIds, $explicit);
 
-            $ownTime = $time->filter(fn (ClientTimeEntry $row): bool => SelfApproval::refuses($row->user_id, $viewer->id));
-            $ownExpenses = $expenses->filter(fn (ClientExpense $row): bool => SelfApproval::refuses($row->created_by_user_id, $viewer->id));
+            $staff = $this->isStaffOfSubmitted($company, $viewer, $time, $expenses);
+            $ownTime = $time->filter(fn (ClientTimeEntry $row): bool => $this->refused($row->user_id, $row->status, $viewer, $staff));
+            $ownExpenses = $expenses->filter(fn (ClientExpense $row): bool => $this->refused($row->created_by_user_id, $row->status, $viewer, $staff));
             if ($explicit) {
-                abort_if($ownTime->isNotEmpty(), 409, SelfApproval::TIME_MESSAGE);
-                abort_if($ownExpenses->isNotEmpty(), 409, SelfApproval::EXPENSE_MESSAGE);
+                abort_if($ownTime->isNotEmpty(), 409, $this->refusalMessage(SelfApproval::TIME_MESSAGE, $ownTime->contains(fn (ClientTimeEntry $row): bool => SelfApproval::refuses($row->user_id, $viewer->id))));
+                abort_if($ownExpenses->isNotEmpty(), 409, $this->refusalMessage(SelfApproval::EXPENSE_MESSAGE, $ownExpenses->contains(fn (ClientExpense $row): bool => SelfApproval::refuses($row->created_by_user_id, $viewer->id))));
             }
 
             $stamp = [
@@ -163,8 +166,8 @@ final class ClientApprovals
             ];
 
             $result = [
-                'time' => $this->write(ClientTimeEntry::query(), $company, $time->reject(fn (ClientTimeEntry $row): bool => SelfApproval::refuses($row->user_id, $viewer->id)), $stamp),
-                'expenses' => $this->write(ClientExpense::query(), $company, $expenses->reject(fn (ClientExpense $row): bool => SelfApproval::refuses($row->created_by_user_id, $viewer->id)), $stamp),
+                'time' => $this->write(ClientTimeEntry::query(), $company, $time->reject(fn (ClientTimeEntry $row): bool => $this->refused($row->user_id, $row->status, $viewer, $staff)), $stamp),
+                'expenses' => $this->write(ClientExpense::query(), $company, $expenses->reject(fn (ClientExpense $row): bool => $this->refused($row->created_by_user_id, $row->status, $viewer, $staff)), $stamp),
                 'skipped_own' => $ownTime->count() + $ownExpenses->count(),
             ];
             $this->record($grant, $viewer, $company, AccessAuditAction::ReviewerApproved, $result);
@@ -186,8 +189,11 @@ final class ClientApprovals
             $time = $kind === 'time' ? $this->resolveTime($company, $scope, null, [$id], true) : collect();
             $expenses = $kind === 'expense' ? $this->resolveExpenses($company, $scope, null, [$id], true) : collect();
 
-            abort_if($time->contains(fn (ClientTimeEntry $row): bool => SelfApproval::refuses($row->user_id, $viewer->id)), 409, SelfApproval::TIME_MESSAGE);
-            abort_if($expenses->contains(fn (ClientExpense $row): bool => SelfApproval::refuses($row->created_by_user_id, $viewer->id)), 409, SelfApproval::EXPENSE_MESSAGE);
+            $staff = $this->isStaffOfSubmitted($company, $viewer, $time, $expenses);
+            abort_if($time->contains(fn (ClientTimeEntry $row): bool => $this->refused($row->user_id, $row->status, $viewer, $staff)), 409,
+                $this->refusalMessage(SelfApproval::TIME_MESSAGE, $time->contains(fn (ClientTimeEntry $row): bool => SelfApproval::refuses($row->user_id, $viewer->id))));
+            abort_if($expenses->contains(fn (ClientExpense $row): bool => $this->refused($row->created_by_user_id, $row->status, $viewer, $staff)), 409,
+                $this->refusalMessage(SelfApproval::EXPENSE_MESSAGE, $expenses->contains(fn (ClientExpense $row): bool => SelfApproval::refuses($row->created_by_user_id, $viewer->id))));
 
             $stamp = [
                 'client_disputed_at' => $this->clock->now($company->workspace),
@@ -202,6 +208,36 @@ final class ClientApprovals
             $this->write(ClientExpense::query(), $company, $expenses, $stamp);
             $this->record($grant, $viewer, $company, AccessAuditAction::ReviewerDisputed, ['kind' => $kind]);
         });
+    }
+
+    /**
+     * Is the row off limits to this person: their own work, or a submission
+     * their own workspace made? Nobody approves their own work, and the
+     * provider's staff do not vouch for what the provider submitted.
+     */
+    private function refused(?int $authorId, string $status, User $viewer, bool $viewerIsStaff): bool
+    {
+        return SelfApproval::refuses($authorId, $viewer->id) || ! SubmissionRules::mayDecide($status, $viewerIsStaff);
+    }
+
+    private function refusalMessage(string $own, bool $isOwn): string
+    {
+        return $isOwn ? $own : SubmissionRules::STAFF_MESSAGE;
+    }
+
+    /**
+     * Does the viewer belong to the provider's workspace, asked only when a
+     * draft (a submission) is among the rows. One workspace-scoped read, no lock.
+     *
+     * @param  Collection<int, ClientTimeEntry>  $time
+     * @param  Collection<int, ClientExpense>  $expenses
+     */
+    private function isStaffOfSubmitted(ClientCompany $company, User $viewer, Collection $time, Collection $expenses): bool
+    {
+        $drafts = $time->contains(fn (ClientTimeEntry $row): bool => $row->status === SubmissionRules::DRAFT)
+            || $expenses->contains(fn (ClientExpense $row): bool => $row->status === SubmissionRules::DRAFT);
+
+        return $drafts && WorkspaceMembership::query()->where('workspace_id', $company->workspace_id)->where('user_id', $viewer->id)->exists();
     }
 
     private function stillReaches(User $viewer, ?ReviewerGrant $grant): void

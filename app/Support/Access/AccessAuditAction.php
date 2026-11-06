@@ -45,4 +45,9 @@ enum AccessAuditAction: string
     case ReviewerApproved = 'reviewer_grant.approved';
     /** A reviewer disputed a row through a grant. Recorded in the granting workspace. */
     case ReviewerDisputed = 'reviewer_grant.disputed';
+
+    /** A person accepted an invitation with no workspace of their own, and a light one was made for them. Recorded in the new workspace. */
+    case LightWorkspaceCreated = 'workspace.light_created';
+    /** An owner turned a light workspace into a full one. */
+    case WorkspaceEditionChanged = 'workspace.edition_changed';
 }

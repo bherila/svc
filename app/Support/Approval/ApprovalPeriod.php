@@ -59,6 +59,18 @@ final readonly class ApprovalPeriod
         return $this->first->endOfMonth()->toDateString();
     }
 
+    /** The key of the month before this one: `2026-01` is followed back by `2025-12`. */
+    public function previousKey(): string
+    {
+        return $this->first->subMonthNoOverflow()->format('Y-m');
+    }
+
+    /** The key of the month after this one. */
+    public function nextKey(): string
+    {
+        return $this->first->addMonthNoOverflow()->format('Y-m');
+    }
+
     /** "October 2026". */
     public function label(): string
     {

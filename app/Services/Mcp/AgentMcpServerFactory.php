@@ -123,6 +123,7 @@ final class AgentMcpServerFactory
             AgentMcpFinanceTools::class => new AgentMcpFinanceTools($rest),
             AgentMcpRevenueTools::class => new AgentMcpRevenueTools($rest),
             AgentMcpSharedProjectTools::class => new AgentMcpSharedProjectTools($rest),
+            AgentMcpSubmissionTools::class => new AgentMcpSubmissionTools($rest),
             AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools($rest, $this->requestArguments),
             AgentMcpTaskPlanningTools::class => new AgentMcpTaskPlanningTools($rest),
             AgentMcpAttachmentSharingTools::class => new AgentMcpAttachmentSharingTools($rest),

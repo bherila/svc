@@ -223,3 +223,4 @@ require __DIR__.'/files.php';
 require __DIR__.'/collaboration.php';
 require __DIR__.'/shared-projects.php';
 require __DIR__.'/approvals.php';
+require __DIR__.'/submissions.php';

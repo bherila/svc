@@ -591,6 +591,8 @@ describe('workspace shell', () => {
                 current_client_id: null,
                 workspace_destinations: {
                     my_work: null,
+                    submissions: null,
+                    timesheet: null,
                     dashboard: '/workspaces/workspace-1/dashboard',
                     clients: '/workspaces/workspace-1/clients',
                     invoices: null,

@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentSquareCoveredPaymentController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
 use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
+use App\Http\Controllers\Api\V1\AgentSubmissionController;
 use App\Http\Controllers\Api\V1\AgentTaskAssigneeController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTaskOrganizationController;
@@ -97,6 +98,10 @@ Route::prefix('v1')
         $workspaceOperation('shared_projects.tasks.assign', [AgentSharedProjectController::class, 'assign'])->whereUuid('project')->whereUuid('task');
         $workspaceOperation('shared_projects.comments.list', [AgentSharedProjectController::class, 'comments'])->whereUuid('project')->whereUuid('task');
         $workspaceOperation('shared_projects.comments.create', [AgentSharedProjectController::class, 'commentCreate'])->whereUuid('project')->whereUuid('task');
+        $workspaceOperation('submissions.list', [AgentSubmissionController::class, 'index']);
+        $workspaceOperation('submissions.submit', [AgentSubmissionController::class, 'submit']);
+        $workspaceOperation('submissions.withdraw', [AgentSubmissionController::class, 'withdraw']);
+        $workspaceOperation('timesheets.approved', [AgentSubmissionController::class, 'approved']);
         $workspaceOperation('finance.invoice_lines.list', [AccountingReadController::class, 'lines']);
         $workspaceOperation('finance.cash_income.list', [AccountingReadController::class, 'income']);
         $workspaceOperation('finance.income.yearly', [AccountingReadController::class, 'yearly']);

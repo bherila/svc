@@ -26,6 +26,7 @@ use App\Services\Mcp\AgentMcpSquareCoveredPaymentTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
+use App\Services\Mcp\AgentMcpSubmissionTools;
 use App\Services\Mcp\AgentMcpTaskOrganizationTools;
 use App\Services\Mcp\AgentMcpTaskPlanningTools;
 use App\Services\Mcp\AgentMcpToolsetTools;
@@ -72,6 +73,7 @@ final class AgentOperationCatalog
     private const array ROUTES = [
         ...AccountingOperations::ROUTES,
         ...SharedProjectOperations::ROUTES,
+        ...SubmissionOperations::ROUTES,
         ...TaskOrganizationOperations::ROUTES,
         ...TaskPlanningOperations::ROUTES,
         ...AttachmentSharingOperations::ROUTES,
@@ -275,7 +277,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools(), ...$this->sharedProjectTools(), ...$this->toolsetTools());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools(), ...$this->sharedProjectTools(), ...$this->submissionTools(), ...$this->toolsetTools());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1885,6 +1887,22 @@ final class AgentOperationCatalog
         return $operations;
     }
 
+    /** @return list<Operation> */
+    private function submissionTools(): array
+    {
+        $operations = [];
+        foreach (SubmissionOperations::DEFINITIONS as $id => [$handler, $title, $response, $request]) {
+            $write = $request !== null;
+            $operations[] = $this->tool($id, $title, self::documented($id), [AgentMcpSubmissionTools::class, $handler],
+                $write ? Effect::LocalWrite : Effect::Read, true, $write ? 'mcp.write' : 'mcp.read',
+                cutovers: $write ? [AgentDeploymentFlags::TIME_ENTRIES] : [],
+                input: $write ? SchemaRef::openApi($request) : null,
+                output: SchemaRef::openApi($response));
+        }
+
+        return $operations;
+    }
+
     private static function documented(string $id): string
     {
         $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
@@ -2185,7 +2203,7 @@ final class AgentOperationCatalog
         // @infection-ignore-all The guard only matters while the checked document does not yet hold
         // the shared project requests (scripts/generate-shared-project-contract.php builds it); afterwards the
         // lookup it skips answers the same, because neither request has a version or a confirmation.
-        if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id])) {
+        if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id]) || isset(SubmissionOperations::ROUTES[$id])) {
             return false;
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
@@ -2198,7 +2216,7 @@ final class AgentOperationCatalog
         // @infection-ignore-all The guard only matters while the checked document does not yet hold
         // the shared project requests (scripts/generate-shared-project-contract.php builds it); afterwards the
         // lookup it skips answers the same, because neither request has a version or a confirmation.
-        if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id])) {
+        if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id]) || isset(SubmissionOperations::ROUTES[$id])) {
             return false;
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);

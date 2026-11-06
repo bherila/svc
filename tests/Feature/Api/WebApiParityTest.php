@@ -30,6 +30,7 @@ final class WebApiParityTest extends TestCase
         'mcp.credentials.connections.update' => 'deliberate:an MCP connection\'s tool-list setting is changed only by the signed-in person who owns it',
         'mcp.credentials.tokens.update' => 'deliberate:an MCP token\'s tool-list setting is changed only by the signed-in person who owns it',
         'clients.manage' => 'web-only:redirect',
+        'workspaces.edition.full' => 'deliberate:turning agreements, invoicing and revenue on for a whole business is a signed-in owner or admin\'s choice, one way, and nothing an agent decides',
         'workspaces.reviewers.destroy' => 'deliberate:review access is taken back only by a signed-in owner or admin of the workspace that gave it',
         'workspaces.reviewers.store' => 'deliberate:letting someone outside the business vouch for its hours is given only by a signed-in owner or admin',
         'workspaces.payments.destroy' => 'deliberate:payment keys are managed only by a signed-in owner or admin',

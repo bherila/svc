@@ -13,6 +13,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use App\Support\Expenses\ExpenseStatus;
 use App\Support\Expenses\NewExpense;
+use App\Support\Submission\SubmissionRules;
 use App\Support\WorkspaceClock;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -187,6 +188,10 @@ final class WorkspaceExpenses
                 throw ExpenseTransitionRefused::edit($status);
             }
 
+            // A reviewer reads what was submitted. Changing it underneath them
+            // is withdrawing it and submitting again, never a quiet edit.
+            abort_if($locked->submitted_at !== null, 409, SubmissionRules::FROZEN_MESSAGE);
+
             // `$reattribute` distinguishes "leave the attribution alone" from
             // "clear it", which a null project alone cannot: a caller editing
             // only the money must not silently detach the expense from its
@@ -262,6 +267,8 @@ final class WorkspaceExpenses
             if (! ExpenseStatus::isEditableValue($status)) {
                 throw ExpenseTransitionRefused::discard($status);
             }
+
+            abort_if($locked->submitted_at !== null, 409, SubmissionRules::FROZEN_MESSAGE);
 
             $locked->delete();
 

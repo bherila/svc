@@ -19,10 +19,12 @@ final class WorkspaceDestinations
         public readonly ?string $time,
         public readonly ?string $finance,
         public readonly ?string $myWork = null,
+        public readonly ?string $submissions = null,
+        public readonly ?string $timesheet = null,
     ) {}
 
     /**
-     * @return array{dashboard: string|null, clients: string|null, invoices: string|null, time: string|null, finance: string|null, my_work: string|null}
+     * @return array{dashboard: string|null, clients: string|null, invoices: string|null, time: string|null, finance: string|null, my_work: string|null, submissions: string|null, timesheet: string|null}
      */
     public function toArray(): array
     {
@@ -33,6 +35,8 @@ final class WorkspaceDestinations
             'time' => $this->time,
             'finance' => $this->finance,
             'my_work' => $this->myWork,
+            'submissions' => $this->submissions,
+            'timesheet' => $this->timesheet,
         ];
     }
 }

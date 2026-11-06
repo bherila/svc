@@ -210,7 +210,7 @@ final class PortalApprovalQueue
         return ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
-            ->approved()
+            ->onOffer()
             ->where('is_billable', true)
             ->where('is_visible_to_client', true)
             ->whereNotNull('client_visible_description')
@@ -238,7 +238,7 @@ final class PortalApprovalQueue
         return ClientExpense::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
-            ->approved()
+            ->onOffer()
             ->when($scope !== null, fn (Builder $rows) => $rows->whereIn('client_project_id', $scope ?? []))
             ->where(fn (Builder $open) => $open
                 ->whereNotNull('client_disputed_at')

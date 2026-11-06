@@ -1,5 +1,5 @@
-import { Head, Link } from '@inertiajs/react';
-import { CheckIcon } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { CheckIcon, PlusIcon, SendIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { DurationField } from '@/components/time/duration-field';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import { refreshPageProps } from '@/lib/refresh-page-props';
 import { cn } from '@/lib/utils';
 import type {
     MyTimeSpan,
+    MyWorkLight,
     MyWorkProject,
     MyWorkProps,
     MyWorkTask,
@@ -200,6 +201,7 @@ function QuickLog({
     const [workedOn, setWorkedOn] = useState(today);
     const [minutes, setMinutes] = useState(60);
     const [description, setDescription] = useState('');
+    const [clientText, setClientText] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
@@ -226,8 +228,11 @@ function QuickLog({
                     description,
                     is_billable: true,
                     is_deferred: false,
-                    is_visible_to_client: false,
-                    client_visible_description: null,
+                    // What the client reads is what a reviewer reads, so it is
+                    // what lets the hours be submitted for review.
+                    is_visible_to_client: clientText.trim() !== '',
+                    client_visible_description:
+                        clientText.trim() === '' ? null : clientText.trim(),
                 },
             ],
         } satisfies ApiSchema<'TimeLogRequest'>;
@@ -252,6 +257,7 @@ function QuickLog({
         }
 
         setDescription('');
+        setClientText('');
         setSaved(true);
         attempt.current = null;
         void refreshPageProps({ onFinish: () => setSaving(false) });
@@ -334,6 +340,22 @@ function QuickLog({
                                     setDescription(event.target.value)
                                 }
                             />
+                        </div>
+                        <div className="grid grid-cols-1 gap-1.5">
+                            <Label htmlFor="quick-log-client-text">
+                                What the client reads (optional)
+                            </Label>
+                            <Input
+                                id="quick-log-client-text"
+                                value={clientText}
+                                onChange={(event) =>
+                                    setClientText(event.target.value)
+                                }
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Hours need this before they can be submitted for
+                                review.
+                            </p>
                         </div>
                         {error !== null && (
                             <p
@@ -421,7 +443,109 @@ function TimeSpan({
     );
 }
 
-export default function MyWork({ today, tasks, projects, time }: MyWorkProps) {
+/**
+ * A partner's light workspace: where its setup stands and the month's hours on
+ * their way to approval (docs/ux-overhaul.md section 7e). The server sends the
+ * facts and the finished links; invoicing is off and its owner can turn it on.
+ */
+function LightWorkspace({
+    light,
+    style,
+}: {
+    light: MyWorkLight;
+    style: DurationStyle;
+}) {
+    const [busy, setBusy] = useState(false);
+    const turnOn = async () => {
+        if (busy || light.full_workspace_url === null) {
+            return;
+        }
+
+        setBusy(true);
+
+        const result = await apiRequest<{ redirect_url: string }>(
+            'POST',
+            light.full_workspace_url,
+            {},
+        );
+
+        if (!result.ok) {
+            setBusy(false);
+
+            return;
+        }
+
+        router.visit(result.data.redirect_url);
+    };
+
+    return (
+        <Card data-test="light-workspace">
+            <CardHeader>
+                <CardTitle>{light.month.label}</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-4">
+                <p className="text-sm wrap-anywhere" data-test="light-month">
+                    {formatDuration(light.month.draft, style)} to submit ·{' '}
+                    {formatDuration(light.month.submitted, style)} with the
+                    reviewer · {formatDuration(light.month.approved, style)}{' '}
+                    approved
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                        href={light.submissions_href}
+                        className="inline-flex min-h-11 items-center gap-1.5 text-sm underline underline-offset-4 md:min-h-8"
+                    >
+                        <SendIcon aria-hidden="true" className="size-4" />
+                        Submit for review
+                    </Link>
+                    <Link
+                        href={light.timesheet_href}
+                        className="inline-flex min-h-11 items-center text-sm underline underline-offset-4 md:min-h-8"
+                    >
+                        Approved timesheet
+                    </Link>
+                </div>
+                <ul className="grid grid-cols-1 gap-1 text-sm text-muted-foreground">
+                    <li className="wrap-anywhere">
+                        Your client:{' '}
+                        {light.client ?? 'none yet. Add one under Clients.'}
+                    </li>
+                    <li className="wrap-anywhere">
+                        Shared project:{' '}
+                        {light.shared_project === null
+                            ? 'not linked.'
+                            : `${light.shared_project.name}, from ${light.shared_project.host_workspace_name}.`}
+                    </li>
+                    <li>
+                        Agreements and invoicing are off in a light workspace.
+                    </li>
+                </ul>
+                {light.full_workspace_url !== null && (
+                    <div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="min-h-11 md:min-h-8"
+                            disabled={busy}
+                            onClick={() => void turnOn()}
+                        >
+                            <PlusIcon aria-hidden="true" />
+                            Turn on agreements and invoicing
+                        </Button>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+export default function MyWork({
+    today,
+    tasks,
+    projects,
+    time,
+    light,
+}: MyWorkProps) {
     const style = useDurationStyle();
     const [taskError, setTaskError] = useState<string | null>(null);
 
@@ -439,6 +563,10 @@ export default function MyWork({ today, tasks, projects, time }: MyWorkProps) {
                     <p className="text-sm text-destructive" role="alert">
                         {taskError}
                     </p>
+                )}
+
+                {light !== null && (
+                    <LightWorkspace light={light} style={style} />
                 )}
 
                 <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">

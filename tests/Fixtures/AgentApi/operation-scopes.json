@@ -2024,6 +2024,38 @@
             "mcp.switch:square.sync"
         ]
     },
+    "submissions.list": {
+        "scopes": [
+            "time:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:submissions.list"
+        ]
+    },
+    "submissions.submit": {
+        "scopes": [
+            "time:write"
+        ],
+        "flags": [
+            "agent.writes.time_entries",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:submissions.submit"
+        ]
+    },
+    "submissions.withdraw": {
+        "scopes": [
+            "time:write"
+        ],
+        "flags": [
+            "agent.writes.time_entries",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:submissions.withdraw"
+        ]
+    },
     "task_organization.get": {
         "scopes": [
             "tasks:read"
@@ -2427,6 +2459,16 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:time_entries.update"
+        ]
+    },
+    "timesheets.approved": {
+        "scopes": [
+            "time:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:timesheets.approved"
         ]
     },
     "toolsets.disable": {

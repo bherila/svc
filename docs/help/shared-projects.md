@@ -31,3 +31,7 @@ A partner links one of its own projects to the shared one. Time is logged agains
 ## Leaving or removing
 
 A partner's owner or admin can leave at any time; the host's owner or admin can remove a partner. Access ends at once, the partner's people come off the tasks, and the partner keeps its own project, time and invoices. Comments already written stay in the thread.
+
+## Joining without a workspace
+
+If you have no workspace of your own when you accept an invitation, one is made for you: a light workspace with you as its owner. You name the client you bill for the work; it holds that client and a project linked to the shared one, and nothing of the host's. See [My work](help:my-work).

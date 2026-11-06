@@ -961,7 +961,48 @@ if (getenv('SVC_LAYOUT_REVIEWERS') === '1') {
     ];
 }
 
+// The light partner workspace (--light-workspace): a partner who accepted the host's
+// invitation with no workspace of their own works in a light one. Their hours are
+// drafts, submitted, approved by a reviewer and disputed, all with names that will not
+// break; the approved timesheet carries two reviewers' approvals. The invitation page
+// is read as a person who has no workspace, so it offers to make one.
+$lightPages = [];
+if (getenv('SVC_LAYOUT_LIGHT') === '1') {
+    $lightMonth = app(WorkspaceClock::class)->today($workspace)->startOfMonth();
+    $lightPartner = User::factory()->create(['name' => 'Partner '.str_repeat('Contractor', 8), 'email' => 'layout-light-partner@example.test']);
+    $lightReviewer = User::factory()->create(['name' => 'Reviewer '.str_repeat('Approver', 8), 'email' => 'layout-light-reviewer@example.test']);
+    $light = Workspace::query()->create(['name' => str_repeat('SyntheticLightPartnerWorkspace', 3), 'slug' => 'layout-light-partner', 'timezone' => 'America/Los_Angeles']);
+    $light->forceFill(['edition' => 'light'])->save();
+    $light->memberships()->create(['user_id' => $lightPartner->id, 'role' => 'owner']);
+    $lightCompany = ClientCompany::query()->create(['workspace_id' => $light->id, 'name' => str_repeat('SyntheticLightClientName', 4), 'slug' => 'layout-light-client']);
+    $lightProject = ClientProject::query()->create(['workspace_id' => $light->id, 'client_company_id' => $lightCompany->id, 'name' => str_repeat('SyntheticLightProject', 5), 'is_visible_to_client' => false]);
+    $submitted = ['submitted_at' => $lightMonth->addDays(10)->toDateTimeString(), 'submitted_by_user_id' => $lightPartner->id];
+    $approved = $submitted + ['client_approved_at' => $lightMonth->addDays(11)->toDateTimeString(), 'client_approved_by_user_id' => $lightReviewer->id, 'client_approval_source' => 'reviewer'];
+    $disputed = $submitted + ['client_disputed_at' => $lightMonth->addDays(11)->toDateTimeString(), 'client_disputed_by_user_id' => $lightReviewer->id, 'client_dispute_note' => 'Which ticket? '.str_repeat('UnbrokenDisputeNote', 6)];
+    $states = [['draft', []], ['draft', []], ['submitted', $submitted], ['approved', $approved], ['approved', $approved], ['disputed', $disputed]];
+    foreach ($states as $index => [$state, $extra]) {
+        ClientTimeEntry::query()->create($extra + [
+            'workspace_id' => $light->id, 'client_company_id' => $lightCompany->id, 'client_project_id' => $lightProject->id, 'user_id' => $lightPartner->id,
+            'worked_on' => $lightMonth->addDays($index)->toDateString(), 'minutes' => 75 + $index, 'description' => 'Private note '.$state,
+            'client_visible_description' => ucfirst($state).' work '.str_repeat('UnbrokenClientLine', 8).' '.$index,
+            'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'draft', 'currency' => 'USD',
+        ]);
+    }
+    $lightInvitee = User::factory()->create(['name' => 'New partner', 'email' => 'layout-light-invitee@example.test']);
+    $lightInvitation = app(SharedProjectParticipations::class)->invite($owner, $workspace, $project->public_id, (string) $lightInvitee->email);
+    $lightPeriod = $lightMonth->format('Y-m');
+    $lightPages = [
+        'light_my_work' => route('workspaces.my-work', $light, absolute: false),
+        'light_submissions' => route('workspaces.submissions', [$light, 'period' => $lightPeriod], absolute: false),
+        'light_timesheet' => route('workspaces.timesheet', [$light, 'period' => $lightPeriod], absolute: false),
+        'light_invitation' => route('shared-project-invitations.show', $lightInvitation->public_id, absolute: false),
+        'light_user_id' => $lightPartner->id,
+        'light_invitee_user_id' => $lightInvitee->id,
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    ...$lightPages,
     ...$paymentPages,
     ...$reviewerPages,
     ...$workPortal,

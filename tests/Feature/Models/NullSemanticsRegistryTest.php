@@ -35,6 +35,7 @@ use Tests\Feature\Engagement\TimeSheetTest;
 use Tests\Feature\EngagementWorkflowTest;
 use Tests\Feature\Square\SquareCandidateImportApiTest;
 use Tests\Feature\Square\SquareCollectionGuardTest;
+use Tests\Feature\Submission\SubmissionTest;
 use Tests\TestCase;
 use Tests\Unit\Billing\InvoiceLedgerBuilderTest;
 use Tests\Unit\Billing\RetainerCalculatorTest;
@@ -249,6 +250,8 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_time_entries.client_disputed_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
         'client_time_entries.client_dispute_note => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
         'client_time_entries.client_dispute_note => covered_by:Tests\Feature\Approval\ClientApprovalTest::test_a_dispute_without_a_note_is_recorded_too',
+        'client_time_entries.submitted_at => covered_by:Tests\Feature\Submission\SubmissionTest::test_an_unsubmitted_draft_does_not_reach_the_reviewer',
+        'client_time_entries.submitted_by_user_id => covered_by:Tests\Feature\Submission\SubmissionTest::test_withdrawing_a_submission_removes_the_row_from_the_queue',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_selected_time_with_no_stored_rate_is_refused',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate',
@@ -1132,6 +1135,21 @@ final class NullSemanticsRegistryTest extends TestCase
                 [
                     'covered_by' => AllocationServiceTest::class,
                     'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+            ],
+            // The author's "ready for review", which puts a draft on a reviewer's
+            // queue. Null is "not submitted", and a draft nobody submitted is
+            // on nobody's queue.
+            'submitted_at' => [
+                [
+                    'covered_by' => SubmissionTest::class,
+                    'method' => 'test_an_unsubmitted_draft_does_not_reach_the_reviewer',
+                ],
+            ],
+            'submitted_by_user_id' => [
+                [
+                    'covered_by' => SubmissionTest::class,
+                    'method' => 'test_withdrawing_a_submission_removes_the_row_from_the_queue',
                 ],
             ],
             'client_dispute_note' => [

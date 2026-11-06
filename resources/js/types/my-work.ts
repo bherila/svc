@@ -46,6 +46,24 @@ export type MyTimeSpan = {
     projects: MyTimeProject[];
 };
 
+/** A partner's light workspace: where its setup stands and the month's hours on their way to approval. */
+export type MyWorkLight = {
+    client: string | null;
+    shared_project: { name: string; host_workspace_name: string } | null;
+    month: {
+        period: string;
+        label: string;
+        draft: number;
+        submitted: number;
+        approved: number;
+        disputed: number;
+    };
+    submissions_href: string;
+    timesheet_href: string;
+    /** Only an owner or admin may turn the rest of SVC on. */
+    full_workspace_url: string | null;
+};
+
 export type MyWorkProps = {
     workspace: { id: string; name: string };
     /** The workspace's calendar day, so the form's date is right whatever the browser's clock says. */
@@ -53,4 +71,6 @@ export type MyWorkProps = {
     tasks: MyWorkTaskGroup[];
     projects: MyWorkProject[];
     time: { week: MyTimeSpan; month: MyTimeSpan };
+    /** Null outside a light workspace. */
+    light: MyWorkLight | null;
 };
