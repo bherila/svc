@@ -48,6 +48,7 @@ use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\GetPromptHandler;
 use Mcp\Server\Handler\Request\ReadResourceHandler;
 use Mcp\Server\Session\Psr16SessionStore;
+use Mcp\Server\Session\SessionInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -150,6 +151,9 @@ final class AgentMcpServerFactory
             $availableOperations,
             static fn (Operation $operation): bool => self::kind($operation) === McpKind::Tool,
         ));
+        $toolsets = new AgentMcpToolsets($exposedTools);
+        $instances[AgentMcpToolsets::class] = $toolsets;
+        $progressive = new McpProgressiveDiscoveryHandler($registry, $toolsets, $availableOperations);
         $exposedToolNames = array_fill_keys(array_map(
             static fn (Operation $operation): string => (string) $operation->mcpName(),
             $exposedTools,
@@ -197,7 +201,7 @@ final class AgentMcpServerFactory
         $builder->setPaginationLimit(100)
             ->setCapabilities(new ServerCapabilities(
                 tools: $implementsTools,
-                toolsListChanged: false,
+                toolsListChanged: true,
                 resources: $implementsResources,
                 resourcesSubscribe: false,
                 resourcesListChanged: false,
@@ -212,6 +216,7 @@ final class AgentMcpServerFactory
             ->setContainer(app())
             ->setRegistry($registry)
             ->setReferenceHandler(new ReferenceHandler(app()))
+            ->addRequestHandler($progressive)
             ->addRequestHandler(new McpRateLimitedCallToolHandler(
                 new ValidatedCallToolHandler(
                     new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new OriginalShapeSchemaValidator($logger, $this->requestArguments)),
@@ -228,6 +233,7 @@ final class AgentMcpServerFactory
                 $context,
                 $this->capabilityMetadata($operations, McpKind::Tool),
                 app(ProviderIdentityWrites::class),
+                $toolsets,
             ))
             ->addRequestHandler(new McpUnsupportedOptionalProtocolHandler)
             ->addRequestHandler(new McpUnsupportedResourceSubscriptionHandler)
@@ -265,6 +271,7 @@ final class AgentMcpServerFactory
 
                     return $this->promptCapabilityKey($operations, $request->name);
                 },
+                static fn (JsonRpcRequest $request, SessionInterface $session): bool => $request instanceof GetPromptRequest && $progressive->promptVisible($request->name, $session),
             ))
             ->setLazyLoading(false);
 

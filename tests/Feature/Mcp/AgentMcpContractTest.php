@@ -630,7 +630,7 @@ final class AgentMcpContractTest extends TestCase
             ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []],
             $session,
         )->assertOk()->json('result.tools');
-        $this->assertSame([], $tools);
+        $this->assertSame(['toolsets.list', 'toolsets.enable', 'toolsets.disable'], array_column($tools, 'name'));
     }
 
     public function test_a_feature_flagged_off_group_is_not_advertised(): void
@@ -701,7 +701,7 @@ final class AgentMcpContractTest extends TestCase
     /** @return array<string, mixed> */
     private function initializeMessage(): array
     {
-        return ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'SVC contract test', 'version' => '1']]];
+        return ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'SVC contract test', 'version' => '1']]];
     }
 
     /** @param array<string, mixed> $message

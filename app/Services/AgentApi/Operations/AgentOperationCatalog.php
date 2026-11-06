@@ -26,6 +26,7 @@ use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
 use App\Services\Mcp\AgentMcpTaskOrganizationTools;
 use App\Services\Mcp\AgentMcpTaskPlanningTools;
+use App\Services\Mcp\AgentMcpToolsets;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -268,7 +269,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->toolsets());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1793,6 +1794,30 @@ final class AgentOperationCatalog
             $this->restOperation('connections.revoke', 'Revoke this connection', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling connection; repeating it is harmless.'), idempotent: true),
             $this->restOperation('connections.disconnect', 'Disconnect this application', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling application\'s credentials for the calling person; repeating it is harmless.'), idempotent: true),
         ];
+    }
+
+    /** @return list<Operation> */
+    private function toolsets(): array
+    {
+        $output = ['type' => 'object', 'additionalProperties' => false, 'required' => ['data'], 'properties' => ['data' => ['type' => 'array', 'items' => [
+            'type' => 'object', 'additionalProperties' => false,
+            'required' => ['name', 'description', 'tool_count', 'enabled'],
+            'properties' => ['name' => ['type' => 'string'], 'description' => ['type' => 'string'], 'tool_count' => ['type' => 'integer'], 'enabled' => ['type' => 'boolean']],
+        ]]]];
+        $operations = [];
+        foreach (['list' => 'List authorized toolsets', 'enable' => 'Enable an authorized toolset', 'disable' => 'Disable a toolset'] as $method => $title) {
+            $input = ['type' => 'object', 'additionalProperties' => false];
+            if ($method !== 'list') {
+                $input['properties'] = ['name' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 100]];
+                $input['required'] = ['name'];
+            }
+            $operations[] = $this->mcpOnly('toolsets.'.$method, $title,
+                $title.'. Changes only session visibility, never permissions. Refresh tools/list after a list_changed notification.',
+                new McpBinding('toolsets.'.$method, [AgentMcpToolsets::class, $method]),
+                ['mcp:use'], 'mcp.toolsets', $input, $output);
+        }
+
+        return $operations;
     }
 
     /** @return list<Operation> */

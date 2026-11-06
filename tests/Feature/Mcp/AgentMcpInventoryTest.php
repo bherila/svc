@@ -210,6 +210,9 @@ final class AgentMcpInventoryTest extends TestCase
         'time_entries.log',
         'time_entries.unapprove',
         'time_entries.update',
+        'toolsets.disable',
+        'toolsets.enable',
+        'toolsets.list',
         'workspaces.create',
     ];
 
@@ -273,7 +276,7 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(188, self::TOOLS);
+        $this->assertCount(191, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
@@ -365,7 +368,7 @@ final class AgentMcpInventoryTest extends TestCase
         }
         $actual = array_keys($mapped);
         sort($actual);
-        $this->assertSame(self::TOOLS, $actual);
+        $this->assertSame(array_values(array_diff(self::TOOLS, ['toolsets.disable', 'toolsets.enable', 'toolsets.list'])), $actual);
     }
 
     public function test_missing_scopes_precede_role_and_every_tool_reports_its_required_scope(): void

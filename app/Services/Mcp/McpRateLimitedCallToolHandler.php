@@ -35,6 +35,7 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         private McpRequestContext $context,
         private array $metadataByTool,
         private ProviderIdentityWrites $writes,
+        private ?AgentMcpToolsets $toolsets = null,
     ) {}
 
     public function supports(Request $request): bool
@@ -92,7 +93,9 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         }
         $started = hrtime(true);
         try {
-            if ($classification === 'agent_api.write') {
+            if ($this->toolsets !== null && ! $this->toolsets->visible($request->name, $session)) {
+                $response = new Error($request->getId(), Error::METHOD_NOT_FOUND, 'Tool not found or not available.');
+            } elseif ($classification === 'agent_api.write') {
                 $refusal = $this->refuseAnEndedIdentity($request, $capability, $bucket, $classification);
                 if ($refusal !== null) {
                     return $refusal;

@@ -2283,6 +2283,36 @@
             "mcp.switch:time_entries.update"
         ]
     },
+    "toolsets.disable": {
+        "scopes": [
+            "mcp:use"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.toolsets",
+            "mcp.switch:toolsets.disable"
+        ]
+    },
+    "toolsets.enable": {
+        "scopes": [
+            "mcp:use"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.toolsets",
+            "mcp.switch:toolsets.enable"
+        ]
+    },
+    "toolsets.list": {
+        "scopes": [
+            "mcp:use"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.toolsets",
+            "mcp.switch:toolsets.list"
+        ]
+    },
     "workspaces.create": {
         "scopes": [
             "workspaces:create"

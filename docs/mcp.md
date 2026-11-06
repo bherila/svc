@@ -70,8 +70,9 @@ least one of `due_date` or `lines` must be supplied.
 
 The initialize response advertises the protocol groups implemented and enabled
 by the server. Discovery within those groups is filtered for the authenticated
-principal, and every invocation is authorized again. SVC does not
-advertise list-change notifications, resource subscriptions, server logging,
+principal, and every invocation is authorized again. Tools advertise
+`listChanged: true`; other groups have no list-change notifications. SVC does not
+advertise resource subscriptions, server logging,
 completions, sampling, roots, or elicitation; direct resource subscription
 and other unsupported optional-feature requests are rejected as unsupported.
 
@@ -1980,3 +1981,50 @@ recording. To record the selected safe payment, supply `--apply --confirm`,
 `--payment`, `--expected-version`, `--reviewed-version` and `--idempotency-key`
 from that review. The same canonical operation owns validation, provider dedup,
 receipts and audit for CLI, REST, MCP and the signed-in website.
+
+
+## Progressive tool discovery
+
+A new session starts with the authorized subset of `context.get`, `search`,
+`projects.list`, `tasks.list`, `time_entries.log`, and the three session controls
+`toolsets.list`, `toolsets.enable`, and `toolsets.disable`. The time tools needed
+by `log-time-across-projects` are therefore immediately available.
+
+Call `toolsets.list` with `{}` to see `data` entries containing `name`,
+`description`, `tool_count` and `enabled`. Toolsets derive from the authorized
+catalog's scope prefixes (including `identity` for the workspace summary and
+`workspaces` for workspace creation); Square's existing catalog discovery group
+is separate even though it shares billing permissions. New scope groups become
+toolsets automatically. Counts exclude core tools and include only tools this
+credential's scopes, workspace roles and deployment flags allow. A tool requiring
+multiple scope groups can appear in more than one toolset; enabling either reveals
+it. No permissions or grants change.
+
+Call `toolsets.enable` or `toolsets.disable` with `{"name":"billing"}`. Both
+persist the session selection and send `notifications/tools/list_changed` before
+the result on the SDK's Streamable HTTP SSE response. Refresh `tools/list` after
+this notification and follow `nextCursor` (100 tools per page). Core tools remain
+visible after disabling a group. Unknown or unauthorized groups are absent from
+the listing and cannot be enabled. Direct invocation of a hidden tool receives
+the existing tool-not-found error. Scope, role and flag checks run again on every
+request, including after a toolset has been enabled. Selections are isolated by
+session and by the existing credential digest namespace; they expire with the
+session.
+
+For clients that need the complete authorized list at connect time, initialize
+with the experimental option below. It is a connection option, not a setting on
+the OAuth client or a new scope:
+
+```json
+{"capabilities":{"experimental":{"svc/toolsets":"all"}}}
+```
+
+This starts with every authorized toolset enabled. Explicit enable/disable calls
+subsequently select groups normally. Existing tool names, schemas and REST
+operations are unchanged; the three controls are MCP session operations only.
+
+Prompts are advertised and fetched only when all their required tools are both
+authorized and visible. Fetching a prompt does **not** enable toolsets. Enable its
+required groups explicitly first; `prepare-invoice-safely` needs projects, time
+and billing, while `log-time-across-projects` is served by the core. Resource
+visibility retains its existing authorization rules.

@@ -32,6 +32,8 @@ final readonly class McpAuditedCapabilityRequestHandler implements RequestHandle
         private McpRequestContext $context,
         private array $metadataByCapability,
         private Closure $capabilityName,
+        /** @var (Closure(Request, SessionInterface): bool)|null */
+        private ?Closure $visible = null,
     ) {}
 
     public function supports(Request $request): bool
@@ -70,7 +72,9 @@ final readonly class McpAuditedCapabilityRequestHandler implements RequestHandle
         }
         $started = hrtime(true);
         try {
-            $response = $this->inner->handle($request, $session);
+            $response = $this->visible !== null && ! ($this->visible)($request, $session)
+                ? new Error($request->getId(), -32002, 'Prompt not found or not available.')
+                : $this->inner->handle($request, $session);
             if ($response instanceof Response && $this->resultLimiter->exceeds($response)) {
                 $this->auditor->record(
                     $this->context,
