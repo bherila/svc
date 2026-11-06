@@ -113,6 +113,7 @@ final class AgentMcpServerFactory
             AgentMcpDeferredBuyDownTools::class => new AgentMcpDeferredBuyDownTools($rest, $this->requestArguments),
             AgentMcpCollaborationTools::class => new AgentMcpCollaborationTools($rest, $this->requestArguments),
             AgentMcpFinanceTools::class => new AgentMcpFinanceTools($rest),
+            AgentMcpRevenueTools::class => new AgentMcpRevenueTools($rest),
             AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools($rest, $this->requestArguments),
             AgentMcpTaskPlanningTools::class => new AgentMcpTaskPlanningTools($rest),
             AgentMcpAttachmentSharingTools::class => new AgentMcpAttachmentSharingTools($rest),

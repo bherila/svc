@@ -1872,6 +1872,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/revenue/clients': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The client roster: per client its MRR (recurring revenue normalised to a month: quarterly ÷ 3, semi-annual ÷ 6, annual ÷ 12, one-time excluded), year to date, trailing twelve months with a twelve-point series of the full months, open and overdue amounts, and the health of each agreement in force: retainer hours used against included this billing period from the capacity ledger, whether it closes over its retainer, and whether it ends within 60 days. Totals for the roster are included. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored. */
+        get: operations['revenue.clients'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/revenue/monthly': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Per month and per client, from twelve months back to twelve months ahead: kind is actual, current or projected. Actual bands (recurring, overage_and_other, expenses) come from the basis; contracted and projected_overage come from the projection, so the current month shows actuals so far plus what remains contracted. band narrows each row to one band (recurring with contracted, overage_and_other with projected overage, or expenses); a figure outside the band, or switched off by include_expenses or include_projected_overage, is null. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored. */
+        get: operations['revenue.monthly'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/revenue/projection': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Per-agreement rows for the current month and the twelve full months after it: terms, retainer, each recurring item with its next charge date, the overage method and history, and each month's contracted retainer, recurring items and projected overage. A charge already on a charged invoice is actual and left out. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored. */
+        get: operations['revenue.projection'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/revenue/summary': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Key figures: year to date (January 1 to today) and trailing twelve months (twelve full months plus the month to date), each against the same span a year earlier; the next twelve full months contracted, with projected overage when include_projected_overage is true; the current month's actual so far and what remains contracted; open receivables with the overdue amount and count; and the agreements ending (with the monthly amount that drops) and starting in the next twelve months. client_id narrows every figure to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored. */
+        get: operations['revenue.summary'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/search': {
         parameters: {
             query?: never;
@@ -4863,6 +4931,241 @@ export interface components {
              * @enum {string}
              */
             status: 'succeeded' | 'failed' | 'canceled';
+        };
+        RevenueAgreementChange: {
+            /** Format: uuid */
+            agreement_id: string;
+            /** Format: uuid */
+            client_id: string;
+            client_name: string;
+            title: string;
+            /** Format: date */
+            date: string;
+            monthly_amount: number;
+        };
+        RevenueAgreementHealth: {
+            /** Format: uuid */
+            agreement_id: string;
+            title: string;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on: string | null;
+            /** Format: date */
+            period_start: string;
+            /** Format: date */
+            period_end: string;
+            hours_used: number | null;
+            hours_included: number | null;
+            over_retainer: boolean | null;
+            ends_within_60_days: boolean;
+            /** @enum {string} */
+            ledger_status: 'ok' | 'no_retainer' | 'ledger_unreadable';
+        };
+        RevenueAgreementProjection: {
+            /** Format: uuid */
+            agreement_id: string;
+            /** Format: uuid */
+            client_id: string;
+            client_name: string;
+            title: string;
+            status: string;
+            /** @enum {string} */
+            billing_cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on: string | null;
+            signed: boolean;
+            retainer: {
+                period_fee: number;
+                monthly_equivalent: number;
+                /** @enum {string} */
+                first_cycle_proration:
+                    'prorate_hours' | 'full_period' | 'align_next_cycle';
+            };
+            monthly_recurring: number;
+            recurring_items: components['schemas']['RevenueProjectedItem'][];
+            overage: components['schemas']['RevenueOverageMethod'];
+            months: components['schemas']['RevenueProjectionMonth'][];
+            totals: {
+                contracted: number;
+                projected_overage: number | null;
+            };
+        };
+        /** @description What a revenue figure was computed under, so a stored figure can be explained later. */
+        RevenueAssumptions: {
+            /** Format: date */
+            as_of: string;
+            /** @enum {string} */
+            basis: 'invoiced' | 'collected';
+            /** @enum {string} */
+            projection_basis: 'invoiced';
+            currency: string | null;
+            /** @enum {string} */
+            tax: 'excluded';
+            fiscal_year_start: string;
+            include_expenses: boolean;
+            include_projected_overage: boolean;
+            overage_window_months: number;
+            minimum_history_months: number;
+            projection_months: number;
+            renewals_assumed: boolean;
+            method_version: string;
+        };
+        RevenueClientRow: {
+            /** Format: uuid */
+            client_id: string;
+            name: string;
+            is_active: boolean;
+            mrr: number;
+            ytd: number;
+            ttm: {
+                amount: number;
+                month_to_date: number;
+                series: {
+                    month: string;
+                    amount: number;
+                }[];
+            };
+            open_amount: number;
+            overdue_amount: number;
+            overdue_count: number;
+            ending_soon: boolean;
+            over_retainer: boolean;
+            agreements: components['schemas']['RevenueAgreementHealth'][];
+        };
+        RevenueClients: {
+            assumptions: components['schemas']['RevenueAssumptions'];
+            clients: components['schemas']['RevenueClientRow'][];
+            totals: {
+                mrr: number;
+                ytd: number;
+                ttm: number;
+                open_amount: number;
+                overdue_amount: number;
+                overdue_count: number;
+            };
+        };
+        RevenueClientsResponse: {
+            data: components['schemas']['RevenueClients'];
+        };
+        RevenueMonth: {
+            month: string;
+            /** @enum {string} */
+            kind: 'actual' | 'current' | 'projected';
+            recurring: number | null;
+            overage_and_other: number | null;
+            expenses: number | null;
+            contracted: number | null;
+            projected_overage: number | null;
+            total: number;
+            clients: components['schemas']['RevenueMonthClient'][];
+        };
+        RevenueMonthClient: {
+            /** Format: uuid */
+            client_id: string;
+            client_name: string;
+            recurring: number | null;
+            overage_and_other: number | null;
+            expenses: number | null;
+            contracted: number | null;
+            projected_overage: number | null;
+            total: number;
+        };
+        RevenueMonthly: {
+            assumptions: components['schemas']['RevenueAssumptions'];
+            /** @enum {string} */
+            band: 'all' | 'recurring' | 'overage_and_other' | 'expenses';
+            months: components['schemas']['RevenueMonth'][];
+        };
+        RevenueMonthlyResponse: {
+            data: components['schemas']['RevenueMonthly'];
+        };
+        RevenueOverageMethod: {
+            /** @enum {string} */
+            method: 'trailing_average';
+            window_months: number;
+            minimum_history_months: number;
+            history_months: number;
+            billed_in_window: number;
+            monthly_average: number;
+            /** @enum {string} */
+            status: 'projected' | 'insufficient_history';
+        };
+        RevenueProjectedItem: {
+            /** Format: uuid */
+            item_id: string;
+            description: string;
+            cadence: string | null;
+            amount: number;
+            monthly_equivalent: number;
+            is_taxable: boolean;
+            is_active: boolean;
+            /** Format: date */
+            effective_on: string | null;
+            /** Format: date */
+            expires_on: string | null;
+            /** Format: date */
+            next_charge_on: string | null;
+        };
+        RevenueProjection: {
+            assumptions: components['schemas']['RevenueAssumptions'];
+            agreements: components['schemas']['RevenueAgreementProjection'][];
+        };
+        RevenueProjectionMonth: {
+            month: string;
+            contracted: number;
+            contracted_retainer: number;
+            contracted_recurring_items: number;
+            projected_overage: number | null;
+        };
+        RevenueProjectionResponse: {
+            data: components['schemas']['RevenueProjection'];
+        };
+        RevenueSummary: {
+            assumptions: components['schemas']['RevenueAssumptions'];
+            ytd: components['schemas']['RevenueWindowFigure'];
+            ttm: components['schemas']['RevenueWindowFigure'];
+            next_12_months: {
+                /** Format: date */
+                from: string;
+                /** Format: date */
+                to: string;
+                contracted: number;
+                projected_overage: number | null;
+            };
+            current_month: {
+                month: string;
+                actual: number;
+                remaining_contracted: number;
+                projected_overage: number | null;
+            };
+            open_receivables: {
+                outstanding: number;
+                invoice_count: number;
+                overdue_amount: number;
+                overdue_count: number;
+            };
+            changes: {
+                ending: components['schemas']['RevenueAgreementChange'][];
+                starting: components['schemas']['RevenueAgreementChange'][];
+            };
+        };
+        RevenueSummaryResponse: {
+            data: components['schemas']['RevenueSummary'];
+        };
+        RevenueWindowFigure: {
+            amount: number;
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            prior_amount: number;
+            /** Format: date */
+            prior_from: string;
+            /** Format: date */
+            prior_to: string;
         };
         ScheduleGenerationPreflight: {
             schedules: number;
@@ -13030,6 +13333,310 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'revenue.clients': {
+        parameters: {
+            query?: {
+                /** @description Which money past months count. */
+                basis?: 'invoiced' | 'collected';
+                /** @description Count pass-through expenses. */
+                include_expenses?: boolean;
+                /** @description One client of the workspace. */
+                client_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read the client revenue roster */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['RevenueClientsResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks revenue:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A query parameter is invalid (errors names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'revenue.monthly': {
+        parameters: {
+            query?: {
+                /** @description Which money past months count. */
+                basis?: 'invoiced' | 'collected';
+                /** @description Count pass-through expenses. */
+                include_expenses?: boolean;
+                /** @description Add the projected overage band. */
+                include_projected_overage?: boolean;
+                /** @description Narrow each row to one band. */
+                band?: 'all' | 'recurring' | 'overage_and_other' | 'expenses';
+                /** @description One client of the workspace. */
+                client_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read monthly revenue by client */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['RevenueMonthlyResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks revenue:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A query parameter is invalid (errors names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'revenue.projection': {
+        parameters: {
+            query?: {
+                /** @description Add the projected overage band. */
+                include_projected_overage?: boolean;
+                /** @description One client of the workspace. */
+                client_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read the per-agreement revenue projection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['RevenueProjectionResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks revenue:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A query parameter is invalid (errors names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'revenue.summary': {
+        parameters: {
+            query?: {
+                /** @description Which money past months count. */
+                basis?: 'invoiced' | 'collected';
+                /** @description Count pass-through expenses. */
+                include_expenses?: boolean;
+                /** @description Add the projected overage band. */
+                include_projected_overage?: boolean;
+                /** @description One client of the workspace. */
+                client_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read revenue key figures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['RevenueSummaryResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks revenue:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A query parameter is invalid (errors names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

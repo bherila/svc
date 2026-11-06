@@ -12457,6 +12457,514 @@
                 "x-mcp-tool": "proposals.send"
             }
         },
+        "/workspaces/{workspace}/revenue/clients": {
+            "get": {
+                "operationId": "revenue.clients",
+                "description": "The client roster: per client its MRR (recurring revenue normalised to a month: quarterly ÷ 3, semi-annual ÷ 6, annual ÷ 12, one-time excluded), year to date, trailing twelve months with a twelve-point series of the full months, open and overdue amounts, and the health of each agreement in force: retainer hours used against included this billing period from the capacity ledger, whether it closes over its retainer, and whether it ends within 60 days. Totals for the roster are included. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "revenue:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "basis",
+                        "in": "query",
+                        "description": "Which money past months count.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "invoiced",
+                                "collected"
+                            ],
+                            "default": "invoiced"
+                        }
+                    },
+                    {
+                        "name": "include_expenses",
+                        "in": "query",
+                        "description": "Count pass-through expenses.",
+                        "schema": {
+                            "type": "boolean",
+                            "default": true
+                        }
+                    },
+                    {
+                        "name": "client_id",
+                        "in": "query",
+                        "description": "One client of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Read the client revenue roster",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RevenueClientsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks revenue:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A query parameter is invalid (errors names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "revenue.clients",
+                "x-svc-flags": [],
+                "x-mcp-tool": "revenue.clients"
+            }
+        },
+        "/workspaces/{workspace}/revenue/monthly": {
+            "get": {
+                "operationId": "revenue.monthly",
+                "description": "Per month and per client, from twelve months back to twelve months ahead: kind is actual, current or projected. Actual bands (recurring, overage_and_other, expenses) come from the basis; contracted and projected_overage come from the projection, so the current month shows actuals so far plus what remains contracted. band narrows each row to one band (recurring with contracted, overage_and_other with projected overage, or expenses); a figure outside the band, or switched off by include_expenses or include_projected_overage, is null. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "revenue:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "basis",
+                        "in": "query",
+                        "description": "Which money past months count.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "invoiced",
+                                "collected"
+                            ],
+                            "default": "invoiced"
+                        }
+                    },
+                    {
+                        "name": "include_expenses",
+                        "in": "query",
+                        "description": "Count pass-through expenses.",
+                        "schema": {
+                            "type": "boolean",
+                            "default": true
+                        }
+                    },
+                    {
+                        "name": "include_projected_overage",
+                        "in": "query",
+                        "description": "Add the projected overage band.",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    {
+                        "name": "band",
+                        "in": "query",
+                        "description": "Narrow each row to one band.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "all",
+                                "recurring",
+                                "overage_and_other",
+                                "expenses"
+                            ],
+                            "default": "all"
+                        }
+                    },
+                    {
+                        "name": "client_id",
+                        "in": "query",
+                        "description": "One client of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Read monthly revenue by client",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RevenueMonthlyResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks revenue:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A query parameter is invalid (errors names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "revenue.monthly",
+                "x-svc-flags": [],
+                "x-mcp-tool": "revenue.monthly"
+            }
+        },
+        "/workspaces/{workspace}/revenue/projection": {
+            "get": {
+                "operationId": "revenue.projection",
+                "description": "Per-agreement rows for the current month and the twelve full months after it: terms, retainer, each recurring item with its next charge date, the overage method and history, and each month's contracted retainer, recurring items and projected overage. A charge already on a charged invoice is actual and left out. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "revenue:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "include_projected_overage",
+                        "in": "query",
+                        "description": "Add the projected overage band.",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    {
+                        "name": "client_id",
+                        "in": "query",
+                        "description": "One client of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Read the per-agreement revenue projection",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RevenueProjectionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks revenue:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A query parameter is invalid (errors names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "revenue.projection",
+                "x-svc-flags": [],
+                "x-mcp-tool": "revenue.projection"
+            }
+        },
+        "/workspaces/{workspace}/revenue/summary": {
+            "get": {
+                "operationId": "revenue.summary",
+                "description": "Key figures: year to date (January 1 to today) and trailing twelve months (twelve full months plus the month to date), each against the same span a year earlier; the next twelve full months contracted, with projected overage when include_projected_overage is true; the current month's actual so far and what remains contracted; open receivables with the overdue amount and count; and the agreements ending (with the monthly amount that drops) and starting in the next twelve months. client_id narrows every figure to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "revenue:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "basis",
+                        "in": "query",
+                        "description": "Which money past months count.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "invoiced",
+                                "collected"
+                            ],
+                            "default": "invoiced"
+                        }
+                    },
+                    {
+                        "name": "include_expenses",
+                        "in": "query",
+                        "description": "Count pass-through expenses.",
+                        "schema": {
+                            "type": "boolean",
+                            "default": true
+                        }
+                    },
+                    {
+                        "name": "include_projected_overage",
+                        "in": "query",
+                        "description": "Add the projected overage band.",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    {
+                        "name": "client_id",
+                        "in": "query",
+                        "description": "One client of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Read revenue key figures",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RevenueSummaryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks revenue:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, the caller is not a workspace owner or admin, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A query parameter is invalid (errors names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "revenue.summary",
+                "x-svc-flags": [],
+                "x-mcp-tool": "revenue.summary"
+            }
+        },
         "/workspaces/{workspace}/search": {
             "get": {
                 "operationId": "search",
@@ -17730,6 +18238,7 @@
                             "payments:record": "Record money already received and correct a recorded payment's method, reference or date; never initiate a charge",
                             "finance:read": "Read received payments with their finance reconciliation allocations, and the processor payouts that settled them, as a workspace owner or admin",
                             "finance:reconcile": "Record and withdraw finance reconciliation allocations against received payments as a workspace owner or admin; never moves money",
+                            "revenue:read": "Read revenue figures, monthly actuals, the contracted and projected revenue of agreements, and per-client revenue and agreement health as a workspace owner or admin",
                             "clients:read": "Read client companies as a workspace manager",
                             "clients:write": "Create, edit and archive client companies and their agreements as a workspace manager",
                             "proposals:read": "Read authorized proposals and their commercial terms",
@@ -26304,6 +26813,993 @@
                             "canceled"
                         ],
                         "description": "succeeded: money recorded as pending cleared. failed: it bounced or was reversed. canceled: it was recorded in error and is withdrawn."
+                    }
+                }
+            },
+            "RevenueAgreementChange": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreement_id",
+                    "client_id",
+                    "client_name",
+                    "title",
+                    "date",
+                    "monthly_amount"
+                ],
+                "properties": {
+                    "agreement_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "client_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "client_name": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "monthly_amount": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "RevenueAgreementHealth": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreement_id",
+                    "title",
+                    "starts_on",
+                    "ends_on",
+                    "period_start",
+                    "period_end",
+                    "hours_used",
+                    "hours_included",
+                    "over_retainer",
+                    "ends_within_60_days",
+                    "ledger_status"
+                ],
+                "properties": {
+                    "agreement_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "starts_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "ends_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "period_start": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "period_end": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "hours_used": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "hours_included": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "over_retainer": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "ends_within_60_days": {
+                        "type": "boolean"
+                    },
+                    "ledger_status": {
+                        "type": "string",
+                        "enum": [
+                            "ok",
+                            "no_retainer",
+                            "ledger_unreadable"
+                        ]
+                    }
+                }
+            },
+            "RevenueAgreementProjection": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreement_id",
+                    "client_id",
+                    "client_name",
+                    "title",
+                    "status",
+                    "billing_cadence",
+                    "starts_on",
+                    "ends_on",
+                    "signed",
+                    "retainer",
+                    "monthly_recurring",
+                    "recurring_items",
+                    "overage",
+                    "months",
+                    "totals"
+                ],
+                "properties": {
+                    "agreement_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "client_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "client_name": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "billing_cadence": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semi_annual",
+                            "annual"
+                        ]
+                    },
+                    "starts_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "ends_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "signed": {
+                        "type": "boolean"
+                    },
+                    "retainer": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "period_fee",
+                            "monthly_equivalent",
+                            "first_cycle_proration"
+                        ],
+                        "properties": {
+                            "period_fee": {
+                                "type": "integer"
+                            },
+                            "monthly_equivalent": {
+                                "type": "integer"
+                            },
+                            "first_cycle_proration": {
+                                "type": "string",
+                                "enum": [
+                                    "prorate_hours",
+                                    "full_period",
+                                    "align_next_cycle"
+                                ]
+                            }
+                        }
+                    },
+                    "monthly_recurring": {
+                        "type": "integer"
+                    },
+                    "recurring_items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RevenueProjectedItem"
+                        }
+                    },
+                    "overage": {
+                        "$ref": "#/components/schemas/RevenueOverageMethod"
+                    },
+                    "months": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RevenueProjectionMonth"
+                        }
+                    },
+                    "totals": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "contracted",
+                            "projected_overage"
+                        ],
+                        "properties": {
+                            "contracted": {
+                                "type": "integer"
+                            },
+                            "projected_overage": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "RevenueAssumptions": {
+                "description": "What a revenue figure was computed under, so a stored figure can be explained later.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "as_of",
+                    "basis",
+                    "projection_basis",
+                    "currency",
+                    "tax",
+                    "fiscal_year_start",
+                    "include_expenses",
+                    "include_projected_overage",
+                    "overage_window_months",
+                    "minimum_history_months",
+                    "projection_months",
+                    "renewals_assumed",
+                    "method_version"
+                ],
+                "properties": {
+                    "as_of": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "basis": {
+                        "type": "string",
+                        "enum": [
+                            "invoiced",
+                            "collected"
+                        ]
+                    },
+                    "projection_basis": {
+                        "type": "string",
+                        "enum": [
+                            "invoiced"
+                        ]
+                    },
+                    "currency": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "tax": {
+                        "type": "string",
+                        "enum": [
+                            "excluded"
+                        ]
+                    },
+                    "fiscal_year_start": {
+                        "type": "string"
+                    },
+                    "include_expenses": {
+                        "type": "boolean"
+                    },
+                    "include_projected_overage": {
+                        "type": "boolean"
+                    },
+                    "overage_window_months": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "minimum_history_months": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "projection_months": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "renewals_assumed": {
+                        "type": "boolean"
+                    },
+                    "method_version": {
+                        "type": "string"
+                    }
+                }
+            },
+            "RevenueClientRow": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "client_id",
+                    "name",
+                    "is_active",
+                    "mrr",
+                    "ytd",
+                    "ttm",
+                    "open_amount",
+                    "overdue_amount",
+                    "overdue_count",
+                    "ending_soon",
+                    "over_retainer",
+                    "agreements"
+                ],
+                "properties": {
+                    "client_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "mrr": {
+                        "type": "integer"
+                    },
+                    "ytd": {
+                        "type": "integer"
+                    },
+                    "ttm": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "amount",
+                            "month_to_date",
+                            "series"
+                        ],
+                        "properties": {
+                            "amount": {
+                                "type": "integer"
+                            },
+                            "month_to_date": {
+                                "type": "integer"
+                            },
+                            "series": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "month",
+                                        "amount"
+                                    ],
+                                    "properties": {
+                                        "month": {
+                                            "type": "string",
+                                            "pattern": "^[0-9]{4}-[0-9]{2}$"
+                                        },
+                                        "amount": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "open_amount": {
+                        "type": "integer"
+                    },
+                    "overdue_amount": {
+                        "type": "integer"
+                    },
+                    "overdue_count": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "ending_soon": {
+                        "type": "boolean"
+                    },
+                    "over_retainer": {
+                        "type": "boolean"
+                    },
+                    "agreements": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RevenueAgreementHealth"
+                        }
+                    }
+                }
+            },
+            "RevenueClients": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "assumptions",
+                    "clients",
+                    "totals"
+                ],
+                "properties": {
+                    "assumptions": {
+                        "$ref": "#/components/schemas/RevenueAssumptions"
+                    },
+                    "clients": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RevenueClientRow"
+                        }
+                    },
+                    "totals": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "mrr",
+                            "ytd",
+                            "ttm",
+                            "open_amount",
+                            "overdue_amount",
+                            "overdue_count"
+                        ],
+                        "properties": {
+                            "mrr": {
+                                "type": "integer"
+                            },
+                            "ytd": {
+                                "type": "integer"
+                            },
+                            "ttm": {
+                                "type": "integer"
+                            },
+                            "open_amount": {
+                                "type": "integer"
+                            },
+                            "overdue_amount": {
+                                "type": "integer"
+                            },
+                            "overdue_count": {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        }
+                    }
+                }
+            },
+            "RevenueClientsResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/RevenueClients"
+                    }
+                }
+            },
+            "RevenueMonth": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "month",
+                    "kind",
+                    "recurring",
+                    "overage_and_other",
+                    "expenses",
+                    "contracted",
+                    "projected_overage",
+                    "total",
+                    "clients"
+                ],
+                "properties": {
+                    "month": {
+                        "type": "string",
+                        "pattern": "^[0-9]{4}-[0-9]{2}$"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "actual",
+                            "current",
+                            "projected"
+                        ]
+                    },
+                    "recurring": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "overage_and_other": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "expenses": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "contracted": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "projected_overage": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "clients": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RevenueMonthClient"
+                        }
+                    }
+                }
+            },
+            "RevenueMonthClient": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "client_id",
+                    "client_name",
+                    "recurring",
+                    "overage_and_other",
+                    "expenses",
+                    "contracted",
+                    "projected_overage",
+                    "total"
+                ],
+                "properties": {
+                    "client_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "client_name": {
+                        "type": "string"
+                    },
+                    "recurring": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "overage_and_other": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "expenses": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "contracted": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "projected_overage": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "RevenueMonthly": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "assumptions",
+                    "band",
+                    "months"
+                ],
+                "properties": {
+                    "assumptions": {
+                        "$ref": "#/components/schemas/RevenueAssumptions"
+                    },
+                    "band": {
+                        "type": "string",
+                        "enum": [
+                            "all",
+                            "recurring",
+                            "overage_and_other",
+                            "expenses"
+                        ]
+                    },
+                    "months": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RevenueMonth"
+                        }
+                    }
+                }
+            },
+            "RevenueMonthlyResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/RevenueMonthly"
+                    }
+                }
+            },
+            "RevenueOverageMethod": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "method",
+                    "window_months",
+                    "minimum_history_months",
+                    "history_months",
+                    "billed_in_window",
+                    "monthly_average",
+                    "status"
+                ],
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "enum": [
+                            "trailing_average"
+                        ]
+                    },
+                    "window_months": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "minimum_history_months": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "history_months": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "billed_in_window": {
+                        "type": "integer"
+                    },
+                    "monthly_average": {
+                        "type": "integer"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "projected",
+                            "insufficient_history"
+                        ]
+                    }
+                }
+            },
+            "RevenueProjectedItem": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "item_id",
+                    "description",
+                    "cadence",
+                    "amount",
+                    "monthly_equivalent",
+                    "is_taxable",
+                    "is_active",
+                    "effective_on",
+                    "expires_on",
+                    "next_charge_on"
+                ],
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "cadence": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "amount": {
+                        "type": "integer"
+                    },
+                    "monthly_equivalent": {
+                        "type": "integer"
+                    },
+                    "is_taxable": {
+                        "type": "boolean"
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "effective_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "expires_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "next_charge_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    }
+                }
+            },
+            "RevenueProjection": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "assumptions",
+                    "agreements"
+                ],
+                "properties": {
+                    "assumptions": {
+                        "$ref": "#/components/schemas/RevenueAssumptions"
+                    },
+                    "agreements": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RevenueAgreementProjection"
+                        }
+                    }
+                }
+            },
+            "RevenueProjectionMonth": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "month",
+                    "contracted",
+                    "contracted_retainer",
+                    "contracted_recurring_items",
+                    "projected_overage"
+                ],
+                "properties": {
+                    "month": {
+                        "type": "string",
+                        "pattern": "^[0-9]{4}-[0-9]{2}$"
+                    },
+                    "contracted": {
+                        "type": "integer"
+                    },
+                    "contracted_retainer": {
+                        "type": "integer"
+                    },
+                    "contracted_recurring_items": {
+                        "type": "integer"
+                    },
+                    "projected_overage": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "RevenueProjectionResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/RevenueProjection"
+                    }
+                }
+            },
+            "RevenueSummary": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "assumptions",
+                    "ytd",
+                    "ttm",
+                    "next_12_months",
+                    "current_month",
+                    "open_receivables",
+                    "changes"
+                ],
+                "properties": {
+                    "assumptions": {
+                        "$ref": "#/components/schemas/RevenueAssumptions"
+                    },
+                    "ytd": {
+                        "$ref": "#/components/schemas/RevenueWindowFigure"
+                    },
+                    "ttm": {
+                        "$ref": "#/components/schemas/RevenueWindowFigure"
+                    },
+                    "next_12_months": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "from",
+                            "to",
+                            "contracted",
+                            "projected_overage"
+                        ],
+                        "properties": {
+                            "from": {
+                                "type": "string",
+                                "format": "date"
+                            },
+                            "to": {
+                                "type": "string",
+                                "format": "date"
+                            },
+                            "contracted": {
+                                "type": "integer"
+                            },
+                            "projected_overage": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "current_month": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "month",
+                            "actual",
+                            "remaining_contracted",
+                            "projected_overage"
+                        ],
+                        "properties": {
+                            "month": {
+                                "type": "string",
+                                "pattern": "^[0-9]{4}-[0-9]{2}$"
+                            },
+                            "actual": {
+                                "type": "integer"
+                            },
+                            "remaining_contracted": {
+                                "type": "integer"
+                            },
+                            "projected_overage": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "open_receivables": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "outstanding",
+                            "invoice_count",
+                            "overdue_amount",
+                            "overdue_count"
+                        ],
+                        "properties": {
+                            "outstanding": {
+                                "type": "integer"
+                            },
+                            "invoice_count": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "overdue_amount": {
+                                "type": "integer"
+                            },
+                            "overdue_count": {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        }
+                    },
+                    "changes": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "ending",
+                            "starting"
+                        ],
+                        "properties": {
+                            "ending": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/RevenueAgreementChange"
+                                }
+                            },
+                            "starting": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/RevenueAgreementChange"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "RevenueSummaryResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/RevenueSummary"
+                    }
+                }
+            },
+            "RevenueWindowFigure": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "amount",
+                    "from",
+                    "to",
+                    "prior_amount",
+                    "prior_from",
+                    "prior_to"
+                ],
+                "properties": {
+                    "amount": {
+                        "type": "integer"
+                    },
+                    "from": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "to": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "prior_amount": {
+                        "type": "integer"
+                    },
+                    "prior_from": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "prior_to": {
+                        "type": "string",
+                        "format": "date"
                     }
                 }
             },
