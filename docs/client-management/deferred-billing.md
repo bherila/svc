@@ -232,9 +232,16 @@ with a 409 until its claim is released by void, discard or the host's reopen.
 Other time on the host stays editable. Attaching removes settled work from the
 stored summaries; when an itemized snapshot exists, only entries and minutes
 recorded there are deducted from the hours statement. Settling work approved after
-generation cannot erase a different entry's waiting hours. Legacy drafts without
-an itemized snapshot retain the existing work-date fallback: their aggregate
-statement does not identify historical entry membership. The website's **Bill
+generation cannot erase a different entry's waiting hours. A legacy draft whose
+stored hours statement reports a nonzero deferred backlog but which has no
+itemized snapshot cannot identify which entries that backlog counts, so attaching
+to it is refused (#609) with 422, code `draft_regeneration_required`, and the
+message "Regenerate this draft first; regeneration may change its charges." on
+REST, MCP and every caller of `DeferredBuyDownAction`. Nothing is reserved or
+rewritten. SVC never regenerates the draft silently and never invents historical
+membership: the caller regenerates it explicitly, which captures the snapshot,
+re-reads its versions, previews again and retries. A legacy draft with no backlog
+has nothing to misattribute and attaches as before. The website's **Bill
 deferred work** flow still creates its own settlement invoice; attaching is an
 agent-surface capability for now.
 

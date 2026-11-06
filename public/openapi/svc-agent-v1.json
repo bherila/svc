@@ -9256,7 +9256,7 @@
         "/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices": {
             "post": {
                 "operationId": "invoices.create_deferred_buydown",
-                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
+                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. A legacy draft whose stored hours statement reports a deferred backlog but has no itemized deferred-work snapshot is refused with 422 and code draft_regeneration_required: regenerate the draft explicitly (regeneration may change its charges), re-read its versions and preview again. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
                 "security": [
                     {
                         "oauth2": [
@@ -20768,6 +20768,11 @@
                                         "type": "string"
                                     }
                                 }
+                            },
+                            "code": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                                "description": "A stable, machine-readable refusal code, present on coded refusals such as draft_regeneration_required."
                             }
                         }
                     },

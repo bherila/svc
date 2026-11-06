@@ -877,7 +877,7 @@ final class AgentOperationCatalog
             ),
             $this->tool(
                 'invoices.create_deferred_buydown', 'Create deferred work settlement draft',
-                'Reserve FIFO whole deferred entries on a draft at the previewed backlog version. Discounts are explicit negative adjustments with reasons. Does not issue, send, consume retainer capacity or trigger catch-up. Void or discard releases the work. With invoice_id, the settlement attaches to that existing cadence draft (a reopened invoice being reissued) instead of a new settlement invoice. Managers only; idempotency required.',
+                'Reserve FIFO whole deferred entries on a draft at the previewed backlog version. Discounts are explicit negative adjustments with reasons. Does not issue, send, consume retainer capacity or trigger catch-up. Void or discard releases the work. With invoice_id, the settlement attaches to that existing cadence draft (a reopened invoice being reissued) instead of a new settlement invoice. A legacy draft with a stored backlog but no itemized snapshot is refused with code draft_regeneration_required: regenerate it explicitly (its charges may change), re-read versions and preview again. Managers only; idempotency required.',
                 [AgentMcpDeferredBuyDownTools::class, 'create'], Effect::LocalWrite, true, 'mcp.write',
                 cutovers: [AgentDeploymentFlags::INVOICES], manager: true,
             ),

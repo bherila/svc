@@ -35,6 +35,13 @@ final class AgentMcpApiFailureTest extends TestCase
         // A budget's refusal is written for the caller and says when to retry.
         yield 'budget refusal' => [429, ['message' => 'The schedule preflight ran recently. Retry in 42 seconds.', 'errors' => ['field' => ['Ignored.']]], 'The schedule preflight ran recently. Retry in 42 seconds. Ignored.'];
         yield 'empty budget refusal' => [429, null, $generic];
+        // A coded refusal repeats its stable code for an agent to branch on.
+        yield 'coded refusal' => [422, ['message' => 'Regenerate this draft first; regeneration may change its charges.', 'code' => 'draft_regeneration_required'],
+            'Regenerate this draft first; regeneration may change its charges. (code: draft_regeneration_required)'];
+        yield 'malformed code' => [422, ['message' => 'Refused.', 'code' => 'Not A Code <b>'], 'Refused.'];
+        yield 'non-string code' => [422, ['message' => 'Refused.', 'code' => ['nested']], 'Refused.'];
+        yield 'code without a message' => [422, ['code' => 'draft_regeneration_required'], $generic];
+        yield 'concealed coded refusal' => [500, ['message' => 'Internal synthetic detail.', 'code' => 'draft_regeneration_required'], $generic];
         foreach ([400, 401, 404, 408, 410, 421, 423, 500, 503] as $status) {
             yield 'conceal '.$status => [$status, ['message' => 'Internal synthetic detail.', 'errors' => ['field' => ['Internal synthetic error.']]], $generic];
         }

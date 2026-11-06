@@ -1930,7 +1930,15 @@ keeps the settlement lines and their claim; voiding or discarding the host
 releases the work exactly as voiding a settlement draft does. An issued host
 cannot be reopened, and time it settles cannot be edited, deleted or unapproved
 (409) until the host is voided or discarded; other time on the host stays
-editable.
+editable. A legacy host whose stored hours statement reports a deferred backlog
+but carries no itemized deferred-work snapshot is refused with 422 and
+`{"message": "Regenerate this draft first; regeneration may change its charges.", "code": "draft_regeneration_required"}`;
+the MCP tool error carries the same sentence followed by
+`(code: draft_regeneration_required)` (#609). Regeneration may change the draft's
+charges, so it is never done implicitly: regenerate the draft, re-read its
+versions, preview again and retry. A legacy host with no backlog attaches as
+before. Any API refusal that carries a stable code reports it in the error body's
+optional `code` field.
 
 `agreements.create` and `agreements.update` also accept the boolean
 `show_deferred_backlog_to_client`, and agreement reads report it. It defaults to
