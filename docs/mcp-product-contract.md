@@ -441,3 +441,14 @@ archive receipt from before the confirmation requirement can replay its original
 body without writing again; every replay still requires current manager access.
 Confirmed archive receipts bind the confirmation field, so omitting it changes the
 request rather than replaying a newly confirmed archive.
+
+
+### Session toolsets
+
+New sessions expose the authorized core of context, search and time logging tools
+plus `toolsets.list`, `toolsets.enable` and `toolsets.disable`. Other tools are
+revealed by catalog-derived scope groups, without adding permissions. Both
+selection controls persist in the credential-isolated session and notify clients
+with `notifications/tools/list_changed`. Initialize with
+`capabilities.experimental["svc/toolsets"] = "all"` for the complete authorized
+list. Prompts require their tools to be visible and never enable groups implicitly.

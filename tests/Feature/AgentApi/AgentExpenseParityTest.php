@@ -624,7 +624,7 @@ final class AgentExpenseParityTest extends TestCase
 
     private function mcpSession(): string
     {
-        $session = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic expense parity test', 'version' => '1']]])->assertOk()->headers->get('Mcp-Session-Id');
+        $session = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic expense parity test', 'version' => '1']]])->assertOk()->headers->get('Mcp-Session-Id');
         $this->assertIsString($session);
 
         return $session;

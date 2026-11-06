@@ -89,7 +89,7 @@ final class FirstPartySessionApiTest extends TestCase
     {
         $this->asSignedIn($this->owner)->postJson('/api/v1/mcp', [
             'jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'SVC test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'SVC test', 'version' => '1']],
         ], ['Mcp-Protocol-Version' => '2025-06-18'])->assertUnauthorized();
     }
 

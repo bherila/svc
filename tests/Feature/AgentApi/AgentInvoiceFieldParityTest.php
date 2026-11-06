@@ -248,7 +248,7 @@ final class AgentInvoiceFieldParityTest extends TestCase
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
         $session = $this->postJson('/api/v1/mcp', [
             'jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic parity test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic parity test', 'version' => '1']],
         ], $headers)->assertOk()->headers->get('Mcp-Session-Id');
         $result = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => $name, 'arguments' => $arguments]],
             [...$headers, 'Mcp-Session-Id' => (string) $session])->assertOk()->json();

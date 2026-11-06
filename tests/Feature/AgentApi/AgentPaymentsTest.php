@@ -412,7 +412,7 @@ final class AgentPaymentsTest extends TestCase
         $this->actingAsMcp($portal, ['mcp:use', 'payments:read', 'payments:record', 'billing:read']);
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
         $init = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic list test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic list test', 'version' => '1']],
         ], $headers)->assertOk();
         $headers['Mcp-Session-Id'] = $init->headers->get('Mcp-Session-Id');
         $names = array_column($this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'], $headers)->assertOk()->json('result.tools'), 'name');
@@ -490,7 +490,7 @@ final class AgentPaymentsTest extends TestCase
     {
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
         $init = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic grant test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic grant test', 'version' => '1']],
         ], $headers)->assertOk();
         $headers['Mcp-Session-Id'] = $init->headers->get('Mcp-Session-Id');
         $response = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call',
@@ -546,7 +546,7 @@ final class AgentPaymentsTest extends TestCase
         }
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
         $init = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic payment test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic payment test', 'version' => '1']],
         ], $headers)->assertOk();
         $headers['Mcp-Session-Id'] = $init->headers->get('Mcp-Session-Id');
         $result = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call',

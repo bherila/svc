@@ -412,7 +412,7 @@ final class AgentTimeParityTest extends TestCase
      * @return array<string,mixed> */
     private function mcpCall(string $method, array $params): array
     {
-        $initialize = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 'initialize', 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic time parity', 'version' => '1']]], ['Mcp-Protocol-Version' => '2025-06-18'])->assertOk();
+        $initialize = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 'initialize', 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic time parity', 'version' => '1']]], ['Mcp-Protocol-Version' => '2025-06-18'])->assertOk();
 
         return $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 'time-call', 'method' => $method, 'params' => (object) $params], ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $initialize->headers->get('Mcp-Session-Id')])->assertOk()->json('result');
     }

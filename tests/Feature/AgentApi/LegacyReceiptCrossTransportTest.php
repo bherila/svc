@@ -31,7 +31,7 @@ final class LegacyReceiptCrossTransportTest extends TestCase
         [$owner, $workspace, $company, $project] = $this->fixture();
         $principal = $this->actingAsMcp($owner, ['mcp:use', 'tasks:write', 'time:write', 'billing:write']);
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
-        $headers['Mcp-Session-Id'] = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic legacy receipt test', 'version' => '1']]], $headers)->assertOk()->headers->get('Mcp-Session-Id');
+        $headers['Mcp-Session-Id'] = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic legacy receipt test', 'version' => '1']]], $headers)->assertOk()->headers->get('Mcp-Session-Id');
         [$path, $body, $extra, $table] = match ($operation) {
             'tasks.create' => ['projects/'.$project->public_id.'/tasks', ['title' => 'Synthetic receipt task'], ['project_id' => $project->public_id], 'client_tasks'],
             'time_entries.log' => ['time-entries', ['entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-09-07', 'minutes' => 30, 'description' => 'Synthetic receipt work']]], [], 'client_time_entries'],

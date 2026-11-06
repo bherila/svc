@@ -168,7 +168,7 @@ final class FinancePayoutApiTest extends TestCase
         $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::FINANCE_READ]);
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
         $init = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic payout test', 'version' => '1']]], $headers)->assertOk();
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic payout test', 'version' => '1']]], $headers)->assertOk();
         $headers['Mcp-Session-Id'] = (string) $init->headers->get('Mcp-Session-Id');
         $result = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => [
             'name' => FinanceReconciliationOperations::PAYOUTS, 'arguments' => ['workspace_id' => $workspace->public_id, 'provider' => 'stripe', 'per_page' => 5],

@@ -392,7 +392,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'SVC billing workflow test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'SVC billing workflow test', 'version' => '1']],
         ])->assertOk();
         $session = $response->headers->get('Mcp-Session-Id');
         $this->assertIsString($session);

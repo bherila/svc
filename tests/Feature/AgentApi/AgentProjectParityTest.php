@@ -510,7 +510,7 @@ final class AgentProjectParityTest extends TestCase
      * @return array<string,mixed> */
     private function mcpResponse(string $method, array $params): array
     {
-        $initialized = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 'initialize', 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic projects client', 'version' => '1']]], ['Mcp-Protocol-Version' => '2025-06-18'])->assertOk();
+        $initialized = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 'initialize', 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic projects client', 'version' => '1']]], ['Mcp-Protocol-Version' => '2025-06-18'])->assertOk();
         $response = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 'projects-call', 'method' => $method, 'params' => (object) $params], ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $initialized->headers->get('Mcp-Session-Id')])->assertOk()->json();
         if ($method === 'tools/list' && array_intersect(['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'], array_column($response['result']['tools'], 'name')) !== []) {
             $this->assertStringContainsString('explicit user confirmation', $initialized->json('result.instructions'));

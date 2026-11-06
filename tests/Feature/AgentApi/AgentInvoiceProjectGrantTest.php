@@ -45,7 +45,7 @@ final class AgentInvoiceProjectGrantTest extends TestCase
     {
         [$workspace, , $viewer, , , $invoices] = $this->fixtures();
         $this->actingAsMcp($viewer, ['mcp:use', 'billing:read', 'identity:read']);
-        $initialized = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic grant audit', 'version' => '1']]])->assertOk();
+        $initialized = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic grant audit', 'version' => '1']]])->assertOk();
         $headers = ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $initialized->headers->get('Mcp-Session-Id')];
         $call = fn (string $name, array $arguments) => $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => $name, 'arguments' => $arguments]], $headers)->assertOk();
         $list = $call('invoices.list', ['workspace_id' => $workspace->public_id]);
@@ -164,7 +164,7 @@ final class AgentInvoiceProjectGrantTest extends TestCase
         $this->assertSame($expectedIds, array_column($this->getJson($base)->assertOk()->json('data'), 'id'));
         $this->assertSame(30000, app(AgentReadService::class)->summary($viewer, $workspace, fn (string $scope): bool => $scope === 'billing:read')['invoices']['collectible_balances'][0]['amount']);
         $this->actingAsMcp($viewer, ['mcp:use', 'billing:read', 'identity:read']);
-        $initialized = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic agreement audit', 'version' => '1']]])->assertOk();
+        $initialized = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic agreement audit', 'version' => '1']]])->assertOk();
         $headers = ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $initialized->headers->get('Mcp-Session-Id')];
         $call = fn (string $name, array $arguments) => $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => $name, 'arguments' => $arguments]], $headers)->assertOk();
         $this->assertSame($expectedIds, array_column($call('invoices.list', ['workspace_id' => $workspace->public_id])->json('result.structuredContent.data'), 'id'));

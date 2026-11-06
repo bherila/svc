@@ -441,7 +441,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
     {
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
         $init = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic finance test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic finance test', 'version' => '1']],
         ], $headers)->assertOk();
         $headers['Mcp-Session-Id'] = (string) $init->headers->get('Mcp-Session-Id');
 

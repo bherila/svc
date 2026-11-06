@@ -1008,7 +1008,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             'method' => 'initialize',
             'params' => [
                 'protocolVersion' => '2025-06-18',
-                'capabilities' => [],
+                'capabilities' => ['experimental' => ['svc/toolsets' => 'all']],
                 'clientInfo' => ['name' => 'SVC OAuth lifecycle test', 'version' => '1'],
             ],
         ];

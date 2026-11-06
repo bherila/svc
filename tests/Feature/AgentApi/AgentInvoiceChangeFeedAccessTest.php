@@ -111,7 +111,7 @@ final class AgentInvoiceChangeFeedAccessTest extends TestCase
         $this->actingAsMcp($portal, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_READ]);
         $initialization = $this->postJson('/api/v1/mcp', [
             'jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic invoice feed test', 'version' => '1']],
+            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic invoice feed test', 'version' => '1']],
         ], ['Mcp-Protocol-Version' => '2025-06-18'])->assertOk();
         $session = $initialization->headers->get('Mcp-Session-Id');
         $this->assertIsString($session);

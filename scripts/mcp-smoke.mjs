@@ -1,8 +1,8 @@
 import process from 'node:process';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 
 /**
  * Authenticated MCP smoke, shared by the pre-merge lane and the post-deploy one.
@@ -192,6 +192,7 @@ try {
             'The server did not advertise tool list notifications.',
         );
     }
+
     let changes = 0;
     client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
         changes += 1;
@@ -201,30 +202,38 @@ try {
         arguments: {},
     });
     const availableSets = toolsets.structuredContent?.data;
+
     if (!Array.isArray(availableSets)) {
         throw new Error('Toolsets did not return their structured catalog.');
     }
+
     const firstSet = availableSets[0];
+
     if (firstSet) {
         const before = (await client.listTools()).tools.map(
             (tool) => tool.name,
         );
+
         for (const action of ['enable', 'disable']) {
             const changed = await client.callTool({
                 name: `toolsets.${action}`,
                 arguments: { name: firstSet.name },
             });
+
             if (changed.isError) {
                 throw new Error(`Toolset ${action} failed.`);
             }
         }
+
         const after = (await client.listTools()).tools.map((tool) => tool.name);
+
         if (changes !== 2 || JSON.stringify(before) !== JSON.stringify(after)) {
             throw new Error(
                 'Toolsets did not round-trip with two notifications.',
             );
         }
     }
+
     record('progressive discovery and list-change notifications');
 
     const context = await client.callTool({

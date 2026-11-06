@@ -354,7 +354,7 @@ final class AgentExpenseApiTest extends TestCase
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
         $this->actingAsMcp($owner, ['mcp:use', 'expenses:read', 'expenses:write']);
-        $session = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic expense test', 'version' => '1']]])->assertOk()->headers->get('Mcp-Session-Id');
+        $session = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => ['experimental' => ['svc/toolsets' => 'all']], 'clientInfo' => ['name' => 'Synthetic expense test', 'version' => '1']]])->assertOk()->headers->get('Mcp-Session-Id');
         $headers = ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $session];
         $arguments = ['workspace_id' => $workspace->public_id, 'entries' => [$this->facts() + ['company_id' => $company->public_id]], 'idempotency_key' => 'mcp-expense-record'];
         $message = ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'expenses.log', 'arguments' => $arguments]];
