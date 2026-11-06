@@ -62,6 +62,7 @@ final class FillableCoverageTest extends TestCase
      */
     private const MODEL_EXEMPT = [
         Workspace::class => [
+            'edition' => 'Whether the workspace is full or a partner\'s light one. Written only by the participation flow when it makes a light workspace, and by WorkspaceEditionController when an owner turns the full workspace on; a value assignable through a workspace update would let a caller change what a business has switched on.',
             'has_square_connection' => 'A navigation hint derived from workspace_payment_connections and written only by WorkspacePaymentConnections after a connection changes; never caller mass assignment.',
         ],
         ClientCollaborationTopic::class => [

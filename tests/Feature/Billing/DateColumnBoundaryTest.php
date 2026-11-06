@@ -308,6 +308,10 @@ final class DateColumnBoundaryTest extends TestCase
             'app/Queries/MyWorkQuery.php' => ['$rollup->earliest()'],
             // ApprovalPeriod::start() and end() are `toDateString()` of the month's bounds.
             'app/Services/Approval/ClientApprovals.php' => ['$period?->start()', '$period?->end()'],
+            'app/Services/Submission/SubmissionService.php' => ['$period?->start()', '$period?->end()'],
+            // The same ApprovalPeriod bounds, read for the month's own page and timesheet.
+            'app/Queries/Submission/ApprovedTimesheet.php' => ['$period->start()', '$period->end()'],
+            'app/Queries/Submission/SubmissionsOverview.php' => ['$period->start()', '$period->end()'],
             // `$upTo?->toDateString()`, taken before the query.
             'app/Services/Billing/DeferredBillingAllocator.php' => ['$upToDate'],
             // filters() validates both bounds with date_format:Y-m-d.

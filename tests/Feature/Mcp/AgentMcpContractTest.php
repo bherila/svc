@@ -355,6 +355,9 @@ final class AgentMcpContractTest extends TestCase
             'square.series.get' => ['billing:read'],
             'square.series.list' => ['billing:read'],
             'square.sync' => ['billing:write'],
+            'submissions.list' => ['time:read'],
+            'submissions.submit' => ['time:write'],
+            'submissions.withdraw' => ['time:write'],
             'task_organization.get' => ['tasks:read'],
             'task_organization.lists.archive' => ['tasks:write'],
             'task_organization.lists.create' => ['tasks:write'],
@@ -390,6 +393,7 @@ final class AgentMcpContractTest extends TestCase
             'time_entries.log' => ['time:write'],
             'time_entries.unapprove' => ['time:approve', 'time:read'],
             'time_entries.update' => ['time:write'],
+            'timesheets.approved' => ['time:read'],
             'workspaces.create' => ['workspaces:create'],
         ], $actual);
     }

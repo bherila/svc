@@ -134,10 +134,10 @@ final class LightWorkspaceTest extends TestCase
         $this->actingAs($partner)->postJson("/shared-project-invitations/{$invitation}/accept", ['client_name' => 'Synthetic Partner Client'])->assertOk();
         $workspace = Workspace::query()->where('edition', 'light')->firstOrFail();
 
-        $this->actingAs($this->world['hostOwner'])->post("/workspaces/{$workspace->public_id}/edition/full")->assertNotFound();
+        $this->actingAs($this->world['hostOwner'])->postJson("/workspaces/{$workspace->public_id}/edition/full")->assertNotFound();
         $this->assertSame('light', $workspace->fresh()->edition);
 
-        $this->actingAs($partner)->post("/workspaces/{$workspace->public_id}/edition/full")->assertRedirect("/workspaces/{$workspace->public_id}");
+        $this->actingAs($partner)->postJson("/workspaces/{$workspace->public_id}/edition/full")->assertOk()->assertJsonPath('data.redirect_url', "/workspaces/{$workspace->public_id}");
         $this->assertSame('full', $workspace->fresh()->edition);
         $this->assertTrue(AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'workspace.edition_changed')->exists());
         $this->actingAs($partner)->get("/workspaces/{$workspace->public_id}/my-work")

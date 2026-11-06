@@ -50,7 +50,8 @@ return new class extends Migration
 
         foreach (['client_expenses' => ['cex_submitted_by_fk', 'cex_ws_submitted_idx'], 'client_time_entries' => ['cte_submitted_by_fk', 'cte_ws_submitted_idx']] as $name => [$foreign, $index]) {
             Schema::table($name, function (Blueprint $table) use ($foreign, $index): void {
-                $table->dropForeign($foreign);
+                // SQLite cannot drop a key by name, only by its columns.
+                $table->dropForeign(Schema::getConnection()->getDriverName() === 'sqlite' ? ['submitted_by_user_id'] : $foreign);
                 $table->dropIndex($index);
                 $table->dropColumn(['submitted_at', 'submitted_by_user_id']);
             });

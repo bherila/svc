@@ -9,7 +9,7 @@ use App\Services\Access\AccessAuditLog;
 use App\Support\Access\AccessAuditAction;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Workspaces\WorkspaceEdition;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Gate;
  */
 final class WorkspaceEditionController extends Controller
 {
-    public function full(Request $request, Workspace $workspace, AccessAuditLog $audit): RedirectResponse
+    public function full(Request $request, Workspace $workspace, AccessAuditLog $audit): JsonResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -34,6 +34,6 @@ final class WorkspaceEditionController extends Controller
             $audit->record(AccessMutationContext::user($user), $workspace, AccessAuditAction::WorkspaceEditionChanged, null, ['edition' => WorkspaceEdition::Light->value], ['edition' => WorkspaceEdition::Full->value]);
         }
 
-        return redirect()->route('workspaces.enter', $workspace);
+        return response()->json(['data' => ['redirect_url' => route('workspaces.enter', $workspace, absolute: false)]]);
     }
 }

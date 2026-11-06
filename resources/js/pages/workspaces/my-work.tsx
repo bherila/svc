@@ -456,17 +456,26 @@ function LightWorkspace({
     style: DurationStyle;
 }) {
     const [busy, setBusy] = useState(false);
-    const turnOn = () => {
+    const turnOn = async () => {
         if (busy || light.full_workspace_url === null) {
             return;
         }
 
         setBusy(true);
-        router.post(
+
+        const result = await apiRequest<{ redirect_url: string }>(
+            'POST',
             light.full_workspace_url,
             {},
-            { onFinish: () => setBusy(false) },
         );
+
+        if (!result.ok) {
+            setBusy(false);
+
+            return;
+        }
+
+        router.visit(result.data.redirect_url);
     };
 
     return (
@@ -518,7 +527,7 @@ function LightWorkspace({
                             variant="outline"
                             className="min-h-11 md:min-h-8"
                             disabled={busy}
-                            onClick={turnOn}
+                            onClick={() => void turnOn()}
                         >
                             <PlusIcon aria-hidden="true" />
                             Turn on agreements and invoicing
