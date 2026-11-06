@@ -35,6 +35,16 @@ final class McpToolPageTest extends TestCase
         $this->assertSame(base64_encode('2'), McpToolPage::slice(['a', 'b', 'c'], 2, null)['next']);
     }
 
+    public function test_a_fractional_cursor_is_read_as_the_whole_offset_the_sdk_reads_it_as(): void
+    {
+        $page = McpToolPage::slice(['a', 'b', 'c', 'd', 'e'], 2, base64_encode('1.5'));
+
+        $this->assertSame(['b', 'c'], $page['names']);
+        $this->assertSame(base64_encode('3'), $page['next']);
+        // Whole-number first: 2.5 is offset 2, which is the end of two items, not past it.
+        $this->assertSame(['names' => [], 'next' => null], McpToolPage::slice(['a', 'b'], 100, base64_encode('2.5')));
+    }
+
     public function test_a_list_shorter_than_a_page_or_empty_is_one_page(): void
     {
         $this->assertSame(['names' => ['a'], 'next' => null], McpToolPage::slice(['a'], 100, null));

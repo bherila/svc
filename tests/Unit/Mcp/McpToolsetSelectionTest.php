@@ -105,6 +105,8 @@ final class McpToolsetSelectionTest extends TestCase
         $three = McpToolsetSelection::progressive()->enable(['time', 'billing', 'projects']);
 
         $this->assertSame(['time', 'projects'], $three->disable(['billing'])->enabled);
+        $this->assertFalse($three->disable(['billing'])->all);
+        $this->assertFalse($three->enable(['tasks'])->all);
         $this->assertSame([0, 1], array_keys($three->disable(['time'])->enabled));
         $this->assertSame(['projects'], $three->disable(['billing', 'time', 'unknown'])->enabled);
         $this->assertSame(['time', 'billing', 'projects'], $three->disable(['tasks'])->enabled);

@@ -89,7 +89,7 @@ final class McpToolsetsTest extends TestCase
             'billing:write' => 'Write invoices',
             'billing:read' => 'Read invoices',
             'billing:deliver' => 'Send invoices',
-            'billing' => 'Not a scope of the group',
+            'projects' => 'Not a scope of the group',
             'projects:write' => 'Create projects',
             'projects:deliver' => 'Deliver projects',
             'tasks:read' => 'Read tasks',

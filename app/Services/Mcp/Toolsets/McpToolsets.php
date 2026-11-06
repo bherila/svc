@@ -64,16 +64,16 @@ final readonly class McpToolsets
         $toolsByToolset = [];
         $toolsetByTool = [];
         foreach ($scopesByTool as $tool => $scopes) {
-            $toolset = self::toolsetFor((string) $tool, $scopes);
-            $toolsByToolset[$toolset][] = (string) $tool;
-            $toolsetByTool[(string) $tool] = $toolset;
+            $toolset = self::toolsetFor($tool, $scopes);
+            $toolsByToolset[$toolset][] = $tool;
+            $toolsetByTool[$tool] = $toolset;
         }
         ksort($toolsByToolset);
         $descriptions = [];
         foreach ($toolsByToolset as $toolset => $tools) {
             sort($tools);
             $toolsByToolset[$toolset] = $tools;
-            $descriptions[$toolset] = self::describe((string) $toolset, $scopeDescriptions);
+            $descriptions[$toolset] = self::describe($toolset, $scopeDescriptions);
         }
 
         return new self($toolsByToolset, $toolsetByTool, $descriptions);
@@ -106,7 +106,7 @@ final readonly class McpToolsets
     /** @return list<string> */
     public function names(): array
     {
-        return array_map('strval', array_keys($this->toolsByToolset));
+        return array_keys($this->toolsByToolset);
     }
 
     public function has(string $toolset): bool
@@ -140,10 +140,10 @@ final readonly class McpToolsets
         $report = [];
         foreach ($this->toolsByToolset as $toolset => $tools) {
             $report[] = [
-                'name' => (string) $toolset,
+                'name' => $toolset,
                 'description' => $this->descriptions[$toolset],
                 'tool_count' => count($tools),
-                'enabled' => $selection->includes((string) $toolset),
+                'enabled' => $selection->includes($toolset),
             ];
         }
 
@@ -160,7 +160,7 @@ final readonly class McpToolsets
             return $scopeDescriptions[$toolset.':read'];
         }
         foreach ($scopeDescriptions as $scope => $description) {
-            if (str_starts_with((string) $scope, $toolset.':')) {
+            if (str_starts_with($scope, $toolset.':')) {
                 return $description;
             }
         }

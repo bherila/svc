@@ -34,7 +34,7 @@ final class McpToolPage
 
         return [
             'names' => array_slice($names, $offset, $limit),
-            'next' => $next < count($names) ? base64_encode((string) $next) : null,
+            'next' => $next < count($names) ? base64_encode(sprintf('%d', $next)) : null,
         ];
     }
 }

@@ -56,9 +56,7 @@ final readonly class McpToolsetSelection
         if ($stored === null) {
             return self::everything();
         }
-        if (! is_array($stored)) {
-            return self::progressive();
-        }
+        $stored = is_array($stored) ? $stored : [];
         if (($stored['all'] ?? false) === true) {
             return self::everything();
         }
