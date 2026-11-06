@@ -38,6 +38,7 @@ final class WorkspaceNavigation
         public readonly ?WorkspaceDestinations $workspaceDestinations = null,
         public readonly ?string $taskLabelsHref = null,
         public readonly ?string $operationsHref = null,
+        public readonly ?string $paymentsHref = null,
     ) {}
 
     /** The option the viewer is standing in, or null outside one. */
@@ -67,6 +68,7 @@ final class WorkspaceNavigation
      *     workspace_destinations: array{dashboard: string|null, clients: string|null, invoices: string|null, time: string|null, finance: string|null}|null,
      *     task_labels_href: string|null,
      *     operations_href: string|null,
+     *     payments_href: string|null,
      * }
      */
     public function toArray(): array
@@ -88,6 +90,7 @@ final class WorkspaceNavigation
             'workspace_destinations' => $this->workspaceDestinations?->toArray(),
             'task_labels_href' => $this->taskLabelsHref,
             'operations_href' => $this->operationsHref,
+            'payments_href' => $this->paymentsHref,
         ];
     }
 }

@@ -299,6 +299,8 @@ final class DateColumnBoundaryTest extends TestCase
             // Split from the replay's invoice key, whose period is built from
             // `toDateString()` or '?' in `key()`; '?' and '' are skipped.
             'app/Console/Commands/Billing/ReplayInvoicesCommand.php' => ['$periodStart', '$periodEnd'],
+            // bounds() returns `Y-m-01` and `date('Y-m-t')` for a validated `Y-m` month.
+            'app/Support/Revenue/ServiceMonth.php' => ['$first', '$last'],
             // `$upTo?->toDateString()`, taken before the query.
             'app/Services/Billing/DeferredBillingAllocator.php' => ['$upToDate'],
             // filters() validates both bounds with date_format:Y-m-d.

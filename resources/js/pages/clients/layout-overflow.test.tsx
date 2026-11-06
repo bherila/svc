@@ -12,6 +12,7 @@ import ClientTasks from '@/pages/clients/tasks';
 import Operations from '@/pages/operations';
 import Dashboard from '@/pages/workspaces/dashboard';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
+import { dashboardRevenue } from '@/test/revenue-fixtures';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { clientOption, workspaceNavigation } from '@/test/workspace-navigation';
 
@@ -135,7 +136,7 @@ describe('client screens under data that does not fit', () => {
             <Dashboard
                 workspace={{ id: 'synthetic-workspace', name: 'Synthetic' }}
                 audience="workspace"
-                revenue={{ slot: 'revenue' }}
+                revenue={dashboardRevenue()}
                 queue={[
                     {
                         id: 'overdue-1',

@@ -111,6 +111,14 @@ export function AccountMenu({
                         Operations (classic tools)
                     </DropdownMenuItem>
                 )}
+                {navigation?.payments_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.payments_href} />}
+                        data-test="account-payments"
+                    >
+                        Payments
+                    </DropdownMenuItem>
+                )}
                 {navigation?.task_labels_href && (
                     <DropdownMenuItem
                         render={<Link href={navigation.task_labels_href} />}

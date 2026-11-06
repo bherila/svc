@@ -8,6 +8,8 @@ import {
     FilePenLineIcon,
     FileSignatureIcon,
 } from 'lucide-react';
+import { AtRiskList } from '@/components/revenue/at-risk-list';
+import { RevenueSection } from '@/components/revenue/revenue-section';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDurationStyle } from '@/hooks/use-duration-style';
 import WorkspaceShell from '@/layouts/workspace-shell';
@@ -17,6 +19,7 @@ import type { DurationStyle } from '@/lib/duration';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { cn } from '@/lib/utils';
+import type { DashboardRevenue } from '@/types/revenue';
 
 export type QueueKind =
     | 'overdue_invoice'
@@ -47,9 +50,9 @@ export type DashboardProps = {
     queue: QueueRow[];
     /**
      * Present for owners and admins only - the key is absent, not null, for
-     * anyone else. The revenue lane mounts the KPI strip and chart here.
+     * anyone else, so a member's page has no figure and nothing to hide.
      */
-    revenue?: { slot: 'revenue' };
+    revenue?: DashboardRevenue;
 };
 
 const ICONS = {
@@ -119,18 +122,22 @@ export default function Dashboard({
                     Dashboard
                 </h1>
 
-                {/*
-                 * REVENUE SLOT. The revenue lane mounts the KPI strip and the
-                 * revenue chart here, above the queue. The server sends the
-                 * `revenue` prop to owners and admins only, so a member's page
-                 * has no slot and nothing to fill it with.
-                 */}
                 {revenue !== undefined && (
-                    <section
-                        aria-label="Revenue"
-                        data-slot="revenue-slot"
-                        className="min-w-0"
-                    />
+                    <>
+                        <RevenueSection
+                            variant="workspace"
+                            only="revenue"
+                            toggleHref={revenue.toggle_href}
+                            filters={revenue.filters}
+                            assumptions={revenue.assumptions}
+                            kpis={revenue.kpis}
+                            months={revenue.months}
+                        />
+                        <AtRiskList
+                            atRisk={revenue.at_risk}
+                            currency={revenue.assumptions.currency}
+                        />
+                    </>
                 )}
 
                 <Card>

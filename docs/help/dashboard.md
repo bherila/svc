@@ -4,7 +4,7 @@ audience: [operator]
 routes: [workspaces.dashboard]
 terms: []
 ---
-The dashboard is where a workspace starts. It lists what needs you now, newest trouble first.
+The dashboard is where a workspace starts. Owners and admins see the money first (see [revenue overview](help:revenue-overview)), then a list of what needs you now, newest trouble first. Other members see only their own work.
 
 ## What needs you
 

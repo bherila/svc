@@ -218,6 +218,16 @@ For payment reminders, dispatch with `reminder_layout: true`: its
 oversized recipients and reasons, the send confirmation, and the client cadence
 switch on settings. Locally, `node scripts/check-layout.mjs --reminders`.
 
+For the Dashboard, client roster and client overview, run
+`node scripts/check-layout.mjs --revenue`. It seeds seven clients with unbroken
+names, agreements whose titles have no break, millions-priced invoices and
+agreements ending inside the projection window, waits for the lazy chart and
+the deferred retainer meters, and captures each screen at every required width
+with the chart's table open, the Collected basis chosen, and the roster
+searched. The build fetches fonts, so build first with the proxy's CA
+(`NODE_EXTRA_CA_CERTS`) and pass `--skip-build` where the harness's own
+sanitized build environment cannot reach the network.
+
 For the deferred backlog on the operator agreement page (#366), run
 `node scripts/check-layout.mjs --deferred-backlog`. It seeds a separate
 synthetic client with an unbroken name, an agreement whose title has no break,

@@ -33,12 +33,7 @@ final class AgreementLedgerRepository
      */
     public function inForce(Workspace $workspace, ProjectionInputs $inputs): array
     {
-        $ids = [];
-        foreach ($inputs->agreements as $agreement) {
-            if ($agreement->billsOnARecurringCadence() && $agreement->isInForceOn($inputs->asOf)) {
-                $ids[] = $agreement->id;
-            }
-        }
+        $ids = $this->inForceIds($inputs);
         if ($ids === []) {
             return [];
         }
@@ -66,5 +61,32 @@ final class AgreementLedgerRepository
         }
 
         return $ledgers;
+    }
+
+    /**
+     * The agreements in force with no ledger read: each is "unreadable", which
+     * is enough for everything that does not need hours (an agreement ending
+     * soon, say) and costs no query. A screen that shows retainer hours asks
+     * {@see self::inForce()} later, off the first paint, because that read
+     * costs the builder's own queries once per agreement.
+     *
+     * @return array<int, null> by agreement id
+     */
+    public function unread(ProjectionInputs $inputs): array
+    {
+        return array_fill_keys($this->inForceIds($inputs), null);
+    }
+
+    /** @return list<int> */
+    private function inForceIds(ProjectionInputs $inputs): array
+    {
+        $ids = [];
+        foreach ($inputs->agreements as $agreement) {
+            if ($agreement->billsOnARecurringCadence() && $agreement->isInForceOn($inputs->asOf)) {
+                $ids[] = $agreement->id;
+            }
+        }
+
+        return $ids;
     }
 }

@@ -109,14 +109,14 @@ class WorkspaceDashboardTest extends TestCase
         ]);
     }
 
-    public function test_an_owner_sees_the_whole_action_queue_and_the_revenue_slot(): void
+    public function test_an_owner_sees_the_whole_action_queue_and_the_revenue_overview(): void
     {
         $this->seedQueue();
 
         $this->actingAs($this->owner)->get($this->path())->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('workspaces/dashboard')
             ->where('audience', 'workspace')
-            ->where('revenue.slot', 'revenue')
+            ->has('revenue.kpis')
             ->has('queue', 5)
             ->where('queue.0.kind', 'overdue_invoice')
             ->where('queue.0.title', 'Invoice SYN-OVERDUE')
@@ -286,6 +286,22 @@ class WorkspaceDashboardTest extends TestCase
         foreach (['invoices', 'time', 'finance'] as $tab) {
             $this->assertNull($member[$tab], $tab);
         }
+    }
+
+    public function test_the_payments_link_is_a_finished_url_for_managers_only(): void
+    {
+        $payments = fn (User $user) => $this->actingAs($user)->get($this->path())->assertOk()->viewData('page')['props']['workspaceNavigation']['payments_href'];
+
+        $this->assertSame("/workspaces/{$this->workspace->public_id}/payments", $payments($this->owner));
+        $this->assertNull($payments($this->member));
+
+        $admin = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
+        $this->assertSame("/workspaces/{$this->workspace->public_id}/payments", $payments($admin));
+
+        // The link is only a link: the page it opens authorizes again.
+        $this->actingAs($this->member)->get("/workspaces/{$this->workspace->public_id}/payments")->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('canManage', false));
     }
 
     public function test_the_client_tier_offers_agreements_and_files_to_managers_only(): void
