@@ -1142,6 +1142,7 @@ try {
                       ? [
                             'invoice',
                             'operations',
+                            'client_invoices',
                             'draft_time',
                             'time',
                             'draft_invoice',
@@ -1167,7 +1168,7 @@ try {
                                           'draft_time',
                                       ]
                                     : engagementOnly
-                                      ? ['operations', 'agreement']
+                                      ? ['client_agreements', 'agreement']
                                       : disputesOnly
                                         ? ['invoice', 'square_portal']
                                         : taskLookupsOnly
@@ -1224,6 +1225,8 @@ try {
                                                                   'proposal',
                                                                   'proposal_acceptance',
                                                                   'operations',
+                                                                  'client_agreements',
+                                                                  'client_invoices',
                                                                   'dashboard',
                                                                   'workspace_clients',
                                                                   'workspace_invoices',
@@ -2405,7 +2408,7 @@ try {
                         }),
                         page.getByLabel('Reference', { exact: true }),
                     );
-                } else if (screen === 'operations') {
+                } else if (screen === 'client_invoices') {
                     const draft = page
                         .getByRole('form', { name: 'Draft invoice' })
                         .first();
@@ -2431,6 +2434,7 @@ try {
                             exact: true,
                         }),
                     );
+                } else if (screen === 'operations') {
                     const payment = page
                         .locator('form')
                         .filter({
@@ -2573,7 +2577,7 @@ try {
                 continue;
             }
 
-            if (engagementOnly && screen === 'operations') {
+            if (engagementOnly && screen === 'client_agreements') {
                 await page
                     .getByLabel('Proposal title', { exact: true })
                     .first()

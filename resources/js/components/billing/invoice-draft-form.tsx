@@ -127,6 +127,7 @@ function InvoiceDraft({
                 disabled={mutation.locked}
                 className={inputClass}
                 placeholder="Invoice number"
+                aria-label="Invoice number"
                 value={form.data.invoice_number}
                 onChange={(event) =>
                     form.setData('invoice_number', event.target.value)
@@ -137,6 +138,7 @@ function InvoiceDraft({
                 disabled={mutation.locked}
                 className={inputClass}
                 type="date"
+                aria-label="Due date"
                 value={form.data.due_date}
                 onChange={(event) =>
                     form.setData('due_date', event.target.value)
@@ -146,6 +148,7 @@ function InvoiceDraft({
                 disabled={mutation.locked}
                 className={`${inputClass} md:col-span-2`}
                 placeholder="Line description"
+                aria-label="Line description"
                 value={form.data.description}
                 onChange={(event) =>
                     form.setData('description', event.target.value)
@@ -159,6 +162,7 @@ function InvoiceDraft({
                 min="0"
                 step="0.01"
                 placeholder="Unit price"
+                aria-label="Unit price"
                 value={form.data.unit_price}
                 onChange={(event) =>
                     form.setData('unit_price', event.target.value)
