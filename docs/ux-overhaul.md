@@ -442,6 +442,71 @@ Decided on the design canvas (2026-11-06):
   their own cadence. Projected overage covers additional hours only; expenses
   are never projected.
 
+## 10. One invoice document: screen, PDF and proforma
+
+Today the operator invoice page (`resources/js/pages/clients/invoice.tsx`),
+the portal invoice page and the PDF (`resources/views/invoices/show.blade.php`
+through `InvoiceDocumentService` and Dompdf) are separate implementations of
+the same document. They become one:
+
+- **`InvoiceDocument`**: an immutable DTO built by one tenant-scoped read and
+  parameterised by audience (`InvoiceLineDetail::OPERATOR` or `CLIENT`). It is
+  built from an issued invoice, a draft, or a proforma preview (the
+  `invoices.preview_period` path). The screen gets it as JSON; the PDF Blade
+  view renders the same DTO.
+- **Grouping** maps every `InvoiceLineType` to a section with an exhaustive
+  `match` and no default arm:
+  - **Time:** retainer, prior-month retainer, work within retainer,
+    additional hours, prior-month billable, subcontractor;
+  - **Recurring services;**
+  - **Expenses;**
+  - **Deferred work:** carried deferred applied, carried deferred billed,
+    deferred buy-down;
+  - **Adjustments and credits:** credit, adjustment, reconciliation,
+    milestone.
+- **Screen**: the document is shown as the document itself (the PDF's page
+  component), with an action rail beside it: payment state, hours approval,
+  receipts, activity. Portal: the same document, with Pay and approve or
+  dispute hours in its rail.
+- **PDF**: stays on Dompdf, so layout uses tables rather than flex. The cover
+  page holds the totals and the pay link. Following pages hold the hours
+  statement, still deferred, appendix A (time entries) and appendix B
+  (receipts).
+
+### Detail that must survive the rewrite
+
+Nothing about rollover and deferred work is simplified, whatever the mockups
+show. Before the old template is deleted, golden tests render every one of
+these, from the existing fixtures, in both the old and the new document and
+compare the figures:
+
+- **The hours statement is the stored `InvoiceHoursStatement` snapshot**,
+  frozen at issue and never recomputed at render, with every section that
+  `InvoiceHoursStatementRows` produces today:
+  - **Opening pool:** retainer, rollover, deficit and expired hours, and hours
+    expired within the period;
+  - **Work reconciled on this invoice:** ordinary hours applied to the work
+    pool or to the next retainer, billed at rate, subcontractor, deferred
+    applied (with entry count), re-carried settled, deferred billed on
+    termination;
+  - **Catch-up billed at the hourly rate:** catch-up, minimum availability and
+    its threshold, interim billing;
+  - **Carried forward:** rolled forward, expiring, deficit carried forward,
+    deferred backlog (hours and entries), re-carried remaining;
+  - **Closing position:** next retainer hours;
+  - **Pool position**, for a pool sold on an earlier invoice (`retainerSoldBy`,
+    pool remaining, available before);
+  - **The correction variants** of each of these sections.
+- **"Still deferred"**: the deferred backlog, shown to clients only where the
+  agreement's `show_deferred_backlog_to_client` allows.
+- **Appendix A**: time entries per line, with the audience-based detail from
+  `InvoiceLineDetail` (internal notes never reach the client audience) and
+  the generic-label notice.
+- **Reissue and correction notices**, and the corrections history.
+- **The proforma** builds its statement the way the generator does (the same
+  allocation plan and capacity ledger), so the preview and the issued invoice
+  can't disagree.
+
 ## Delivery slices (stacked commits, one PR)
 
 0. **Help scaffolding** (section 8): the `docs/help` loader, glossary,
@@ -464,6 +529,9 @@ Decided on the design canvas (2026-11-06):
    and comments, local linked projects.
 10. **Reviewer grants and the cross-workspace approval queue** (7c, 7d).
 11. **Light workspace and approved timesheet** (7e).
+12. **Invoice document** (section 10): `InvoiceDocument` DTO and grouping, the
+    golden tests against the current template, then the new PDF, operator page,
+    portal page and proforma.
 
 ## Settled answers
 
