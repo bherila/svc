@@ -748,6 +748,7 @@ if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
     $stripeRow = $connections->connect($stripeWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
         'external_account_id' => 'acct_synthetic', 'display_name' => str_repeat('SyntheticBusinessNameWithoutBreaks', 6), 'environment' => 'live',
         'secret' => 'rk_live_'.str_repeat('synthetic', 6).'a1b2', 'webhook_secret' => 'whsec_synthetic',
+        'publishable_key' => 'pk_live_'.str_repeat('Synthetic', 20),
     ]);
     $connections->connect($squareWorkspace, PaymentProcessor::Square, ConnectionOrigin::Entered, $owner, [
         'external_account_id' => 'MERCHANT_SYNTHETIC', 'display_name' => str_repeat('SyntheticSquareBusinessWithoutBreaks', 5), 'environment' => 'production',

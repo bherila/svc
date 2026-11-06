@@ -613,6 +613,9 @@ try {
                 await expect(
                     page.locator('[data-test="payment-stripe-hint"]'),
                 ).toHaveText('rk_live_…a1b2');
+                await expect(
+                    page.locator('[data-test="payment-stripe-publishable"]'),
+                ).toHaveText(`pk_live_${'Synthetic'.repeat(20)}`);
             } else if (state === 'square-connected') {
                 await expect(
                     page.locator('[data-test="payment-square-hint"]'),
