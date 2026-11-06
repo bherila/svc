@@ -4,6 +4,7 @@ namespace Tests;
 
 use App\Models\AgentPrincipal;
 use App\Models\User;
+use App\Services\Mcp\Toolsets\McpToolsetSelection;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Str;
@@ -24,6 +25,14 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutVite();
+        // Progressive discovery is the default for every real client, so a test
+        // that connects to MCP would see only the core tools. Most tests are about
+        // what the authorized surface contains, not how it is revealed, so they
+        // connect the way a client that opts into the full list does. The tests
+        // of progressive discovery itself connect with `McpToolsetSelection::progressive`
+        // (see CallsMcp::progressiveHeaders()); this header is ignored by every
+        // request but an MCP initialize.
+        $this->withHeader(McpToolsetSelection::CONNECT_HEADER, 'all');
         // A locally built SSR bundle must not turn a backend test into an HTTP
         // call to the renderer. CI and a clean checkout have no such bundle.
         config(['inertia.ssr.enabled' => false]);

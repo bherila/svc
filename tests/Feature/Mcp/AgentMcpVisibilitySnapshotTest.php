@@ -9,6 +9,7 @@ use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentPrivacyLatch;
+use App\Services\Mcp\Toolsets\McpToolsetSelection;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -25,6 +26,10 @@ use Tests\TestCase;
  * schemas, annotations and security schemes, the same resources and prompts,
  * and the same withheld-tool reasons in context, for every principal, scope
  * set and deployment state below. A connector must not notice the switch.
+ *
+ * Each observation also records what the default, progressive discovery,
+ * shows: the core tools and the size of every toolset. Everything else is
+ * observed as a client that asks for the full list.
  *
  * Regenerate with SVC_UPDATE_MCP_VISIBILITY_SNAPSHOT=1, only for an intended
  * change recorded in the PR that makes it.
@@ -177,6 +182,10 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         $tools = $this->listTools($session);
         usort($tools, static fn (array $a, array $b): int => $a['name'] <=> $b['name']);
         $observed['tools'] = $full ? $tools : $this->digests($tools, 'name');
+        // The default for every client that does not ask for the full list: the
+        // core tools and, per toolset, how many tools enabling it reveals. The
+        // core set plus every toolset is the list above.
+        $observed['progressive'] = $this->progressive();
         foreach (['resources/list' => 'resources', 'resources/templates/list' => 'resourceTemplates', 'prompts/list' => 'prompts'] as $method => $key) {
             $response = $this->mcp(['jsonrpc' => '2.0', 'id' => 3, 'method' => $method, 'params' => []], $session);
             $items = $response->json('result.'.$key);
@@ -190,6 +199,28 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         }
 
         return $observed;
+    }
+
+    /** @return array<string, mixed> */
+    private function progressive(): array
+    {
+        $initialize = $this->mcp($this->initializeMessage(), headers: [McpToolsetSelection::CONNECT_HEADER => 'progressive'])->assertOk();
+        $session = (string) $initialize->headers->get('Mcp-Session-Id');
+        $core = $this->toolNames($session);
+        sort($core);
+        $toolsets = [];
+        if (in_array('toolsets.list', $core, true)) {
+            $result = $this->mcp(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'tools/call', 'params' => ['name' => 'toolsets.list', 'arguments' => new \stdClass]], $session)->assertOk();
+            foreach ((array) $result->json('result.structuredContent.data.toolsets') as $toolset) {
+                $toolsets[$toolset['name']] = $toolset['tool_count'];
+            }
+        }
+
+        return [
+            'list_changed' => $initialize->json('result.capabilities.tools.listChanged'),
+            'core_tools' => $core,
+            'toolsets' => $toolsets,
+        ];
     }
 
     /**
