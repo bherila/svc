@@ -3,7 +3,6 @@
 namespace Tests\Feature\Submission;
 
 use App\Models\ClientCompanyMembership;
-use App\Models\ClientExpense;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
