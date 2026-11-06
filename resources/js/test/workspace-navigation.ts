@@ -69,6 +69,7 @@ export function workspaceNavigation(
         },
         task_labels_href: '/workspaces/workspace-1/task-labels',
         operations_href: '/workspaces/workspace-1/operations',
+        payments_href: '/workspaces/workspace-1/payments',
         ...overrides,
     };
 }

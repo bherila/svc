@@ -45,6 +45,57 @@ final class RevenueReadService
         return $this->summaries->summary($this->actuals->load($workspace, $assumptions->asOf), $inputs, $projection, $assumptions, $clientId)->toArray();
     }
 
+    /**
+     * What the dashboard prints: the key figures and the chart's months from
+     * one load of the inputs, so the two cannot disagree and the page costs
+     * one read of each repository rather than one per figure.
+     *
+     * @return array{summary: array<string, mixed>, months: list<array<string, mixed>>}
+     */
+    public function dashboard(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query): array
+    {
+        [$assumptions, $clientId] = $this->context($user, $workspace, $query);
+        $inputs = $this->projectionInputs->load($workspace, $assumptions->asOf);
+        $actuals = $this->actuals->load($workspace, $assumptions->asOf);
+        $projection = $this->projector->project($inputs);
+
+        return [
+            'summary' => $this->summaries->summary($actuals, $inputs, $projection, $assumptions, $clientId)->toArray(),
+            'months' => $this->summaries->monthly($actuals, $projection, $assumptions, RevenueSummaries::BAND_ALL, $clientId),
+        ];
+    }
+
+    /**
+     * One client's overview (docs/ux-overhaul.md section 4): its key figures,
+     * its 24-month chart, each agreement's projection and its roster row
+     * (MRR and retainer health), from one load of the inputs. The query must
+     * name the client; a client of another workspace is not found.
+     *
+     * @return array{summary: array<string, mixed>, months: list<array<string, mixed>>, agreements: list<array<string, mixed>>, client: array<string, mixed>|null}
+     */
+    public function clientOverview(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query, bool $withLedgers = true): array
+    {
+        [$assumptions, $clientId] = $this->context($user, $workspace, $query);
+        if ($clientId === null) {
+            throw (new ModelNotFoundException)->setModel(ClientCompany::class);
+        }
+        $inputs = $this->projectionInputs->load($workspace, $assumptions->asOf)->forClient($clientId);
+        $actuals = $this->actuals->load($workspace, $assumptions->asOf);
+        $projection = $this->projector->project($inputs);
+        $roster = $this->summaries->clients($actuals->forClient($clientId), $inputs, $assumptions, $withLedgers ? $this->ledgers->inForce($workspace, $inputs) : $this->ledgers->unread($inputs));
+        $row = $roster['clients'][0] ?? null;
+
+        return [
+            'summary' => $this->summaries->summary($actuals, $inputs, $projection, $assumptions, $clientId)->toArray(),
+            'months' => $this->summaries->monthly($actuals, $projection, $assumptions, RevenueSummaries::BAND_ALL, $clientId),
+            'agreements' => array_map(
+                static fn (AgreementProjection $agreement): array => $agreement->toArray($assumptions->includeProjectedOverage),
+                $projection->agreements,
+            ),
+            'client' => $row instanceof ClientRevenue ? $row->toArray() : null,
+        ];
+    }
+
     /** @return array{assumptions: array<string, mixed>, months: list<array<string, mixed>>} */
     public function monthly(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query): array
     {
@@ -76,7 +127,7 @@ final class RevenueReadService
     }
 
     /** @return array{assumptions: array<string, mixed>, clients: list<array<string, mixed>>, totals: array<string, int>} */
-    public function clients(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query): array
+    public function clients(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query, bool $withLedgers = true): array
     {
         [$assumptions, $clientId] = $this->context($user, $workspace, $query);
         $inputs = $this->projectionInputs->load($workspace, $assumptions->asOf);
@@ -85,7 +136,7 @@ final class RevenueReadService
             $inputs = $inputs->forClient($clientId);
             $actuals = $actuals->forClient($clientId);
         }
-        $roster = $this->summaries->clients($actuals, $inputs, $assumptions, $this->ledgers->inForce($workspace, $inputs));
+        $roster = $this->summaries->clients($actuals, $inputs, $assumptions, $withLedgers ? $this->ledgers->inForce($workspace, $inputs) : $this->ledgers->unread($inputs));
 
         return [
             'assumptions' => $assumptions->toArray(),
