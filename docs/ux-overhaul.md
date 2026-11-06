@@ -400,10 +400,19 @@ invoicing in SVC are off until they turn them on. They see "My work" (section
 
 ## Open questions
 
-1. **Who creates Other Eng's workspace?** Does Herila invite them (creating
-   a light workspace on their first sign-in), or do they sign up themselves?
-2. **Does a client approval period end on the calendar month for every
-   vendor**, or follow each agreement's billing cadence?
-3. **Hosting handover**: if Herila leaves the vetvet engagement, does the
-   shared project pass to another participant, or to vetvet (which would need
-   vetvet to have a workspace of its own)?
+None. Answered on 2026-11-06:
+
+1. **Onboarding is by invitation.** The host invites a contractor by email to
+   a shared project. Accepting the invitation (through the shared identity
+   provider) creates their light workspace, with the invitee as owner, and
+   joins it to the shared project as a participant in the same transaction.
+   An invitation is single-use, expires, and can be revoked before it is
+   accepted. A person who already owns a workspace picks which of their
+   workspaces joins.
+2. **Client approval periods are calendar months** for every vendor,
+   whatever the agreement's billing cadence. Submitting, reviewing and
+   approving all work in calendar-month periods.
+3. **Handover is chosen when the host leaves.** Leaving a shared project as
+   host requires naming the new host, either a participant workspace or a
+   client-owned workspace created for the purpose. The project can't be left
+   without a host. Until a handover happens, nothing about hosting changes.
