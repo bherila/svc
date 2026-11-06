@@ -2,6 +2,8 @@
 
 namespace App\Services\SharedProjects;
 
+use App\Actions\CreateWorkspace;
+use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProjectParticipation;
 use App\Models\ClientProjectParticipationInvitation;
@@ -9,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTaskAssignment;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspaceMembership;
 use App\Services\Access\AccessAuditLog;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\Access\AccessAuditAction;
@@ -18,10 +21,12 @@ use App\Support\Concurrency\Locks;
 use App\Support\SharedProjects\InvitationState;
 use App\Support\SharedProjects\InviteeAddress;
 use App\Support\WorkspaceClock;
+use App\Support\Workspaces\WorkspaceEdition;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -51,6 +56,7 @@ final class SharedProjectParticipations
         private readonly SharedProjectAccess $access,
         private readonly ProjectAccess $roles,
         private readonly AccessAuditLog $audit,
+        private readonly CreateWorkspace $createWorkspace,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -156,27 +162,107 @@ final class SharedProjectParticipations
                 throw ValidationException::withMessages(['workspace' => 'That workspace already takes part in this project.']);
             }
 
-            $participation = new ClientProjectParticipation;
-            $participation->forceFill([
-                'host_workspace_id' => $locked->id,
-                'client_project_id' => $project->id,
-                'participant_workspace_id' => $participant->id,
-                'invitation_id' => $current->id,
-                'granted_by_user_id' => $current->invited_by_user_id,
-                'granted_at' => $current->created_at,
-                'accepted_by_user_id' => $actor->id,
-                'accepted_at' => $now,
-                'active_marker' => 1,
-            ])->save();
-            $current->forceFill(['accepted_at' => $now, 'resolved_by_user_id' => $actor->id])->save();
-
-            $context = AccessMutationContext::user($actor);
-            $after = ['participation' => $participation->public_id, 'project' => $project->public_id];
-            $this->audit->record($context, $locked, AccessAuditAction::SharedProjectJoined, $actor, null, $after);
-            $this->audit->record($context, $participant, AccessAuditAction::SharedProjectJoined, $actor, null, $after);
-
-            return $participation;
+            return $this->join($locked, $actor, $current, $project, $participant);
         });
+    }
+
+    /**
+     * Accept an invitation with a workspace made for the occasion: the partner's
+     * light workspace (docs/ux-overhaul.md section 7e).
+     *
+     * For a person who has no workspace of their own to join with - owner or
+     * admin of nothing but the host's - so it is refused for anyone who does:
+     * they choose that one. The workspace is theirs alone, light, with them as
+     * owner. It holds a client the person names, and a local project linked to
+     * the share, and nothing of the host's: not the host's client, rates,
+     * agreements, time or any other record, and not even the client's name,
+     * which the invitation never told them. The participation is the only link.
+     *
+     * @return array{ClientProjectParticipation, Workspace}
+     */
+    public function acceptIntoNewLightWorkspace(User $actor, string $invitationPublicId, string $clientName, ?string $workspaceName = null): array
+    {
+        $invitation = $this->openInvitationFor($actor, $invitationPublicId);
+        abort_if($invitation === null, 404);
+        $input = Validator::make(
+            ['client_name' => trim($clientName), 'workspace_name' => $workspaceName === null ? null : trim($workspaceName)],
+            ['client_name' => ['required', 'string', 'max:120'], 'workspace_name' => ['nullable', 'string', 'max:120']],
+        )->validate();
+
+        return $this->locked($invitation->hostWorkspace, function (Workspace $locked) use ($actor, $invitation, $input): array {
+            $current = ClientProjectParticipationInvitation::query()->where('host_workspace_id', $locked->id)->whereKey($invitation->id)->firstOrFail();
+            $now = $this->clock->now($locked);
+            abort_unless($current->state($now)->isOpen() && InviteeAddress::matches($current->email, $actor->email), 404);
+            $project = ClientProject::query()->where('workspace_id', $locked->id)->whereKey($current->client_project_id)->firstOrFail();
+
+            if ($this->managesAnotherWorkspace($actor, $locked)) {
+                throw ValidationException::withMessages(['workspace' => 'You already have a workspace. Choose which of your workspaces joins.']);
+            }
+
+            $name = $input['workspace_name'] !== null && $input['workspace_name'] !== '' ? $input['workspace_name'] : $this->defaultWorkspaceName($actor);
+            $workspace = $this->createWorkspace->handle($actor, $name);
+            $workspace->forceFill(['edition' => WorkspaceEdition::Light->value])->save();
+
+            $company = new ClientCompany;
+            $company->forceFill(['workspace_id' => $workspace->id, 'name' => $input['client_name'], 'slug' => Str::slug($input['client_name']).'-'.Str::lower(Str::random(5))])->save();
+            $local = new ClientProject;
+            $local->forceFill(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => $project->name, 'is_visible_to_client' => false])->save();
+
+            $participation = $this->join($locked, $actor, $current, $project, $workspace);
+            $local->forceFill(['shared_participation_id' => $participation->id])->save();
+            $context = AccessMutationContext::user($actor);
+            $this->audit->record($context, $workspace, AccessAuditAction::LightWorkspaceCreated, $actor, null,
+                ['participation' => $participation->public_id, 'project' => $project->public_id, 'local_project' => $local->public_id]);
+            $this->audit->record($context, $workspace, AccessAuditAction::SharedProjectLinked, null, null, ['project' => $project->public_id, 'local_project' => $local->public_id]);
+
+            return [$participation, $workspace];
+        });
+    }
+
+    /**
+     * Write the participation and close the invitation, audited in the host and
+     * in the participant. Every caller holds the host's lock.
+     */
+    private function join(Workspace $locked, User $actor, ClientProjectParticipationInvitation $current, ClientProject $project, Workspace $participant): ClientProjectParticipation
+    {
+        $now = $this->clock->now($locked);
+        $participation = new ClientProjectParticipation;
+        $participation->forceFill([
+            'host_workspace_id' => $locked->id,
+            'client_project_id' => $project->id,
+            'participant_workspace_id' => $participant->id,
+            'invitation_id' => $current->id,
+            'granted_by_user_id' => $current->invited_by_user_id,
+            'granted_at' => $current->created_at,
+            'accepted_by_user_id' => $actor->id,
+            'accepted_at' => $now,
+            'active_marker' => 1,
+        ])->save();
+        $current->forceFill(['accepted_at' => $now, 'resolved_by_user_id' => $actor->id])->save();
+
+        $context = AccessMutationContext::user($actor);
+        $after = ['participation' => $participation->public_id, 'project' => $project->public_id];
+        $this->audit->record($context, $locked, AccessAuditAction::SharedProjectJoined, $actor, null, $after);
+        $this->audit->record($context, $participant, AccessAuditAction::SharedProjectJoined, $actor, null, $after);
+
+        return $participation;
+    }
+
+    /** Does the person own or administer a workspace other than the host's? */
+    private function managesAnotherWorkspace(User $actor, Workspace $host): bool
+    {
+        return WorkspaceMembership::query()
+            ->where('user_id', $actor->id)
+            ->whereIn('role', [StaffRole::Owner->value, StaffRole::Admin->value])
+            ->where('workspace_id', '!=', $host->id)
+            ->exists();
+    }
+
+    private function defaultWorkspaceName(User $actor): string
+    {
+        $name = trim($actor->name);
+
+        return $name === '' ? 'My workspace' : mb_substr($name, 0, 100).' (partner)';
     }
 
     public function decline(User $actor, string $invitationPublicId): ClientProjectParticipationInvitation

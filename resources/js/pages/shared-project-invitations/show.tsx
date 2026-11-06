@@ -3,6 +3,7 @@ import { CheckIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -28,6 +29,7 @@ import type { SharedInvitationProps } from '@/types/shared-projects';
 export default function SharedProjectInvitation({
     invitation,
     workspaces,
+    creates_light_workspace: createsLightWorkspace,
     accept_url: acceptUrl,
     decline_url: declineUrl,
     workspaces_url: workspacesUrl,
@@ -35,6 +37,8 @@ export default function SharedProjectInvitation({
     const [workspaceId, setWorkspaceId] = useState<string>(
         workspaces[0]?.id ?? '',
     );
+    const [clientName, setClientName] = useState('');
+    const [workspaceName, setWorkspaceName] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const items = workspaces.map((workspace) => ({
@@ -53,11 +57,24 @@ export default function SharedProjectInvitation({
         const result = await apiRequest<{ redirect_url: string }>(
             'POST',
             accept ? acceptUrl : declineUrl,
-            accept ? { workspace_id: workspaceId } : {},
+            accept
+                ? createsLightWorkspace
+                    ? {
+                          client_name: clientName,
+                          ...(workspaceName.trim() === ''
+                              ? {}
+                              : { workspace_name: workspaceName }),
+                      }
+                    : { workspace_id: workspaceId }
+                : {},
         );
 
         if (!result.ok) {
-            setError(result.errors?.workspace?.[0] ?? result.message);
+            setError(
+                result.errors?.workspace?.[0] ??
+                    result.errors?.client_name?.[0] ??
+                    result.message,
+            );
             setBusy(false);
 
             return;
@@ -92,7 +109,47 @@ export default function SharedProjectInvitation({
                                 The invitation expires{' '}
                                 {formatTimestampDate(invitation.expires_at)}.
                             </p>
-                            {workspaces.length === 0 ? (
+                            {createsLightWorkspace ? (
+                                <div className="grid grid-cols-1 gap-4">
+                                    <p className="text-sm">
+                                        You have no workspace of your own yet,
+                                        so joining sets one up for you: a light
+                                        workspace to log time, submit it for
+                                        review and keep your approved
+                                        timesheet. It starts empty. Nothing of{' '}
+                                        {invitation.host_workspace_name}’s is
+                                        copied into it.
+                                    </p>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="join-client-name">
+                                            The client you bill for this work
+                                        </Label>
+                                        <Input
+                                            id="join-client-name"
+                                            value={clientName}
+                                            maxLength={120}
+                                            onChange={(event) =>
+                                                setClientName(event.target.value)
+                                            }
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="join-workspace-name">
+                                            Name your workspace (optional)
+                                        </Label>
+                                        <Input
+                                            id="join-workspace-name"
+                                            value={workspaceName}
+                                            maxLength={120}
+                                            onChange={(event) =>
+                                                setWorkspaceName(
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            ) : workspaces.length === 0 ? (
                                 <p className="text-sm">
                                     Only an owner or admin of a workspace can
                                     accept. You are not one for any workspace
@@ -146,7 +203,12 @@ export default function SharedProjectInvitation({
                                     Decline
                                 </Button>
                                 <Button
-                                    disabled={busy || workspaceId === ''}
+                                    disabled={
+                                        busy ||
+                                        (createsLightWorkspace
+                                            ? clientName.trim() === ''
+                                            : workspaceId === '')
+                                    }
                                     onClick={() => void respond(true)}
                                 >
                                     <CheckIcon aria-hidden />

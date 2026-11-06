@@ -125,6 +125,7 @@ function props(overrides: Partial<MyWorkProps> = {}): MyWorkProps {
                 projects: [],
             },
         },
+        light: null,
         ...overrides,
     };
 }

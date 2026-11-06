@@ -31,7 +31,14 @@ export type ClientModule =
 
 /** The workspace tier's tabs, shown while no client is selected. */
 export type WorkspaceSection =
-    'my_work' | 'dashboard' | 'clients' | 'invoices' | 'time' | 'finance';
+    | 'my_work'
+    | 'dashboard'
+    | 'clients'
+    | 'invoices'
+    | 'time'
+    | 'finance'
+    | 'submissions'
+    | 'timesheet';
 
 /**
  * Finished URLs, generated per viewer after authorization.
@@ -56,8 +63,12 @@ export type ClientModuleDestinations = {
 
 /** The workspace tier, chosen on the server per role; a null is not rendered. */
 export type WorkspaceDestinations = {
-    /** Members who do not run the workspace; null for owners and admins. */
+    /** Members who do not run the workspace, and everyone in a light one; null for owners and admins of a full one. */
     my_work: string | null;
+    /** A light workspace's own hours for the month, to submit. Null in a full one. */
+    submissions: string | null;
+    /** A light workspace's approved timesheet. Null in a full one. */
+    timesheet: string | null;
     dashboard: string | null;
     clients: string | null;
     invoices: string | null;
@@ -110,4 +121,12 @@ export type WorkspaceNavigation = {
     reviewers_href?: string | null;
     /** Everything waiting for this person across providers; null when nothing could be. */
     approvals_href?: string | null;
+    /** The member's own hours and expenses for a month, to submit for review. */
+    submissions_href?: string | null;
+    /** What a reviewer approved of the member's hours, for a month. */
+    timesheet_href?: string | null;
+    /** A partner's light workspace: agreements, invoicing and revenue are off. */
+    light?: boolean;
+    /** Where an owner turns the rest of SVC on; null unless the workspace is light and they manage it. */
+    full_workspace_url?: string | null;
 };

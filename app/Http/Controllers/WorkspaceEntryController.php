@@ -64,6 +64,12 @@ class WorkspaceEntryController extends Controller
 
         $context = $navigation->for($workspace, $user, null);
 
+        // A partner's light workspace opens on "My work" (docs/ux-overhaul.md 7e):
+        // it has no dashboard, and its one client is not where its work is done.
+        if ($context->light && $context->workspaceDestinations?->myWork !== null && ! is_string($request->query('module'))) {
+            return redirect()->to($context->workspaceDestinations->myWork);
+        }
+
         $destination = $this->rememberedClient($request, $workspace, $context)
             ?? $this->clientOnRecord($returnPoint, $user, $workspace, $context)
             ?? $this->onlyClient($context);

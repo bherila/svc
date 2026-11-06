@@ -10,6 +10,7 @@ use App\Models\WorkspaceMembership;
 use App\Services\SharedProjects\SharedProjectParticipations;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 
@@ -39,6 +40,8 @@ final class SharedProjectInvitationController extends Controller
 
         return Inertia::render('shared-project-invitations/show', [
             'invitation' => $this->present($record),
+            // A person with no workspace to join with gets one made when they accept.
+            'creates_light_workspace' => $workspaces->isEmpty(),
             'workspaces' => $workspaces->map(fn (Workspace $workspace): array => ['id' => $workspace->public_id, 'name' => $workspace->name])->values()->all(),
             'accept_url' => route('shared-project-invitations.accept', $record->public_id, absolute: false),
             'decline_url' => route('shared-project-invitations.decline', $record->public_id, absolute: false),
@@ -49,7 +52,22 @@ final class SharedProjectInvitationController extends Controller
     public function accept(Request $request, string $invitation): JsonResponse
     {
         $user = $this->user($request);
-        $input = $request->validate(['workspace_id' => ['required', 'uuid']]);
+        $input = $request->validate([
+            'workspace_id' => ['sometimes', 'uuid'],
+            // Only for a person with no workspace of their own to join with.
+            'client_name' => ['sometimes', 'string', 'max:120'],
+            'workspace_name' => ['sometimes', 'nullable', 'string', 'max:120'],
+        ]);
+
+        if (! isset($input['workspace_id'])) {
+            if (! isset($input['client_name'])) {
+                throw ValidationException::withMessages(['client_name' => 'Name the client you work for on this project.']);
+            }
+            [, $created] = $this->participations->acceptIntoNewLightWorkspace($user, $invitation, $input['client_name'], $input['workspace_name'] ?? null);
+
+            return response()->json(['data' => ['redirect_url' => route('workspaces.my-work', $created, absolute: false)]]);
+        }
+
         $workspace = Workspace::query()->where('public_id', $input['workspace_id'])->first();
         // A workspace the person is not in is not found, the same as one that does not exist.
         abort_unless($workspace !== null && WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->exists(), 404);

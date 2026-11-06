@@ -2383,6 +2383,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/submissions': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The caller's own hours and expenses for one calendar month (period, default the current month), each with its state: draft, submitted, approved or disputed, and whether it can be submitted or withdrawn now. Expenses are listed only to a token that also has expenses:read. Bounded to 500 rows of each kind; truncated says when there are more. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned. */
+        get: operations['submissions.list'];
+        put?: never;
+        /** @description Mark the caller's own draft hours and expenses as submitted for review, so a reviewer or the client sees them without anyone in the caller's workspace approving them. Name a calendar month (period) and every eligible row in it is submitted and the rest are left alone, or name rows (time_entry_ids, expense_ids) and each must be eligible or nothing changes. Submitting approves nothing and changes no status; a submitted row cannot be edited until it is withdrawn. Expenses are included only for a token that also has expenses:write while AGENT_API_EXPENSE_WRITES_ENABLED is on; naming an expense without it is a 403. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned. */
+        post: operations['submissions.submit'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/submissions/withdraw': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Take back the caller's own submissions that nobody has approved yet, removing them from the reviewer's list. Named like submit: a month, or rows that must each be withdrawable. A row already approved, or already marked ready to bill, is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned. */
+        post: operations['submissions.withdraw'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/task-organization': {
         parameters: {
             query?: never;
@@ -2829,6 +2864,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/timesheets/approved': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The approved timesheet for one calendar month (period, default the current month): the hours a reviewer or the client's contact approved, with who worked each, who approved it and how, and the month's total. Draft, merely submitted, disputed and payment-implied rows are never included. An owner or admin reads the workspace's, any other member their own. Bounded to 1000 entries. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned. */
+        get: operations['timesheets.approved'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces': {
         parameters: {
             query?: never;
@@ -3017,6 +3069,32 @@ export interface components {
         };
         ApprovalResponse: {
             data: components['schemas']['ApprovalReceipt'];
+        };
+        ApprovedTimesheetResponse: {
+            data: {
+                period: string;
+                period_label: string;
+                previous_period: string;
+                next_period: string;
+                entries: {
+                    /** Format: uuid */
+                    id: string;
+                    /** Format: date */
+                    worked_on: string;
+                    minutes: number;
+                    description: string;
+                    project: string | null;
+                    task: string | null;
+                    worked_by: string | null;
+                    approved_by: string | null;
+                    /** Format: date-time */
+                    approved_at: string | null;
+                    /** @enum {string} */
+                    approved_via: 'Reviewer' | 'Client' | 'Payment' | 'Unknown';
+                }[];
+                total_minutes: number;
+                truncated: boolean;
+            };
         };
         Attachment: {
             /** Format: uuid */
@@ -6403,6 +6481,72 @@ export interface components {
         StaleInvoiceBalance: {
             currency: components['schemas']['Currency'];
             balance_amount: number;
+        };
+        SubmissionListResponse: {
+            data: {
+                period: string;
+                period_label: string;
+                previous_period: string;
+                next_period: string;
+                time: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    state: 'draft' | 'submitted' | 'approved' | 'disputed';
+                    project: string | null;
+                    dispute_note: string | null;
+                    can_submit: boolean;
+                    why_not: string | null;
+                    can_withdraw: boolean;
+                    /** Format: date */
+                    worked_on: string;
+                    minutes: number;
+                    description: string;
+                    client_description: string | null;
+                }[];
+                expenses: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    state: 'draft' | 'submitted' | 'approved' | 'disputed';
+                    project: string | null;
+                    dispute_note: string | null;
+                    can_submit: boolean;
+                    why_not: string | null;
+                    can_withdraw: boolean;
+                    /** Format: date */
+                    spent_on: string;
+                    description: string;
+                    amount: number;
+                    currency: string;
+                }[];
+                totals: {
+                    draft: number;
+                    submitted: number;
+                    approved: number;
+                    disputed: number;
+                };
+                truncated: boolean;
+            };
+        };
+        SubmissionRequest: {
+            period?: string;
+            /** Format: uuid */
+            project_id?: string;
+            time_entry_ids?: string[];
+            expense_ids?: string[];
+        };
+        SubmissionResultResponse: {
+            data: {
+                items: {
+                    /** @enum {string} */
+                    kind: 'time' | 'expense';
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    state: 'draft' | 'submitted' | 'approved' | 'disputed';
+                }[];
+            };
         };
         Summary: {
             workspace_id: components['schemas']['Uuid'];
@@ -15182,6 +15326,243 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'submissions.list': {
+        parameters: {
+            query?: {
+                period?: string;
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SubmissionListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, the caller is not a member of the workspace, or an expense is named without expenses:write and its cutover. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or a named row is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description period is not a month written YYYY-MM, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'submissions.submit': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SubmissionRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SubmissionResultResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, the caller is not a member of the workspace, or an expense is named without expenses:write and its cutover. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or a named row is not visible to the caller. Agent writes also answer 404 while AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A named row cannot be moved (it is not a draft, is already submitted, is not billable or shown to the client, or a decision landed first), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, nothing was named (give a period or the rows), more than 500 rows match, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'submissions.withdraw': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SubmissionRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SubmissionResultResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, the caller is not a member of the workspace, or an expense is named without expenses:write and its cutover. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or a named row is not visible to the caller. Agent writes also answer 404 while AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A named row cannot be moved (it is not a draft, is already submitted, is not billable or shown to the client, or a decision landed first), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, nothing was named (give a period or the rows), more than 500 rows match, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'task_organization.get': {
         parameters: {
             query?: {
@@ -17759,6 +18140,77 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['TimeEntryResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'timesheets.approved': {
+        parameters: {
+            query?: {
+                period?: string;
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ApprovedTimesheetResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, the caller is not a member of the workspace, or an expense is named without expenses:write and its cutover. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or a named row is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description period is not a month written YYYY-MM, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

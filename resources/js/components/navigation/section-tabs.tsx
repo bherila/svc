@@ -67,6 +67,8 @@ const WORKSPACE_TABS: readonly {
     label: string;
 }[] = [
     { key: 'my_work', label: 'My work' },
+    { key: 'submissions', label: 'Submit' },
+    { key: 'timesheet', label: 'Timesheet' },
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'clients', label: 'Clients' },
     { key: 'invoices', label: 'Invoices' },

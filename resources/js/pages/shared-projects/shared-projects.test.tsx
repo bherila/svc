@@ -607,6 +607,7 @@ describe('Invitation', () => {
             { id: 'ws-1', name: 'First Workspace' },
             { id: 'ws-2', name: 'Second Workspace' },
         ],
+        creates_light_workspace: false,
         accept_url: '/shared-project-invitations/invitation-1/accept',
         decline_url: '/shared-project-invitations/invitation-1/decline',
         workspaces_url: '/app',

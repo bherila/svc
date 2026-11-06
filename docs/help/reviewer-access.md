@@ -14,9 +14,11 @@ A contact is reached by the email address on their record. A workspace is reache
 
 ## What a reviewer sees
 
-Only that client's hours and expenses that are ready to bill: date, time, the description the client already sees, and the project. An expense shows its amount, because that is what is being approved. A reviewer never sees rates, invoices, agreements, internal notes or any other client.
+Only that client's hours and expenses that are ready to bill, or that the person who did the work has submitted for review: date, time, the description the client already sees, and the project. An expense shows its amount, because that is what is being approved. A reviewer never sees rates, invoices, agreements, internal notes or any other client.
 
 Approving or disputing records the decision in your workspace, against your own entries, with the reviewer's name. You see it on the entry like any client decision. Nobody can approve their own hours or expenses, whatever access they hold.
+
+A one-person business has nobody to approve its hours, so it submits them instead (see [submitting hours and expenses](help:submitting-hours)). Submitted rows reach the reviewer without anyone in the business approving them, and the reviewer's approval is what makes them approved.
 
 ## Taking access back
 

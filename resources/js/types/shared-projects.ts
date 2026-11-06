@@ -126,6 +126,8 @@ export type SharedInvitationProps = {
         expires_at: string;
     };
     workspaces: { id: string; name: string }[];
+    /** True when the person has no workspace of their own to join with, so accepting makes a light one. */
+    creates_light_workspace: boolean;
     accept_url: string;
     decline_url: string;
     workspaces_url: string;

@@ -85,6 +85,11 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
             'Which money a figure counts. Invoiced counts what was billed, in the month it was for. Collected counts payments received, net of refunds.',
     },
     {
+        term: 'Approved timesheet',
+        definition:
+            'The hours someone else approved for one calendar month, with who worked each and who approved it. You invoice from it or send it.',
+    },
+    {
         term: 'Partner',
         definition:
             'An independent business that does part of the work on a shared project.',

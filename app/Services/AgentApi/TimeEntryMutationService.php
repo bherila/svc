@@ -22,6 +22,7 @@ use App\Support\AgentApi\TimeEntryAllocation;
 use App\Support\Approval\SelfApproval;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
+use App\Support\Submission\SubmissionRules;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
@@ -461,6 +462,9 @@ final class TimeEntryMutationService
         ?ClientInvoice $invoice,
     ): void {
         abort_unless($entry->workspace_id === $workspace->id, 404);
+        // A reviewer reads what was submitted; changing it underneath them is
+        // withdrawing and submitting again, never a quiet edit.
+        abort_if($entry->submitted_at !== null, 409, SubmissionRules::FROZEN_MESSAGE);
         if ($invoice instanceof ClientInvoice) {
             abort_unless(
                 $invoice->client_company_id === $entry->client_company_id,
