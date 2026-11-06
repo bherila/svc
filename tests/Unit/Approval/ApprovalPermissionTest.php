@@ -27,6 +27,12 @@ final class ApprovalPermissionTest extends TestCase
         $this->assertTrue(ApprovalPermission::isBillingContact(' ap@example.test ', ' AP@example.test '));
     }
 
+    public function test_case_is_ignored_for_letters_outside_ascii_too(): void
+    {
+        $this->assertTrue(ApprovalPermission::isBillingContact('ÉLISE@example.test', 'élise@example.test'));
+        $this->assertTrue(ApprovalPermission::isBillingContact('élise@example.test', 'x@example.test, ÉLISE@example.test'));
+    }
+
     public function test_the_billing_field_may_list_several_addresses(): void
     {
         $billing = 'first@example.test, second@example.test;third@example.test fourth@example.test';

@@ -219,6 +219,32 @@ class TimeEntrySplitterTest extends TestCase
         $this->assertNull($result['overflow']->client_invoice_line_id);
     }
 
+    public function test_a_split_carries_the_clients_decision_to_the_overflow_fragment(): void
+    {
+        $user = $this->createUser();
+        $client = $this->createUser();
+        $company = $this->createClientCompany();
+        $project = ClientProject::query()->create([
+            'workspace_id' => $company->workspace_id,
+            'client_company_id' => $company->id,
+            'name' => 'Splitter project',
+        ]);
+        $entry = $this->entryOn($project, $user, 180, '2024-01-15');
+        $entry->forceFill([
+            'client_approved_at' => '2024-02-01 10:00:00', 'client_approved_by_user_id' => $client->id, 'client_approval_source' => 'portal',
+            'client_disputed_at' => '2024-02-02 10:00:00', 'client_disputed_by_user_id' => $client->id, 'client_dispute_note' => 'Synthetic note',
+        ])->save();
+
+        $overflow = $this->splitter->splitEntry($entry->fresh(), 120)['overflow']->fresh();
+
+        $this->assertSame('2024-02-01 10:00:00', $overflow->client_approved_at?->format('Y-m-d H:i:s'));
+        $this->assertSame($client->id, $overflow->client_approved_by_user_id);
+        $this->assertSame('portal', $overflow->client_approval_source);
+        $this->assertSame('2024-02-02 10:00:00', $overflow->client_disputed_at?->format('Y-m-d H:i:s'));
+        $this->assertSame($client->id, $overflow->client_disputed_by_user_id);
+        $this->assertSame('Synthetic note', $overflow->client_dispute_note);
+    }
+
     public function test_split_entry_throws_on_invalid_split_point(): void
     {
         $this->expectException(\InvalidArgumentException::class);
