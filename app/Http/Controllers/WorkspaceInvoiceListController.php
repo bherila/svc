@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Support\Revenue\ServiceMonth;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -29,8 +30,10 @@ final class WorkspaceInvoiceListController extends Controller
         abort_unless($user instanceof User, 401);
         abort_unless($access->isWorkspaceManager($user, $workspace), 403);
 
-        $page = ClientInvoice::query()
-            ->where('workspace_id', $workspace->id)
+        // A chart bar on the Dashboard links here with the month it stands for.
+        $month = ServiceMonth::bounds($request->query('month')) === null ? null : (string) $request->query('month');
+
+        $page = ServiceMonth::constrain(ClientInvoice::query()->where('workspace_id', $workspace->id), $month)
             ->orderByDesc('issue_date')->orderByDesc('id')
             ->simplePaginate(self::PER_PAGE)
             ->withQueryString();
@@ -65,6 +68,8 @@ final class WorkspaceInvoiceListController extends Controller
 
         return Inertia::render('workspaces/invoices', [
             'invoices' => $rows,
+            'month' => $month,
+            'clear_month_href' => $month === null ? null : route('workspaces.invoices', $workspace, absolute: false),
             'next_href' => $page->nextPageUrl(),
             'previous_href' => $page->previousPageUrl(),
         ]);

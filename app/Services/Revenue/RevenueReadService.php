@@ -45,6 +45,26 @@ final class RevenueReadService
         return $this->summaries->summary($this->actuals->load($workspace, $assumptions->asOf), $inputs, $projection, $assumptions, $clientId)->toArray();
     }
 
+    /**
+     * What the dashboard prints: the key figures and the chart's months from
+     * one load of the inputs, so the two cannot disagree and the page costs
+     * one read of each repository rather than one per figure.
+     *
+     * @return array{summary: array<string, mixed>, months: list<array<string, mixed>>}
+     */
+    public function dashboard(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query): array
+    {
+        [$assumptions, $clientId] = $this->context($user, $workspace, $query);
+        $inputs = $this->projectionInputs->load($workspace, $assumptions->asOf);
+        $actuals = $this->actuals->load($workspace, $assumptions->asOf);
+        $projection = $this->projector->project($inputs);
+
+        return [
+            'summary' => $this->summaries->summary($actuals, $inputs, $projection, $assumptions, $clientId)->toArray(),
+            'months' => $this->summaries->monthly($actuals, $projection, $assumptions, RevenueSummaries::BAND_ALL, $clientId),
+        ];
+    }
+
     /** @return array{assumptions: array<string, mixed>, months: list<array<string, mixed>>} */
     public function monthly(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query): array
     {

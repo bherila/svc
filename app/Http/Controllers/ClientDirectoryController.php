@@ -63,6 +63,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Files\AttachmentListing;
+use App\Support\Revenue\ServiceMonth;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -202,15 +203,20 @@ class ClientDirectoryController extends Controller
         $viewable = $access->viewableProjectIds($user, $workspace);
         $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
-        $invoices = $billing->constrainInvoices(
+        // The Client Overview chart links a month here.
+        $month = ServiceMonth::bounds($request->query('month')) === null ? null : (string) $request->query('month');
+
+        $invoices = ServiceMonth::constrain($billing->constrainInvoices(
             ClientInvoice::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $clientCompany->id),
             $user,
             $workspace,
-        )->orderByDesc('issue_date')->orderByDesc('id')->get();
+        ), $month)->orderByDesc('issue_date')->orderByDesc('id')->get();
 
         return Inertia::render('clients/invoices', [
+            'month' => $month,
+            'clear_month_href' => $month === null ? null : route('clients.invoices', [$workspace, $clientCompany], absolute: false),
             'company' => AgentClientPresenter::identity($clientCompany),
             // Where a row links. Sent rather than assembled in the browser
             // because the client's own copy of this screen is a different route

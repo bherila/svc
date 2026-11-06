@@ -60,6 +60,26 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
             'A project run by one business with another business taking part in it.',
     },
     {
+        term: 'MRR',
+        definition:
+            'Monthly recurring revenue: what recurring charges add up to in a month. Annual items count one twelfth, quarterly one third. One-time charges are left out.',
+    },
+    {
+        term: 'Contracted',
+        definition:
+            'Revenue the agreements on file already commit the client to. It stops when an agreement ends; no renewal is assumed.',
+    },
+    {
+        term: 'Projected overage',
+        definition:
+            'A guess at hours beyond the retainer, from the last six months of billed overage. It is off unless you turn it on.',
+    },
+    {
+        term: 'Basis',
+        definition:
+            'Which money a figure counts. Invoiced counts what was billed, in the month it was for. Collected counts payments received, net of refunds.',
+    },
+    {
         term: 'Partner',
         definition:
             'An independent business that does part of the work on a shared project.',

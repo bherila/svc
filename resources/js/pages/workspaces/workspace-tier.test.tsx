@@ -7,6 +7,7 @@ import WorkspaceFinance from '@/pages/workspaces/finance';
 import WorkspaceInvoices from '@/pages/workspaces/invoices';
 import WorkspaceTime from '@/pages/workspaces/time';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
+import { dashboardRevenue } from '@/test/revenue-fixtures';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
 
@@ -115,18 +116,18 @@ describe('dashboard', () => {
         ).toBeInTheDocument();
     });
 
-    it('leaves the revenue slot to the revenue lane, and only for owners and admins', () => {
+    it('draws the revenue overview for owners and admins only', () => {
         const { container, rerender } = render(
             <Dashboard
                 workspace={WORKSPACE}
                 audience="workspace"
                 queue={[]}
-                revenue={{ slot: 'revenue' }}
+                revenue={dashboardRevenue()}
             />,
         );
 
         expect(
-            container.querySelector('[data-slot="revenue-slot"]'),
+            container.querySelector('[data-slot="revenue-section"]'),
         ).not.toBeNull();
 
         rerender(
@@ -134,8 +135,9 @@ describe('dashboard', () => {
         );
 
         expect(
-            container.querySelector('[data-slot="revenue-slot"]'),
+            container.querySelector('[data-slot="revenue-section"]'),
         ).toBeNull();
+        expect(container.querySelector('[data-slot="stat-tile"]')).toBeNull();
         expect(screen.getByText('Your work')).toBeInTheDocument();
     });
 

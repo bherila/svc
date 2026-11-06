@@ -109,14 +109,14 @@ class WorkspaceDashboardTest extends TestCase
         ]);
     }
 
-    public function test_an_owner_sees_the_whole_action_queue_and_the_revenue_slot(): void
+    public function test_an_owner_sees_the_whole_action_queue_and_the_revenue_overview(): void
     {
         $this->seedQueue();
 
         $this->actingAs($this->owner)->get($this->path())->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('workspaces/dashboard')
             ->where('audience', 'workspace')
-            ->where('revenue.slot', 'revenue')
+            ->has('revenue.kpis')
             ->has('queue', 5)
             ->where('queue.0.kind', 'overdue_invoice')
             ->where('queue.0.title', 'Invoice SYN-OVERDUE')
