@@ -26,15 +26,30 @@ final class InvoiceDeferredWorkDisclosure
      */
     public static function documentData(ClientInvoice $invoice, string $audience): ?array
     {
-        $snapshot = $invoice->deferredWorkSnapshot();
+        return self::forAudience(
+            $invoice->deferredWorkSnapshot(),
+            $audience,
+            static fn (): bool => self::clientMayRead($invoice),
+        );
+    }
 
+    /**
+     * The decision itself, free of the database so it is unit-tested directly.
+     * `$clientOptedIn` is consulted only for a client copy of a stored snapshot.
+     *
+     * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
+     * @param  callable(): bool  $clientOptedIn
+     * @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null}>}|null
+     */
+    public static function forAudience(?InvoiceDeferredWorkSnapshot $snapshot, string $audience, callable $clientOptedIn): ?array
+    {
         if ($snapshot === null) {
             return null;
         }
 
         $visible = match ($audience) {
             InvoiceLineDetail::OPERATOR => true,
-            InvoiceLineDetail::CLIENT => self::clientMayRead($invoice),
+            InvoiceLineDetail::CLIENT => $clientOptedIn(),
         };
 
         return $visible ? $snapshot->documentData() : null;
