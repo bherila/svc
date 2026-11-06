@@ -145,10 +145,12 @@ final class PortalProjectCapabilitiesTest extends TestCase
             $result = $this->callTool((string) $session, 'time_entries.log', ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'synthetic-dual-role-time', 'approve' => true, 'entries' => $entries])['result'];
             $this->assertFalse($result['isError']);
             $this->assertCount(4, $result['structuredContent']['data']);
+            $this->assertFalse($result['structuredContent']['meta']['approval']['applied']);
         } else {
-            $this->withHeader('Idempotency-Key', 'synthetic-dual-role-time')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['approve' => true, 'entries' => $entries])->assertCreated()->assertJsonCount(4, 'data');
+            $this->withHeader('Idempotency-Key', 'synthetic-dual-role-time')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['approve' => true, 'entries' => $entries])->assertCreated()->assertJsonCount(4, 'data')->assertJsonPath('meta.approval.applied', false);
         }
-        $this->assertSame(4, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->where('status', 'approved')->count());
+        // `approve: true` does nothing: this is the caller's own time.
+        $this->assertSame(4, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->where('status', 'draft')->whereNull('approved_by_user_id')->count());
 
         config(['agent_api.time_entry_writes_enabled' => false, 'agent_api.writes_enabled' => false]);
         $disabled = app(AgentCapabilities::class)->forWorkspace($user, $workspace, fn (): bool => true);

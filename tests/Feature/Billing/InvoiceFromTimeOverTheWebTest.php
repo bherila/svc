@@ -150,7 +150,10 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         ]);
         $entry = $time->unapprove($this->workspace, $entry, $this->owner, AgentApiVersion::for($entry));
         $entry = $time->update($this->workspace, $entry, $this->owner, ['expected_version' => AgentApiVersion::for($entry), 'minutes' => 90]);
-        $time->approve($this->workspace, $this->owner, [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]);
+        // The owner's own time cannot be approved by the owner; a second admin approves it.
+        $admin = User::factory()->create();
+        WorkspaceMembership::query()->create(['workspace_id' => $this->workspace->id, 'user_id' => $admin->id, 'role' => 'admin']);
+        $time->approve($this->workspace, $admin, [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]);
         $invoice->refresh();
         $preserved = $invoice->lines()->orderBy('id')->get()->map->getAttributes()->all();
         $version = AgentApiVersion::for($invoice);

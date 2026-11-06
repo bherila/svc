@@ -773,7 +773,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'time_entries.log',
                 'Log time',
-                'Idempotently log up to 20 completed time entries. When time:read is held and time_entries.list remains enabled, the response matches time_entries.list, including its role rule for rates; if that list capability is disabled, the response uses the plain write shape. If client_visible_description is supplied and is_visible_to_client is omitted, the entry defaults to client-visible; send false to stage client text privately. Pass approve: true to approve them in the same call, only when the user asked for approval; approving and explicit billing rates require time:approve and a project approver role.',
+                'Idempotently log up to 20 completed time entries. When time:read is held and time_entries.list remains enabled, the response matches time_entries.list, including its role rule for rates; if that list capability is disabled, the response uses the plain write shape. If client_visible_description is supplied and is_visible_to_client is omitted, the entry defaults to client-visible; send false to stage client text privately. approve: true is deprecated and does nothing, because nobody approves their own time; the response says so in meta.approval. Explicit billing rates require time:approve and a project approver role.',
                 [AgentMcpWriteTools::class, 'timeEntriesLog'],
                 Effect::LocalWrite,
                 true,

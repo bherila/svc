@@ -20,6 +20,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\ReadView;
+use App\Support\Approval\SelfApproval;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,21 +37,32 @@ final class AgentTimeEntryMutationController extends Controller
     ): JsonResponse {
         $context = $contexts->from($request);
         $readView = ReadView::requested($request);
+        $payload = ReadView::payload($request);
         $ids = $logTime->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
             $context->idempotencyKey,
-            ReadView::payload($request),
+            $payload,
             $scopes->allows($request, AgentApiScopes::TIME_APPROVE),
         );
+        // `approve: true` is accepted and does nothing: what you log is your
+        // own, and nobody approves their own time. Said in the response, and
+        // worked out from the request rather than stored, so a replay of the
+        // same receipt says it too.
+        $meta = LogTimeEntriesAction::approvalRequested($payload) ? ['meta' => ['approval' => [
+            'requested' => true,
+            'applied' => false,
+            'skipped_ids' => $ids,
+            'note' => 'approve is deprecated and does nothing. '.SelfApproval::TIME_MESSAGE,
+        ]]] : [];
         // The rows exactly as time_entries.list presents them, rate and
         // status included, for a caller who may read time.
         if ($readView && $scopes->allows($request, AgentApiScopes::TIME_READ)) {
             $reader = $request->user();
             abort_unless($reader instanceof User || $reader instanceof AgentPrincipal, 401);
 
-            return response()->json(['data' => $reads->timeEntriesByIds($reader, $workspace, $ids)], 201);
+            return response()->json(['data' => $reads->timeEntriesByIds($reader, $workspace, $ids)] + $meta, 201);
         }
         $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->with(AgentTimeEntryPresenter::authorRelations($workspace))->withCapacityPlacement($workspace->id)->get()->keyBy('public_id');
         $entries = collect($ids)->map(function (string $id) use ($entriesById): ClientTimeEntry {
@@ -60,7 +72,7 @@ final class AgentTimeEntryMutationController extends Controller
             return $entry;
         });
 
-        return response()->json(['data' => $entries->map(fn (ClientTimeEntry $entry): array => $presenter->present($workspace, $entry))->values()], 201);
+        return response()->json(['data' => $entries->map(fn (ClientTimeEntry $entry): array => $presenter->present($workspace, $entry))->values()] + $meta, 201);
     }
 
     public function update(

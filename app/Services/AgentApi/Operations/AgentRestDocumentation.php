@@ -1591,7 +1591,7 @@ final class AgentRestDocumentation
             'time_entries.log' => [
                 'method' => 'POST',
                 'scopes' => ['time:write'],
-                'description' => 'Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true approves the entries in the same transaction and receipt; it requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
+                'description' => 'Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true is deprecated and does nothing, because nobody approves their own time: the entries stay unapproved and meta.approval says so. It still requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey', self::readView('the written time entries exactly as time_entries.list presents them', 'time:read')],
                 'request' => 'TimeLogRequest',
                 'response' => 'TimeEntryBatchResponse',

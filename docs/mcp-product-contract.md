@@ -143,7 +143,14 @@ agreements with deferred work outstanding, largest first, each with the hours
 and the amount the termination invoice would charge for them (see
 [deferred billing](client-management/deferred-billing.md#deferred-backlog)).
 
-Time follows `draft -> approved -> invoiced`. Approval snapshots the hourly rate and
+Time follows `draft -> approved -> invoiced`. Nobody approves their own time: a
+`time_entries.approve` batch naming an entry the caller logged is refused with 409
+and nothing in the batch is written, whatever the caller's role. Consultant time
+is not waiting on approval to be billed: generating a cadence draft pulls every
+unbilled, billable consultant entry logged up to the workspace's today onto it,
+moving those entries to `approved` with no approver, and the client approves
+afterwards in the portal or by paying. Approval by an operator of someone else's
+time (a subcontractor's, for instance) snapshots the hourly rate and
 currency from an agreement effective on the work date, including agreements now
 paused, terminated or expired. Project-specific agreements win over company-wide
 ones, then currently active agreements over other lifecycle states, then the most
@@ -331,6 +338,13 @@ payment statuses, record money already returned and reverse erroneous refund
 records; none moves funds.
 Reference remains optional. Read responses follow invoice visibility and omit
 private finance reconciliation and processor identifiers.
+
+`time_entries.log` with `approve: true` is deprecated and does nothing: the time it
+logs is the caller's own, so the entries stay unapproved. The call still needs the
+gates `time_entries.approve` has (the `time:approve` scope, the approver role on
+every project, the write cutover) and is refused without them. The response then
+carries an `approval` object under `meta` (`requested: true`, `applied: false`, `skipped_ids`, `note`),
+on REST and through MCP alike; a log that did not send `approve` carries no `meta`.
 
 Withdrawing time approval requires both `time:approve` and `time:read`, so the caller can obtain the current opaque revision from the public time read response.
 

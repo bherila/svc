@@ -2718,7 +2718,7 @@ export interface paths {
         };
         get: operations['time_entries.list'];
         put?: never;
-        /** @description Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true approves the entries in the same transaction and receipt; it requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
+        /** @description Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true is deprecated and does nothing, because nobody approves their own time: the entries stay unapproved and meta.approval says so. It still requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         post: operations['time_entries.log'];
         delete?: never;
         options?: never;
@@ -6529,6 +6529,16 @@ export interface components {
         /** @description The logged rows exactly as time_entries.list presents them, rates and subcontractor terms included for workspace owners and admins, when the request asks for view=read and the token also holds time:read; the write shape otherwise. The MCP tool asks for the view while time_entries.list is enabled. */
         TimeEntryBatchResponse: {
             data: components['schemas']['TimeEntry'][];
+            /** @description Present only when the request sent approve: true, which is deprecated and does nothing: nobody approves their own time, and the time logged here is the caller's own. */
+            meta?: {
+                approval: {
+                    requested: boolean;
+                    /** @description False: the entries stay unapproved. */
+                    applied: boolean;
+                    skipped_ids: string[];
+                    note: string;
+                };
+            };
         };
         TimeEntryListResponse: {
             data: components['schemas']['TimeEntry'][];

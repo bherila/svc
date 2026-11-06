@@ -24,6 +24,7 @@ use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
+use App\Support\Approval\SelfApproval;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
@@ -838,8 +839,11 @@ class TimeSheetController extends Controller
             'can_edit' => $editable,
             'update_url' => $editable ? route('agent-api.v1.time-entries.update', [$workspace, $entry->public_id], absolute: false) : null,
             'delete_url' => $editable ? route('agent-api.v1.time-entries.destroy', [$workspace, $entry->public_id], absolute: false) : null,
+            // Never on your own entry: the server refuses it whatever the
+            // role, so the screen does not offer it.
             'can_approve' => $entry->status === 'draft'
                 && $invoice === null
+                && ! SelfApproval::refuses($entry->user_id, $userId)
                 && ($permissions[$entry->client_project_id]['approve'] ?? false),
             // Offered on the same terms `TimeEntryMutationService::unapprove()`
             // enforces: an owner or admin, approved time, and no invoice that
