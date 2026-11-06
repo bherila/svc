@@ -42635,10 +42635,18 @@
                 "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
-            "tools": [],
+            "tools": {
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
             "progressive": {
                 "list_changed": true,
-                "core_tools": [],
+                "core_tools": [
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
                 "toolsets": []
             },
             "resources": [],
@@ -42722,12 +42730,22 @@
                 "square.payments.list": "b64361da80f37d8a",
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
-                "square.sync": "107c06a20bae1b8a"
+                "square.sync": "107c06a20bae1b8a",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
             },
             "progressive": {
                 "list_changed": true,
-                "core_tools": [],
-                "toolsets": []
+                "core_tools": [
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 32,
+                    "square": 28
+                }
             },
             "resources": [],
             "resourceTemplates": {
@@ -42996,10 +43014,18 @@
                 "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
-            "tools": [],
+            "tools": {
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
             "progressive": {
                 "list_changed": true,
-                "core_tools": [],
+                "core_tools": [
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
                 "toolsets": []
             },
             "resources": [],
@@ -43031,12 +43057,21 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.reopen": "aaeecbf61addb4c2",
                 "invoices.update_details": "110f5516fa0858ce",
-                "invoices.update_draft": "86b5037fc0f233e7"
+                "invoices.update_draft": "86b5037fc0f233e7",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
             },
             "progressive": {
                 "list_changed": true,
-                "core_tools": [],
-                "toolsets": []
+                "core_tools": [
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 8
+                }
             },
             "resources": [],
             "resourceTemplates": [],
@@ -43303,10 +43338,18 @@
                 "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
-            "tools": [],
+            "tools": {
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
             "progressive": {
                 "list_changed": true,
-                "core_tools": [],
+                "core_tools": [
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
                 "toolsets": []
             },
             "resources": [],
@@ -43338,12 +43381,21 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.reopen": "aaeecbf61addb4c2",
                 "invoices.update_details": "110f5516fa0858ce",
-                "invoices.update_draft": "86b5037fc0f233e7"
+                "invoices.update_draft": "86b5037fc0f233e7",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
             },
             "progressive": {
                 "list_changed": true,
-                "core_tools": [],
-                "toolsets": []
+                "core_tools": [
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 8
+                }
             },
             "resources": [],
             "resourceTemplates": [],

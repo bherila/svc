@@ -2335,7 +2335,7 @@
     },
     "toolsets.disable": {
         "scopes": [
-            "identity:read"
+            "mcp:use"
         ],
         "flags": [
             "mcp",
@@ -2345,7 +2345,7 @@
     },
     "toolsets.enable": {
         "scopes": [
-            "identity:read"
+            "mcp:use"
         ],
         "flags": [
             "mcp",
@@ -2355,7 +2355,7 @@
     },
     "toolsets.list": {
         "scopes": [
-            "identity:read"
+            "mcp:use"
         ],
         "flags": [
             "mcp",

@@ -44,7 +44,7 @@ final class ToolsetOperationContractTest extends TestCase
                 $this->assertTrue($operation->isIdempotent(), $id);
                 $this->assertFalse($catalog->isManagerOnly($id), $id);
                 $this->assertFalse($catalog->readsExternalSystem($id), $id);
-                $this->assertSame(['identity:read'], $operation->requirement->scopes, $id);
+                $this->assertSame(['mcp:use'], $operation->requirement->scopes, $id);
                 $this->assertSame([AgentDeploymentFlags::MCP, AgentDeploymentFlags::MCP_SWITCH.'mcp.read.toolsets', AgentDeploymentFlags::MCP_SWITCH.$id], $operation->requirement->flags, $id);
                 $this->assertNull($operation->rest, $id);
                 $this->assertSame(McpKind::Tool, $operation->mcp?->kind, $id);
