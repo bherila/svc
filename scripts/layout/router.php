@@ -63,7 +63,11 @@ $paymentsWrite = getenv('SVC_LAYOUT_PAYMENTS') === '1' && $method === 'POST' && 
     && is_array($paymentsBody = json_decode((string) file_get_contents('php://input'), true))
     && is_string($paymentsBody['secret'] ?? null)
     && preg_match('/^(?:rk|sk)_/', $paymentsBody['secret']) !== 1;
-if ($method !== 'GET' && ! $paymentsWrite && ! $projectWrite && ! $workspaceWrite && ! $receiptWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
+// The MCP setup page's "Show all tools" switches: a PUT of one seeded credential's
+// own setting, which the check changes and puts back (--credentials).
+$credentialWrite = getenv('SVC_LAYOUT_CREDENTIALS') === '1' && $method === 'PUT' && is_string($requestPath)
+    && preg_match('#^/account/mcp-credentials/(connections|tokens)/[0-9A-Za-z-]{36,80}$#D', $requestPath) === 1;
+if ($method !== 'GET' && ! $credentialWrite && ! $paymentsWrite && ! $projectWrite && ! $workspaceWrite && ! $receiptWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }

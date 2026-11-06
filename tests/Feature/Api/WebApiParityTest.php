@@ -25,6 +25,10 @@ final class WebApiParityTest extends TestCase
         'bherila-auth.credentials.connections.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
+        // The same kind of exception: a setting of the person's own MCP credential, a view
+        // over the tools it already may call, which grants nothing and changes at its next connect.
+        'mcp.credentials.connections.update' => 'deliberate:an MCP connection\'s tool-list setting is changed only by the signed-in person who owns it',
+        'mcp.credentials.tokens.update' => 'deliberate:an MCP token\'s tool-list setting is changed only by the signed-in person who owns it',
         'clients.manage' => 'web-only:redirect',
         'workspaces.reviewers.destroy' => 'deliberate:review access is taken back only by a signed-in owner or admin of the workspace that gave it',
         'workspaces.reviewers.store' => 'deliberate:letting someone outside the business vouch for its hours is given only by a signed-in owner or admin',
