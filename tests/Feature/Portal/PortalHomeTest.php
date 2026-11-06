@@ -13,6 +13,12 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Square\Mirror\SquareMirrorRepository;
+use App\Services\Square\Mirror\SquareSnapshotMapper;
+use App\Services\Square\SquareLinkService;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Square\SquareInvoiceReference;
+use App\Support\Square\SquareMatchMethod;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -119,6 +125,31 @@ final class PortalHomeTest extends TestCase
             ->where('balance.first.days_until_due', 9)
             ->where('pay.invoice_href', fn (string $href): bool => str_starts_with($href, '/portal/'.$this->company->public_id.'/invoices/'))
             ->where('pay.href', null));
+    }
+
+    public function test_pay_is_the_first_invoices_hosted_payment_page_when_it_is_linked(): void
+    {
+        config([
+            'services.square.access_token' => 'synthetic-square-test-token',
+            'services.square.environment' => 'sandbox',
+            'services.square.workspace' => $this->workspace->public_id,
+        ]);
+        $first = $this->invoice('SYN-FIRST', ['balance_amount' => 920000, 'due_date' => '2026-11-10']);
+        $this->invoice('SYN-SECOND', ['balance_amount' => 5000, 'due_date' => '2026-12-01']);
+        $row = app(SquareSnapshotMapper::class)->invoice([
+            'id' => 'inv_home_pay', 'version' => 1, 'invoice_number' => '000009-R-0001', 'location_id' => 'LOCFIXTURE01', 'status' => 'UNPAID',
+            'title' => 'Synthetic', 'primary_recipient' => ['customer_id' => 'cust_home_pay', 'company_name' => 'Synthetic'],
+            'payment_requests' => [['due_date' => '2026-11-10', 'computed_amount_money' => ['amount' => 920000, 'currency' => 'USD']]],
+            'public_url' => 'https://squareupsandbox.com/pay-invoice/inv_home_pay',
+        ]);
+        app(SquareMirrorRepository::class)->storeInvoices($this->workspace, [$row], CarbonImmutable::now('UTC'));
+        $owner = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        app(SquareLinkService::class)->link($this->workspace, $first, $owner, AgentApiVersion::for($first), new SquareInvoiceReference('inv_home_pay', '000009-R-0001', 'USD', SquareMatchMethod::Manual), false);
+
+        $this->home($this->portalUser())->assertInertia(fn (Assert $page) => $page
+            ->where('balance.first.number', 'SYN-FIRST')
+            ->where('pay.href', 'https://squareupsandbox.com/pay-invoice/inv_home_pay'));
     }
 
     public function test_an_overdue_invoice_flags_the_balance(): void

@@ -860,6 +860,34 @@ Settled by the product owner before a period away:
   while the score is under its 82% threshold. Before every merge, the actual
   counts in the log are read.
 
+- **2026-11-06, slices 6 and 7: My work and the portal home.**
+  - **Who gets "My work":** every workspace member who is not an owner or admin,
+    as the first workspace tab. The Dashboard and Clients tabs #619 gave members
+    stay; removing them is a navigation change nobody asked for. Owners and
+    admins get null.
+  - **Task status inline:** only where the viewer owns or manages the task's
+    project, because `tasks.update` requires that. Letting an assignee change
+    their own task's status is a permission change, deferred. Others get the
+    status as words and the task page.
+  - **Quick log:** a project select (with labels), not yet the search-as-you-type
+    combobox of section 9; posts to `time_entries.log` as billable, internal.
+  - **"Next invoice (estimate)":** the first of the next three cadence cycles
+    with something unsold: retainer, recurring items on their own dates, and
+    hours past the retainer so far at the agreement's rate. Charges a charged
+    invoice already sold are skipped. Excludes tax and expenses, and says so;
+    portal expenses are still an undecided disclosure. An unstated rate leaves
+    the overage as hours, priced when billed.
+  - **This period** reads one agreement: the most recently started active,
+    disclosed one in force and inside the viewer's project scope.
+  - **Hours available** is the period's included hours plus rollover at its start;
+    overage is the ledger's negative balance at the period's latest row.
+  - **Pay** is the first-due invoice's hosted (Square) payment page, else absent;
+    View invoice is always offered. Amount due is withheld across currencies.
+  - **Deferred work** on the home is totals only, through
+    `InvoiceDeferredWorkDisclosure` on the latest invoice.
+  - **Open tasks** are ordered as before; the schema has no "waiting on the
+    client" flag. "To approve" is not drawn (slice 8).
+
 ## Open questions
 
 None. Answered on 2026-11-06:

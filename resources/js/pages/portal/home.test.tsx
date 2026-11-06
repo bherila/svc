@@ -168,7 +168,9 @@ describe('portal home', () => {
             screen.getByText(/Invoice SYN-1041 · due .* \(in 9 days\)/),
         ).toBeInTheDocument();
         expect(
-            screen.getByRole('link', { name: 'Pay invoice SYN-1041' }),
+            screen.getByRole('link', {
+                name: 'Pay $9,200.00, invoice SYN-1041',
+            }),
         ).toHaveAttribute('href', 'https://pay.example.test/invoice-1');
         expect(
             screen.getByRole('link', { name: /View invoice/ }),
@@ -212,7 +214,7 @@ describe('portal home', () => {
         );
 
         expect(
-            screen.queryByRole('link', { name: /Pay invoice/ }),
+            screen.queryByRole('link', { name: /^Pay / }),
         ).not.toBeInTheDocument();
         expect(
             screen.getByRole('link', { name: /View invoice/ }),

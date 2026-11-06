@@ -105,7 +105,8 @@ function BalanceCard({
                     {pay.href !== null && (
                         <a
                             href={pay.href}
-                            aria-label={`Pay invoice ${first.number}`}
+                            // The name has to contain the visible text (WCAG 2.5.3).
+                            aria-label={`Pay ${formatMoney(first.balance, first.currency)}, invoice ${first.number}`}
                             className={buttonVariants({ size: 'lg' })}
                         >
                             <CreditCardIcon aria-hidden="true" />

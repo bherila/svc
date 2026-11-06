@@ -76,5 +76,11 @@ if ($file !== false && str_starts_with($file, $public.'/build/') && is_file($fil
 }
 
 $app = require __DIR__.'/bootstrap.php';
-Auth::onceUsingId(in_array($requestPath, [$fixture['square_portal'], $fixture['task_portal']], true) ? $fixture['square_portal_user_id'] : $fixture['user_id']);
+Auth::onceUsingId(match (true) {
+    // The member who is not a manager reads My work as themselves.
+    isset($fixture['my_work']) && $requestPath === $fixture['my_work'] => $fixture['work_member_id'],
+    // The client contact reads the portal as the client.
+    in_array($requestPath, array_filter([$fixture['square_portal'], $fixture['task_portal'], $fixture['portal_home'] ?? null]), true) => $fixture['square_portal_user_id'],
+    default => $fixture['user_id'],
+});
 $app->handleRequest(Request::capture());

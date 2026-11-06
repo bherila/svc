@@ -79,7 +79,7 @@ final class PortalOverviewQuery
             ->where('balance_amount', '>', 0)
             ->orderBy('id')
             ->limit(self::OPEN_INVOICES)
-            ->get(['id', 'public_id', 'invoice_number', 'balance_amount', 'currency', 'due_date', 'status']);
+            ->get();
 
         $balance = new PortalBalance(
             array_values($open->map(fn (ClientInvoice $invoice): array => [
