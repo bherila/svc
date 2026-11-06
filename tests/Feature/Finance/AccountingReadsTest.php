@@ -9,6 +9,7 @@ use App\Models\ClientInvoiceCorrection;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientInvoicePaymentRefund;
 use App\Models\ClientProject;
+use App\Models\ProcessorMovement;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceCorrectionService;
@@ -114,6 +115,51 @@ final class AccountingReadsTest extends TestCase
         $mcp = $this->callTool($session, 'finance.income.yearly', ['workspace_id' => $this->workspace->public_id, 'year' => 2026]);
         $this->assertFalse($mcp['result']['isError'], json_encode($mcp));
         $this->assertSame($json, $mcp['result']['structuredContent']);
+    }
+
+    public function test_processor_income_reconciles_by_effective_date_and_cannot_cross_workspaces(): void
+    {
+        $invoice = $this->invoice();
+        $this->travelTo(Carbon::parse('2026-01-08 12:00:00 UTC'));
+        $processor = ClientInvoicePayment::query()->create(['workspace_id' => $this->workspace->id, 'client_invoice_id' => $invoice->id,
+            'status' => 'succeeded', 'amount' => 9000, 'refunded_amount' => 500, 'currency' => 'USD', 'method' => 'card',
+            'provider' => 'stripe', 'received_on' => '2026-01-08']);
+        $processor->forceFill(['provider_fee_amount' => 100])->save();
+        $manual = ClientInvoicePayment::query()->create(['workspace_id' => $this->workspace->id, 'client_invoice_id' => $invoice->id,
+            'status' => 'succeeded', 'amount' => 2000, 'refunded_amount' => 200, 'currency' => 'USD', 'method' => 'bank_transfer', 'received_on' => '2026-01-08']);
+        $this->travelTo(Carbon::parse('2026-01-09 12:00:00 UTC'));
+        $this->refund($manual, 'refund', 200);
+        $movement = ProcessorMovement::query()->forceCreate(['workspace_id' => $this->workspace->id,
+            'client_invoice_payment_id' => $processor->id, 'provider' => 'stripe', 'account_key' => 'synthetic-account',
+            'provider_entry_identifier' => 'synthetic-refund-entry', 'kind' => 'refund', 'principal_minor' => -500,
+            'fee_minor' => 10, 'net_minor' => -510, 'currency' => 'USD', 'provider_occurred_at' => now(),
+            'occurred_on' => '2026-01-09', 'occurred_timezone' => 'UTC', 'date_basis' => 'stripe_balance_created']);
+        $this->travelTo(Carbon::parse('2026-01-09 12:10:00 UTC'));
+        $result = $this->getJson($this->url('cash-income'))->assertOk()->json();
+        $this->assertCount(4, $result['data']);
+        $this->assertSame(10190, array_sum(array_column($result['data'], 'net_amount')));
+        $this->assertSame(0, array_sum(array_column($result['data'], 'unattributed_refund_amount')));
+        $existing = $this->getJson('/api/v1/workspaces/'.$this->workspace->public_id.'/processor-movements')->assertOk()->json('data.0');
+        $cashMovement = collect($result['data'])->firstWhere('source_id', $movement->public_id);
+        $this->assertSame($existing['principal_minor'], $cashMovement['amount']);
+        $this->assertSame($existing['fee_minor'], $cashMovement['fee_amount']);
+        $this->assertSame($existing['net_minor'], $cashMovement['net_amount']);
+        $day = $this->getJson($this->url('cash-income').'?from=2026-01-09&to=2026-01-09')->assertOk()->json('data');
+        $this->assertCount(2, $day);
+        $this->assertSame(-710, array_sum(array_column($day, 'net_amount')));
+        $other = Workspace::query()->create(['name' => 'Other Cash Workspace', 'slug' => 'other-cash-workspace']);
+        $other->memberships()->create(['user_id' => $this->owner->id, 'role' => 'owner']);
+        $this->getJson('/api/v1/workspaces/'.$other->public_id.'/accounting/cash-income')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/workspaces/'.$other->public_id.'/accounting/income?year=2026')->assertOk()
+            ->assertJsonPath('data.months.0.cash_received', 0)->assertJsonPath('data.months.0.refunds', 0)->assertJsonPath('data.months.0.fees', 0);
+        $old = collect($result['data'])->firstWhere('source_id', $manual->public_id);
+        $manual->forceFill(['received_on' => '2026-01-07'])->save();
+        $this->travelTo(Carbon::parse('2026-01-09 12:20:00 UTC'));
+        $changed = $this->getJson($this->url('cash-income').'?'.http_build_query(['updated_since' => $result['meta']['updated_since']]))->assertOk()->json('data');
+        $this->assertCount(1, $changed);
+        $this->assertSame($old['id'], $changed[0]['id']);
+        $this->assertNotSame($old['version'], $changed[0]['version']);
+        $this->assertSame('2026-01-07', $changed[0]['effective_on']);
     }
 
     public function test_pagination_ties_and_cursors_are_scoped_to_operation_and_workspace(): void
