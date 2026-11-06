@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme Veterinary · Client portal</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+input,textarea,select{background:#0b1120;color:#e5e7eb}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <header style="background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 32px; height: 56px; display: flex; align-items: center; gap: 24px">
+      <div style="font-weight: 600; font-size: 15px; white-space: nowrap">Acme Veterinary</div>
+      <nav aria-label="Portal" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">Overview</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Invoices</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Hours</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Tasks</a>
+      </nav>
+      <span style="font-size: 13px; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">? Help</span>
+      <span style="width: 32px; height: 32px; border-radius: 16px; background: #14b8a6; color: #111827; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600">DO</span>
+    </div>
+  </header>
+  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 28px 32px 48px; display: flex; flex-direction: column; gap: 20px">
+    <div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 600">Hi Dana</h1>
+      <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">Everything Acme works on with Herila Consulting and Rivera Engineering, in one place.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px">
+      <section aria-label="Balance" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px 22px; display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 14px; font-weight: 600; color: #9ca3af">You owe Herila Consulting</h2>
+        <div style="font-size: 34px; font-weight: 600; letter-spacing: -0.02em">$9,200</div>
+        <div style="font-size: 14px; color: #cbd5e1">Invoice #1041 · October · due Nov 15 (in 9 days)</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px">
+          <a href="#" style="background: #e5e7eb; color: #111827; border-radius: 8px; padding: 11px 18px; font-size: 14px; font-weight: 600; text-decoration: none">Pay $9,200</a>
+          <a href="#" style="font-size: 14px">View invoice</a>
+        </div>
+        <p style="margin: 4px 0 0; font-size: 13px; color: #9ca3af; line-height: 1.5">Paying this invoice also approves its hours, unless you’ve disputed any. Last payment: $8,800 on Oct 12.</p>
+      </section>
+      <section aria-label="This month" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px 22px; display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 14px; font-weight: 600; color: #9ca3af">November so far · Herila retainer</h2>
+        <div style="display: flex; justify-content: space-between; font-size: 15px"><span><strong>31.5 h</strong> used</span><span style="color: #9ca3af">of 46.0 h available</span></div>
+        <div style="display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: #1f2937" role="img" aria-label="31.5 of 46 hours used"><span style="width: 68%; background: #3b82f6"></span></div>
+        <div style="font-size: 13px; color: #9ca3af">Includes 6.0 h rolled over from August, which expire Nov 30.</div>
+        <div style="border-top: 1px solid #1a2332; padding-top: 10px; font-size: 14px; display: flex; justify-content: space-between"><span>Next invoice · estimate</span><span style="font-weight: 600">$8,301 on Dec 1</span></div>
+        <div style="font-size: 13px; color: #9ca3af">December retainer $8,000 · web hosting $150 · expenses $138 · tax $13 · overage so far $0</div>
+      </section>
+    </div>
+
+    <section aria-label="Hours to approve" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600">Hours to approve · October 2026</h2>
+        <span style="font-size: 13px; color: #9ca3af">{{pending}}</span>
+      </div>
+      <p style="margin: 0; font-size: 14px; color: #cbd5e1; line-height: 1.55">Approve a month when the hours look right. Disagree with an entry? Dispute it and say why: the team sees your note and nothing about that entry is final until it’s resolved.</p>
+      <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+        <div style="border: 1px solid #1f2937; border-radius: 10px; overflow: hidden">
+          <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 16px; background: #0b1120">
+            <button type="button" onClick="{{g.toggle}}" aria-expanded="{{g.open}}" style="border: 0; background: transparent; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; gap: 8px; align-items: center; padding: 4px 0; min-height: 36px; color: #e5e7eb">
+              <span aria-hidden="true">{{g.chev}}</span>{{g.vendor}}
+            </button>
+            <span style="font-size: 14px; font-variant-numeric: tabular-nums">{{g.hours}}</span>
+            <span style="{{g.badgeStyle}}">{{g.badge}}</span>
+            <span style="flex: 1 1 200px; font-size: 13px; color: #9ca3af; min-width: 0">{{g.context}}</span>
+            <button type="button" onClick="{{g.approve}}" style="{{g.approveStyle}}">{{g.approveLabel}}</button>
+          </div>
+          <sc-if value="{{g.open}}" hint-placeholder-val="{{true}}">
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px">
+              <tbody>
+                <sc-for list="{{g.rows}}" as="r" hint-placeholder-count="4">
+                  <tr style="border-top: 1px solid #1a2332">
+                    <td style="padding: 10px 16px; white-space: nowrap; width: 80px">{{r.date}}</td>
+                    <td style="padding: 10px 16px; white-space: normal; overflow-wrap: anywhere">{{r.desc}}<sc-if value="{{r.disputed}}" hint-placeholder-val="{{false}}"><div style="font-size: 13px; color: #fdba74; margin-top: 4px">You disputed this: “This was Rivera’s call, not ours.” Waiting on Herila.</div></sc-if></td>
+                    <td style="padding: 10px 16px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums">{{r.hours}}</td>
+                    <td style="padding: 10px 16px; white-space: nowrap; font-size: 13px; color: #cbd5e1">{{r.state}}</td>
+                    <td style="padding: 10px 16px; white-space: nowrap; text-align: right; width: 1%"><button type="button" onClick="{{r.dispute}}" style="{{r.disputeStyle}}">{{r.disputeLabel}}</button></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </sc-if>
+        </div>
+      </sc-for>
+    </section>
+
+    <section aria-label="Tasks waiting on you" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px 22px">
+      <h2 style="margin: 0 0 10px; font-size: 16px; font-weight: 600">Waiting on you</h2>
+      <div style="display: flex; flex-direction: column; font-size: 14px">
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; padding: 10px 0; border-top: 1px solid #1a2332"><span>Confirm clinic list for the January import</span><span style="color: #9ca3af">Acme platform · asked by Luis Rivera · due Nov 12</span></div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; padding: 10px 0; border-top: 1px solid #1a2332"><span>Choose a lab-results vendor</span><span style="color: #9ca3af">Acme platform · asked by Ben Herila · due Nov 20</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1400}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { open: { h: true, r: false }, approved: {}, disputed: { 'h3': true } }; }
+  renderVals() {
+    const st = this.state;
+    const src = [
+      { id: 'h', vendor: 'Herila Consulting', hours: '41.5 h', context: 'On invoice #1041 · 12.0 h you already approved', rows: [
+        ['Oct 3', 'Billing API architecture review and plan', '3.0', 'Approved by you'],
+        ['Oct 7', 'Webhook retry design with Rivera', '2.5', 'Approved by you'],
+        ['Oct 10', 'Clinic onboarding: data model and migration plan', '6.5', 'Approved by you'],
+        ['Oct 14', 'Vendor call', '1.5', ''],
+        ['Oct 20', 'Security review and access audit', '4.0', ''],
+        ['Oct 21–31', '11 more entries', '24.0', '']
+      ] },
+      { id: 'r', vendor: 'Rivera Engineering', hours: '22.0 h', context: 'Reviewed by Ben Herila on Nov 6 · Rivera invoices Acme directly', rows: [
+        ['Oct 2', 'Paired with Ben on the invoice webhook retry design', '2.5', ''],
+        ['Oct 6', 'Implemented idempotent webhook handler and tests', '4.0', ''],
+        ['Oct 9', 'Migration script for clinic import; dry run on staging', '3.5', ''],
+        ['Oct 14–28', '4 more entries', '12.0', '']
+      ] }
+    ];
+    let pendingCount = 0;
+    const groups = src.map((g) => {
+      const open = !!st.open[g.id]; const ok = !!st.approved[g.id];
+      const rows = g.rows.map((r, i) => {
+        const key = g.id + i; const d = !!st.disputed[key];
+        const state = d ? 'Disputed' : (r[3] || (ok ? 'Approved by you' : 'Waiting for you'));
+        if (state === 'Waiting for you') pendingCount++;
+        return { date: r[0], desc: r[1], hours: r[2], state, disputed: d,
+          disputeLabel: d ? 'Withdraw dispute' : 'Dispute',
+          disputeStyle: 'border:1px solid #374151;background:#111827;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;min-height:32px;color:#e5e7eb;',
+          dispute: () => { const n = Object.assign({}, st.disputed); n[key] = !d; this.setState({ disputed: n }); } };
+      });
+      const nd = rows.filter((r) => r.disputed).length;
+      return { vendor: g.vendor, hours: g.hours, context: g.context, rows, open, chev: open ? '▾' : '▸',
+        badge: ok ? 'Approved' : (g.id === 'r' ? 'Reviewed ✓' : 'Invoiced'),
+        badgeStyle: 'font-size:12px;font-weight:600;border-radius:6px;padding:3px 8px;background:' + (ok ? '#052e16' : '#172f5e') + ';color:' + (ok ? '#86efac' : '#93c5fd') + ';',
+        approveLabel: ok ? 'Approved · undo' : (nd ? 'Approve the rest (' + nd + ' disputed)' : 'Approve October'),
+        approveStyle: 'border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;background:' + (ok ? '#1f2937' : '#e5e7eb') + ';color:' + (ok ? '#e5e7eb' : '#111827') + ';',
+        toggle: () => { const n = Object.assign({}, st.open); n[g.id] = !open; this.setState({ open: n }); },
+        approve: () => { const n = Object.assign({}, st.approved); n[g.id] = !ok; this.setState({ approved: n }); } };
+    });
+    const left = groups.filter((g) => g.badge !== 'Approved').length;
+    return { groups, pending: left ? left + ' of 2 months waiting for you' : 'All caught up' };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Review partner hours</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+input,textarea,select{background:#0b1120;color:#e5e7eb}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <header style="background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 32px; height: 56px; display: flex; align-items: center; gap: 24px">
+      <div style="font-weight: 600; font-size: 15px; white-space: nowrap">⏻  Herila Consulting</div>
+      <nav aria-label="Workspace" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
+        <a href="Main.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Dashboard</a>
+        <a href="Clients.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Clients</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Invoices</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">Time</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Finance</a>
+      </nav>
+      <span style="font-size: 13px; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">? Help</span>
+    </div>
+  </header>
+  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 24px 32px 48px; display: flex; flex-direction: column; gap: 18px">
+    <div role="tablist" aria-label="Time" style="display: flex; gap: 4px; border-bottom: 1px solid #1f2937; font-size: 14px">
+      <span role="tab" aria-selected="false" style="padding: 10px 14px; color: #9ca3af">My time</span>
+      <span role="tab" aria-selected="false" style="padding: 10px 14px; color: #9ca3af">My team’s time · 0</span>
+      <span role="tab" aria-selected="true" style="padding: 10px 14px; border-bottom: 2px solid #3b82f6; font-weight: 600">Partner hours to review · 1</span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-end">
+      <div style="min-width: 0">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 600">Rivera Engineering · October 2026</h1>
+        <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">Acme platform (shared project) · submitted Nov 2 by Luis Rivera · 22.0 h</p>
+      </div>
+      <a href="#" style="font-size: 13px">Download as CSV</a>
+    </div>
+
+    <div role="note" style="background: #172554; border: 1px solid #1e3a8a; border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; font-size: 14px; line-height: 1.55">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2" aria-hidden="true" style="flex: none; margin-top: 2px"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+      <div><strong>Why you’re seeing this:</strong> Rivera Engineering has its own agreement with Acme Veterinary, and Acme asked you to check Rivera’s hours before it pays. Rivera gave you access to review this project’s hours. You see dates, hours, tasks and descriptions, never Rivera’s rate or invoices. <strong>Your review isn’t the final approval</strong>: Acme sees it and approves in its portal.</div>
+    </div>
+
+    <ol aria-label="Progress" style="list-style: none; margin: 0; padding: 0; display: flex; align-items: stretch; gap: 0; font-size: 13px">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+        <li aria-current="{{s.current}}" style="flex: 1 1 0; min-width: 0; display: flex; align-items: center">
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch">
+            <div style="height: 14px; display: flex; justify-content: center"><span style="{{s.pointer}}" aria-hidden="true"></span></div>
+            <div style="{{s.style}}"><div style="{{s.titleStyle}}">{{s.mark}}{{s.title}}</div><div style="color: #9ca3af; margin-top: 2px">{{s.sub}}</div></div>
+          </div>
+          <sc-if value="{{s.arrow}}" hint-placeholder-val="{{true}}">
+            <svg width="28" height="16" viewBox="0 0 28 16" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 14px"><path d="M4 8h19"></path><path d="M18 3l5 5-5 5"></path></svg>
+          </sc-if>
+        </li>
+      </sc-for>
+    </ol>
+
+    <section aria-label="Entries" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; overflow: hidden">
+      <div style="overflow-x: auto">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px">
+          <thead><tr style="background: #0b1120; text-align: left; font-size: 12px; color: #9ca3af">
+            <th scope="col" style="padding: 10px 14px">Date</th><th scope="col" style="padding: 10px 14px">Task</th><th scope="col" style="padding: 10px 14px; min-width: 320px">Description</th><th scope="col" style="padding: 10px 14px; text-align: right">Hours</th><th scope="col" style="padding: 10px 14px">Your review</th>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{entries}}" as="e" hint-placeholder-count="7">
+              <tr style="{{e.rowStyle}}">
+                <td style="padding: 11px 14px; white-space: nowrap">{{e.date}}</td>
+                <td style="padding: 11px 14px; white-space: nowrap">{{e.task}}</td>
+                <td style="padding: 11px 14px; white-space: normal; overflow-wrap: anywhere">{{e.desc}}
+                  <sc-if value="{{e.flagged}}" hint-placeholder-val="{{false}}"><div style="margin-top: 6px; font-size: 13px; color: #fdba74">Flagged: “Overlaps with my Oct 14 vendor call. Please confirm who led it.” Rivera will see this note.</div></sc-if>
+                </td>
+                <td style="padding: 11px 14px; text-align: right; font-variant-numeric: tabular-nums">{{e.hours}}</td>
+                <td style="padding: 11px 14px; white-space: nowrap">
+                  <button type="button" onClick="{{e.toggle}}" aria-pressed="{{e.flagged}}" style="{{e.btnStyle}}">{{e.btn}}</button>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 14px 16px">
+      <div style="font-size: 14px; line-height: 1.5; min-width: 0; flex: 1 1 400px">{{summary}}</div>
+      <button type="button" onClick="{{review}}" style="{{reviewBtn}}">{{reviewLabel}}</button>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { flagged: {}, reviewed: false }; }
+  renderVals() {
+    const st = this.state;
+    const raw = [
+      ['Oct 2', 'Billing API', 'Paired with Ben on the invoice webhook retry design', '2.5'],
+      ['Oct 6', 'Billing API', 'Implemented idempotent webhook handler and tests', '4.0'],
+      ['Oct 9', 'Clinic onboarding', 'Migration script for clinic import; dry run on staging', '3.5'],
+      ['Oct 14', 'Vendor review', 'Vendor call with the lab-results provider', '1.5'],
+      ['Oct 16', 'Clinic onboarding', 'Fixed duplicate-clinic edge case found in dry run', '3.0'],
+      ['Oct 22', 'Billing API', 'Code review responses; merged retry design', '2.0'],
+      ['Oct 28', 'Ops', 'On-call handover notes and runbook for the import job', '5.5']
+    ];
+    const nFlag = Object.keys(st.flagged).filter((k) => st.flagged[k]).length;
+    const entries = raw.map((r, i) => {
+      const f = !!st.flagged[i];
+      return { date: r[0], task: r[1], desc: r[2], hours: r[3], flagged: f,
+        rowStyle: 'border-top:1px solid #1a2332;background:' + (f ? '#2a1606' : '#111827') + ';',
+        btn: f ? 'Remove flag' : 'Flag',
+        btnStyle: 'border:1px solid ' + (f ? '#f97316' : '#374151') + ';background:#111827;color:' + (f ? '#fdba74' : '#e5e7eb') + ';border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;min-height:32px;',
+        toggle: () => { const n = Object.assign({}, st.flagged); n[i] = !f; this.setState({ flagged: n, reviewed: false }); } };
+    });
+    const step = (state, title, sub) => ({ title, sub, current: state === 'now' ? 'step' : 'false',
+      mark: state === 'done' ? '✓ ' : '',
+      pointer: state === 'now' ? 'width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #e5e7eb;' : 'display:none;',
+      titleStyle: 'font-weight:600;color:' + (state === 'todo' ? '#9ca3af' : '#e5e7eb') + ';',
+      style: 'border-radius:10px;padding:10px 12px;border:1px solid ' + (state === 'now' ? '#e5e7eb' : '#1f2937') + ';' });
+    const steps = [
+      step('done', '1 · Submitted', 'Rivera, Nov 2'),
+      step(st.reviewed ? 'done' : 'now', '2 · Reviewed by you', st.reviewed ? (nFlag ? 'Reviewed with ' + nFlag + ' flagged' : 'Today') : 'Waiting on you'),
+      step(st.reviewed ? 'now' : 'todo', '3 · Approved by Acme', 'Dana Okafor approves in the portal'),
+      step('todo', '4 · Rivera bills Acme', 'With the approved timesheet')
+    ].map((x, k, all) => Object.assign(x, { arrow: k < all.length - 1 }));
+    const total = 22.0;
+    const summary = st.reviewed
+      ? 'Reviewed. Acme can now see “Reviewed by Ben Herila” on these hours.' + (nFlag ? ' Rivera has been asked about ' + nFlag + ' flagged ' + (nFlag === 1 ? 'entry' : 'entries') + '.' : '')
+      : (nFlag ? nFlag + ' flagged. When you mark the month reviewed, Rivera sees your notes and Acme sees the flagged entries.' : 'Everything looks right? Marking October reviewed shows your review to Acme. Acme still gives the final approval.') + ' ' + total.toFixed(1) + ' h in total.';
+    return { entries, steps, summary,
+      reviewLabel: st.reviewed ? 'Undo review' : (nFlag ? 'Mark reviewed, with ' + nFlag + ' flagged' : 'Mark October reviewed'),
+      reviewBtn: 'border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;background:' + (st.reviewed ? '#1f2937' : '#e5e7eb') + ';color:' + (st.reviewed ? '#e5e7eb' : '#111827') + ';',
+      review: () => this.setState({ reviewed: !st.reviewed }) };
+  }
+}
+</script>
+</body>
+</html>

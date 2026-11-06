@@ -575,11 +575,11 @@ Proposal:
    and comments, local linked projects.
 10. **Reviewer grants and the cross-workspace approval queue** (7c, 7d).
 11. **Light workspace and approved timesheet** (7e).
-13. **MCP progressive discovery** (section 11), together with the revenue
-    tools from section 2.
 12. **Invoice document** (section 10): `InvoiceDocument` DTO and grouping, the
     golden tests against the current template, then the new PDF, operator page,
     portal page and proforma.
+13. **MCP progressive discovery** (section 11), together with the revenue
+    tools from section 2.
 
 ## Settled answers
 

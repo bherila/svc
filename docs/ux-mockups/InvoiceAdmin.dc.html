@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice 1041 · Acme Veterinary</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <header style="background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 32px; height: 56px; display: flex; align-items: center; gap: 20px">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; white-space: nowrap">
+        <span style="font-weight: 600">⏻  Herila Consulting</span><span style="color: #6b7280" aria-hidden="true">›</span>
+        <span style="border: 1px solid #1f2937; border-radius: 6px; padding: 5px 10px; font-weight: 600">Acme Veterinary ▾</span>
+      </div>
+      <nav aria-label="Client" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
+        <a href="ClientOverview.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Overview</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Agreements</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">Invoices</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Time</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Tasks</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Files</a>
+      </nav>
+      <span style="font-size: 13px; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">? Help</span>
+    </div>
+  </header>
+
+  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 24px 32px 48px; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+      <div>
+        <h1 style="margin: 0; font-size: 22px; font-weight: 600">Invoice 1041</h1>
+        <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">October 2026 · $9,200.00 · due Nov 15</p>
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap">
+        <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 14px; font-size: 14px; color: #e5e7eb; text-decoration: none">Download PDF</a>
+        <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 14px; font-size: 14px; color: #e5e7eb; text-decoration: none">More ▾</a>
+      </div>
+    </div>
+
+    <ol aria-label="Invoice progress" style="list-style: none; margin: 0; padding: 0; display: flex; align-items: stretch; font-size: 13px">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+        <li aria-current="{{s.current}}" style="flex: 1 1 0; min-width: 0; display: flex; align-items: center">
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+            <div style="height: 14px; display: flex; justify-content: center"><span style="{{s.pointer}}" aria-hidden="true"></span></div>
+            <div style="{{s.style}}"><div style="{{s.titleStyle}}">{{s.mark}}{{s.title}}</div><div style="color: #9ca3af; margin-top: 2px">{{s.sub}}</div></div>
+          </div>
+          <sc-if value="{{s.arrow}}" hint-placeholder-val="{{true}}">
+            <svg width="28" height="16" viewBox="0 0 28 16" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 14px"><path d="M4 8h19"></path><path d="M18 3l5 5-5 5"></path></svg>
+          </sc-if>
+        </li>
+      </sc-for>
+    </ol>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+      <div style="flex: 0 1 816px; min-width: 0; overflow-x: auto; border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.5)">
+        <dc-import name="InvoicePdf" hint-size="816px,1056px"></dc-import>
+      </div>
+
+      <aside style="flex: 1 1 320px; min-width: 300px; display: flex; flex-direction: column; gap: 16px; font-size: 14px">
+        <section aria-label="Balance" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; justify-content: space-between; align-items: baseline"><h2 style="margin: 0; font-size: 15px; font-weight: 600">Waiting for payment</h2><span style="color: #9ca3af; font-size: 13px">due in 9 days</span></div>
+          <div style="font-size: 28px; font-weight: 600">$9,200.00</div>
+          <p style="margin: 0; color: #9ca3af; font-size: 13px; line-height: 1.5">Nothing needs you yet. If it’s still unpaid on Nov 15, it moves to your Needs you list.</p>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 12px; font-size: 13px; color: #e5e7eb; text-decoration: none; text-align: center">Record a payment received elsewhere</a>
+            <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 12px; font-size: 13px; color: #e5e7eb; text-decoration: none; text-align: center">Send a reminder now</a>
+          </div>
+        </section>
+
+        <section aria-label="Hours approval" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">Hours approval</h2>
+          <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #1f2937" role="img" aria-label="12 of 41.5 hours approved"><span style="width: 29%; background: #86efac"></span></div>
+          <div style="color: #cbd5e1; font-size: 13px; line-height: 1.5">12.0 of 41.5 h approved by Dana Okafor in the portal on Nov 4. The rest are approved when this invoice is paid. No disputes.</div>
+        </section>
+
+        <section aria-label="Expenses on this invoice" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">Expenses · 2 receipts</h2>
+          <div style="display: flex; justify-content: space-between; font-size: 13px"><span>Staging database</span><a href="#">B1 · pdf</a></div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px"><span>Lab-results API usage</span><a href="#">B2 · pdf</a></div>
+          <div style="color: #9ca3af; font-size: 12px">Attached to the PDF as appendix B. Acme can open them in its portal.</div>
+        </section>
+
+        <section aria-label="Activity" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+          <h2 style="margin: 0; font-size: 15px; font-weight: 600">Activity</h2>
+          <div style="display: flex; gap: 10px"><span style="color: #9ca3af; width: 52px; flex: none">Nov 4</span><span>Dana approved 12.0 h</span></div>
+          <div style="display: flex; gap: 10px"><span style="color: #9ca3af; width: 52px; flex: none">Nov 2</span><span>Dana opened the email</span></div>
+          <div style="display: flex; gap: 10px"><span style="color: #9ca3af; width: 52px; flex: none">Nov 1</span><span>Issued and emailed to dana@acme-vet.test</span></div>
+          <div style="display: flex; gap: 10px"><span style="color: #9ca3af; width: 52px; flex: none">Nov 1</span><span>Drafted from the agreement (you reviewed 41.5 h)</span></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const step = (state, title, sub) => ({ title, sub, current: state === 'now' ? 'step' : 'false',
+      mark: state === 'done' ? '✓ ' : '',
+      pointer: state === 'now' ? 'width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #e5e7eb;' : 'display:none;',
+      titleStyle: 'font-weight:600;color:' + (state === 'todo' ? '#9ca3af' : '#e5e7eb') + ';',
+      style: 'border-radius:10px;padding:10px 12px;border:1px solid ' + (state === 'now' ? '#e5e7eb' : '#1f2937') + ';' });
+    const steps = [
+      step('done', 'Drafted', 'Nov 1 · from the agreement'),
+      step('done', 'Issued', 'Nov 1 · hours and rates locked'),
+      step('done', 'Sent', 'Nov 1 · opened Nov 2'),
+      step('now', 'Paid', 'Waiting on Acme · due Nov 15')
+    ].map((x, k, all) => Object.assign(x, { arrow: k < all.length - 1 }));
+    return { steps };
+  }
+}
+</script>
+</body>
+</html>

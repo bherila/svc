@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme Veterinary · Overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+input,textarea,select{background:#0b1120;color:#e5e7eb}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <header style="background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 32px; height: 56px; display: flex; align-items: center; gap: 20px">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; white-space: nowrap; min-width: 0">
+        <span style="font-weight: 600">⏻  Herila Consulting</span>
+        <span style="color: #6b7280" aria-hidden="true">›</span>
+        <span style="border: 1px solid #1f2937; border-radius: 6px; padding: 5px 10px; font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis">Acme Veterinary ▾</span>
+      </div>
+      <nav aria-label="Client" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">Overview</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Agreements</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Invoices</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Time</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Tasks</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Files</a>
+      </nav>
+      <span style="font-size: 13px; color: #9ca3af; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">Search  ⌘K</span>
+      <span style="font-size: 13px; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">? Help</span>
+    </div>
+  </header>
+
+  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 28px 32px 48px; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+      <div style="min-width: 0">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 600">Acme Veterinary</h1>
+        <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">Client since March 2024 · Billing contact: Dana Okafor (dana@acme-vet.test)</p>
+      </div>
+      <div style="display: flex; gap: 8px">
+        <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 14px; font-size: 14px; color: #e5e7eb; text-decoration: none">Log time</a>
+        <a href="Proforma.dc.html" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 14px; font-size: 14px; color: #e5e7eb; text-decoration: none">Preview next invoice</a>
+      </div>
+    </div>
+
+    <section aria-label="Key figures" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+      <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px"><div style="font-size: 13px; color: #9ca3af">Monthly recurring</div><div style="font-size: 26px; font-weight: 600; margin-top: 4px">$8,000</div><div style="font-size: 13px; color: #9ca3af; margin-top: 4px">Retainer · 40 h a month</div></div>
+      <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px"><div style="font-size: 13px; color: #9ca3af">Year to date</div><div style="font-size: 26px; font-weight: 600; margin-top: 4px">$96,400</div><div style="font-size: 13px; color: #9ca3af; margin-top: 4px">$8,400 of it overage</div></div>
+      <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px"><div style="font-size: 13px; color: #9ca3af">Last 12 months</div><div style="font-size: 26px; font-weight: 600; margin-top: 4px">$104,900</div><div style="font-size: 13px; color: #9ca3af; margin-top: 4px">▲ 6% vs. prior year</div></div>
+      <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px"><div style="font-size: 13px; color: #9ca3af">Unpaid</div><div style="font-size: 26px; font-weight: 600; margin-top: 4px">$9,200</div><div style="font-size: 13px; color: #9ca3af; margin-top: 4px">#1041 · due Nov 15</div></div>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: stretch">
+      <section aria-label="This month" style="flex: 999 1 560px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline"><h2 style="margin: 0; font-size: 16px; font-weight: 600">November so far</h2><span style="font-size: 13px; color: #9ca3af">Nov 1 – Nov 30</span></div>
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 14px"><span><strong>Herila Consulting</strong> · your retainer</span><span style="font-variant-numeric: tabular-nums">31.5 of 46.0 h</span></div>
+          <div style="display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #1f2937; margin-top: 8px" role="img" aria-label="31.5 hours used: 6 from rollover, 25.5 from this month; 14.5 hours left">
+            <span style="width: 13%; background: #93c5fd"></span>
+            <span style="width: 55.5%; background: #3b82f6"></span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #cbd5e1; margin-top: 8px">
+            <span style="display: flex; gap: 6px; align-items: center"><span style="width: 10px; height: 10px; border-radius: 2px; background: #93c5fd"></span>Rollover used first · 6.0 h (from August, expires Nov 30)</span>
+            <span style="display: flex; gap: 6px; align-items: center"><span style="width: 10px; height: 10px; border-radius: 2px; background: #3b82f6"></span>This month · 25.5 of 40.0 h</span>
+            <span style="display: flex; gap: 6px; align-items: center"><span style="width: 10px; height: 10px; border-radius: 2px; background: #1f2937; box-shadow: inset 0 0 0 1px #6b7280"></span>Left · 14.5 h</span>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #1a2332; padding-top: 14px">
+          <div style="display: flex; justify-content: space-between; font-size: 14px"><span><strong>Rivera Engineering</strong> · partner, bills Acme directly</span><span style="font-variant-numeric: tabular-nums">18.0 h</span></div>
+          <p style="margin: 6px 0 0; font-size: 13px; color: #9ca3af; line-height: 1.5">Doesn’t use your retainer. Shown because you share the Acme platform project and Acme asked you to review Rivera’s hours. October’s 22.0 h are waiting for your review.</p>
+          <a href="Review.dc.html" style="font-size: 13px; display: inline-block; margin-top: 6px">Review October hours →</a>
+        </div>
+      </section>
+
+      <section aria-label="Next invoice" style="flex: 1 1 320px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">Next invoice · estimate</h2>
+        <p style="margin: 0; font-size: 13px; color: #9ca3af">Draft created Dec 1. You review it, then issue it.</p>
+        <div style="display: flex; justify-content: space-between"><span>December retainer</span><span style="font-variant-numeric: tabular-nums">$8,000</span></div>
+        <div style="display: flex; justify-content: space-between"><span>November overage so far</span><span style="font-variant-numeric: tabular-nums">$0</span></div>
+        <div style="display: flex; justify-content: space-between"><span>Web hosting · December</span><span style="font-variant-numeric: tabular-nums">$150</span></div>
+        <div style="display: flex; justify-content: space-between"><span>Expenses · 2 approved</span><span style="font-variant-numeric: tabular-nums">$138</span></div>
+        <div style="display: flex; justify-content: space-between; color: #9ca3af"><span>Tax</span><span style="font-variant-numeric: tabular-nums">$13</span></div>
+        <div style="display: flex; justify-content: space-between; border-top: 1px solid #1f2937; padding-top: 8px; font-weight: 600"><span>Estimate</span><span style="font-variant-numeric: tabular-nums">$8,301</span></div>
+        <p style="margin: 0; font-size: 13px; color: #9ca3af; line-height: 1.5">1 more expense ($120) is waiting for your approval. Your November hours, approved expenses and recurring services go on this draft automatically. Acme approves them in its portal, or by paying the invoice.</p>
+        <a href="Proforma.dc.html" style="align-self: flex-start; border: 1px solid #374151; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 500; color: #e5e7eb; text-decoration: none">View proforma invoice</a>
+      </section>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <section aria-label="Recent invoices" style="flex: 999 1 560px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 18px 20px">
+        <h2 style="margin: 0 0 10px; font-size: 16px; font-weight: 600">Recent invoices</h2>
+        <div style="overflow-x: auto">
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px">
+            <thead><tr style="text-align: left; font-size: 12px; color: #9ca3af"><th scope="col" style="padding: 8px 10px">Invoice</th><th scope="col" style="padding: 8px 10px">Period</th><th scope="col" style="padding: 8px 10px; text-align: right">Amount</th><th scope="col" style="padding: 8px 10px">Payment</th><th scope="col" style="padding: 8px 10px; min-width: 220px">Hours approval</th></tr></thead>
+            <tbody>
+              <tr style="border-top: 1px solid #1a2332"><td style="padding: 10px; white-space: nowrap"><a href="#">#1041</a></td><td style="padding: 10px; white-space: nowrap">October</td><td style="padding: 10px; text-align: right; font-variant-numeric: tabular-nums">$9,200</td><td style="padding: 10px"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #172f5e; color: #93c5fd">Issued</span></td><td style="padding: 10px; font-size: 13px; color: #cbd5e1; white-space: normal">12.0 of 41.5 h approved by Dana in the portal. The rest are approved when the invoice is paid.</td></tr>
+              <tr style="border-top: 1px solid #1a2332"><td style="padding: 10px"><a href="#">#1040</a></td><td style="padding: 10px">September</td><td style="padding: 10px; text-align: right; font-variant-numeric: tabular-nums">$8,800</td><td style="padding: 10px"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #052e16; color: #86efac">Paid</span></td><td style="padding: 10px; font-size: 13px; color: #cbd5e1; white-space: normal">Approved by payment, except 1 disputed entry (1.5 h)</td></tr>
+              <tr style="border-top: 1px solid #1a2332"><td style="padding: 10px"><a href="#">#1033</a></td><td style="padding: 10px">August</td><td style="padding: 10px; text-align: right; font-variant-numeric: tabular-nums">$8,000</td><td style="padding: 10px"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #052e16; color: #86efac">Paid</span></td><td style="padding: 10px; font-size: 13px; color: #cbd5e1; white-space: normal">All 38.0 h approved by Dana in the portal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-label="Shared project" style="flex: 1 1 320px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px">
+        <div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 16px; font-weight: 600">Acme platform</h2><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #2e1065; color: #c4b5fd">Shared project</span></div>
+        <p style="margin: 0; font-size: 13px; color: #9ca3af; line-height: 1.5">You host it. Tasks, comments and files are shared. Each business’s time, rates and invoices stay in its own workspace.</p>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <div style="display: flex; justify-content: space-between"><span>Herila Consulting</span><span style="color: #9ca3af; font-size: 13px">Host · you</span></div>
+          <div style="display: flex; justify-content: space-between"><span>Rivera Engineering</span><span style="color: #9ca3af; font-size: 13px">Partner · you review its hours</span></div>
+          <div style="display: flex; justify-content: space-between"><span>Acme Veterinary</span><span style="color: #9ca3af; font-size: 13px">Client · approves hours</span></div>
+        </div>
+        <div style="display: flex; gap: 12px; font-size: 13px"><a href="#">Open tasks (14)</a><a href="#">Invite a partner</a></div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
