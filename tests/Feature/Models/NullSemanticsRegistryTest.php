@@ -10,6 +10,7 @@ use ReflectionClass;
 use Tests\Feature\AgentApi\AgentInvoiceOperationsParityTest;
 use Tests\Feature\AgentApi\AgentReadApiTest;
 use Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest;
+use Tests\Feature\Approval\ClientApprovalTest;
 use Tests\Feature\Billing\AgreementBillingRateResolverTest;
 use Tests\Feature\Billing\AllocationServiceTest;
 use Tests\Feature\Billing\BillingWorkflowTest;
@@ -237,6 +238,17 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.service_period_start => covered_by:Tests\Feature\Billing\UnplaceableInvoiceAuditorTest::test_the_period_guard_count_reads_both_boundaries_and_narrows_by_kind_only_when_unlinked',
         'client_time_entries.approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
         'client_time_entries.approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_and_without_an_approval_author_do_not_recombine',
+        'client_time_entries.client_approved_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.client_approved_at => covered_by:Tests\Feature\Approval\ClientApprovalTest::test_approving_a_month_stamps_hours_and_expenses_and_leaves_other_months_alone',
+        'client_time_entries.client_approved_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.client_approved_by_user_id => covered_by:Tests\Feature\Approval\ClientApprovalTest::test_paying_in_full_approves_the_hours_and_expenses_on_the_invoice_and_names_no_one',
+        'client_time_entries.client_approval_source => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.client_approval_source => covered_by:Tests\Feature\Approval\ClientApprovalTest::test_a_part_payment_approves_nothing',
+        'client_time_entries.client_disputed_at => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.client_disputed_at => covered_by:Tests\Feature\Approval\ClientApprovalTest::test_approving_a_month_does_not_override_a_dispute_and_a_dispute_clears_an_approval',
+        'client_time_entries.client_disputed_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.client_dispute_note => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
+        'client_time_entries.client_dispute_note => covered_by:Tests\Feature\Approval\ClientApprovalTest::test_a_dispute_without_a_note_is_recorded_too',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_selected_time_with_no_stored_rate_is_refused',
         'client_time_entries.billing_rate_source => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_a_stored_rate_with_no_provenance_is_replaced_by_the_agreement_rate',
@@ -1072,6 +1084,65 @@ final class NullSemanticsRegistryTest extends TestCase
             'approved_at' => [
                 'covered_by' => AllocationServiceTest::class,
                 'method' => 'test_fragments_with_and_without_an_approval_timestamp_do_not_recombine',
+            ],
+            // The client's own decision, kept apart from the operator's approval
+            // above. Null is "not decided", and a fragment that has been decided
+            // on is not the same piece of work as one that has not.
+            'client_approved_at' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+                [
+                    'covered_by' => ClientApprovalTest::class,
+                    'method' => 'test_approving_a_month_stamps_hours_and_expenses_and_leaves_other_months_alone',
+                ],
+            ],
+            'client_approved_by_user_id' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+                [
+                    'covered_by' => ClientApprovalTest::class,
+                    'method' => 'test_paying_in_full_approves_the_hours_and_expenses_on_the_invoice_and_names_no_one',
+                ],
+            ],
+            'client_approval_source' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+                [
+                    'covered_by' => ClientApprovalTest::class,
+                    'method' => 'test_a_part_payment_approves_nothing',
+                ],
+            ],
+            'client_disputed_at' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+                [
+                    'covered_by' => ClientApprovalTest::class,
+                    'method' => 'test_approving_a_month_does_not_override_a_dispute_and_a_dispute_clears_an_approval',
+                ],
+            ],
+            'client_disputed_by_user_id' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+            ],
+            'client_dispute_note' => [
+                [
+                    'covered_by' => AllocationServiceTest::class,
+                    'method' => 'test_fragments_with_divergent_preserved_fields_do_not_recombine',
+                ],
+                [
+                    'covered_by' => ClientApprovalTest::class,
+                    'method' => 'test_a_dispute_without_a_note_is_recorded_too',
+                ],
             ],
             // Both once cited a fixture that nulls the pair, while production
             // refuses on `amount === null || currency === ''`. Because that is

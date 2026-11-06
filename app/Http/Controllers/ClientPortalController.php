@@ -12,6 +12,7 @@ use App\Models\ClientProposalItem;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
+use App\Queries\Approval\PortalApprovalQueue;
 use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Queries\Portal\PortalOverviewQuery;
 use App\Services\Authorization\PortalAccess;
@@ -73,7 +74,7 @@ class ClientPortalController extends Controller
      * a client the less their own screen told them. This is bounded, and every
      * section links to the module holding the rest.
      */
-    public function show(Request $request, ClientCompany $clientCompany, PortalClientHomeQuery $home, PortalOverviewQuery $overview): Response
+    public function show(Request $request, ClientCompany $clientCompany, PortalClientHomeQuery $home, PortalOverviewQuery $overview, PortalApprovalQueue $approvals): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
@@ -85,6 +86,10 @@ class ClientPortalController extends Controller
         return Inertia::render('portal/home', [
             ...$home->for($clientCompany, $viewer)->toArray(),
             ...$overview->for($clientCompany, $viewer),
+            // Null for anyone who may not approve for this client, so the
+            // section is not rendered at all rather than shown disabled.
+            'to_approve' => $approvals->for($clientCompany, $viewer),
+            'approval_result' => session('approval_result'),
         ]);
     }
 

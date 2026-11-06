@@ -108,7 +108,7 @@ final class RecordPaymentAction
                     function (ClientInvoice $locked) use ($data, $agreement, $policy): void {
                         abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
                         $this->collection->assertMayRecord($locked, $agreement, $policy);
-                    });
+                    }, $user->id);
                 if ($allocation !== null) {
                     $reconciliation = $this->reconciliations->upsert($workspace, $payment, $user, [
                         'external_system_slug' => $allocation['external_system_slug'],

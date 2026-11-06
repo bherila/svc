@@ -23,7 +23,7 @@ final readonly class ApprovalPeriod
     public static function containing(string $day): self
     {
         $parsed = CarbonImmutable::createFromFormat('!Y-m-d', $day);
-        if ($parsed === false || $parsed->toDateString() !== $day) {
+        if (! $parsed instanceof CarbonImmutable || $parsed->toDateString() !== $day) {
             throw new InvalidArgumentException('An approval period is found from a Y-m-d day.');
         }
 
@@ -39,7 +39,7 @@ final readonly class ApprovalPeriod
 
         $first = CarbonImmutable::createFromFormat('!Y-m-d', $key.'-01');
 
-        return $first === false ? null : new self($first);
+        return $first instanceof CarbonImmutable ? new self($first) : null;
     }
 
     public function key(): string

@@ -62,7 +62,9 @@ final class ConsultantTimeReleaser
             if (! ConsultantTimeRelease::releases(
                 $entry->status,
                 $entry->is_billable,
-                $entry->getRawOriginal('subcontractor_billing_mode'),
+                // Raw, so a mode this code has never heard of keeps the entry out
+                // rather than throwing from the cast in the middle of generation.
+                is_string($entry->getRawOriginal('subcontractor_billing_mode')) ? $entry->getRawOriginal('subcontractor_billing_mode') : null,
                 $entry->subcontractor_cost_amount !== null,
                 $entry->worked_on->toDateString(),
                 $today,

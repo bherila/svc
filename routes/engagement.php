@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Engagement\AgreementController;
+use App\Http\Controllers\Engagement\PortalApprovalController;
 use App\Http\Controllers\Engagement\ProposalController;
 use App\Http\Controllers\Engagement\TimeSheetController;
 use App\Http\Controllers\WorkspaceModuleRedirectController;
@@ -21,6 +22,12 @@ Route::middleware(['web', 'auth'])->group(function (): void {
         ->name('svc.engagement.time-entries.index');
     Route::post('/portal/{clientCompany}/proposals/{clientProposal}/accept', [ProposalController::class, 'accept'])
         ->name('svc.engagement.proposals.accept');
+
+    // The client's own decisions on hours and expenses, from the portal home.
+    Route::post('/portal/{clientCompany}/approvals/approve', [PortalApprovalController::class, 'approve'])
+        ->name('portal.approvals.approve');
+    Route::post('/portal/{clientCompany}/approvals/dispute', [PortalApprovalController::class, 'dispute'])
+        ->name('portal.approvals.dispute');
 
     Route::post('/workspaces/{workspace}/agreements/{clientAgreement}/sign', [AgreementController::class, 'sign'])
         ->name('svc.engagement.agreements.sign');
