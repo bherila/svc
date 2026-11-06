@@ -109,7 +109,7 @@ final class AttachmentSharingNativeTest extends TestCase
         $this->actingAs($contributor, 'web')->get(route('svc.files.parent.show', [$workspace, 'project', $project->public_id]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('attachment_panel.upload', null)->missing('legacy_upload_href'));
     }
 
-    public function test_financial_detail_uses_shared_seeded_controls_without_per_record_queries(): void
+    public function test_financial_detail_and_operations_use_shared_seeded_controls_without_per_record_queries(): void
     {
         [$workspace, $company, , $owner] = $this->fixture();
         $this->actingAs($owner, 'web');
@@ -124,12 +124,12 @@ final class AttachmentSharingNativeTest extends TestCase
             }
             DB::enableQueryLog();
             DB::flushQueryLog();
-            $response = $this->get(route('clients.proposal', [$workspace, $company, $proposal]));
+            $response = $this->get(route('workspaces.operations', $workspace));
             $counts[] = count(array_filter(DB::getQueryLog(), fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select')));
             DB::disableQueryLog();
             $response->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->has('attachment_panel.files', 1)
-                ->where('attachment_panel.files.0.sharing.effective_visible_to_client', false));
+                ->has('workspace.clients.0.proposals', $index)->has('workspace.clients.0.proposals.0.attachment_panel.files', 1)
+                ->where('workspace.clients.0.proposals.0.attachment_panel.files.0.sharing.is_visible_to_client', false));
         }
         $this->assertSame($counts[0], $counts[3], 'Growing native file parents must not grow SQL query count.');
     }

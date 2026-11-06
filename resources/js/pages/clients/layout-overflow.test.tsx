@@ -9,6 +9,7 @@ import ClientInvoices from '@/pages/clients/invoices';
 import ClientProposalDetail from '@/pages/clients/proposal';
 import ClientSettings from '@/pages/clients/settings';
 import ClientTasks from '@/pages/clients/tasks';
+import Operations from '@/pages/operations';
 import Dashboard from '@/pages/workspaces/dashboard';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
@@ -96,6 +97,39 @@ const LONG_REPOSITORY =
 const company = { id: 'company-1', name: LONG_NAME };
 
 describe('client screens under data that does not fit', () => {
+    it('keeps the Operations workspace title in content and all existing navigation available', () => {
+        const workspaceName = 'SyntheticUnbrokenWorkspace'.repeat(10);
+        const { container } = render(
+            <Operations
+                workspace={{
+                    id: 'synthetic-workspace',
+                    name: workspaceName,
+                    clients: [],
+                    timezone: 'UTC',
+                }}
+            />,
+        );
+
+        expect(screen.getByRole('main')).toContainElement(
+            screen.getByRole('heading', { level: 1, name: workspaceName }),
+        );
+        expect(screen.getByRole('banner')).not.toContainElement(
+            screen.getByRole('main'),
+        );
+        expect(
+            screen.getByRole('link', { name: 'Leave this workspace' }),
+        ).toHaveAttribute('href', '/app');
+        expect(
+            screen.getByRole('navigation', { name: 'Client sections' }),
+        ).toContainElement(screen.getByRole('link', { name: 'Overview' }));
+        expect(screen.getByRole('link', { name: 'Time' })).toHaveAttribute(
+            'href',
+            '/workspaces/workspace-1/clients/company-1/time',
+        );
+        expect(screen.getAllByRole('banner')).toHaveLength(1);
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
     it('keeps the Dashboard queue and all existing navigation inside the window', () => {
         const { container } = render(
             <Dashboard

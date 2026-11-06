@@ -1,10 +1,14 @@
 ---
 title: History, MCP and Square
 audience: [operator]
-routes: [history.index, history.show, mcp.setup, square.explore]
+routes: [workspaces.operations, history.index, history.show, mcp.setup, square.explore]
 terms: []
 ---
 These live in the settings menu because they are about the workspace, not one client.
+
+## Operations (classic tools)
+
+The older all-in-one page keeps the tools that have not moved yet: drafting and sending proposals, activating agreements, billing schedules, logging time by project and the per-client file panels. It is in the settings menu until each has a new home.
 
 ## History
 

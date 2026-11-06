@@ -115,6 +115,8 @@ final class WorkspaceNavigationFactory
             createClientUrl: $manages ? route('agent-api.v1.clients.store', $workspace, absolute: false) : null,
             workspaceDestinations: $this->workspaceDestinations($workspace, $isMember, $manages),
             taskLabelsHref: $isMember ? route('tasks.planning.labels.page', $workspace, absolute: false) : null,
+            // The classic tools page, for the members who could always open it.
+            operationsHref: $isMember ? route('workspaces.operations', $workspace, absolute: false) : null,
         );
     }
 

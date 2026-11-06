@@ -303,10 +303,11 @@ class WorkspaceDashboardTest extends TestCase
         $this->assertNull($member['settings']);
     }
 
-    public function test_the_old_operations_url_redirects_to_the_dashboard(): void
+    public function test_operations_still_renders_as_a_classic_tools_page_linked_from_the_menu(): void
     {
-        $this->actingAs($this->owner)->get($this->path('operations'))
-            ->assertRedirect(route('workspaces.dashboard', $this->workspace));
+        $this->actingAs($this->owner)->get($this->path('operations'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component('operations')
+                ->where('workspaceNavigation.operations_href', "/workspaces/{$this->workspace->public_id}/operations"));
     }
 
     public function test_entering_a_workspace_with_no_client_to_go_to_lands_on_the_dashboard(): void

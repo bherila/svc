@@ -3,16 +3,47 @@
 namespace Tests\Feature\Api;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 final class EngagementBrowserApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_operations_sends_versions_and_finished_manager_urls_and_withholds_them_from_viewers(): void
+    {
+        [$owner, $workspace, $company] = $this->tenant();
+        $proposal = ClientProposal::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic proposal', 'status' => 'draft', 'currency' => 'USD']);
+        $draft = $this->agreement($workspace, $company, 'draft');
+        $active = $this->agreement($workspace, $company, 'active');
+        $schedule = ClientBillingSchedule::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $active->id, 'cadence' => 'monthly', 'next_run_on' => '2026-10-01', 'due_days' => 30, 'currency' => 'USD', 'is_active' => true, 'line_template' => []]);
+        $this->actingAs($owner)->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $page): Assert => $page
+            ->where('workspace.clients.0.version', AgentApiVersion::for($company))
+            ->where('workspace.clients.0.create_proposal_href', route('agent-api.v1.proposals.store', $workspace, absolute: false))
+            ->where('workspace.clients.0.proposals.0.version', AgentApiVersion::for($proposal))
+            ->where('workspace.clients.0.proposals.0.send_href', route('agent-api.v1.proposals.send', [$workspace, $proposal->public_id], absolute: false))
+            ->where('workspace.clients.0.agreements', function ($agreements) use ($draft, $workspace): bool {
+                $data = collect($agreements)->keyBy('id');
+
+                return $data[$draft->public_id]['activate_href'] === route('agent-api.v1.agreements.activate', [$workspace, $draft->public_id], absolute: false)
+                    && collect($agreements)->every(fn (array $agreement): bool => $agreement['create_schedule_href'] === null);
+            })
+            ->where('workspace.clients.0.billing_schedules.0.generate_href', route('agent-api.v1.billing-schedules.generate', [$workspace, $schedule->public_id], absolute: false)));
+        $viewer = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $viewer->id, 'role' => 'viewer']);
+        $this->actingAs($viewer)->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $page): Assert => $page
+            ->where('workspace.clients.0.create_proposal_href', null)
+            ->where('workspace.clients.0.proposals.0.send_href', null)
+            ->where('workspace.clients.0.agreements', fn ($agreements): bool => collect($agreements)->every(fn (array $agreement): bool => $agreement['activate_href'] === null && $agreement['create_schedule_href'] === null))
+            ->where('workspace.clients.0.billing_schedules.0.generate_href', null));
+    }
 
     public function test_session_schedule_creation_is_versioned_and_replayable_with_agent_writes_disabled(): void
     {

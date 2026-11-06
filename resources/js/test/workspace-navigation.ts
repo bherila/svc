@@ -68,6 +68,7 @@ export function workspaceNavigation(
             finance: '/workspaces/workspace-1/finance',
         },
         task_labels_href: '/workspaces/workspace-1/task-labels',
+        operations_href: '/workspaces/workspace-1/operations',
         ...overrides,
     };
 }

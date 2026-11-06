@@ -17,12 +17,12 @@ use App\Http\Controllers\WorkspaceDashboardController;
 use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceFinanceController;
 use App\Http\Controllers\WorkspaceInvoiceListController;
+use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Controllers\WorkspaceTimeQueueController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PublishApiDocumentation;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
-use App\Models\Workspace;
 use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
 use Illuminate\Support\Facades\Route;
@@ -107,10 +107,13 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/workspaces/{workspace}/finance', WorkspaceFinanceController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.finance');
-    // The retired Operations screen. Kept as a redirect so bookmarks and the
-    // `web_url` values the API has handed out still land somewhere real; the
-    // route name stays because those URLs are built from it.
-    Route::get('/workspaces/{workspace}/operations', fn (Workspace $workspace) => redirect()->route('workspaces.dashboard', $workspace))
+    // Operations, kept exactly as it was: until the client overview and invoice
+    // lanes re-home each of its tools (draft proposals, proposal send, agreement
+    // activation, billing schedules, the per-project time form, per-client file
+    // panels) it is the only UI for them. Reached from the settings menu as
+    // "Operations (classic tools)"; no tab is lit.
+    Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {

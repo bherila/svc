@@ -209,6 +209,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                         'note',
                         'portal',
                         'agreementfiles',
+                        'operationsfiles',
                         'parentfiles',
                         'portalproposalfiles',
                         'portalinvoicefiles',
@@ -256,7 +257,10 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             await page.goto(origin + fixture[screen]);
             await expect(page.locator('main')).toBeVisible();
 
-            if (screen !== 'pagination_native_parent') {
+            if (
+                screen !== 'operationsfiles' &&
+                screen !== 'pagination_native_parent'
+            ) {
                 await expect(
                     page.getByRole('button', { name: 'Current client' }),
                 ).toContainText(fixture.company_name);

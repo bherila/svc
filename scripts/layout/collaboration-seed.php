@@ -140,6 +140,7 @@ file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->
     'nativeportalagreementfiles' => route('portal.agreement', [$company, $agreement], absolute: false),
     'dualportalagreementfiles' => route('portal.agreement', [$company, $agreement], absolute: false),
     'expensefiles' => route('svc.expenses.receipts', [$workspace, $company, $expense->public_id], absolute: false),
+    'operationsfiles' => route('workspaces.operations', $workspace, absolute: false),
     'taskthread' => route('collaboration.comments.index', [$workspace, $company, 'task', $task->public_id], absolute: false),
     'content_topic_create' => route('agent-api.v1.collaboration.topics.store', [$workspace, $company->public_id], absolute: false),
     'content_comment_create' => route('agent-api.v1.collaboration.comments.store', [$workspace, $company->public_id, 'topic', $topics['note']->public_id], absolute: false),
