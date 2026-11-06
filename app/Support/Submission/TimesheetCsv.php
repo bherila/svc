@@ -52,7 +52,14 @@ final class TimesheetCsv
     /** @param list<string> $cells */
     private static function line(array $cells): string
     {
-        return implode(',', array_map(self::cell(...), $cells));
+        // A direct call, so strict types apply to each cell: a value that is not
+        // text is refused here rather than coerced by a callback.
+        $written = [];
+        foreach ($cells as $cell) {
+            $written[] = self::cell($cell);
+        }
+
+        return implode(',', $written);
     }
 
     private static function cell(string $value): string
