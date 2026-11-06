@@ -30943,6 +30943,816 @@
                     }
                 },
                 {
+                    "name": "shared_projects.comments.create",
+                    "title": "Comment on a shared task",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "task_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "body": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 50000
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "task_id",
+                            "body",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Add a comment to a task the caller may see. It joins the shared conversation, so the host and every participant who can see the task read it; it is never shown to the host's client. A host viewer with no write role on the project, and a participant who cannot see the task, cannot comment. Requires AGENT_API_COLLABORATION_WRITES_ENABLED. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "body",
+                                    "author_name",
+                                    "author_workspace_name",
+                                    "shared_with_participants",
+                                    "created_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "body": {
+                                        "type": "string"
+                                    },
+                                    "author_name": {
+                                        "type": "string"
+                                    },
+                                    "author_workspace_name": {
+                                        "type": "string"
+                                    },
+                                    "shared_with_participants": {
+                                        "type": "boolean"
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "shared_projects.comments.list",
+                    "title": "List a shared task's comments",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "task_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 50,
+                                "minimum": 1,
+                                "maximum": 50
+                            },
+                            "cursor": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "maxLength": 2048
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "task_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "The comments of a task the caller may see, 50 per page. The host sees all of them and which are shared; a participant sees only comments in the shared conversation: ones a participant wrote, and ones the host published to it. The host's internal comments are never returned to a participant. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data",
+                            "meta"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "maxItems": 50,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "body",
+                                        "author_name",
+                                        "author_workspace_name",
+                                        "shared_with_participants",
+                                        "created_at"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "body": {
+                                            "type": "string"
+                                        },
+                                        "author_name": {
+                                            "type": "string"
+                                        },
+                                        "author_workspace_name": {
+                                            "type": "string"
+                                        },
+                                        "shared_with_participants": {
+                                            "type": "boolean"
+                                        },
+                                        "created_at": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "date-time"
+                                        }
+                                    }
+                                }
+                            },
+                            "meta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "next_cursor"
+                                ],
+                                "properties": {
+                                    "next_cursor": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "shared_projects.get",
+                    "title": "Get a shared project",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "One shared project: its name, status and the viewer's standing. The host also gets the client name, description, participating workspaces and open invitations; a participant gets the host workspace's name and its own linked local project. Only a viewer who may assign gets assignee_options: the people of the host and of each participant who can be handed a task. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "name",
+                                    "status",
+                                    "side",
+                                    "host_workspace_name",
+                                    "viewer",
+                                    "web_url"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "status": {
+                                        "type": "string"
+                                    },
+                                    "side": {
+                                        "type": "string",
+                                        "enum": [
+                                            "host",
+                                            "participant"
+                                        ]
+                                    },
+                                    "host_workspace_name": {
+                                        "type": "string"
+                                    },
+                                    "viewer": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "sees_whole_project",
+                                            "can_assign",
+                                            "can_manage_participants",
+                                            "can_act_as_participant"
+                                        ],
+                                        "properties": {
+                                            "sees_whole_project": {
+                                                "type": "boolean"
+                                            },
+                                            "can_assign": {
+                                                "type": "boolean"
+                                            },
+                                            "can_manage_participants": {
+                                                "type": "boolean"
+                                            },
+                                            "can_act_as_participant": {
+                                                "type": "boolean"
+                                            }
+                                        }
+                                    },
+                                    "web_url": {
+                                        "type": "string"
+                                    },
+                                    "client_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "participants": {
+                                        "type": "array",
+                                        "maxItems": 25,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "id",
+                                                "workspace_name",
+                                                "accepted_at"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "workspace_name": {
+                                                    "type": "string"
+                                                },
+                                                "accepted_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "invitations": {
+                                        "type": "array",
+                                        "maxItems": 25,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "id",
+                                                "email",
+                                                "expires_at"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "email": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "participation": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "accepted_at"
+                                        ],
+                                        "properties": {
+                                            "accepted_at": {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            }
+                                        }
+                                    },
+                                    "local_project": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "id",
+                                            "name"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "name": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "assignee_options": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "user_id",
+                                                "name",
+                                                "workspace_id",
+                                                "workspace_name"
+                                            ],
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "workspace_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "workspace_name": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "shared_projects.list",
+                    "title": "List shared projects",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "The shared projects the workspace hosts (with a participant or a pending invitation) and the ones it takes part in. Bounded to 100 of each. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "hosted",
+                                    "participating"
+                                ],
+                                "properties": {
+                                    "hosted": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "client_name",
+                                                "web_url"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "client_name": {
+                                                    "type": "string"
+                                                },
+                                                "web_url": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "participating": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "host_workspace_name",
+                                                "web_url"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "host_workspace_name": {
+                                                    "type": "string"
+                                                },
+                                                "web_url": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "shared_projects.tasks.assign",
+                    "title": "Assign a shared task across workspaces",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "task_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "assignees": {
+                                "type": "array",
+                                "maxItems": 25,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "user_id",
+                                        "workspace_id"
+                                    ],
+                                    "properties": {
+                                        "user_id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "workspace_id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        }
+                                    }
+                                }
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id",
+                            "task_id",
+                            "assignees",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Replace who a task is assigned to, across the host and its participants, for a host workspace owner or admin or a project owner or manager. People already assigned stay; anyone new must be offered in assignee_options. Assigning gives access to nothing: a participant sees the task only as the rules above allow. A person can hold a task once. Requires AGENT_API_COLLABORATION_WRITES_ENABLED. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "task_id",
+                                    "assignees"
+                                ],
+                                "properties": {
+                                    "task_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "assignees": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "name",
+                                                "workspace_name"
+                                            ],
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "workspace_name": {
+                                                    "type": "string"
+                                                },
+                                                "user_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "workspace_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "shared_projects.tasks.list",
+                    "title": "List a shared project's tasks",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 50,
+                                "minimum": 1,
+                                "maximum": 50
+                            },
+                            "cursor": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "maxLength": 2048
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "project_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "The project's tasks the caller may see, 50 per page, ordered by creation; follow meta.next_cursor until null. Each carries its assignees with the workspace each stands in; user and workspace ids are returned only to a viewer who may assign. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data",
+                            "meta"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "maxItems": 50,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "title",
+                                        "description",
+                                        "status",
+                                        "shared_with_participants",
+                                        "starts_on",
+                                        "due_on",
+                                        "completed_at",
+                                        "web_url",
+                                        "assignees",
+                                        "can_comment"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "description": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "shared_with_participants": {
+                                            "type": "boolean"
+                                        },
+                                        "starts_on": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "date"
+                                        },
+                                        "due_on": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "date"
+                                        },
+                                        "completed_at": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "date-time"
+                                        },
+                                        "web_url": {
+                                            "type": "string"
+                                        },
+                                        "assignees": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "name",
+                                                    "workspace_name"
+                                                ],
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "workspace_name": {
+                                                        "type": "string"
+                                                    },
+                                                    "user_id": {
+                                                        "type": "string",
+                                                        "format": "uuid"
+                                                    },
+                                                    "workspace_id": {
+                                                        "type": "string",
+                                                        "format": "uuid"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "can_comment": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            },
+                            "meta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "next_cursor"
+                                ],
+                                "properties": {
+                                    "next_cursor": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "square.customers.get",
                     "title": "Get Square customer",
                     "inputSchema": {
@@ -41615,17 +42425,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -41825,6 +42635,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -41895,17 +42711,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -42110,6 +42926,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -42153,14 +42975,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -42363,6 +43185,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -42406,14 +43234,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -42616,6 +43444,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -42659,14 +43493,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -42869,6 +43703,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -42912,14 +43752,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -43019,6 +43859,8 @@
                     "proposals.accept scope_not_granted proposals:accept",
                     "proposals.create scope_not_granted proposals:write",
                     "proposals.send scope_not_granted proposals:write",
+                    "shared_projects.comments.create scope_not_granted collaboration:write",
+                    "shared_projects.tasks.assign scope_not_granted tasks:write",
                     "square.import_customer scope_not_granted billing:write",
                     "square.sync scope_not_granted billing:write",
                     "task_organization.lists.archive scope_not_granted tasks:write",
@@ -43121,6 +43963,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -43164,17 +44010,17 @@
                 "toolsets": {
                     "billing": 20,
                     "clients": 6,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 6,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 17,
-                    "tasks": 12,
+                    "tasks": 13,
                     "time": 1
                 }
             },
@@ -43451,6 +44297,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create scope_not_granted collaboration:write",
+                    "shared_projects.tasks.assign scope_not_granted tasks:write",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -43527,6 +44375,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -43551,14 +44403,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -43778,6 +44630,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create scope_not_granted collaboration:write",
+                    "shared_projects.tasks.assign scope_not_granted tasks:write",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -43854,6 +44708,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -43878,14 +44736,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -44155,6 +45013,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -44210,17 +45074,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 14,
+                    "tasks": 16,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -44414,6 +45278,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -44469,17 +45339,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 14,
+                    "tasks": 16,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -44690,6 +45560,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -44727,14 +45603,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 14,
+                    "tasks": 16,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -44943,6 +45819,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -44980,14 +45862,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 14,
+                    "tasks": 16,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -45196,6 +46078,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -45233,14 +46121,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 14,
+                    "tasks": 16,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -45449,6 +46337,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -45486,14 +46380,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 14,
+                    "tasks": 16,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -45672,6 +46566,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -45742,17 +46642,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 8,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -45931,6 +46831,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -46001,17 +46907,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 8,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -46216,6 +47122,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -46259,14 +47171,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -46469,6 +47381,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -46512,14 +47430,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -46722,6 +47640,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -46765,14 +47689,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -46975,6 +47899,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -47018,14 +47948,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -47127,6 +48057,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -47249,6 +48181,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -47274,17 +48210,17 @@
                 "toolsets": {
                     "billing": 20,
                     "clients": 5,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 9,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 1,
-                    "tasks": 3,
+                    "tasks": 4,
                     "time": 4
                 }
             },
@@ -47384,6 +48320,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -47506,6 +48444,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -47531,17 +48473,17 @@
                 "toolsets": {
                     "billing": 20,
                     "clients": 5,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 9,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 1,
-                    "tasks": 3,
+                    "tasks": 4,
                     "time": 4
                 }
             },
@@ -47685,6 +48627,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -47763,6 +48707,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -47787,14 +48735,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 3,
+                    "tasks": 4,
                     "time": 4
                 }
             },
@@ -47936,6 +48884,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -48014,6 +48964,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -48038,14 +48992,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 3,
+                    "tasks": 4,
                     "time": 4
                 }
             },
@@ -48187,6 +49141,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -48265,6 +49221,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -48289,14 +49249,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 3,
+                    "tasks": 4,
                     "time": 4
                 }
             },
@@ -48438,6 +49398,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -48516,6 +49478,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
@@ -48540,14 +49506,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 3,
+                    "tasks": 4,
                     "time": 4
                 }
             },
@@ -48644,6 +49610,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
                     "task_organization.lists.archive deployment_disabled",
@@ -48749,6 +49717,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -48792,17 +49764,17 @@
                 "toolsets": {
                     "billing": 20,
                     "clients": 6,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 9,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 17,
-                    "tasks": 12,
+                    "tasks": 13,
                     "time": 1
                 }
             },
@@ -48897,6 +49869,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
                     "task_organization.lists.archive deployment_disabled",
@@ -49002,6 +49976,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -49045,17 +50023,17 @@
                 "toolsets": {
                     "billing": 20,
                     "clients": 6,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 9,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 17,
-                    "tasks": 12,
+                    "tasks": 13,
                     "time": 1
                 }
             },
@@ -49197,6 +50175,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -49273,6 +50253,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -49297,14 +50281,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -49444,6 +50428,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -49520,6 +50506,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -49544,14 +50534,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -49691,6 +50681,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -49767,6 +50759,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -49791,14 +50787,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -49938,6 +50934,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -50014,6 +51012,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -50038,14 +51040,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -50140,6 +51142,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
                     "task_organization.lists.archive deployment_disabled",
@@ -50242,6 +51246,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -50290,17 +51298,17 @@
                 "toolsets": {
                     "billing": 20,
                     "clients": 6,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 9,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 17,
-                    "tasks": 12,
+                    "tasks": 13,
                     "time": 4
                 }
             },
@@ -50397,6 +51405,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
                     "task_organization.lists.archive deployment_disabled",
@@ -50499,6 +51509,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -50547,17 +51561,17 @@
                 "toolsets": {
                     "billing": 20,
                     "clients": 6,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 9,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 17,
-                    "tasks": 12,
+                    "tasks": 13,
                     "time": 4
                 }
             },
@@ -50701,6 +51715,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -50774,6 +51790,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -50803,14 +51823,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 4
                 }
             },
@@ -50952,6 +51972,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -51025,6 +52047,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -51054,14 +52080,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 4
                 }
             },
@@ -51203,6 +52229,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -51276,6 +52304,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -51305,14 +52337,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 4
                 }
             },
@@ -51454,6 +52486,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -51527,6 +52561,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -51556,14 +52594,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 4
                 }
             },
@@ -51740,6 +52778,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -51810,17 +52854,17 @@
                 "toolsets": {
                     "billing": 21,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 25,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -51998,6 +53042,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -52068,17 +53118,17 @@
                 "toolsets": {
                     "billing": 21,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 25,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -52282,6 +53332,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -52325,14 +53381,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -52534,6 +53590,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -52577,14 +53639,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -52786,6 +53848,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -52829,14 +53897,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -53038,6 +54106,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -53081,14 +54155,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -53166,6 +54240,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
                     "task_organization.lists.archive deployment_disabled",
@@ -53291,6 +54367,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -53334,17 +54414,17 @@
                 "toolsets": {
                     "billing": 21,
                     "clients": 24,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 6,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 21,
-                    "tasks": 12,
+                    "tasks": 13,
                     "time": 1
                 }
             },
@@ -53419,6 +54499,8 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.import_customer deployment_disabled",
                     "square.sync deployment_disabled",
                     "task_organization.lists.archive deployment_disabled",
@@ -53544,6 +54626,10 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -53587,17 +54673,17 @@
                 "toolsets": {
                     "billing": 21,
                     "clients": 24,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 4,
                     "files": 6,
                     "finance": 6,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 3,
+                    "projects": 5,
                     "proposals": 2,
                     "revenue": 4,
                     "square": 21,
-                    "tasks": 12,
+                    "tasks": 13,
                     "time": 1
                 }
             },
@@ -53739,6 +54825,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -53815,6 +54903,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -53839,14 +54931,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -53986,6 +55078,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -54062,6 +55156,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -54086,14 +55184,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -54233,6 +55331,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -54309,6 +55409,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -54333,14 +55437,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -54480,6 +55584,8 @@
                     "revenue.monthly role",
                     "revenue.projection role",
                     "revenue.summary role",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -54556,6 +55662,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_planning.dependencies.get": "cb38d15b1e15c8e9",
                 "task_planning.dependencies.options": "41a2b755cbc7b2d8",
@@ -54580,14 +55690,14 @@
                 ],
                 "toolsets": {
                     "billing": 3,
-                    "collaboration": 3,
+                    "collaboration": 4,
                     "expenses": 1,
                     "files": 2,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 2,
-                    "tasks": 8,
+                    "tasks": 9,
                     "time": 1
                 }
             },
@@ -54762,6 +55872,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -54832,17 +55948,17 @@
                 "toolsets": {
                     "billing": 36,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -55019,6 +56135,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -55089,17 +56211,17 @@
                 "toolsets": {
                     "billing": 36,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -55302,6 +56424,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -55345,14 +56473,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -55555,6 +56683,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -55598,14 +56732,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -55808,6 +56942,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -55851,14 +56991,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -56061,6 +57201,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -56104,14 +57250,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -56291,6 +57437,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -56357,17 +57509,17 @@
                 "toolsets": {
                     "billing": 37,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 2,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -56544,6 +57696,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -56610,17 +57768,17 @@
                 "toolsets": {
                     "billing": 37,
                     "clients": 24,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 2,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -56823,6 +57981,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -56862,14 +58026,14 @@
                 ],
                 "toolsets": {
                     "billing": 11,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 2,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 4,
                     "workspaces": 1
                 }
@@ -57070,6 +58234,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -57109,14 +58279,14 @@
                 ],
                 "toolsets": {
                     "billing": 11,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 2,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 4,
                     "workspaces": 1
                 }
@@ -57317,6 +58487,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -57356,14 +58532,14 @@
                 ],
                 "toolsets": {
                     "billing": 11,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 2,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 4,
                     "workspaces": 1
                 }
@@ -57564,6 +58740,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -57603,14 +58785,14 @@
                 ],
                 "toolsets": {
                     "billing": 11,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 2,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 4,
                     "workspaces": 1
                 }
@@ -57770,6 +58952,12 @@
                     "revenue.projection deployment_disabled",
                     "revenue.summary deployment_disabled",
                     "search deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.comments.list deployment_disabled",
+                    "shared_projects.get deployment_disabled",
+                    "shared_projects.list deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
+                    "shared_projects.tasks.list deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -57976,6 +59164,12 @@
                     "revenue.projection deployment_disabled",
                     "revenue.summary deployment_disabled",
                     "search deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.comments.list deployment_disabled",
+                    "shared_projects.get deployment_disabled",
+                    "shared_projects.list deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
+                    "shared_projects.tasks.list deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -58182,6 +59376,12 @@
                     "revenue.projection deployment_disabled",
                     "revenue.summary deployment_disabled",
                     "search deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.comments.list deployment_disabled",
+                    "shared_projects.get deployment_disabled",
+                    "shared_projects.list deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
+                    "shared_projects.tasks.list deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -58388,6 +59588,12 @@
                     "revenue.projection deployment_disabled",
                     "revenue.summary deployment_disabled",
                     "search deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.comments.list deployment_disabled",
+                    "shared_projects.get deployment_disabled",
+                    "shared_projects.list deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
+                    "shared_projects.tasks.list deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -58594,6 +59800,12 @@
                     "revenue.projection deployment_disabled",
                     "revenue.summary deployment_disabled",
                     "search deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.comments.list deployment_disabled",
+                    "shared_projects.get deployment_disabled",
+                    "shared_projects.list deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
+                    "shared_projects.tasks.list deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -58800,6 +60012,12 @@
                     "revenue.projection deployment_disabled",
                     "revenue.summary deployment_disabled",
                     "search deployment_disabled",
+                    "shared_projects.comments.create deployment_disabled",
+                    "shared_projects.comments.list deployment_disabled",
+                    "shared_projects.get deployment_disabled",
+                    "shared_projects.list deployment_disabled",
+                    "shared_projects.tasks.assign deployment_disabled",
+                    "shared_projects.tasks.list deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -59024,6 +60242,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -59094,17 +60318,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 20,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -59283,6 +60507,12 @@
                 "revenue.projection": "980f6f2414dc2ae2",
                 "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
@@ -59353,17 +60583,17 @@
                 "toolsets": {
                     "billing": 38,
                     "clients": 20,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 14,
                     "files": 12,
                     "finance": 9,
                     "identity": 3,
                     "payments": 6,
-                    "projects": 7,
+                    "projects": 9,
                     "proposals": 5,
                     "revenue": 4,
                     "square": 29,
-                    "tasks": 29,
+                    "tasks": 31,
                     "time": 6,
                     "workspaces": 1
                 }
@@ -59568,6 +60798,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -59611,14 +60847,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -59821,6 +61057,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -59864,14 +61106,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -60074,6 +61316,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -60117,14 +61365,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }
@@ -60327,6 +61575,12 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "227c3212336753dc",
+                "shared_projects.comments.create": "ba8e3ffe8f93a987",
+                "shared_projects.comments.list": "2fe05333155e5d0e",
+                "shared_projects.get": "6b482294049ce95b",
+                "shared_projects.list": "e87d2fc5fb6f39f5",
+                "shared_projects.tasks.assign": "e9cb6e0985894c24",
+                "shared_projects.tasks.list": "005ef1130498efce",
                 "task_organization.get": "f9adae72b05c876d",
                 "task_organization.lists.archive": "054d0ff824b61e6c",
                 "task_organization.lists.create": "8794913d0d3764fb",
@@ -60370,14 +61624,14 @@
                 ],
                 "toolsets": {
                     "billing": 12,
-                    "collaboration": 9,
+                    "collaboration": 11,
                     "expenses": 1,
                     "files": 5,
                     "identity": 3,
                     "payments": 1,
-                    "projects": 2,
+                    "projects": 4,
                     "proposals": 3,
-                    "tasks": 20,
+                    "tasks": 22,
                     "time": 5,
                     "workspaces": 1
                 }

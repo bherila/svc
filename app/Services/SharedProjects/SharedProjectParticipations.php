@@ -124,7 +124,7 @@ final class SharedProjectParticipations
     /** @return Collection<int, ClientProjectParticipationInvitation> */
     public function openInvitationsFor(User $user): Collection
     {
-        if ($user->email === null || trim($user->email) === '') {
+        if (trim($user->email) === '') {
             return new Collection;
         }
 

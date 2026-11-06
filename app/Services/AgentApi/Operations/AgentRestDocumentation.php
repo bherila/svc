@@ -258,6 +258,7 @@ final class AgentRestDocumentation
     {
         return [
             ...AccountingOperations::documentation(),
+            ...SharedProjectOperations::documentation(),
             ...TaskOrganizationOperations::documentation(),
             ...TaskPlanningOperations::documentation(),
             ...SquareCoveredPaymentOperations::documentation(),

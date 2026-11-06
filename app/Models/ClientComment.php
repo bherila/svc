@@ -36,7 +36,7 @@ class ClientComment extends Model implements WorkspaceOwned
 
     protected function casts(): array
     {
-        return ['is_visible_to_client' => 'boolean', 'edited_at' => 'immutable_datetime', 'deleted_at' => 'immutable_datetime'];
+        return ['is_visible_to_client' => 'boolean', 'shared_with_participants' => 'boolean', 'edited_at' => 'immutable_datetime', 'deleted_at' => 'immutable_datetime'];
     }
 
     protected static function booted(): void

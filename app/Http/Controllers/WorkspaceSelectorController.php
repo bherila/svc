@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ClientProjectParticipationInvitation;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\AccessibleWorkspacesQuery;
+use App\Services\SharedProjects\SharedProjectParticipations;
 use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -28,13 +30,21 @@ use Inertia\Response;
  */
 class WorkspaceSelectorController extends Controller
 {
-    public function __invoke(Request $request, AccessibleWorkspacesQuery $accessible): Response
+    public function __invoke(Request $request, AccessibleWorkspacesQuery $accessible, SharedProjectParticipations $sharing): Response
     {
         $user = $request->user();
         abort_if(! $user instanceof User, 401);
 
         return Inertia::render('workspaces/index', [
             'create_url' => route('agent-api.v1.workspaces.store', absolute: false),
+            // Invitations addressed to this person's own address, open and unexpired.
+            'shared_project_invitations' => $sharing->openInvitationsFor($user)
+                ->map(fn (ClientProjectParticipationInvitation $invitation): array => [
+                    'id' => $invitation->public_id,
+                    'project_name' => $invitation->project->name,
+                    'host_workspace_name' => $invitation->hostWorkspace->name,
+                    'href' => route('shared-project-invitations.show', $invitation->public_id, absolute: false),
+                ])->values()->all(),
             'workspaces' => $accessible->for($user)
                 ->map(fn (Workspace $workspace): array => AgentWorkspacePresenter::identity($workspace) + [
                     // Entering resolves which client to open, so the row links

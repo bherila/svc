@@ -55,6 +55,21 @@ final class TaskVisibility
         // MariaDB may materialize an EXISTS semijoin for the entire workspace
         // before applying the outer page limit. The bounded scalar form uses
         // a unique task key, then one key lookup per ancestor on both DBs.
+        return $this->constrainVisibleAncestry($tasks, $workspace);
+    }
+
+    /**
+     * Only the task, its ancestors and its list being visible: no project,
+     * company or actor condition. Shared projects use it to decide which tasks
+     * a participant workspace is shown, since sharing a project was itself the
+     * host's explicit act and the project's own client flag says nothing about
+     * a partner.
+     *
+     * @param  Builder<ClientTask>  $tasks
+     * @return Builder<ClientTask>
+     */
+    public function constrainVisibleAncestry(Builder $tasks, Workspace $workspace): Builder
+    {
         return $tasks->where(fn (QueryBuilder $probe) => $this->visibleAncestry($workspace, $probe)->limit(1), '=', 1);
     }
 

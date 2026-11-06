@@ -13433,6 +13433,678 @@
                 "x-mcp-tool": "search"
             }
         },
+        "/workspaces/{workspace}/shared-projects/{project}/tasks/{task}/comments": {
+            "post": {
+                "operationId": "shared_projects.comments.create",
+                "description": "Add a comment to a task the caller may see. It joins the shared conversation, so the host and every participant who can see the task read it; it is never shown to the host's client. A host viewer with no write role on the project, and a participant who cannot see the task, cannot comment. Requires AGENT_API_COLLABORATION_WRITES_ENABLED. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:write",
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SharedProjectCommentRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SharedProjectCommentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the scope, or the caller's role in the workspace does not allow the operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. Agent writes also answer 404 while AGENT_API_COLLABORATION_WRITES_ENABLED is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument"
+                },
+                "x-agent-mcp-tool": "shared_projects.comments.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "shared_projects.comments.create"
+            },
+            "get": {
+                "operationId": "shared_projects.comments.list",
+                "description": "The comments of a task the caller may see, 50 per page. The host sees all of them and which are shared; a participant sees only comments in the shared conversation: ones a participant wrote, and ones the host published to it. The host's internal comments are never returned to a participant. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:read",
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SharedProjectCommentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the scope, or the caller's role in the workspace does not allow the operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "shared_projects.comments.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "shared_projects.comments.list"
+            }
+        },
+        "/workspaces/{workspace}/shared-projects/{project}": {
+            "get": {
+                "operationId": "shared_projects.get",
+                "description": "One shared project: its name, status and the viewer's standing. The host also gets the client name, description, participating workspaces and open invitations; a participant gets the host workspace's name and its own linked local project. Only a viewer who may assign gets assignee_options: the people of the host and of each participant who can be handed a task. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "projects:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SharedProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the scope, or the caller's role in the workspace does not allow the operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "shared_projects.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "shared_projects.get"
+            }
+        },
+        "/workspaces/{workspace}/shared-projects": {
+            "get": {
+                "operationId": "shared_projects.list",
+                "description": "The shared projects the workspace hosts (with a participant or a pending invitation) and the ones it takes part in. Bounded to 100 of each. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "projects:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SharedProjectListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the scope, or the caller's role in the workspace does not allow the operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "shared_projects.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "shared_projects.list"
+            }
+        },
+        "/workspaces/{workspace}/shared-projects/{project}/tasks/{task}/assignees": {
+            "put": {
+                "operationId": "shared_projects.tasks.assign",
+                "description": "Replace who a task is assigned to, across the host and its participants, for a host workspace owner or admin or a project owner or manager. People already assigned stay; anyone new must be offered in assignee_options. Assigning gives access to nothing: a participant sees the task only as the rules above allow. A person can hold a task once. Requires AGENT_API_COLLABORATION_WRITES_ENABLED. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SharedProjectAssignRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SharedProjectAssignmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the scope, or the caller's role in the workspace does not allow the operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. Agent writes also answer 404 while AGENT_API_COLLABORATION_WRITES_ENABLED is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument"
+                },
+                "x-agent-mcp-tool": "shared_projects.tasks.assign",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "shared_projects.tasks.assign"
+            }
+        },
+        "/workspaces/{workspace}/shared-projects/{project}/tasks": {
+            "get": {
+                "operationId": "shared_projects.tasks.list",
+                "description": "The project's tasks the caller may see, 50 per page, ordered by creation; follow meta.next_cursor until null. Each carries its assignees with the workspace each stands in; user and workspace ids are returned only to a viewer who may assign. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "tasks:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SharedProjectTaskListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the scope, or the caller's role in the workspace does not allow the operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "shared_projects.tasks.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "shared_projects.tasks.list"
+            }
+        },
         "/workspaces/{workspace}/square/customers/{customer}": {
             "get": {
                 "operationId": "square.customers.get",
@@ -28850,6 +29522,608 @@
                     },
                     "workspace": {
                         "type": "string"
+                    }
+                }
+            },
+            "SharedProjectAssignRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "assignees"
+                ],
+                "properties": {
+                    "assignees": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "user_id",
+                                "workspace_id"
+                            ],
+                            "properties": {
+                                "user_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "workspace_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SharedProjectAssignmentResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "task_id",
+                            "assignees"
+                        ],
+                        "properties": {
+                            "task_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "assignees": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "name",
+                                        "workspace_name"
+                                    ],
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "workspace_name": {
+                                            "type": "string"
+                                        },
+                                        "user_id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "workspace_id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SharedProjectCommentListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "body",
+                                "author_name",
+                                "author_workspace_name",
+                                "shared_with_participants",
+                                "created_at"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "body": {
+                                    "type": "string"
+                                },
+                                "author_name": {
+                                    "type": "string"
+                                },
+                                "author_workspace_name": {
+                                    "type": "string"
+                                },
+                                "shared_with_participants": {
+                                    "type": "boolean"
+                                },
+                                "created_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "SharedProjectCommentRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "body"
+                ],
+                "properties": {
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50000
+                    }
+                }
+            },
+            "SharedProjectCommentResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "body",
+                            "author_name",
+                            "author_workspace_name",
+                            "shared_with_participants",
+                            "created_at"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "body": {
+                                "type": "string"
+                            },
+                            "author_name": {
+                                "type": "string"
+                            },
+                            "author_workspace_name": {
+                                "type": "string"
+                            },
+                            "shared_with_participants": {
+                                "type": "boolean"
+                            },
+                            "created_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time"
+                            }
+                        }
+                    }
+                }
+            },
+            "SharedProjectListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "hosted",
+                            "participating"
+                        ],
+                        "properties": {
+                            "hosted": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "name",
+                                        "client_name",
+                                        "web_url"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "client_name": {
+                                            "type": "string"
+                                        },
+                                        "web_url": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "participating": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "name",
+                                        "host_workspace_name",
+                                        "web_url"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "host_workspace_name": {
+                                            "type": "string"
+                                        },
+                                        "web_url": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SharedProjectResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "name",
+                            "status",
+                            "side",
+                            "host_workspace_name",
+                            "viewer",
+                            "web_url"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "side": {
+                                "type": "string",
+                                "enum": [
+                                    "host",
+                                    "participant"
+                                ]
+                            },
+                            "host_workspace_name": {
+                                "type": "string"
+                            },
+                            "viewer": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "sees_whole_project",
+                                    "can_assign",
+                                    "can_manage_participants",
+                                    "can_act_as_participant"
+                                ],
+                                "properties": {
+                                    "sees_whole_project": {
+                                        "type": "boolean"
+                                    },
+                                    "can_assign": {
+                                        "type": "boolean"
+                                    },
+                                    "can_manage_participants": {
+                                        "type": "boolean"
+                                    },
+                                    "can_act_as_participant": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            },
+                            "web_url": {
+                                "type": "string"
+                            },
+                            "client_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "description": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "participants": {
+                                "type": "array",
+                                "maxItems": 25,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "workspace_name",
+                                        "accepted_at"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "workspace_name": {
+                                            "type": "string"
+                                        },
+                                        "accepted_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        }
+                                    }
+                                }
+                            },
+                            "invitations": {
+                                "type": "array",
+                                "maxItems": 25,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "email",
+                                        "expires_at"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "email": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        }
+                                    }
+                                }
+                            },
+                            "participation": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "accepted_at"
+                                ],
+                                "properties": {
+                                    "accepted_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            },
+                            "local_project": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "name"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "assignee_options": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "user_id",
+                                        "name",
+                                        "workspace_id",
+                                        "workspace_name"
+                                    ],
+                                    "properties": {
+                                        "user_id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "workspace_id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "workspace_name": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SharedProjectTaskListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "title",
+                                "description",
+                                "status",
+                                "shared_with_participants",
+                                "starts_on",
+                                "due_on",
+                                "completed_at",
+                                "web_url",
+                                "assignees",
+                                "can_comment"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "title": {
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "status": {
+                                    "type": "string"
+                                },
+                                "shared_with_participants": {
+                                    "type": "boolean"
+                                },
+                                "starts_on": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "due_on": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "completed_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time"
+                                },
+                                "web_url": {
+                                    "type": "string"
+                                },
+                                "assignees": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "name",
+                                            "workspace_name"
+                                        ],
+                                        "properties": {
+                                            "name": {
+                                                "type": "string"
+                                            },
+                                            "workspace_name": {
+                                                "type": "string"
+                                            },
+                                            "user_id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "workspace_id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            }
+                                        }
+                                    }
+                                },
+                                "can_comment": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
                     }
                 }
             },

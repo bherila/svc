@@ -806,6 +806,8 @@ class ClientDirectoryController extends Controller
 
         return Inertia::render('clients/project', [
             'files_href' => route('svc.files.parent.show', [$workspace, 'project', $clientProject->public_id], absolute: false),
+            // Who else takes part in this project is an owner's or admin's to decide.
+            'sharing_href' => $access->isWorkspaceManager($user, $workspace) ? route('shared-projects.show', [$workspace, $clientProject->public_id], absolute: false) : null,
             'workspace' => ['id' => $workspace->public_id],
             'organization_href' => $canManageTasks && config('task_organization.enabled') === true
                 ? route('tasks.organization.show', [$workspace, $clientCompany, $clientProject->public_id]) : null,
