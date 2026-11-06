@@ -1,11 +1,13 @@
+import { router } from '@inertiajs/react';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PortalHome from '@/pages/portal/home';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
-import type { PortalHomeProps } from '@/types/portal';
+import type { PortalHomeProps, PortalToApprove } from '@/types/portal';
 
 const style = vi.hoisted(() => ({ value: 'decimal' as 'decimal' | 'clock' }));
 
@@ -23,7 +25,7 @@ vi.mock('@inertiajs/react', () => ({
             {children}
         </a>
     ),
-    router: { visit: vi.fn() },
+    router: { visit: vi.fn(), post: vi.fn() },
     usePage: () => {
         const shared = sharedPageProps({
             workspaceNavigation: workspaceNavigation({
@@ -154,6 +156,8 @@ function props(overrides: Partial<PortalHomeProps> = {}): PortalHomeProps {
             time: '/portal/company-1/time',
             tasks: '/portal/company-1/tasks',
         },
+        to_approve: null,
+        approval_result: null,
         ...overrides,
     };
 }
@@ -366,10 +370,250 @@ describe('portal home', () => {
         ).toBeInTheDocument();
     });
 
-    it('does not draw an approval queue', () => {
+    it('draws no approval section for someone who may not approve', () => {
         render(<PortalHome {...props()} />);
 
         expect(screen.queryByText(/to approve/i)).toBeNull();
+    });
+
+    describe('to approve', () => {
+        const toApprove: PortalToApprove = {
+            approve_href: '/portal/company-1/approvals/approve',
+            dispute_href: '/portal/company-1/approvals/dispute',
+            truncated: false,
+            groups: [
+                {
+                    key: '2026-10',
+                    vendor: 'Synthetic Vendor',
+                    period: '2026-10',
+                    period_label: 'October 2026',
+                    hours: {
+                        minutes: 150,
+                        pending_count: 2,
+                        entries: [
+                            {
+                                id: 'time-1',
+                                worked_on: '2026-10-14',
+                                minutes: 90,
+                                description: 'Synthetic client text',
+                                project: 'Synthetic Project',
+                                state: 'pending',
+                                dispute_note: null,
+                                invoice: {
+                                    number: 'SYN-1042',
+                                    href: '/portal/company-1/invoices/invoice-2',
+                                },
+                            },
+                            {
+                                id: 'time-2',
+                                worked_on: '2026-10-15',
+                                minutes: 60,
+                                description: 'Second entry',
+                                project: null,
+                                state: 'pending',
+                                dispute_note: null,
+                                invoice: null,
+                            },
+                            {
+                                id: 'time-3',
+                                worked_on: '2026-10-16',
+                                minutes: 30,
+                                description: 'Already questioned',
+                                project: null,
+                                state: 'disputed',
+                                dispute_note: 'Too long',
+                                invoice: null,
+                            },
+                        ],
+                    },
+                    expenses: {
+                        pending_count: 1,
+                        amount: 4200,
+                        currency: 'USD',
+                        items: [
+                            {
+                                id: 'expense-1',
+                                spent_on: '2026-10-02',
+                                description: 'Synthetic travel',
+                                amount: 4200,
+                                currency: 'USD',
+                                project: null,
+                                state: 'pending',
+                                dispute_note: null,
+                                invoice: null,
+                            },
+                        ],
+                    },
+                },
+            ],
+        };
+
+        beforeEach(() => {
+            vi.mocked(router.post)
+                .mockReset()
+                .mockImplementation((_url, _body, options) => {
+                    options?.onSuccess?.({} as never);
+                    options?.onFinish?.({} as never);
+                });
+        });
+
+        it('groups by vendor and month, with hours as time and expenses as money', () => {
+            render(<PortalHome {...props({ to_approve: toApprove })} />);
+
+            const section = screen.getByRole('region', {
+                name: 'Synthetic Vendor · October 2026',
+            });
+
+            expect(
+                within(section).getByText('2.5 h of time · $42.00 of expenses'),
+            ).toBeInTheDocument();
+            expect(
+                within(section).getByRole('link', { name: 'Invoice SYN-1042' }),
+            ).toHaveAttribute('href', '/portal/company-1/invoices/invoice-2');
+            // Hours are never priced here.
+            expect(
+                screen.getByText('Second entry').closest('li')!.textContent,
+            ).not.toContain('$');
+        });
+
+        it('approves a month with a check icon, posting to the server-sent url', async () => {
+            render(<PortalHome {...props({ to_approve: toApprove })} />);
+
+            const button = screen.getByRole('button', {
+                name: 'Approve October 2026 from Synthetic Vendor',
+            });
+
+            expect(button.querySelector('svg.lucide-check')).not.toBeNull();
+            await userEvent.click(button);
+
+            expect(router.post).toHaveBeenCalledWith(
+                '/portal/company-1/approvals/approve',
+                { period: '2026-10' },
+                expect.objectContaining({ preserveScroll: true }),
+            );
+        });
+
+        it('approves one entry or one expense by name', async () => {
+            render(<PortalHome {...props({ to_approve: toApprove })} />);
+
+            await userEvent.click(
+                screen.getByRole('button', {
+                    name: 'Approve Synthetic client text',
+                }),
+            );
+            await userEvent.click(
+                screen.getByRole('button', {
+                    name: 'Approve Synthetic travel',
+                }),
+            );
+
+            expect(
+                vi.mocked(router.post).mock.calls.map((call) => call[1]),
+            ).toEqual([
+                { time_ids: ['time-1'] },
+                { expense_ids: ['expense-1'] },
+            ]);
+        });
+
+        it('disputes with a note, or without one', async () => {
+            render(<PortalHome {...props({ to_approve: toApprove })} />);
+
+            await userEvent.click(
+                screen.getByRole('button', {
+                    name: 'Dispute Synthetic client text',
+                }),
+            );
+            await userEvent.type(
+                screen.getByLabelText('Note for your provider (optional)'),
+                'Too many hours',
+            );
+            await userEvent.click(
+                screen.getByRole('button', { name: 'Send dispute' }),
+            );
+            await userEvent.click(
+                screen.getByRole('button', { name: 'Dispute Second entry' }),
+            );
+            await userEvent.click(
+                screen.getByRole('button', { name: 'Send dispute' }),
+            );
+
+            expect(
+                vi
+                    .mocked(router.post)
+                    .mock.calls.map((call) => [call[0], call[1]]),
+            ).toEqual([
+                [
+                    '/portal/company-1/approvals/dispute',
+                    { kind: 'time', id: 'time-1', note: 'Too many hours' },
+                ],
+                [
+                    '/portal/company-1/approvals/dispute',
+                    { kind: 'time', id: 'time-2', note: '' },
+                ],
+            ]);
+        });
+
+        it('shows a disputed row with its note and no controls', () => {
+            render(<PortalHome {...props({ to_approve: toApprove })} />);
+
+            expect(screen.getByText('Your note: Too long')).toBeInTheDocument();
+            expect(
+                screen.queryByRole('button', {
+                    name: 'Approve Already questioned',
+                }),
+            ).toBeNull();
+        });
+
+        it('says what the last decision did, including what it left alone', () => {
+            render(
+                <PortalHome
+                    {...props({
+                        to_approve: toApprove,
+                        approval_result: {
+                            kind: 'approved',
+                            time: 2,
+                            expenses: 1,
+                            skipped_own: 1,
+                        },
+                    })}
+                />,
+            );
+
+            expect(
+                screen.getByRole('status', {
+                    name: '',
+                    description: '',
+                }).textContent,
+            ).toBe(
+                'Approved 2 entries of time and 1 expense. 1 of your own was left for someone else to approve.',
+            );
+        });
+
+        it('has a calm empty state', () => {
+            render(
+                <PortalHome
+                    {...props({ to_approve: { ...toApprove, groups: [] } })}
+                />,
+            );
+
+            expect(screen.getByText(/Nothing is waiting/)).toBeInTheDocument();
+        });
+
+        it('holds with unbroken names and no overflow risk', () => {
+            const hostile = structuredClone(toApprove);
+            hostile.groups[0].vendor = LONG;
+            hostile.groups[0].hours.entries[0].description = LONG;
+            hostile.groups[0].hours.entries[0].project = LONG;
+            hostile.groups[0].hours.entries[0].invoice!.number = LONG;
+            hostile.groups[0].hours.entries[2].dispute_note = LONG;
+            hostile.groups[0].expenses.items[0].description = LONG;
+
+            const { container } = render(
+                <PortalHome {...props({ to_approve: hostile })} />,
+            );
+
+            expect(horizontalOverflowRisks(container)).toEqual([]);
+        });
     });
 
     it('holds with unbroken names and no overflow risk', () => {

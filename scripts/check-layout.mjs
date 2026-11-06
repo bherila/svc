@@ -810,7 +810,32 @@ try {
                 page.getByRole('region', { name: 'Next invoice (estimate)' }),
             ).toBeVisible();
             await expect(page.getByText(/is still deferred|of work is still deferred/)).toBeVisible();
-            await expect(page.getByText(/to approve/i)).toHaveCount(0);
+            // "To approve" (slice 8): the contact holds the permission, so the
+            // section is there with this month and last month, hours as time and
+            // never as money, and no receipt.
+            const toApprove = page.locator('[data-slot="to-approve"]');
+            await expect(toApprove).toBeVisible();
+            await expect(toApprove.locator('[data-slot="card-title"]')).toHaveText('To approve');
+            await expect(toApprove.getByRole('region')).toHaveCount(2);
+            const approveButtons = toApprove.getByRole('button', { name: /^Approve .* from / });
+            await expect(approveButtons).toHaveCount(2);
+            // A checkmark icon on every approve control, and never a filled one:
+            // the page's one filled button is Pay.
+            for (const button of await approveButtons.all()) {
+                await expect(button.locator('svg.lucide-check')).toHaveCount(1);
+                await expect(button).not.toHaveClass(/bg-primary/);
+            }
+            for (const summary of await toApprove.getByText(/^Show the \d+ rows?$/).all()) {
+                await summary.click();
+            }
+            await expect(toApprove.getByRole('button', { name: /^Approve Synthetic last month/ }).first()).toBeVisible();
+            await expect(toApprove.getByText(/Your note: Synthetic dispute note/)).toBeVisible();
+            await expect(toApprove).not.toContainText(/987654|9,876/);
+            // The dispute form open, with a note that will not break.
+            await toApprove.getByRole('button', { name: /^Dispute Synthetic last month/ }).first().click();
+            await toApprove
+                .getByLabel('Note for your provider (optional)')
+                .fill('SyntheticDisputeNote'.repeat(12));
             const body = await page.locator('body').innerText();
 
             for (const forbidden of ['987654', 'Synthetic internal note', 'subcontractor']) {
@@ -3438,11 +3463,14 @@ try {
         const logged = page
             .getByRole('row')
             .filter({ hasText: 'Synthetic explicit rate acceptance' });
-        await logged
-            .getByRole('button', { name: 'Approve', exact: true })
-            .click();
-        await expect(logged).toContainText('Approved');
-        await capture('time', 'explicit-rate-approved', 1440);
+        // The person who logged it cannot approve it: no Approve control is
+        // offered, and the row stays a draft with the rate they stated.
+        await expect(logged).toBeVisible();
+        await expect(
+            logged.getByRole('button', { name: 'Approve', exact: true }),
+        ).toHaveCount(0);
+        await expect(logged).toContainText('Draft');
+        await capture('time', 'explicit-rate-own-time', 1440);
         run('php', ['scripts/layout/verify-time-log.php'], env);
     }
 

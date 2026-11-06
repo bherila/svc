@@ -92,6 +92,73 @@ export type PortalInvoiceRow = {
     href: string;
 };
 
+/** Where a row stands with the client; a row already approved is never sent. */
+export type PortalApprovalState = 'pending' | 'disputed';
+
+export type PortalApprovalInvoice = { number: string; href: string };
+
+export type PortalApprovalHour = {
+    id: string;
+    worked_on: string;
+    minutes: number;
+    /** The client-facing description; the internal note never reaches this page. */
+    description: string | null;
+    project: string | null;
+    state: PortalApprovalState;
+    dispute_note: string | null;
+    invoice: PortalApprovalInvoice | null;
+};
+
+export type PortalApprovalExpense = {
+    id: string;
+    spent_on: string;
+    description: string;
+    amount: number;
+    currency: string;
+    project: string | null;
+    state: PortalApprovalState;
+    dispute_note: string | null;
+    invoice: PortalApprovalInvoice | null;
+};
+
+/** One vendor's calendar month: the unit a client approves in. */
+export type PortalApprovalGroup = {
+    key: string;
+    vendor: string;
+    /** `YYYY-MM`. */
+    period: string;
+    period_label: string;
+    hours: {
+        minutes: number;
+        pending_count: number;
+        entries: PortalApprovalHour[];
+    };
+    expenses: {
+        pending_count: number;
+        /** Null when the pending expenses are in more than one currency. */
+        amount: number | null;
+        currency: string | null;
+        items: PortalApprovalExpense[];
+    };
+};
+
+/**
+ * "To approve". Null for anyone who may not approve for this client, in which
+ * case the section is not drawn at all. Receipts are deliberately absent: an
+ * expense receipt has no client-sharing audience.
+ */
+export type PortalToApprove = {
+    approve_href: string;
+    dispute_href: string;
+    groups: PortalApprovalGroup[];
+    /** True when the oldest rows were shown and newer ones are waiting behind them. */
+    truncated: boolean;
+};
+
+export type PortalApprovalResult =
+    | { kind: 'approved'; time: number; expenses: number; skipped_own: number }
+    | { kind: 'disputed' };
+
 export type PortalHomeProps = {
     company: { id: string; name: string };
     balance: PortalBalance;
@@ -122,4 +189,6 @@ export type PortalHomeProps = {
         time: string | null;
         tasks: string | null;
     };
+    to_approve: PortalToApprove | null;
+    approval_result: PortalApprovalResult | null;
 };

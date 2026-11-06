@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { AlertCircleIcon, CreditCardIcon, FileTextIcon } from 'lucide-react';
+import { ToApprove } from '@/components/portal/to-approve';
 import { RetainerMeter } from '@/components/revenue/retainer-meter';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -320,6 +321,8 @@ export default function PortalHome({
     open_tasks: openTasks,
     engagement,
     links,
+    to_approve: toApprove,
+    approval_result: approvalResult,
 }: PortalHomeProps) {
     const style = useDurationStyle();
 
@@ -364,6 +367,10 @@ export default function PortalHome({
                     />
                     <ThisPeriodCard period={thisPeriod} style={style} />
                 </div>
+
+                {toApprove !== null && (
+                    <ToApprove data={toApprove} result={approvalResult} />
+                )}
 
                 <Section
                     title="Open tasks"
