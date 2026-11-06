@@ -15,10 +15,13 @@ final class RecordReceivedPayment
 {
     public function __construct(private readonly InvoiceLifecycleService $invoices) {}
 
-    /** @param (callable(ClientInvoice): void)|null $assertLocked */
-    public function record(Workspace $workspace, ClientInvoice $invoice, ReceivedPaymentData $facts, ?string $idempotencyKey = null, ?callable $assertLocked = null): ClientInvoicePayment
+    /**
+     * @param  (callable(ClientInvoice): void)|null  $assertLocked
+     * @param  int|null  $recordedByUserId  the person recording it, whose own hours and expenses paying the invoice in full will not approve
+     */
+    public function record(Workspace $workspace, ClientInvoice $invoice, ReceivedPaymentData $facts, ?string $idempotencyKey = null, ?callable $assertLocked = null, ?int $recordedByUserId = null): ClientInvoicePayment
     {
-        $payment = $this->invoices->applyPayment($invoice, $facts->attributes($idempotencyKey), $workspace, $assertLocked);
+        $payment = $this->invoices->applyPayment($invoice, $facts->attributes($idempotencyKey) + ['recorded_by_user_id' => $recordedByUserId], $workspace, $assertLocked);
         $payment->setRelation('invoice', ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($payment->client_invoice_id)->firstOrFail());
 
         return $payment;

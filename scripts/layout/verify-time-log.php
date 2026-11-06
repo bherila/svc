@@ -7,7 +7,11 @@ $fixture = json_decode(file_get_contents(getenv('SVC_LAYOUT_RUNTIME').'/fixture.
 $entry = ClientTimeEntry::query()->where('workspace_id', $fixture['workspace_id'])
     ->where('description', 'Synthetic explicit rate acceptance')->sole();
 if ($entry->client_project_id !== $fixture['log_project_id'] || $entry->billing_rate_amount !== 12345
-    || $entry->currency !== 'USD' || $entry->status !== 'approved') {
+    || $entry->currency !== 'USD') {
     throw new RuntimeException('Time logging lost the selected project or explicit rate.');
 }
-echo "Time logging browser acceptance: selected project and explicit rate preserved through approval.\n";
+// Nobody approves their own time: the entry the browser logged is still a draft.
+if ($entry->status !== 'draft' || $entry->approved_by_user_id !== null || $entry->approved_at !== null) {
+    throw new RuntimeException('Logged time was approved by the person who logged it.');
+}
+echo "Time logging browser acceptance: selected project and explicit rate preserved; own time left unapproved.\n";

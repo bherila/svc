@@ -38,6 +38,8 @@ class TimeSheetTest extends TestCase
 
     private User $manager;
 
+    private ?User $colleague = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -453,8 +455,8 @@ class TimeSheetTest extends TestCase
     public function test_approving_stamps_the_status_and_the_approver(): void
     {
         $this->agreementWithAnHourlyRate();
-        $first = $this->entry(['minutes' => 60]);
-        $second = $this->entry(['minutes' => 30]);
+        $first = $this->entry(['minutes' => 60, 'user_id' => $this->colleague()->id]);
+        $second = $this->entry(['minutes' => 30, 'user_id' => $this->colleague()->id]);
 
         $this->actingAs($this->manager, 'web')
             ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
@@ -666,7 +668,7 @@ class TimeSheetTest extends TestCase
     public function test_a_rate_override_needs_both_an_amount_and_a_currency(): void
     {
         $this->agreementWithAnHourlyRate();
-        $entry = $this->entry();
+        $entry = $this->entry(['user_id' => $this->colleague()->id]);
 
         $this->actingAs($this->manager, 'web')
             ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
@@ -2760,6 +2762,7 @@ class TimeSheetTest extends TestCase
         $entry = $this->entry([
             'billing_rate_amount' => 22500,
             'billing_rate_source' => 'explicit',
+            'user_id' => $this->colleague()->id,
         ]);
 
         $this->actingAs($this->manager, 'web')
@@ -2848,7 +2851,7 @@ class TimeSheetTest extends TestCase
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()->assertInertia(fn (Assert $page) => $page->where('approval_limit', 100));
 
-        $records = collect(range(1, 101))->map(fn () => $this->entry(['is_billable' => false]));
+        $records = collect(range(1, 101))->map(fn () => $this->entry(['is_billable' => false, 'user_id' => $this->colleague()->id]));
         $entries = $records->map(fn (ClientTimeEntry $entry): array => [
             'id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry),
         ])->all();
@@ -2886,6 +2889,8 @@ class TimeSheetTest extends TestCase
             ->assertSuccessful();
 
         $entry = ClientTimeEntry::query()->firstOrFail();
+        // Logged by the manager; approved, as a colleague's time must be.
+        $entry->forceFill(['user_id' => $this->colleague()->id])->save();
 
         $this->assertSame('explicit', $entry->billing_rate_source);
         $this->assertSame($this->workspace->fresh()?->default_currency, $entry->currency);
@@ -2908,6 +2913,7 @@ class TimeSheetTest extends TestCase
             'billing_rate_amount' => 22500,
             'billing_rate_source' => 'explicit',
             'currency' => null,
+            'user_id' => $this->colleague()->id,
         ]);
 
         $this->actingAs($this->manager, 'web')
@@ -3394,6 +3400,12 @@ class TimeSheetTest extends TestCase
             ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries", [
                 'entries' => [['project_id' => $projectId, ...$payload]],
             ]);
+    }
+
+    /** A second member of the workspace: the author whose time the manager may approve. */
+    private function colleague(): User
+    {
+        return $this->colleague ??= tap(User::factory()->create(), fn (User $user) => $this->workspace->memberships()->create(['user_id' => $user->id, 'role' => 'member']));
     }
 
     private function entry(array $attributes = []): ClientTimeEntry

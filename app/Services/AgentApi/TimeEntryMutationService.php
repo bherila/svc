@@ -19,6 +19,7 @@ use App\Services\Engagement\EngagementException;
 use App\Services\Engagement\TimeEntryWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\TimeEntryAllocation;
+use App\Support\Approval\SelfApproval;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -352,6 +353,12 @@ final class TimeEntryMutationService
                 $workspace,
                 $projects->values(),
             ), 403);
+            // Whatever the actor's role, and before anything is written: one
+            // of their own entries refuses the whole batch, the way a missing
+            // one does, so a batch is never half approved.
+            foreach ($lockedEntries as $entry) {
+                abort_if(SelfApproval::refuses($entry->user_id, $actor->id), 409, SelfApproval::TIME_MESSAGE);
+            }
 
             foreach ($entries as $item) {
                 $entry = $lockedEntries->get($item['id']);

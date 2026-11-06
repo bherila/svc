@@ -518,7 +518,10 @@ final class LockOrderConformanceTest extends TestCase
         $entry->forceFill(['status' => 'draft'])->save();
         $time->update($this->workspace, $entry, $this->user, ['description' => 'Synthetic updated work', 'expected_version' => AgentApiVersion::for($entry)]);
         $entry->refresh()->forceFill(['status' => 'draft'])->save();
-        $time->approve($this->workspace, $this->user, [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]);
+        // Nobody approves their own time: a second admin approves it.
+        $approver = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $approver->id, 'role' => 'admin']);
+        $time->approve($this->workspace, $approver, [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]);
 
         $selected = app(InvoiceFromTimeService::class);
         $draft = $selected->create($this->workspace, $this->company, ['invoice_number' => 'SYNTHETIC-MAINTENANCE', 'currency' => 'USD'], [$entry->public_id]);

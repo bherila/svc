@@ -217,6 +217,8 @@ final class CalendarDateCastTablesTest extends TestCase
                 'spent_on' => DateOnly::class,
                 'amount' => 'integer',
                 'approved_at' => 'immutable_datetime',
+                'client_approved_at' => 'immutable_datetime',
+                'client_disputed_at' => 'immutable_datetime',
             ],
         ];
 

@@ -3,7 +3,9 @@
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientContact;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientPortalInvitation;
@@ -372,9 +374,13 @@ $logProject = ClientProject::query()->create([
     'name' => 'ZZZ Synthetic second logging project', 'status' => 'active',
 ]);
 
+// A colleague's hour, because nobody approves their own: the correction journey
+// returns it to draft and the owner approves it again.
+$correctionAuthor = User::factory()->create(['name' => 'Synthetic Colleague', 'email' => 'layout-colleague@example.test']);
+$workspace->memberships()->create(['user_id' => $correctionAuthor->id, 'role' => 'member']);
 $correction = ClientTimeEntry::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
-    'user_id' => $owner->id, 'worked_on' => $date, 'minutes' => 60, 'description' => 'Synthetic draft correction',
+    'user_id' => $correctionAuthor->id, 'worked_on' => $date, 'minutes' => 60, 'description' => 'Synthetic draft correction',
     'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 12000, 'billing_rate_source' => 'explicit', 'currency' => 'USD',
 ]);
 $companion = ClientTimeEntry::query()->create([
@@ -581,6 +587,34 @@ if (getenv('SVC_LAYOUT_WORK_PORTAL') === '1') {
             'description' => 'Synthetic internal note '.str_repeat('Internal', 8),
             'client_visible_description' => 'Synthetic client summary '.str_repeat('WithoutBreaks', 8).' '.$index,
             'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved',
+        ]);
+    }
+    // "To approve": the client contact holds the permission by an explicit grant. This
+    // month's five hours above are waiting; last month adds hours, expenses and one row the
+    // contact already disputed, all with names that will not break and no price on the hours.
+    ClientCompanyMembership::query()->where('client_company_id', $company->id)->where('user_id', $squarePortalContact->id)
+        ->update(['can_approve_time_and_expenses' => true]);
+    $lastMonth = $workToday->subMonthNoOverflow()->startOfMonth();
+    foreach (range(0, 2) as $index) {
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $owner->id,
+            'worked_on' => $lastMonth->addDays($index * 9)->toDateString(), 'minutes' => 195, 'description' => 'Synthetic internal note '.str_repeat('Internal', 8),
+            'client_visible_description' => 'Synthetic last month '.str_repeat('WithoutBreaksAtAll', 9).' '.$index,
+            'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 987654, 'currency' => 'USD',
+        ]);
+    }
+    ClientTimeEntry::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $owner->id,
+        'worked_on' => $lastMonth->addDays(20)->toDateString(), 'minutes' => 45, 'description' => 'Synthetic internal note',
+        'client_visible_description' => 'Synthetic already disputed '.str_repeat('Unbroken', 10),
+        'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved',
+        'client_disputed_at' => now(), 'client_disputed_by_user_id' => $squarePortalContact->id, 'client_dispute_note' => 'Synthetic dispute note '.str_repeat('WithoutBreaks', 12),
+    ]);
+    foreach ([[$lastMonth->addDays(3), 123456789], [$workToday->startOfMonth(), 98765]] as $index => [$spent, $cents]) {
+        ClientExpense::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'created_by_user_id' => $owner->id,
+            'spent_on' => $spent->toDateString(), 'amount' => $cents, 'currency' => 'USD', 'status' => 'approved',
+            'description' => 'Synthetic expense '.str_repeat('UnbrokenExpenseDescription', 5).$index,
         ]);
     }
     foreach (range(0, 3) as $index) {

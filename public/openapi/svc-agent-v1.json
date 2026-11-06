@@ -18370,7 +18370,7 @@
             },
             "post": {
                 "operationId": "time_entries.log",
-                "description": "Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true approves the entries in the same transaction and receipt; it requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.",
+                "description": "Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true is deprecated and does nothing, because nobody approves their own time: the entries stay unapproved and meta.approval says so. It still requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.",
                 "security": [
                     {
                         "oauth2": [
@@ -34181,6 +34181,45 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/TimeEntry"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Present only when the request sent approve: true, which is deprecated and does nothing: nobody approves their own time, and the time logged here is the caller's own.",
+                        "required": [
+                            "approval"
+                        ],
+                        "properties": {
+                            "approval": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "requested",
+                                    "applied",
+                                    "skipped_ids",
+                                    "note"
+                                ],
+                                "properties": {
+                                    "requested": {
+                                        "type": "boolean"
+                                    },
+                                    "applied": {
+                                        "type": "boolean",
+                                        "description": "False: the entries stay unapproved."
+                                    },
+                                    "skipped_ids": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        }
+                                    },
+                                    "note": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
                         }
                     }
                 }

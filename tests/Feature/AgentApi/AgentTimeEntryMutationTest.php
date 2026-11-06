@@ -438,8 +438,9 @@ final class AgentTimeEntryMutationTest extends TestCase
     }
 
     /**
-     * `approve: true` on a log carries every gate the approve endpoint has, and
-     * a refused approval leaves nothing logged: the batch is one transaction.
+     * `approve: true` on a log is deprecated and does nothing, but it keeps
+     * every gate the approve endpoint has, and a refused request leaves
+     * nothing logged: the batch is one transaction.
      */
     public function test_logging_with_approve_is_gated_like_approval_and_all_or_nothing(): void
     {
@@ -472,14 +473,25 @@ final class AgentTimeEntryMutationTest extends TestCase
         $this->assertDatabaseCount('client_time_entries', 0);
         config(['agent_api.writes_enabled' => true]);
 
-        $id = $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated()->json('data.0.id');
-        $this->assertDatabaseHas('client_time_entries', ['public_id' => $id, 'status' => 'approved', 'approved_by_user_id' => $manager->id, 'billing_rate_amount' => 17500, 'billing_rate_source' => 'explicit']);
-        $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated()->assertJsonPath('data.0.id', $id);
+        // Authorised, `approve: true` is accepted and does nothing: the manager
+        // logged the time, so it is their own, and nobody approves their own.
+        $created = $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated();
+        $id = $created->json('data.0.id');
+        $this->assertDatabaseHas('client_time_entries', ['public_id' => $id, 'status' => 'draft', 'approved_by_user_id' => null, 'approved_at' => null]);
+        $created->assertJsonPath('meta.approval.requested', true)
+            ->assertJsonPath('meta.approval.applied', false)
+            ->assertJsonPath('meta.approval.skipped_ids', [$id]);
+        $this->assertStringContainsString('draft invoice', (string) $created->json('meta.approval.note'));
+        $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertCreated()->assertJsonPath('data.0.id', $id)
+            ->assertJsonPath('meta.approval.applied', false);
+        // An ordinary log says nothing about approval at all.
+        $this->withHeader('Idempotency-Key', 'log-plain-1')->postJson($url, $plain)->assertCreated()->assertJsonMissingPath('meta');
+        $this->assertDatabaseCount('client_time_entries', 2);
 
         // A replay rechecks the approver role, as the approve endpoint's replay does.
         $managerMembership->forceFill(['role' => 'contributor'])->save();
         $this->withHeader('Idempotency-Key', 'log-approve-1')->postJson($url, $payload)->assertForbidden();
-        $this->assertDatabaseCount('client_time_entries', 1);
+        $this->assertDatabaseCount('client_time_entries', 2);
     }
 
     /**

@@ -306,6 +306,8 @@ final class DateColumnBoundaryTest extends TestCase
             'app/Support/Revenue/ServiceMonth.php' => ['$first', '$last'],
             // TimeRollup::earliest() returns the earlier of two `toDateString()` values.
             'app/Queries/MyWorkQuery.php' => ['$rollup->earliest()'],
+            // ApprovalPeriod::start() and end() are `toDateString()` of the month's bounds.
+            'app/Services/Approval/ClientApprovals.php' => ['$period?->start()', '$period?->end()'],
             // `$upTo?->toDateString()`, taken before the query.
             'app/Services/Billing/DeferredBillingAllocator.php' => ['$upToDate'],
             // filters() validates both bounds with date_format:Y-m-d.

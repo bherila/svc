@@ -7,9 +7,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
-use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
-use App\Support\AgentApi\TimeEntryAllocation;
 use App\Support\Engagement\TimeEntryCreationRules;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
@@ -20,11 +18,13 @@ use Illuminate\Support\Facades\Validator;
  * The action validates the payload inside the mutation executor so every
  * transport reaches the same receipt and failure-audit boundary.
  *
- * `approve: true` approves the logged entries in the same transaction and
- * under the same receipt, so a batch is either logged and approved or not
- * written at all. It is gated exactly as `time_entries.approve` is: the
- * workflow write cutover, the time:approve scope, and the approver role on
- * every project, each rechecked before a receipt is replayed.
+ * `approve: true` is deprecated and does nothing (UX overhaul section 7b):
+ * time you log is your own, and no one approves their own time, so the
+ * entries are written unapproved and the response says so. It is still
+ * gated exactly as `time_entries.approve` is - the workflow write cutover,
+ * the time:approve scope, and the approver role on every project, each
+ * rechecked before a receipt is replayed - so a caller who could not have
+ * asked is still refused rather than silently ignored.
  */
 final class LogTimeEntriesAction
 {
@@ -41,8 +41,6 @@ final class LogTimeEntriesAction
      */
     public function run(User $user, Workspace $workspace, string $clientId, string $idempotencyKey, array $payload, bool $allowsApprovalScope): array
     {
-        $additionalAuditOperation = $this->approves($payload) ? 'time_entries.approve' : null;
-
         return $this->mutations->run(
             $user,
             $workspace,
@@ -61,15 +59,20 @@ final class LogTimeEntriesAction
                 $approve = $this->approves($data);
                 $this->assertApprovalAllowed($approve, $allowsApprovalScope);
                 $ids = [];
+                $projects = [];
                 foreach ($data['entries'] as $entry) {
                     $project = ClientProject::query()
                         ->where('workspace_id', $workspace->id)
                         ->where('public_id', $entry['project_id'] ?? null)
                         ->firstOrFail();
+                    $projects[$project->id] = $project;
                     $ids[] = $this->time->create($workspace, $project, $user, $entry)->public_id;
                 }
+                // Nothing is approved - see the class comment - but the ask is
+                // still held to the approver's gate, so a request nobody could
+                // have made is refused and rolled back, not quietly ignored.
                 if ($approve) {
-                    $this->time->approve($workspace, $user, $this->approvalItems($workspace, $ids));
+                    abort_unless($this->access->canApproveTimeForProjects($user, $workspace, collect(array_values($projects))), 403);
                 }
 
                 return $ids;
@@ -101,7 +104,6 @@ final class LogTimeEntriesAction
                     ), 403);
                 }
             },
-            $additionalAuditOperation,
         );
     }
 
@@ -111,9 +113,15 @@ final class LogTimeEntriesAction
      *
      * @param  array<string, mixed>  $payload
      */
-    private function approves(array $payload): bool
+    public static function approvalRequested(array $payload): bool
     {
         return in_array($payload['approve'] ?? false, [true, 1, '1'], true);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function approves(array $payload): bool
+    {
+        return self::approvalRequested($payload);
     }
 
     private function assertApprovalAllowed(bool $approve, bool $allowsApprovalScope): void
@@ -125,21 +133,6 @@ final class LogTimeEntriesAction
         // cutover that withholds `time_entries.approve` itself.
         abort_unless(AgentWriteCutover::writes(), 403, 'Approving time is not enabled for agents.');
         abort_unless($allowsApprovalScope, 403, 'Approving time requires the time:approve scope.');
-    }
-
-    /**
-     * @param  list<string>  $ids
-     * @return list<array{id: string, expected_version: string}>
-     */
-    private function approvalItems(Workspace $workspace, array $ids): array
-    {
-        $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)
-            ->with(TimeEntryAllocation::relations($workspace->id))->get()->keyBy('public_id');
-
-        return array_map(fn (string $id): array => [
-            'id' => $id,
-            'expected_version' => AgentApiVersion::for($entries->get($id) ?? throw new \LogicException('A time entry logged in this transaction is missing.')),
-        ], $ids);
     }
 
     /** @param array<string, mixed> $payload */

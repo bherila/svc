@@ -99,7 +99,7 @@ final class IssueInvoiceAction
                 if ($paymentFacts === null) {
                     return [$issued->public_id];
                 }
-                $recorded = $this->receivedPayments->record($workspace, $issued, $paymentFacts, RecordReceivedPayment::agentKey($user->id, $clientId, $key, 'invoices.issue'));
+                $recorded = $this->receivedPayments->record($workspace, $issued, $paymentFacts, RecordReceivedPayment::agentKey($user->id, $clientId, $key, 'invoices.issue'), null, $user->id);
                 // issue() snapshotted the administrator's copy while the invoice
                 // was still unpaid, a state this transaction never commits.
                 $this->administratorNotifications->resnapshotIssued($this->invoice($workspace, $issued->public_id));

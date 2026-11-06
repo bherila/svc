@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Accounting\InvoiceAccountingJournal;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Services\Approval\ClientApprovalByPayment;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
@@ -43,6 +44,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LogicException;
 use RuntimeException;
+use Throwable;
 
 final class InvoiceLifecycleService
 {
@@ -1418,9 +1420,45 @@ final class InvoiceLifecycleService
             if ($status === InvoicePaymentStatus::Succeeded) {
                 $this->recordPaymentActivity($locked, $payment, 'invoice.payment_received');
                 $this->recordMarkedPaid($locked, $previousInvoiceStatus, $payment->public_id);
+                $this->approveOnPaymentInFull($locked, $previousInvoiceStatus, $data);
             }
 
             return ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->firstOrFail();
+        });
+    }
+
+    /**
+     * Paying an invoice in full approves its hours and expenses for the client.
+     *
+     * Only on the payment that takes the invoice to paid, and only once that
+     * payment has committed: the write is deferred to commit explicitly, not
+     * by asking how deep the transaction is, because the suite's own wrapping
+     * transaction would make that answer differ from production's. Nothing is
+     * queued - no worker runs - so it happens in this request. A failure here
+     * leaves the payment recorded and the hours unapproved, which is the safe
+     * way round, and is reported rather than swallowed.
+     *
+     * `recorded_by_user_id` names the person who recorded the payment, when
+     * one did: their own entries are never approved this way.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function approveOnPaymentInFull(ClientInvoice $invoice, string $previousStatus, array $data): void
+    {
+        if ($invoice->status !== InvoiceStatus::Paid->value || $previousStatus === InvoiceStatus::Paid->value) {
+            return;
+        }
+
+        $workspaceId = (int) $invoice->workspace_id;
+        $invoiceId = (int) $invoice->id;
+        $recordedBy = is_int($data['recorded_by_user_id'] ?? null) ? $data['recorded_by_user_id'] : null;
+
+        DB::afterCommit(function () use ($workspaceId, $invoiceId, $recordedBy): void {
+            try {
+                app(ClientApprovalByPayment::class)->approve($workspaceId, $invoiceId, $recordedBy);
+            } catch (Throwable $failure) {
+                report($failure);
+            }
         });
     }
 

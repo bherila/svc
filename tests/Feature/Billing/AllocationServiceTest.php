@@ -214,7 +214,7 @@ final class AllocationServiceTest extends TestCase
             ])->id;
         }
 
-        if ($field === 'user_id') {
+        if (in_array($field, ['user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id'], true)) {
             $value = User::factory()->create()->id;
         }
 
@@ -453,7 +453,37 @@ final class AllocationServiceTest extends TestCase
             'subcontractor cost' => ['subcontractor_cost_amount', 7500],
             'subcontractor cost currency' => ['subcontractor_cost_currency', 'EUR'],
             'subcontractor cost metadata' => ['subcontractor_cost_metadata', ['source' => 'synthetic-divergence']],
+            // The client's own decision is about the work: a fragment they have
+            // decided on is not the same piece of work as one they have not.
+            'client approval time' => ['client_approved_at', '2026-11-01 10:00:00'],
+            'client approval person' => ['client_approved_by_user_id', 0],
+            'client approval source' => ['client_approval_source', 'portal'],
+            'client dispute time' => ['client_disputed_at', '2026-11-01 10:00:00'],
+            'client dispute person' => ['client_disputed_by_user_id', 0],
+            'client dispute note' => ['client_dispute_note', 'Synthetic dispute'],
         ];
+    }
+
+    public function test_a_split_carries_the_clients_decision_to_both_fragments(): void
+    {
+        $entry = $this->entry(180);
+        $client = User::factory()->create();
+        $entry->forceFill([
+            'client_approved_at' => '2026-11-01 10:00:00', 'client_approved_by_user_id' => $client->id, 'client_approval_source' => 'portal',
+            'client_disputed_at' => '2026-11-02 10:00:00', 'client_disputed_by_user_id' => $client->id, 'client_dispute_note' => 'Synthetic note',
+        ])->save();
+
+        $parts = app(TimeEntrySplitter::class)->splitEntry($entry->fresh(), 120);
+
+        foreach ([$parts['primary']->fresh(), $parts['overflow']->fresh()] as $fragment) {
+            $this->assertSame('2026-11-01 10:00:00', $fragment->client_approved_at?->format('Y-m-d H:i:s'));
+            $this->assertSame($client->id, $fragment->client_approved_by_user_id);
+            $this->assertSame('portal', $fragment->client_approval_source);
+            $this->assertSame('2026-11-02 10:00:00', $fragment->client_disputed_at?->format('Y-m-d H:i:s'));
+            $this->assertSame($client->id, $fragment->client_disputed_by_user_id);
+            $this->assertSame('Synthetic note', $fragment->client_dispute_note);
+        }
+        $this->assertSame(1, $this->recombine(), 'Fragments that agree still recombine.');
     }
 
     public function test_the_survivor_stops_being_a_fragment(): void

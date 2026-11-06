@@ -174,6 +174,14 @@ class TimeEntrySplitter
                 'subcontractor_cost_metadata' => $entry->subcontractor_cost_metadata,
                 'approved_by_user_id' => $entry->approved_by_user_id,
                 'approved_at' => $entry->approved_at,
+                // The client's say-so is about the work, so it covers both
+                // halves of a split.
+                'client_approved_at' => $entry->client_approved_at,
+                'client_approved_by_user_id' => $entry->client_approved_by_user_id,
+                'client_approval_source' => $entry->client_approval_source,
+                'client_disputed_at' => $entry->client_disputed_at,
+                'client_disputed_by_user_id' => $entry->client_disputed_by_user_id,
+                'client_dispute_note' => $entry->client_dispute_note,
                 // The overflow starts unbilled. Here that is the absence of a pivot
                 // row rather than a null column, so there is nothing to set.
             ]);
