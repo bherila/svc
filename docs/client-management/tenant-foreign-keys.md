@@ -358,3 +358,22 @@ The append-only `accounting_invoice_entries.client_invoice_id` uses
 `accounting_invoice_ws_invoice_fk` on `(workspace_id, client_invoice_id)` to
 reference `client_invoices(workspace_id, id)` with delete restricted. Its document
 snapshot cannot be moved to another tenant or orphaned by deleting the invoice.
+
+## Shared projects belong to two workspaces
+
+`client_project_participation_invitations` and `client_project_participations`
+(UX overhaul slice 9) are not tenant-owned in the sense this document means, so
+neither has a `workspace_id`, and `TenantForeignKeyInventoryTest` does not list
+them. They name `host_workspace_id` and `participant_workspace_id`, and are read
+only through `SharedProjectAccess`. What the schema does enforce is that the
+project lives in the host: `(host_workspace_id, client_project_id)` is a
+composite key onto `client_projects(workspace_id, id)` in both tables
+(`cppinv_host_project_fk`, `cppart_host_project_fk`).
+
+Three columns on tenant tables point at a *workspace* rather than at a tenant-owned
+row, so they are single-column keys to `workspaces`:
+`client_comments.author_workspace_id` and `client_task_assignments.assignee_workspace_id`
+name the participant workspace that wrote or was assigned, and
+`client_projects.shared_participation_id` points at the participation a
+participant's own project works against. None of them can grant access: every read
+re-resolves the participation, so a stale value shows nothing.

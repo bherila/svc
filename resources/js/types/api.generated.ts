@@ -2025,6 +2025,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/shared-projects/{project}/tasks/{task}/comments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The comments of a task the caller may see, 50 per page. The host sees all of them and which are shared; a participant sees only comments in the shared conversation: ones a participant wrote, and ones the host published to it. The host's internal comments are never returned to a participant. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them. */
+        get: operations['shared_projects.comments.list'];
+        put?: never;
+        /** @description Add a comment to a task the caller may see. It joins the shared conversation, so the host and every participant who can see the task read it; it is never shown to the host's client. A host viewer with no write role on the project, and a participant who cannot see the task, cannot comment. Requires AGENT_API_COLLABORATION_WRITES_ENABLED. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them. */
+        post: operations['shared_projects.comments.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/shared-projects/{project}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description One shared project: its name, status and the viewer's standing. The host also gets the client name, description, participating workspaces and open invitations; a participant gets the host workspace's name and its own linked local project. Only a viewer who may assign gets assignee_options: the people of the host and of each participant who can be handed a task. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them. */
+        get: operations['shared_projects.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/shared-projects': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The shared projects the workspace hosts (with a participant or a pending invitation) and the ones it takes part in. Bounded to 100 of each. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them. */
+        get: operations['shared_projects.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/shared-projects/{project}/tasks/{task}/assignees': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replace who a task is assigned to, across the host and its participants, for a host workspace owner or admin or a project owner or manager. People already assigned stay; anyone new must be offered in assignee_options. Assigning gives access to nothing: a participant sees the task only as the rules above allow. A person can hold a task once. Requires AGENT_API_COLLABORATION_WRITES_ENABLED. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them. */
+        put: operations['shared_projects.tasks.assign'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/shared-projects/{project}/tasks': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The project's tasks the caller may see, 50 per page, ordered by creation; follow meta.next_cursor until null. Each carries its assignees with the workspace each stands in; user and workspace ids are returned only to a viewer who may assign. The path workspace is the caller's own. The project is the host workspace's, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host's workspace name and the assignees' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them. */
+        get: operations['shared_projects.tasks.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/square/customers/{customer}': {
         parameters: {
             query?: never;
@@ -5389,6 +5475,156 @@ export interface components {
             subtitle: string | null;
             href: string;
             workspace: string;
+        };
+        SharedProjectAssignRequest: {
+            assignees: {
+                /** Format: uuid */
+                user_id: string;
+                /** Format: uuid */
+                workspace_id: string;
+            }[];
+        };
+        SharedProjectAssignmentResponse: {
+            data: {
+                /** Format: uuid */
+                task_id: string;
+                assignees: {
+                    name: string;
+                    workspace_name: string;
+                    /** Format: uuid */
+                    user_id?: string;
+                    /** Format: uuid */
+                    workspace_id?: string;
+                }[];
+            };
+        };
+        SharedProjectCommentListResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                body: string;
+                author_name: string;
+                author_workspace_name: string;
+                shared_with_participants: boolean;
+                /** Format: date-time */
+                created_at: string | null;
+            }[];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        SharedProjectCommentRequest: {
+            body: string;
+        };
+        SharedProjectCommentResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                body: string;
+                author_name: string;
+                author_workspace_name: string;
+                shared_with_participants: boolean;
+                /** Format: date-time */
+                created_at: string | null;
+            };
+        };
+        SharedProjectListResponse: {
+            data: {
+                hosted: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    client_name: string;
+                    web_url: string;
+                }[];
+                participating: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    host_workspace_name: string;
+                    web_url: string;
+                }[];
+            };
+        };
+        SharedProjectResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                status: string;
+                /** @enum {string} */
+                side: 'host' | 'participant';
+                host_workspace_name: string;
+                viewer: {
+                    sees_whole_project: boolean;
+                    can_assign: boolean;
+                    can_manage_participants: boolean;
+                    can_act_as_participant: boolean;
+                };
+                web_url: string;
+                client_name?: string | null;
+                description?: string | null;
+                participants?: {
+                    /** Format: uuid */
+                    id: string;
+                    workspace_name: string;
+                    /** Format: date-time */
+                    accepted_at: string;
+                }[];
+                invitations?: {
+                    /** Format: uuid */
+                    id: string;
+                    email: string;
+                    /** Format: date-time */
+                    expires_at: string;
+                }[];
+                participation?: {
+                    /** Format: date-time */
+                    accepted_at: string;
+                };
+                local_project?: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                } | null;
+                assignee_options?: {
+                    /** Format: uuid */
+                    user_id: string;
+                    name: string;
+                    /** Format: uuid */
+                    workspace_id: string;
+                    workspace_name: string;
+                }[];
+            };
+        };
+        SharedProjectTaskListResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                description: string | null;
+                status: string;
+                shared_with_participants: boolean;
+                /** Format: date */
+                starts_on: string | null;
+                /** Format: date */
+                due_on: string | null;
+                /** Format: date-time */
+                completed_at: string | null;
+                web_url: string;
+                assignees: {
+                    name: string;
+                    workspace_name: string;
+                    /** Format: uuid */
+                    user_id?: string;
+                    /** Format: uuid */
+                    workspace_id?: string;
+                }[];
+                can_comment: boolean;
+            }[];
+            meta: {
+                next_cursor: string | null;
+            };
         };
         /** @description Phase-two Square billing-audit flags, read from svc's mirror as of its last sync. Empty where Square does not serve the workspace. Nothing here writes to Square. */
         SquareBillingAudit: {
@@ -14070,6 +14306,422 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SearchResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'shared_projects.comments.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: string;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SharedProjectCommentListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, or the caller's role in the workspace does not allow the operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'shared_projects.comments.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: string;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SharedProjectCommentRequest'];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SharedProjectCommentResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, or the caller's role in the workspace does not allow the operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. Agent writes also answer 404 while AGENT_API_COLLABORATION_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'shared_projects.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SharedProjectResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, or the caller's role in the workspace does not allow the operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'shared_projects.list': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SharedProjectListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, or the caller's role in the workspace does not allow the operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'shared_projects.tasks.assign': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: string;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SharedProjectAssignRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SharedProjectAssignmentResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, or the caller's role in the workspace does not allow the operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. Agent writes also answer 404 while AGENT_API_COLLABORATION_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'shared_projects.tasks.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SharedProjectTaskListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the scope, or the caller's role in the workspace does not allow the operation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or task is not visible to the caller, or the caller's workspace does not take part in the project. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

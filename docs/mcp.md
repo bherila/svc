@@ -682,6 +682,7 @@ resolves authenticated context, validates its DTO, and maps the result.
 | `billing.preflight_schedule_generation`           | `svc:billing:preflight-schedule-generation`; `AgentBillingAuditReadService` over `ScheduleGenerationPreflight`            | `billing:read`; manager; the caller's workspace only                                | Counts per refusal reason and schedule defect, through the workspace's today, at most 60 periods per schedule and 5 calls per ten minutes; `complete` false when a backlog was not fully examined | `mcp.read.billing.preflight_schedule_generation`; parity and tenant-isolation tests                                   |
 | `billing.audit_unlinked_proposal_agreements`      | `svc:engagement:audit-unlinked-proposal-agreements`; `AgentBillingAuditReadService` over `UnlinkedProposalAgreementAuditor` | `billing:read`; manager; the caller's workspace only                              | Counts only; nothing is repaired or guessed                                                                                                                                     | `mcp.read.billing.audit_unlinked_proposal_agreements`; parity and tenant-isolation tests                              |
 | `billing.audit_deferred_lineage_visibility`       | `svc:billing:audit-deferred-lineage-visibility`; `AgentBillingAuditReadService` over `DeferredLineageVisibilityAuditor`     | `billing:read`; manager; the caller's workspace only                              | Counts, up to 100 affected invoice ids and numbers, and the supported fix; nothing about the deferred work, its projects or members; nothing is repaired                        | `mcp.read.billing.audit_deferred_lineage_visibility`; parity and tenant-isolation tests                               |
+| `shared_projects.list`, `shared_projects.get`, `shared_projects.tasks.list`, `shared_projects.tasks.assign`, `shared_projects.comments.list`, `shared_projects.comments.create` | Shared projects (UX overhaul slice 9); `SharedProjectReadService` and `SharedProjectCollaboration` behind `SharedProjectAccess`, the one host-or-active-participation rule | `projects:read` (list, get), `tasks:read` (tasks), `tasks:write` (assign), `collaboration:read`/`collaboration:write` with `tasks:read` (comments); the caller's own workspace in the path, the project found only as host or active participant | Task title, description, status, dates, assignees with their workspace names, and shared comments; never a rate, time entry, invoice, payment, agreement, file or internal note | `mcp.read`, `mcp.write`; writes behind the collaboration cutover; `SharedProjectIsolationTest`, `SharedProjectCollaborationTest` |
 | `revenue.summary`, `revenue.monthly`, `revenue.projection`, `revenue.clients` | Dashboard, client roster and client overview figures; `RevenueReadService` over `ProjectionInputsRepository`, `RevenueActualsRepository` and `AgreementLedgerRepository`, computed by `RecurringRevenueProjector` and `RevenueSummaries` | `revenue:read` (not implied by `finance:read`); manager; workspace-scoped reads, `client_id` resolved within the workspace | Aggregates and per-client figures in minor units; every response carries `assumptions`; no invoice or payment identifiers | `mcp.read.revenue`; REST/MCP/DTO parity, schema, isolation and scope tests (`RevenueRestTest`, `RevenueRepositoriesTest`) |
 | Duplicate-time diagnostics                        | No checked-in workflow/service establishes the grouping key                                                               | Deferred from read GA                                                               | Not implemented: a canonical application query, grouping contract, bounded DTO, and privacy review must exist before MCP can adapt it                                           | No flag or release cohort                                                                                             |
 | Session workspace selection                       | Existing clients select an authorized workspace on every scoped call                                                      | Accepted v1 compatibility contract                                                  | Credential/client sessions are bound; every selector is active-membership scoped and reauthorized per call. Session pinning requires a future versioned migration.              | Context, membership-removal, credential-binding, and multi-workspace compatibility tests                              |
@@ -1172,6 +1173,50 @@ commands call the same operation.
 - The tool arguments are the REST ones, with the path parameters named
   `payment_id`, `external_system` and `transaction_id`, and the list's invoice
   filter `invoice_id`.
+
+### Shared projects
+
+`shared_projects.*` are the REST operations and MCP tools of a project one
+workspace hosts and others take part in ([the UX overhaul](ux-overhaul.md),
+section 7a). They are `SharedProjectOperations` in the catalog and
+`AgentMcpSharedProjectTools` over REST. The path's `{workspace}` is always the
+caller's own workspace; the project in `{project}` is found by
+`SharedProjectAccess` only as the host, or as a workspace with an accepted,
+unrevoked participation that has not left. Anything else - a stranger, a pending,
+declined or expired invitation, a revoked or departed participant, another
+participant's project - is the same 404 as a project that does not exist.
+
+All paths start with `/api/v1/workspaces/{workspace}/shared-projects`:
+
+| Tool | REST path | Scope | Notes |
+| --- | --- | --- | --- |
+| `shared_projects.list` | `GET /` | `projects:read` | Hosted (with a participant or a pending invitation) and joined |
+| `shared_projects.get` | `GET /{project}` | `projects:read` | The host also gets participants, open invitations and `assignee_options` |
+| `shared_projects.tasks.list` | `GET /{project}/tasks` | `tasks:read` | 50 per page, `meta.next_cursor` |
+| `shared_projects.tasks.assign` | `PUT /{project}/tasks/{task}/assignees` | `tasks:write` | Host owners, admins and project owners or managers; `AGENT_API_COLLABORATION_WRITES_ENABLED` |
+| `shared_projects.comments.list` | `GET /{project}/tasks/{task}/comments` | `collaboration:read`, `tasks:read` | |
+| `shared_projects.comments.create` | `POST /{project}/tasks/{task}/comments` | `collaboration:write`, `tasks:read` | `AGENT_API_COLLABORATION_WRITES_ENABLED` |
+
+- **What a participant sees.** Only tasks whose own flag, ancestors and list are
+  visible to the host's client (`TaskVisibility::constrainVisibleAncestry`), by
+  named columns only (`SharedTaskScope`), so a milestone price, an invoice link,
+  a list, a label, a contact or a dependency is never selected. A participant
+  who is not an owner or admin of its workspace sees only the tasks assigned to
+  it from that workspace. The project's client, description and the other
+  participants are the host's alone.
+- **Comments.** A comment lives in the host's thread and names the workspace that
+  wrote it. A participant reads only comments in the shared conversation
+  (`shared_with_participants`); the host's existing comments stay internal. A
+  comment written here is never shown to the host's client.
+- **Assignment.** The offered people are the host's staff on the project and, for
+  each participant, its owners and admins and the members it put on its linked
+  local project. Ids are told only to a viewer who may assign.
+- **Not operations.** Inviting, withdrawing, accepting, declining, removing a
+  participant, leaving and linking a local project are browser-only by decision,
+  with an access-audit row each (`shared_project.*`).
+- **Isolation.** `SharedViewer` holds every "may this person see or do X" rule,
+  database-free; `SharedProjectIsolationTest` proves each denied standing on the
+  web page, REST, MCP and search.
 
 ### Revenue planning reads
 

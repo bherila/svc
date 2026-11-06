@@ -89,7 +89,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
         $this->assertNotContains('billing.audit_opening_rollover', array_column($tools, 'name'));
-        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.members.list', 'projects.get', 'tasks.assignees.list', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.pdf', 'invoices.preview_period', 'billing_audit.stale_and_missing', 'invoices.corrections.get', 'invoices.get', 'search', 'deferred_backlog.preview', 'companies.square_customer.get', 'invoices.reminders.list', 'companies.payment_reminders.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.preflight_schedule_generation', 'billing.audit_unlinked_proposal_agreements', 'billing.audit_deferred_lineage_visibility', 'toolsets.list', 'toolsets.enable', 'toolsets.disable'], array_column($tools, 'name'));
+        $this->assertSame(['context.get', 'operations.summary', 'projects.list', 'projects.members.list', 'projects.get', 'tasks.assignees.list', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.pdf', 'invoices.preview_period', 'billing_audit.stale_and_missing', 'invoices.corrections.get', 'invoices.get', 'search', 'deferred_backlog.preview', 'companies.square_customer.get', 'invoices.reminders.list', 'companies.payment_reminders.get', 'agreements.list', 'agreements.get', 'billing_schedules.list', 'billing_schedules.get', 'capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.preflight_schedule_generation', 'billing.audit_unlinked_proposal_agreements', 'billing.audit_deferred_lineage_visibility', 'shared_projects.list', 'shared_projects.get', 'shared_projects.tasks.list', 'toolsets.list', 'toolsets.enable', 'toolsets.disable'], array_column($tools, 'name'));
         foreach ($tools as $tool) {
             $this->assertTrue($tool['annotations']['readOnlyHint']);
             $this->assertFalse($tool['annotations']['destructiveHint']);
@@ -1131,7 +1131,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
 
-        $this->assertSame(['projects.list', 'projects.get', ...self::TOOLSET_TOOLS], array_column($tools, 'name'));
+        $this->assertSame(['projects.list', 'projects.get', 'shared_projects.list', 'shared_projects.get', ...self::TOOLSET_TOOLS], array_column($tools, 'name'));
     }
 
     public function test_per_capability_kill_switches_remove_tools_and_the_global_switch_refuses_service(): void
@@ -1143,7 +1143,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         config(['agent_api.mcp_feature_flags' => ['projects.list' => false]]);
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
-        $this->assertSame(['projects.get', ...self::TOOLSET_TOOLS], array_column($tools, 'name'));
+        $this->assertSame(['projects.get', 'shared_projects.list', 'shared_projects.get', ...self::TOOLSET_TOOLS], array_column($tools, 'name'));
 
         $this->mcp([
             'jsonrpc' => '2.0',

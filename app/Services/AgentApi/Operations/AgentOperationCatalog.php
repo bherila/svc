@@ -21,6 +21,7 @@ use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpRevenueTools;
+use App\Services\Mcp\AgentMcpSharedProjectTools;
 use App\Services\Mcp\AgentMcpSquareCoveredPaymentTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
@@ -70,6 +71,7 @@ final class AgentOperationCatalog
      */
     private const array ROUTES = [
         ...AccountingOperations::ROUTES,
+        ...SharedProjectOperations::ROUTES,
         ...TaskOrganizationOperations::ROUTES,
         ...TaskPlanningOperations::ROUTES,
         ...AttachmentSharingOperations::ROUTES,
@@ -273,7 +275,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools(), ...$this->toolsetTools());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools(), ...$this->sharedProjectTools(), ...$this->toolsetTools());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1860,6 +1862,29 @@ final class AgentOperationCatalog
         ];
     }
 
+    /**
+     * The shared project tools (docs/ux-overhaul.md section 7a). The two writes
+     * sit behind the collaboration cutover, so agents get them only when an
+     * operator has switched agent collaboration writes on; the website, which
+     * passes every cutover, always has them.
+     *
+     * @return list<Operation>
+     */
+    private function sharedProjectTools(): array
+    {
+        $operations = [];
+        foreach (SharedProjectOperations::DEFINITIONS as $id => [$handler, $title, $response, $request]) {
+            $write = $request !== null;
+            $operations[] = $this->tool($id, $title, self::documented($id), [AgentMcpSharedProjectTools::class, $handler],
+                $write ? Effect::LocalWrite : Effect::Read, true, $write ? 'mcp.write' : 'mcp.read',
+                cutovers: $write ? [AgentDeploymentFlags::COLLABORATION] : [],
+                input: $write ? SchemaRef::openApi($request) : null,
+                output: SchemaRef::openApi($response));
+        }
+
+        return $operations;
+    }
+
     private static function documented(string $id): string
     {
         $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
@@ -2157,7 +2182,10 @@ final class AgentOperationCatalog
 
     private function takesConfirmation(string $id): bool
     {
-        if (! isset(self::ROUTES[$id])) {
+        // @infection-ignore-all The guard only matters while the checked document does not yet hold
+        // the shared project requests (scripts/generate-shared-project-contract.php builds it); afterwards the
+        // lookup it skips answers the same, because neither request has a version or a confirmation.
+        if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id])) {
             return false;
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
@@ -2167,7 +2195,10 @@ final class AgentOperationCatalog
 
     private function takesVersion(string $id): bool
     {
-        if (! isset(self::ROUTES[$id])) {
+        // @infection-ignore-all The guard only matters while the checked document does not yet hold
+        // the shared project requests (scripts/generate-shared-project-contract.php builds it); afterwards the
+        // lookup it skips answers the same, because neither request has a version or a confirmation.
+        if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id])) {
             return false;
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);

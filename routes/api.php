@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\AgentProjectController;
 use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentRevenueController;
+use App\Http\Controllers\Api\V1\AgentSharedProjectController;
 use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentSquareCoveredPaymentController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
@@ -90,6 +91,12 @@ Route::prefix('v1')
     ->name('agent-api.v1.')
     ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation, $workspaceOperation): void {
+        $workspaceOperation('shared_projects.list', [AgentSharedProjectController::class, 'index']);
+        $workspaceOperation('shared_projects.get', [AgentSharedProjectController::class, 'show'])->whereUuid('project');
+        $workspaceOperation('shared_projects.tasks.list', [AgentSharedProjectController::class, 'tasks'])->whereUuid('project');
+        $workspaceOperation('shared_projects.tasks.assign', [AgentSharedProjectController::class, 'assign'])->whereUuid('project')->whereUuid('task');
+        $workspaceOperation('shared_projects.comments.list', [AgentSharedProjectController::class, 'comments'])->whereUuid('project')->whereUuid('task');
+        $workspaceOperation('shared_projects.comments.create', [AgentSharedProjectController::class, 'commentCreate'])->whereUuid('project')->whereUuid('task');
         $workspaceOperation('finance.invoice_lines.list', [AccountingReadController::class, 'lines']);
         $workspaceOperation('finance.cash_income.list', [AccountingReadController::class, 'income']);
         $workspaceOperation('finance.income.yearly', [AccountingReadController::class, 'yearly']);

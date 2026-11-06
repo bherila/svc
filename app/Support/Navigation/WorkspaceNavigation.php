@@ -39,6 +39,7 @@ final class WorkspaceNavigation
         public readonly ?string $taskLabelsHref = null,
         public readonly ?string $operationsHref = null,
         public readonly ?string $paymentsHref = null,
+        public readonly ?string $sharedProjectsHref = null,
     ) {}
 
     /** The option the viewer is standing in, or null outside one. */
@@ -69,6 +70,7 @@ final class WorkspaceNavigation
      *     task_labels_href: string|null,
      *     operations_href: string|null,
      *     payments_href: string|null,
+     *     shared_projects_href: string|null,
      * }
      */
     public function toArray(): array
@@ -91,6 +93,7 @@ final class WorkspaceNavigation
             'task_labels_href' => $this->taskLabelsHref,
             'operations_href' => $this->operationsHref,
             'payments_href' => $this->paymentsHref,
+            'shared_projects_href' => $this->sharedProjectsHref,
         ];
     }
 }

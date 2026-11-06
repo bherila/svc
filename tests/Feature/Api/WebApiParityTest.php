@@ -38,6 +38,15 @@ final class WebApiParityTest extends TestCase
         'svc.billing.square.workspace-webhook' => 'web-only:inbound webhook',
         'portal.approvals.approve' => 'deliberate:a client contact approving the hours and expenses they pay for is an interactive decision by the payer in the portal, which holds no agent credential',
         'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
+        // Sharing a project crosses a workspace boundary, so only a signed-in
+        // owner or admin of each side may open, accept, end or relink it (#631).
+        'shared-project-invitations.accept' => 'deliberate:joining another workspace\'s project is accepted only by a signed-in owner or admin of the joining workspace',
+        'shared-project-invitations.decline' => 'deliberate:an invitation to another workspace\'s project is declined only by a signed-in invitee',
+        'shared-projects.invitations.destroy' => 'deliberate:cross-workspace invitations are withdrawn only by a signed-in host owner or admin',
+        'shared-projects.invitations.store' => 'deliberate:cross-workspace invitations are issued only by a signed-in host owner or admin',
+        'shared-projects.leave' => 'deliberate:leaving another workspace\'s project is done only by a signed-in owner or admin of the leaving workspace',
+        'shared-projects.local-project.update' => 'deliberate:linking a local project to a shared one is done only by a signed-in owner or admin of the participant workspace',
+        'shared-projects.participants.destroy' => 'deliberate:participants are removed only by a signed-in host owner or admin',
         'svc.engagement.agreements.sign' => 'deliberate:a signature is an interactive act by the signer',
         'svc.engagement.proposals.accept' => 'deliberate:portal acceptance is an interactive signature by the recipient; REST/MCP separately support confirmed offline acceptance',
     ];

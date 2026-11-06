@@ -234,12 +234,22 @@ function NewWorkspaceDialog({
     );
 }
 
+type SharedProjectInvitation = {
+    id: string;
+    project_name: string;
+    host_workspace_name: string;
+    href: string;
+};
+
 export default function WorkspaceSelector({
     workspaces,
     create_url: createUrl,
+    shared_project_invitations: sharedInvitations = [],
 }: {
     create_url: string;
     workspaces: WorkspaceChoice[];
+    /** Invitations to take part in another workspace's project, addressed to this person. */
+    shared_project_invitations?: SharedProjectInvitation[];
 }) {
     const [creating, setCreating] = useState(false);
 
@@ -263,6 +273,36 @@ export default function WorkspaceSelector({
                         New workspace
                     </Button>
                 </div>
+
+                {sharedInvitations.length > 0 && (
+                    <section
+                        aria-label="Invitations"
+                        className="mt-6 grid grid-cols-1 gap-1"
+                        data-test="shared-project-invitations"
+                    >
+                        <h2 className="text-sm font-semibold">
+                            Invited to a shared project
+                        </h2>
+                        <ul className="divide-y divide-border border-y border-border">
+                            {sharedInvitations.map((invitation) => (
+                                <li key={invitation.id}>
+                                    <Link
+                                        href={invitation.href}
+                                        className="flex items-center justify-between gap-4 px-1 py-3 text-sm hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                    >
+                                        <span className="min-w-0 truncate font-medium">
+                                            {invitation.project_name} ·{' '}
+                                            {invitation.host_workspace_name}
+                                        </span>
+                                        <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+                                            Review…
+                                        </span>
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                )}
 
                 {workspaces.length === 0 ? (
                     <p className="mt-8 text-sm text-muted-foreground">

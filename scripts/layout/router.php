@@ -79,6 +79,10 @@ $app = require __DIR__.'/bootstrap.php';
 Auth::onceUsingId(match (true) {
     // The member who is not a manager reads My work as themselves.
     isset($fixture['my_work']) && $requestPath === $fixture['my_work'] => $fixture['work_member_id'],
+    // A participant reads the shared project from their own workspace.
+    isset($fixture['shared_participant']) && $requestPath === $fixture['shared_participant'] => $fixture['shared_participant_user_id'],
+    // The invitee reads the invitation addressed to them.
+    isset($fixture['shared_invitation']) && $requestPath === $fixture['shared_invitation'] => $fixture['shared_invitee_user_id'],
     // The client contact reads the portal as the client.
     in_array($requestPath, array_filter([$fixture['square_portal'], $fixture['task_portal'], $fixture['portal_home'] ?? null, $fixture['document_portal'] ?? null]), true) => $fixture['square_portal_user_id'],
     default => $fixture['user_id'],

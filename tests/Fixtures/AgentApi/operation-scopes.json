@@ -1780,6 +1780,72 @@
             "mcp.switch:search"
         ]
     },
+    "shared_projects.comments.create": {
+        "scopes": [
+            "collaboration:write",
+            "tasks:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:shared_projects.comments.create"
+        ]
+    },
+    "shared_projects.comments.list": {
+        "scopes": [
+            "collaboration:read",
+            "tasks:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:shared_projects.comments.list"
+        ]
+    },
+    "shared_projects.get": {
+        "scopes": [
+            "projects:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:shared_projects.get"
+        ]
+    },
+    "shared_projects.list": {
+        "scopes": [
+            "projects:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:shared_projects.list"
+        ]
+    },
+    "shared_projects.tasks.assign": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:shared_projects.tasks.assign"
+        ]
+    },
+    "shared_projects.tasks.list": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:shared_projects.tasks.list"
+        ]
+    },
     "square.customers.get": {
         "scopes": [
             "billing:read"

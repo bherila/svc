@@ -120,6 +120,8 @@ final class WorkspaceNavigationFactory
             // The workspace's payment connections (Stripe, Square). Managers
             // only: it is where the keys that get the workspace paid are kept.
             paymentsHref: $manages ? route('workspaces.payments', $workspace, absolute: false) : null,
+            // Projects this workspace hosts for other workspaces, and ones it takes part in.
+            sharedProjectsHref: $isMember ? route('shared-projects.index', $workspace, absolute: false) : null,
         );
     }
 

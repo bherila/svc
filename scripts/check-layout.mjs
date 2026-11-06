@@ -52,6 +52,10 @@ const uiGated = new Set([
     'workspace_finance',
     'my_work',
     'portal_home',
+    'shared_index',
+    'shared_host',
+    'shared_participant',
+    'shared_invitation',
 ]);
 const clientsOnly = process.argv.includes('--clients');
 const resourceChromeOnly = process.argv.includes('--resource-chrome');
@@ -81,6 +85,7 @@ const paymentsOnly = process.argv.includes('--payments');
 const revenueOnly = process.argv.includes('--revenue');
 const workPortalOnly = process.argv.includes('--work-portal');
 const invoiceDocumentOnly = process.argv.includes('--invoice-document');
+const sharedProjectsOnly = process.argv.includes('--shared-projects');
 const revenueScreens = new Set([
     'dashboard',
     'workspace_clients',
@@ -202,6 +207,7 @@ try {
         SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
         SVC_LAYOUT_REVENUE: revenueOnly ? '1' : '0',
         SVC_LAYOUT_WORK_PORTAL: workPortalOnly ? '1' : '0',
+        SVC_LAYOUT_SHARED_PROJECTS: sharedProjectsOnly ? '1' : '0',
         SVC_LAYOUT_INVOICE_DOCUMENT: invoiceDocumentOnly ? '1' : '0',
         // The portal offers card payment only where the deployment can confirm one.
         STRIPE_PUBLISHABLE_KEY: invoiceDocumentOnly
@@ -826,6 +832,179 @@ try {
         await page.unroute('**/account/api-credentials', handler);
     }
 
+    // Shared projects (--shared-projects). The host's page, the participant's
+    // page (read as the participant who owns two workspaces) and the invitation
+    // are read with deliberately oversized names. The participant's page must
+    // carry nothing of the host's money or notes, and no raw stored status; the
+    // discussion is stubbed so oversized comments can be drawn without a session.
+    async function checkSharedProjects(screen, width) {
+        await page.waitForLoadState('networkidle');
+        const comment = (id, body, workspaceName, shared) => ({
+            id,
+            body,
+            author_name: 'Partner'.repeat(10),
+            author_workspace_name: workspaceName,
+            shared_with_participants: shared,
+            created_at: '2026-11-09T10:00:00Z',
+        });
+        const commentsHandler = async (route) => {
+            if (route.request().method() !== 'GET') {
+                return route.fulfill({ status: 403, body: '{}' });
+            }
+
+            return route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    data: [
+                        comment(
+                            'c1',
+                            'Host '.concat('SharedUnbrokenComment'.repeat(8)),
+                            'SyntheticHostWorkspace'.repeat(4),
+                            true,
+                        ),
+                        comment(
+                            'c2',
+                            'Partner '.concat('ReplyWithoutBreaks'.repeat(10)),
+                            'SyntheticPartnerWorkspace'.repeat(4),
+                            true,
+                        ),
+                    ],
+                    meta: { next_cursor: null },
+                }),
+            });
+        };
+
+        if (screen === 'shared_index') {
+            await expect(
+                page.getByRole('heading', {
+                    name: 'Shared projects',
+                    level: 1,
+                }),
+            ).toBeVisible();
+            await expect(
+                page.locator('[data-test="hosted-projects"] a'),
+            ).not.toHaveCount(0);
+        }
+
+        if (screen === 'shared_host' || screen === 'shared_participant') {
+            await page.route(
+                '**/shared-projects/*/tasks/*/comments*',
+                commentsHandler,
+            );
+            await expect(page.getByRole('heading', { level: 1 })).toContainText(
+                'Shared',
+            );
+            await expect(
+                page.locator('[data-test="shared-tasks"]'),
+            ).toBeVisible();
+            const body = await page.locator('main').innerText();
+
+            for (const raw of ['in_progress', 'shared_with_participants']) {
+                if (body.includes(raw)) {
+                    failures.push(
+                        `${screen} at ${width}px prints the stored value "${raw}".`,
+                    );
+                }
+            }
+
+            if (screen === 'shared_host') {
+                await expect(
+                    page.locator('[data-test="shared-participants"]'),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Invite by email address'),
+                ).toBeVisible();
+                await expect(
+                    page.getByText('SECRET-HOST-INTERNAL-TASK'),
+                ).toBeVisible();
+            } else {
+                await expect(
+                    page.locator('[data-test="shared-participation"]'),
+                ).toBeVisible();
+                await expect(
+                    page.locator('[data-test="shared-participants"]'),
+                ).toHaveCount(0);
+
+                for (const forbidden of [
+                    'SECRET-',
+                    '987654',
+                    '9,876',
+                    'Who takes part',
+                    'Invoices',
+                    'Finance',
+                ]) {
+                    if (body.includes(forbidden)) {
+                        failures.push(
+                            `${screen} at ${width}px prints "${forbidden}".`,
+                        );
+                    }
+                }
+            }
+
+            await capture(screen, 'loaded', width, false);
+            await page
+                .getByRole('button', { name: 'Discussion' })
+                .first()
+                .click();
+            await expect(
+                page.getByText('SharedUnbrokenComment'.repeat(8)),
+            ).toBeVisible();
+            await capture(screen, 'discussion', width, false);
+
+            if (screen === 'shared_host') {
+                await page
+                    .getByRole('button', { name: 'Assign…' })
+                    .first()
+                    .click();
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await capture(screen, 'assign', width, false);
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('dialog')).toHaveCount(0);
+                await page
+                    .getByRole('button', { name: 'Remove…' })
+                    .first()
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'remove', width, false);
+                await page.keyboard.press('Escape');
+                await expect(page.getByRole('alertdialog')).toHaveCount(0);
+            } else {
+                await page
+                    .getByRole('button', { name: 'Leave this project…' })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'leave', width, false);
+                await page.keyboard.press('Escape');
+            }
+
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+            await page.unroute(
+                '**/shared-projects/*/tasks/*/comments*',
+                commentsHandler,
+            );
+        }
+
+        if (screen === 'shared_invitation') {
+            await expect(
+                page.getByRole('heading', {
+                    name: 'Join a shared project',
+                    level: 1,
+                }),
+            ).toBeVisible();
+            await expect(
+                page.getByLabel('Which of your workspaces joins'),
+            ).toBeVisible();
+            const body = await page.locator('main').innerText();
+
+            if (body.includes('Invitee member only')) {
+                failures.push(
+                    `shared_invitation at ${width}px offers a workspace the person only belongs to.`,
+                );
+            }
+        }
+    }
+
     // "My work" and the portal home (--work-portal). Both are read as the
     // people they are for: a member who is not an owner or admin, and a client
     // contact. The member's page must carry no price however it is read; the
@@ -1083,7 +1262,10 @@ try {
             )
             .map(
                 (violation) =>
-                    `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes)`,
+                    `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
+                        .slice(0, 3)
+                        .map((node) => node.target.join(' '))
+                        .join(', ')})`,
             );
         const screenshot = `${screen}-${state}-${width}.png`;
         await page.screenshot({
@@ -1128,115 +1310,122 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of invoiceDocumentOnly
-            ? ['document_invoice', 'document_portal', 'document_proforma']
-            : paymentsOnly
-              ? ['payments']
-              : workPortalOnly
-                ? ['my_work', 'portal_home']
-                : invoiceSendOnly
-                  ? ['invoice']
-                  : invoiceHistoryOnly
-                    ? ['draft_time']
-                    : invoiceRecoveryOnly
-                      ? [
-                            'invoice',
-                            'operations',
-                            'client_invoices',
-                            'draft_time',
-                            'time',
-                            'draft_invoice',
-                            'invoice_review',
-                        ]
-                      : receiptsOnly
-                        ? ['receipts']
-                        : projectsOnly
-                          ? ['settings']
-                          : schedulesOnly
-                            ? ['expense_schedules']
-                            : expensesOnly
-                              ? ['expenses']
-                              : workspacesOnly
-                                ? ['selector']
-                                : credentialsOnly
-                                  ? ['mcp_setup']
-                                  : invoiceActionsOnly
-                                    ? [
-                                          'invoice',
-                                          'invoice_review',
-                                          'draft_invoice',
-                                          'draft_time',
-                                      ]
-                                    : engagementOnly
-                                      ? ['client_agreements', 'agreement']
-                                      : disputesOnly
-                                        ? ['invoice', 'square_portal']
-                                        : taskLookupsOnly
-                                          ? ['task_editor']
-                                          : tasksOnly
-                                            ? [
-                                                  'task_list',
-                                                  'task_project',
-                                                  'task_editor',
-                                                  'task_portal',
-                                              ]
-                                            : historyOnly
+        for (const screen of sharedProjectsOnly
+            ? [
+                  'shared_index',
+                  'shared_host',
+                  'shared_participant',
+                  'shared_invitation',
+              ]
+            : invoiceDocumentOnly
+              ? ['document_invoice', 'document_portal', 'document_proforma']
+              : paymentsOnly
+                ? ['payments']
+                : workPortalOnly
+                  ? ['my_work', 'portal_home']
+                  : invoiceSendOnly
+                    ? ['invoice']
+                    : invoiceHistoryOnly
+                      ? ['draft_time']
+                      : invoiceRecoveryOnly
+                        ? [
+                              'invoice',
+                              'operations',
+                              'client_invoices',
+                              'draft_time',
+                              'time',
+                              'draft_invoice',
+                              'invoice_review',
+                          ]
+                        : receiptsOnly
+                          ? ['receipts']
+                          : projectsOnly
+                            ? ['settings']
+                            : schedulesOnly
+                              ? ['expense_schedules']
+                              : expensesOnly
+                                ? ['expenses']
+                                : workspacesOnly
+                                  ? ['selector']
+                                  : credentialsOnly
+                                    ? ['mcp_setup']
+                                    : invoiceActionsOnly
+                                      ? [
+                                            'invoice',
+                                            'invoice_review',
+                                            'draft_invoice',
+                                            'draft_time',
+                                        ]
+                                      : engagementOnly
+                                        ? ['client_agreements', 'agreement']
+                                        : disputesOnly
+                                          ? ['invoice', 'square_portal']
+                                          : taskLookupsOnly
+                                            ? ['task_editor']
+                                            : tasksOnly
                                               ? [
-                                                    'history_index',
-                                                    'history_discussion',
-                                                    'history_invoice',
+                                                    'task_list',
+                                                    'task_project',
+                                                    'task_editor',
+                                                    'task_portal',
                                                 ]
-                                              : portalOnly
-                                                ? ['settings']
-                                                : correctionOnly
-                                                  ? ['invoice_review']
-                                                  : squareOnly
-                                                    ? [
-                                                          'square_explore',
-                                                          'square_invoice',
-                                                          'square_portal',
-                                                      ]
-                                                    : remindersOnly
+                                              : historyOnly
+                                                ? [
+                                                      'history_index',
+                                                      'history_discussion',
+                                                      'history_invoice',
+                                                  ]
+                                                : portalOnly
+                                                  ? ['settings']
+                                                  : correctionOnly
+                                                    ? ['invoice_review']
+                                                    : squareOnly
                                                       ? [
-                                                            'reminder_invoice',
-                                                            'settings',
+                                                            'square_explore',
+                                                            'square_invoice',
+                                                            'square_portal',
                                                         ]
-                                                      : revenueOnly
+                                                      : remindersOnly
                                                         ? [
-                                                              'dashboard',
-                                                              'workspace_clients',
-                                                              'client_overview',
+                                                              'reminder_invoice',
+                                                              'settings',
                                                           ]
-                                                        : timeOnly
+                                                        : revenueOnly
                                                           ? [
-                                                                'time',
-                                                                'draft_time',
+                                                                'dashboard',
+                                                                'workspace_clients',
+                                                                'client_overview',
                                                             ]
-                                                          : backlogOnly
-                                                            ? ['agreement']
-                                                            : [
-                                                                  'mcp_setup',
-                                                                  'invoice',
-                                                                  'invoice_review',
-                                                                  'reminder_invoice',
-                                                                  'settings',
-                                                                  'draft_invoice',
-                                                                  'draft_time',
-                                                                  'proposal',
-                                                                  'proposal_acceptance',
-                                                                  'operations',
-                                                                  'client_agreements',
-                                                                  'client_invoices',
-                                                                  'dashboard',
-                                                                  'workspace_clients',
-                                                                  'workspace_invoices',
-                                                                  'workspace_time',
-                                                                  'workspace_finance',
+                                                          : timeOnly
+                                                            ? [
                                                                   'time',
-                                                                  'expenses',
-                                                                  'receipts',
-                                                                  'expense_schedules',
-                                                              ]) {
+                                                                  'draft_time',
+                                                              ]
+                                                            : backlogOnly
+                                                              ? ['agreement']
+                                                              : [
+                                                                    'mcp_setup',
+                                                                    'invoice',
+                                                                    'invoice_review',
+                                                                    'reminder_invoice',
+                                                                    'settings',
+                                                                    'draft_invoice',
+                                                                    'draft_time',
+                                                                    'proposal',
+                                                                    'proposal_acceptance',
+                                                                    'operations',
+                                                                    'client_agreements',
+                                                                    'client_invoices',
+                                                                    'dashboard',
+                                                                    'workspace_clients',
+                                                                    'workspace_invoices',
+                                                                    'workspace_time',
+                                                                    'workspace_finance',
+                                                                    'time',
+                                                                    'expenses',
+                                                                    'receipts',
+                                                                    'expense_schedules',
+                                                                ]) {
             if (
                 resourceChromeOnly &&
                 !['invoice', 'proposal', 'proposal_acceptance'].includes(screen)
@@ -2194,6 +2383,10 @@ try {
 
             if (workPortalOnly) {
                 await checkWorkPortal(screen, width);
+            }
+
+            if (sharedProjectsOnly) {
+                await checkSharedProjects(screen, width);
             }
 
             if (screen !== 'task_editor') {
