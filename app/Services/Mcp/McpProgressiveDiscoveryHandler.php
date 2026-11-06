@@ -18,7 +18,7 @@ use Mcp\Schema\Tool;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 
-/** @implements RequestHandlerInterface<ListToolsResult|ListPromptsResult> */
+/** @implements RequestHandlerInterface<mixed> */
 final readonly class McpProgressiveDiscoveryHandler implements RequestHandlerInterface
 {
     /** @param list<Operation> $operations */
@@ -29,16 +29,27 @@ final readonly class McpProgressiveDiscoveryHandler implements RequestHandlerInt
         return $request instanceof ListToolsRequest || $request instanceof ListPromptsRequest;
     }
 
+    /** @return Response<ListToolsResult>|Response<ListPromptsResult>|Error */
     public function handle(Request $request, SessionInterface $session): Response|Error
     {
         if ($request instanceof ListToolsRequest) {
-            $tools = array_values(array_filter($this->registry->getTools()->references, fn (Tool $tool): bool => $this->toolsets->visible($tool->name, $session)));
+            $tools = [];
+            foreach ($this->registry->getTools()->references as $tool) {
+                if ($tool instanceof Tool && $this->toolsets->visible($tool->name, $session)) {
+                    $tools[] = $tool;
+                }
+            }
             [$page, $cursor] = $this->page($tools, $request->cursor);
 
             return new Response($request->getId(), new ListToolsResult($page, $cursor));
         }
         if ($request instanceof ListPromptsRequest) {
-            $prompts = array_values(array_filter($this->registry->getPrompts()->references, fn (Prompt $prompt): bool => $this->promptVisible($prompt->name, $session)));
+            $prompts = [];
+            foreach ($this->registry->getPrompts()->references as $prompt) {
+                if ($prompt instanceof Prompt && $this->promptVisible($prompt->name, $session)) {
+                    $prompts[] = $prompt;
+                }
+            }
             [$page, $cursor] = $this->page($prompts, $request->cursor);
 
             return new Response($request->getId(), new ListPromptsResult($page, $cursor));
