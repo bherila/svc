@@ -87,6 +87,7 @@ class AppServiceProvider extends ServiceProvider
         Passport::useClientModel(OAuthClient::class);
         $this->app->singleton(ReplayHistoryBasis::class);
         $this->app->bind(InvoiceMailSender::class, LaravelInvoiceMailSender::class);
+        // @infection-ignore-all CastString: the setting is a string in every environment file, so the casts only satisfy static analysis; an unknown name is covered by InvoicePdfRendererBindingTest.
         $this->app->bind(InvoicePdfRenderer::class, static fn ($app): InvoicePdfRenderer => match ((string) config('svc.invoice_pdf_renderer')) {
             'dompdf' => $app->make(DompdfInvoicePdfRenderer::class),
             default => throw new RuntimeException('Unknown invoice PDF renderer "'.(string) config('svc.invoice_pdf_renderer').'".'),

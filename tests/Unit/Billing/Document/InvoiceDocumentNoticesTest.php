@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
 
 #[CoversClass(InvoiceDocumentNotices::class)]
 #[CoversClass(InvoiceDocument::class)]
+#[CoversClass(InvoiceDocumentLine::class)]
 final class InvoiceDocumentNoticesTest extends TestCase
 {
     public function test_only_the_operator_copy_has_the_banner(): void
