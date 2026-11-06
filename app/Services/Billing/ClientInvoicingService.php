@@ -148,6 +148,7 @@ final class ClientInvoicingService
         private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository,
         private readonly DeferredBacklogReader $deferredBacklogReader = new DeferredBacklogReader,
         private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
+        private readonly ConsultantTimeReleaser $consultantTime = new ConsultantTimeReleaser,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
@@ -172,6 +173,22 @@ final class ClientInvoicingService
             activities: $this->activities,
             clock: $this->clock,
         );
+    }
+
+    /**
+     * Pull the consultant's unbilled time onto what is about to be generated.
+     *
+     * Its own short transaction for the entry points that read a ledger before
+     * the generating transaction opens; the generating transactions call the
+     * releaser themselves, under the agreement lock. Releasing twice is
+     * harmless: the second finds nothing left in `draft`.
+     */
+    private function releaseConsultantTime(ClientCompany $company, ClientAgreement $agreement): void
+    {
+        DB::transaction(function () use ($company, $agreement): void {
+            BillingMaintenance::share($company->workspace_id);
+            $this->consultantTime->release($company, $agreement);
+        });
     }
 
     /**
@@ -305,6 +322,10 @@ final class ClientInvoicingService
         ?ClientInvoice $refreshInvoice = null,
     ): ?ClientInvoice {
         $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
+        $agreementForTime = $agreement ?? $company->activeAgreement($this->clock->today($company->workspace));
+        if ($agreementForTime instanceof ClientAgreement) {
+            $this->releaseConsultantTime($company, $agreementForTime);
+        }
 
         return $this->interimOverageGenerator->generateInterimOverageInvoice(
             $company,
@@ -503,6 +524,8 @@ final class ClientInvoicingService
             return $this->summarizeGenerationResults($generated, $updated, $skipped);
         }
 
+        // Before the ledger is built, because the ledger reads `approved`.
+        $this->releaseConsultantTime($company, $agreement);
         $handover = $this->handovers->forAgreement($agreement);
         $through = $this->retainerGenerationThroughDate($agreement, $successorAgreement);
         $billExcessImmediately = $agreement->effectiveBillingCadence() !== BillingCadence::Monthly
@@ -763,6 +786,7 @@ final class ClientInvoicingService
             BillingMaintenance::share($company->workspace_id);
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
+            $this->consultantTime->release($company, $agreement);
             $this->handovers->forAgreement($agreement)?->assertClear(
                 $retainerMonthStart->toDateString(), $retainerMonthStart->copy()->endOfMonth()->toDateString(), true,
             );
@@ -1213,6 +1237,7 @@ final class ClientInvoicingService
             // agreement row is what serializes concurrent generation.
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
+            $this->consultantTime->release($company, $agreement);
             $this->handovers->forAgreement($agreement)?->assertClear($retainerStart->toDateString(), $retainerEnd->toDateString(), true);
 
             if ((bool) $agreement->bill_overage_interim) {
