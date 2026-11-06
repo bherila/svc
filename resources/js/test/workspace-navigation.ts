@@ -22,7 +22,7 @@ export function clientOption(
         name,
         destinations: {
             home: `/workspaces/workspace-1/clients/${id}`,
-            agreements: `/workspaces/workspace-1/clients/${id}#agreements`,
+            agreements: `/workspaces/workspace-1/clients/${id}/agreements`,
             invoices: `/workspaces/workspace-1/clients/${id}/invoices`,
             time: `/workspaces/workspace-1/clients/${id}/time`,
             tasks: `/workspaces/workspace-1/clients/${id}/tasks`,

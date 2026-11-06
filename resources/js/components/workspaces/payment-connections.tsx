@@ -25,6 +25,7 @@ export interface PaymentConnectionView {
     environment: string | null;
     key_hint: string | null;
     location_id: string | null;
+    publishable_key: string | null;
     reused_from: string | null;
     usable: boolean;
     webhook_url: string | null;
@@ -51,6 +52,7 @@ type Errors = Record<string, string>;
 function ProcessorCard({ view }: { view: PaymentProcessorView }) {
     const [secret, setSecret] = useState('');
     const [webhookSecret, setWebhookSecret] = useState('');
+    const [publishableKey, setPublishableKey] = useState('');
     const [locationId, setLocationId] = useState('');
     const [environment, setEnvironment] = useState('production');
     const [source, setSource] = useState('');
@@ -92,6 +94,7 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
         // The key leaves the browser's memory as soon as it is saved.
         setSecret('');
         setWebhookSecret('');
+        setPublishableKey('');
         setErrors({});
         setReplacing(false);
         router.reload();
@@ -115,7 +118,7 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                       location_id: locationId,
                       environment,
                   }
-                : { secret },
+                : { secret, publishable_key: publishableKey },
         );
     }
 
@@ -157,6 +160,19 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                     data-test={`payment-${view.processor}-hint`}
                                 >
                                     {connection.key_hint}
+                                </dd>
+                            </div>
+                        )}
+                        {connection.publishable_key !== null && (
+                            <div>
+                                <dt className="text-muted-foreground">
+                                    Publishable key
+                                </dt>
+                                <dd
+                                    className="font-mono wrap-anywhere"
+                                    data-test="payment-stripe-publishable"
+                                >
+                                    {connection.publishable_key}
                                 </dd>
                             </div>
                         )}
@@ -231,6 +247,38 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                 </p>
                             )}
                         </div>
+                        {!square && (
+                            <div className="grid min-w-0 grid-cols-1 gap-2">
+                                <Label htmlFor="stripe-publishable">
+                                    Stripe publishable key
+                                </Label>
+                                <Input
+                                    id="stripe-publishable"
+                                    autoComplete="off"
+                                    placeholder="pk_live_… or pk_test_…"
+                                    value={publishableKey}
+                                    onChange={(event) =>
+                                        setPublishableKey(event.target.value)
+                                    }
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Optional. Clients are offered card payment
+                                    only when this is set. It must be in the
+                                    same mode (live or test) as the restricted
+                                    key. SVC cannot tell which account a
+                                    publishable key belongs to, so copy both
+                                    keys from the same Stripe account.
+                                </p>
+                                {errors.publishable_key !== undefined && (
+                                    <p
+                                        role="alert"
+                                        className="text-sm text-destructive"
+                                    >
+                                        {errors.publishable_key}
+                                    </p>
+                                )}
+                            </div>
+                        )}
                         {square && (
                             <>
                                 <div className="grid min-w-0 grid-cols-1 gap-2">

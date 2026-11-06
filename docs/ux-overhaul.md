@@ -884,6 +884,21 @@ Settled by the product owner before a period away:
     environment one. A workspace on a key of its own gets no card option
     (Square's page still shows). A per-connection publishable key is the
     follow-up that lifts this.
+- **2026-11-06, #624 item 5: engagement tools re-homed.**
+  - **Where:** the client tier's Agreements tab is now a page of its own
+    (`clients.agreements`), replacing the `#agreements` anchor on the Overview.
+    It holds proposal draft and send, agreement activation, billing schedule
+    create and generate-due. Draft invoice moved to the client's Invoices tab.
+    Record payment and Issue already existed on the invoice page.
+  - **Same behaviour:** every control posts to the same agent API route with the
+    same confirmation; the server sends the finished URL, or `null`.
+  - **Permissions:** the lists follow the client's reach (a member sees only a
+    client whose project they belong to; Operations showed every client to every
+    member); the controls are for owners and admins as before.
+  - **Left on Operations:** the per-project time form, the per-record file
+    panels, and the invoice list with its Issue and payment forms, which
+    duplicate the invoice page and are retired with the page. Each moved tool
+    is replaced there by a link.
 - **2026-11-06, #617: mutation gate.** The mutation job can show success
   while the score is under its 82% threshold. Before every merge, the actual
   counts in the log are read.

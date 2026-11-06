@@ -4,7 +4,7 @@ audience: [operator]
 routes: [workspaces.invoices, workspaces.finance, clients.invoices, clients.invoice, clients.proforma, svc.billing.invoices.index, svc.billing.invoices.show, svc.billing.schedules.show]
 terms: []
 ---
-An invoice bills approved work for one period.
+An invoice bills approved work for one period. A client's Invoices tab lists them and has a **Draft an invoice** form for a manual one.
 
 ## Life of an invoice
 

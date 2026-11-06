@@ -3,6 +3,7 @@
 namespace App\Services\Payments;
 
 use App\Support\Payments\PaymentProcessor;
+use App\Support\Payments\StripePublishableKey;
 use Stripe\Exception\ExceptionInterface;
 use Stripe\StripeClient;
 use Throwable;
@@ -38,6 +39,14 @@ final class StripeKeyAdapter implements PaymentConnectionAdapter
             str_starts_with($secret, 'rk_test_'), str_starts_with($secret, 'sk_test_') => 'test',
             default => throw new PaymentCredentialsRejected('Enter a Stripe secret or restricted key (it starts with rk_ or sk_).'),
         };
+        // Only the mode can be checked: the account behind a publishable key
+        // cannot be resolved from the key, and the restricted key cannot read it.
+        if ($credentials->publishableKey !== null) {
+            $refusal = StripePublishableKey::rejection($credentials->publishableKey, $environment);
+            if ($refusal !== null) {
+                throw new PaymentCredentialsRejected($refusal, 'publishable_key');
+            }
+        }
         try {
             $account = (new StripeClient($secret))->accounts->retrieve()->toArray();
         } catch (ExceptionInterface) {

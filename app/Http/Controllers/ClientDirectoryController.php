@@ -307,6 +307,10 @@ class ClientDirectoryController extends Controller
             // because the client's own copy of this screen is a different route
             // family entirely, and the page is the same page.
             'invoice_base_href' => route('clients.invoices', [$workspace, $clientCompany], absolute: false),
+            // The draft-invoice form's finished URL: the same agent API route
+            // Operations posted to, offered to those who manage the workspace.
+            'invoice_create_href' => Gate::forUser($user)->allows('manage', $workspace)
+                ? route('agent-api.v1.invoices.store', $workspace, absolute: false) : null,
             'invoices' => $invoices->map(
                 fn (ClientInvoice $invoice): array => $this->invoicePayload($invoice),
             )->values()->all(),

@@ -78,6 +78,7 @@ class WorkspacePaymentConnectionController extends Controller
         $input = $request->validate(match ($processor) {
             PaymentProcessor::Stripe => [
                 'secret' => ['required', 'string', 'min:12', 'max:512'],
+                'publishable_key' => ['nullable', 'string', 'max:255'],
             ],
             PaymentProcessor::Square => [
                 'secret' => ['required', 'string', 'min:12', 'max:512'],
@@ -92,11 +93,12 @@ class WorkspacePaymentConnectionController extends Controller
                 isset($input['webhook_secret']) ? trim((string) $input['webhook_secret']) : null,
                 $input['location_id'] ?? null,
                 $input['environment'] ?? null,
+                isset($input['publishable_key']) && trim((string) $input['publishable_key']) !== '' ? trim((string) $input['publishable_key']) : null,
             ), $user);
         } catch (AuthorizationException) {
             abort(403);
         } catch (PaymentCredentialsRejected $rejected) {
-            throw ValidationException::withMessages(['secret' => $rejected->getMessage()]);
+            throw ValidationException::withMessages([$rejected->field => $rejected->getMessage()]);
         }
 
         return response()->noContent();
@@ -141,6 +143,7 @@ class WorkspacePaymentConnectionController extends Controller
             'environment' => $row->environment,
             'key_hint' => $source?->secret_hint,
             'location_id' => $source?->location_id,
+            'publishable_key' => $source?->publishable_key,
             'reused_from' => $sourceWorkspace,
             'usable' => $source !== null,
             'webhook_url' => $manages && ! $row->isReused() ? $this->service->webhookUrl($row->processorEnum(), $row->endpoint_token) : null,

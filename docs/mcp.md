@@ -1924,8 +1924,8 @@ redirects and numeric form revision error.
 
 ### Proposals
 
-The Operations proposal draft/send controls, agreement activation and billing
-schedule creation/generation call the canonical REST operations through the
+The client Agreements tab's proposal draft/send controls, agreement activation
+and billing schedule creation/generation call the canonical REST operations through the
 signed-in browser session. Agreement rename and terms editing use
 `agreements.update`. The server supplies finished URLs and current opaque
 versions; viewer controls are absent. Activation, sending and generation require

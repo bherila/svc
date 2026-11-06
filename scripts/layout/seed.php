@@ -2,6 +2,7 @@
 
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
+use App\Models\ClientBillingSchedule;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
@@ -244,6 +245,17 @@ if (getenv('SVC_LAYOUT_ENGAGEMENT') === '1') {
         'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
         'title' => str_repeat('SyntheticActiveAgreementWithoutBreaks', 8), 'status' => 'active',
         'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly',
+    ]);
+    $scheduledAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'title' => str_repeat('SyntheticScheduledAgreementWithoutBreaks', 6), 'status' => 'active',
+        'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly',
+    ]);
+    ClientBillingSchedule::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'client_agreement_id' => $scheduledAgreement->id, 'cadence' => 'monthly', 'next_run_on' => $date,
+        'due_days' => 30, 'currency' => 'USD', 'is_active' => true,
+        'line_template' => [['type' => 'service', 'description' => str_repeat('SyntheticScheduleLine', 8), 'quantity' => '1', 'unit_amount' => 10000]],
     ]);
     $engagementAgreementPath = route('clients.agreement', [$workspace, $company, $draftAgreement], absolute: false);
 }
@@ -751,6 +763,7 @@ if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
     $stripeRow = $connections->connect($stripeWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
         'external_account_id' => 'acct_synthetic', 'display_name' => str_repeat('SyntheticBusinessNameWithoutBreaks', 6), 'environment' => 'live',
         'secret' => 'rk_live_'.str_repeat('synthetic', 6).'a1b2', 'webhook_secret' => 'whsec_synthetic',
+        'publishable_key' => 'pk_live_'.str_repeat('Synthetic', 20),
     ]);
     $connections->connect($squareWorkspace, PaymentProcessor::Square, ConnectionOrigin::Entered, $owner, [
         'external_account_id' => 'MERCHANT_SYNTHETIC', 'display_name' => str_repeat('SyntheticSquareBusinessWithoutBreaks', 5), 'environment' => 'production',
@@ -886,6 +899,8 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'expenses' => route('clients.expenses', [$workspace, $company], absolute: false),
     'time' => route('clients.time', [$workspace, $company], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
+    'client_agreements' => route('clients.agreements', [$workspace, $company], absolute: false),
+    'client_invoices' => route('clients.invoices', [$workspace, $company], absolute: false),
     'dashboard' => route('workspaces.dashboard', $workspace, absolute: false),
     'client_overview' => route('clients.show', [$workspace, $company], absolute: false),
     'workspace_clients' => route('clients.index', $workspace, absolute: false),

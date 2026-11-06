@@ -1,10 +1,20 @@
 ---
 title: Agreements and proposals
 audience: [operator]
-routes: [clients.agreement, clients.proposal]
+routes: [clients.agreements, clients.agreement, clients.proposal]
 terms: [Retainer, Rollover, Overage]
 ---
 A proposal is an offer. An agreement is the standing terms once the client accepts.
+
+## The Agreements tab
+
+The tab lists the client's proposals, agreements and billing schedules, and holds the tools that change them:
+
+- **Draft a proposal** and **Send** it for the client's review.
+- **Activate** a draft agreement. This enables its billing workflow, so it asks you to confirm.
+- **Add schedule** to an active agreement that has none, then **Generate due** to issue the invoices a schedule owes through today. Both confirm first.
+
+Only owners and admins see these controls. Everyone else who can see the client reads the lists.
 
 ## Retainer
 

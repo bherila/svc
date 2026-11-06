@@ -8,7 +8,7 @@ These live in the settings menu because they are about the workspace, not one cl
 
 ## Operations (classic tools)
 
-The older all-in-one page keeps the tools that have not moved yet: drafting and sending proposals, activating agreements, billing schedules, logging time by project and the per-client file panels. It is in the settings menu until each has a new home.
+The older all-in-one page keeps the tools that have not moved yet: logging time by project and the per-client file panels. Proposals, agreements, billing schedules and drafting an invoice moved to the client's Agreements and Invoices tabs, and the page links to them.
 
 ## History
 
