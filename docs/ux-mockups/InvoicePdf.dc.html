@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice 1041 · PDF page 1</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 816px; height: 1056px; box-sizing: border-box; padding: 56px 64px 40px; background: {{c.paper}}; color: {{c.ink}}; font-family: Inter, system-ui, sans-serif; font-size: 12px; display: flex; flex-direction: column">
+  <table style="width: 100%; border-collapse: collapse">
+    <tr>
+      <td style="vertical-align: top">
+        <div style="font-size: 20px; font-weight: 700">Herila Consulting</div>
+        <div style="color: {{c.muted}}; margin-top: 4px; line-height: 1.5">billing@herila.test<br>New York, NY</div>
+      </td>
+      <td style="vertical-align: top; text-align: right">
+        <div style="font-size: 26px; font-weight: 700; letter-spacing: -0.01em">Invoice 1041</div>
+        <table style="margin-left: auto; margin-top: 6px; border-collapse: collapse; color: {{c.body}}">
+          <tr><td style="padding: 1px 10px 1px 0; color: {{c.muted}}">Issued</td><td style="text-align: right">Nov 1, 2026</td></tr>
+          <tr><td style="padding: 1px 10px 1px 0; color: {{c.muted}}">Service period</td><td style="text-align: right">Oct 1 – Oct 31, 2026</td></tr>
+          <tr><td style="padding: 1px 10px 1px 0; color: {{c.muted}}">Due</td><td style="text-align: right; font-weight: 700; color: {{c.ink}}">Nov 15, 2026</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table style="width: 100%; border-collapse: collapse; margin-top: 28px">
+    <tr>
+      <td style="vertical-align: top; width: 50%">
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: {{c.muted}}; text-transform: uppercase">Bill to</div>
+        <div style="font-size: 14px; font-weight: 600; margin-top: 4px">Acme Veterinary</div>
+        <div style="color: {{c.muted}}; line-height: 1.5">Dana Okafor · dana@acme-vet.test</div>
+      </td>
+      <td style="vertical-align: top; text-align: right">
+        <div style="display: inline-block; text-align: left; border: 1.5px solid {{c.ink}}; border-radius: 6px; padding: 10px 14px">
+          <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: {{c.muted}}; text-transform: uppercase">Balance due</div>
+          <div style="font-size: 22px; font-weight: 700; margin-top: 2px">$9,200.00</div>
+          <div style="color: {{c.link}}; margin-top: 2px">Pay online: pay.herila.test/i/7Q2K</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <table style="width: 100%; border-collapse: collapse; margin-top: 26px">
+    <thead>
+      <tr style="border-bottom: 1.5px solid {{c.ink}}; text-align: left; font-size: 10px; color: {{c.muted}}; text-transform: uppercase; letter-spacing: 0.06em">
+        <th scope="col" style="padding: 6px 0">Description</th><th scope="col" style="padding: 6px 0; text-align: right; width: 70px">Qty</th><th scope="col" style="padding: 6px 0; text-align: right; width: 80px">Rate</th><th scope="col" style="padding: 6px 0; text-align: right; width: 90px">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="4" style="padding: 14px 0 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: {{c.muted}}; text-transform: uppercase">Time</td></tr>
+      <tr style="border-bottom: 1px solid {{c.rule}}"><td style="padding: 8px 0">Retainer · November 2026<div style="color: {{c.muted}}; font-size: 11px">40 h included · billed in advance</div></td><td style="text-align: right">1</td><td style="text-align: right">$8,000.00</td><td style="text-align: right">$8,000.00</td></tr>
+      <tr style="border-bottom: 1px solid {{c.rule}}"><td style="padding: 8px 0">October work within retainer<div style="color: {{c.muted}}; font-size: 11px">40.0 of 40.0 h used · 0 h rolled over · see appendix A</div></td><td style="text-align: right">40.0 h</td><td style="text-align: right">—</td><td style="text-align: right">$0.00</td></tr>
+      <tr style="border-bottom: 1px solid {{c.rule}}"><td style="padding: 8px 0">Additional hours · October<div style="color: {{c.muted}}; font-size: 11px">Beyond the retainer · see appendix A</div></td><td style="text-align: right">1.5 h</td><td style="text-align: right">$200.00</td><td style="text-align: right">$300.00</td></tr>
+      <tr><td colspan="4" style="padding: 14px 0 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: {{c.muted}}; text-transform: uppercase">Recurring services</td></tr>
+      <tr style="border-bottom: 1px solid {{c.rule}}"><td style="padding: 8px 0">Web hosting · November 2026<div style="color: {{c.muted}}; font-size: 11px">Monthly · taxable</div></td><td style="text-align: right">1</td><td style="text-align: right">$150.00</td><td style="text-align: right">$150.00</td></tr>
+      <tr><td colspan="4" style="padding: 14px 0 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: {{c.muted}}; text-transform: uppercase">Expenses · at cost</td></tr>
+      <tr style="border-bottom: 1px solid {{c.rule}}"><td style="padding: 8px 0">Staging database · October<div style="color: {{c.muted}}; font-size: 11px">Oct 31 · receipt B1</div></td><td style="text-align: right">1</td><td style="text-align: right">$412.00</td><td style="text-align: right">$412.00</td></tr>
+      <tr style="border-bottom: 1px solid {{c.rule}}"><td style="padding: 8px 0">Lab-results API usage · October<div style="color: {{c.muted}}; font-size: 11px">Oct 31 · receipt B2</div></td><td style="text-align: right">1</td><td style="text-align: right">$324.69</td><td style="text-align: right">$324.69</td></tr>
+    </tbody>
+  </table>
+
+  <table style="margin-left: auto; margin-top: 14px; border-collapse: collapse; width: 280px">
+    <tr><td style="padding: 3px 0">Subtotal</td><td style="text-align: right">$9,186.69</td></tr>
+    <tr><td style="padding: 3px 0; color: {{c.muted}}">Sales tax 8.875% on $150.00</td><td style="text-align: right">$13.31</td></tr>
+    <tr style="border-top: 1.5px solid {{c.ink}}"><td style="padding: 8px 0 3px; font-weight: 700; font-size: 14px">Total</td><td style="padding-top: 8px; text-align: right; font-weight: 700; font-size: 14px">$9,200.00</td></tr>
+    <tr><td style="padding: 3px 0; color: {{c.muted}}">Paid</td><td style="text-align: right; color: {{c.muted}}">$0.00</td></tr>
+    <tr><td style="padding: 3px 0; font-weight: 700">Balance due</td><td style="text-align: right; font-weight: 700">$9,200.00</td></tr>
+  </table>
+
+  <div style="margin-top: auto; border-top: 1px solid {{c.rule}}; padding-top: 12px; display: flex; justify-content: space-between; gap: 24px; color: {{c.muted}}; font-size: 10.5px; line-height: 1.5">
+    <div style="max-width: 460px">Pay by card or bank transfer at the link above. Questions about an entry? Dispute it in your portal before paying; paying approves this invoice’s hours. Page 2: hours statement (opening pool, rollover used and expiring, carried forward, still deferred). Appendix A lists every time entry; appendix B attaches the receipts.</div>
+    <div style="white-space: nowrap; text-align: right">Invoice 1041 · page 1 of 4</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":816,"height":1056}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    const c = dark
+      ? { paper: '#111827', ink: '#e5e7eb', body: '#cbd5e1', muted: '#9ca3af', rule: '#1f2937', link: '#93c5fd' }
+      : { paper: '#ffffff', ink: '#0f172a', body: '#334155', muted: '#475569', rule: '#e2e8f0', link: '#1d4ed8' };
+    return { c };
+  }
+}
+</script>
+</body>
+</html>

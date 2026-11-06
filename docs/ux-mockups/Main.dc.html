@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
+input,textarea,select{background:#0b1120;color:#e5e7eb}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120; min-height: 100%">
+  <header style="background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 16px">
+      <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; white-space: nowrap; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" aria-hidden="true"><path d="M12 2v10"></path><path d="M18.4 6.6a9 9 0 1 1-12.8 0"></path></svg>
+        Herila Consulting
+      </div>
+      <nav aria-label="Workspace" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">Dashboard</a>
+        <a href="Clients.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Clients</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Invoices</a>
+        <a href="Review.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Time</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Finance</a>
+      </nav>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9ca3af">
+        <button type="button" aria-label="Search (⌘K)" title="Search (⌘K)" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid #1f2937; background: #111827; border-radius: 8px; color: #e5e7eb; cursor: pointer; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
+        <button type="button" onClick="{{toggleHelp}}" aria-pressed="{{helpOpen}}" style="display: flex; align-items: center; gap: 6px; border: 1px solid #1f2937; background: #111827; border-radius: 8px; padding: 6px 10px; font-size: 13px; color: #e5e7eb; cursor: pointer; min-height: 36px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+          Help
+        </button>
+        <span style="width: 32px; height: 32px; border-radius: 16px; background: #cbd5e1; color: #111827; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600">BH</span>
+      </div>
+    </div>
+  </header>
+
+  <div style="max-width: 1440px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+    <main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+        <div>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 600">Good afternoon, Ben</h1>
+          <p style="margin: 4px 0 0; color: #9ca3af; font-size: 14px">Friday, November 6, 2026 · 5 things need you</p>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+          <div role="group" aria-label="Revenue basis" style="display: flex; background: #1f2937; border-radius: 8px; padding: 3px">
+            <button type="button" onClick="{{setInvoiced}}" aria-pressed="{{isInvoiced}}" style="{{invBtn}}">Invoiced</button>
+            <button type="button" onClick="{{setCollected}}" aria-pressed="{{isCollected}}" style="{{colBtn}}">Collected</button>
+          </div>
+          <button type="button" onClick="{{toggleOverage}}" aria-pressed="{{showOverage}}" style="{{ovrBtn}}">
+            <span style="{{ovrDot}}"></span>Projected overage
+          </button>
+          <button type="button" onClick="{{toggleExpenses}}" aria-pressed="{{showExpenses}}" style="{{expBtn}}">
+            <span style="{{expDot}}"></span>Expenses
+          </button>
+        </div>
+      </div>
+
+      <section aria-label="Key figures" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px">
+        <sc-for list="{{kpis}}" as="k" hint-placeholder-count="4">
+          <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; position: relative">
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #9ca3af; font-weight: 500">
+              {{k.label}}
+              <button type="button" onClick="{{k.tip}}" aria-label="{{k.tipLabel}}" style="width: 22px; height: 22px; border-radius: 11px; border: 1px solid #374151; background: #111827; color: #9ca3af; font-size: 12px; line-height: 1; cursor: pointer; padding: 0">?</button>
+            </div>
+            <div style="font-size: 28px; font-weight: 600; letter-spacing: -0.02em">{{k.value}}</div>
+            <div style="font-size: 13px; color: #9ca3af">{{k.context}}</div>
+            <sc-if value="{{k.open}}" hint-placeholder-val="{{false}}">
+              <div role="note" style="margin-top: 6px; background: #1a2332; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; color: #cbd5e1">
+                {{k.help}}
+                <div style="margin-top: 6px"><a href="Help.dc.html" style="font-size: 13px">How this is calculated →</a></div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </section>
+
+      <section aria-label="Revenue by month" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: baseline">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 600">Revenue by month</h2>
+          <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #cbd5e1">
+            <sc-for list="{{legend}}" as="l" hint-placeholder-count="4">
+              <span style="display: flex; align-items: center; gap: 6px"><span style="{{l.swatch}}"></span>{{l.label}}</span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap">
+          <div style="flex: 999 1 600px; min-width: 0; overflow-x: auto">
+            <div style="position: relative; min-width: 720px; height: 260px; display: flex; align-items: flex-end; gap: 6px; border-bottom: 1px solid #374151; padding-top: 20px">
+              <sc-for list="{{bars}}" as="b" hint-placeholder-count="25">
+                <button type="button" onClick="{{b.pick}}" aria-label="{{b.aria}}" style="{{b.colStyle}}">
+                  <sc-if value="{{b.isNow}}" hint-placeholder-val="{{false}}">
+                    <span style="position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 600; color: #e5e7eb; white-space: nowrap">Today</span>
+                  </sc-if>
+                  <sc-for list="{{b.segs}}" as="s" hint-placeholder-count="2">
+                    <span style="{{s}}"></span>
+                  </sc-for>
+                </button>
+              </sc-for>
+            </div>
+            <div style="min-width: 720px; display: flex; gap: 6px; margin-top: 6px">
+              <sc-for list="{{bars}}" as="b" hint-placeholder-count="25">
+                <span style="flex: 1; text-align: center; font-size: 11px; color: #9ca3af; line-height: 1.3">{{b.label}}<br>{{b.year}}</span>
+              </sc-for>
+            </div>
+          </div>
+          <aside aria-live="polite" style="flex: 1 1 240px; min-width: 220px; background: #0b1120; border: 1px solid #1f2937; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+            <div style="font-weight: 600; font-size: 14px">{{sel.title}}</div>
+            <div style="color: #9ca3af">{{sel.kind}}</div>
+            <sc-for list="{{sel.rows}}" as="r" hint-placeholder-count="5">
+              <div style="display: flex; justify-content: space-between; gap: 8px"><span style="min-width: 0">{{r.name}}</span><span style="font-variant-numeric: tabular-nums; white-space: nowrap">{{r.amount}}</span></div>
+            </sc-for>
+            <div style="display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #1f2937; padding-top: 8px; font-weight: 600"><span>Total</span><span style="font-variant-numeric: tabular-nums">{{sel.total}}</span></div>
+            <div style="color: #9ca3af; line-height: 1.5">{{sel.note}}</div>
+            <a href="#" style="font-size: 13px">{{sel.link}}</a>
+          </aside>
+        </div>
+      </section>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+        <section aria-label="Needs you" style="flex: 999 1 560px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px">
+          <h2 style="margin: 0 0 12px; font-size: 16px; font-weight: 600">Needs you</h2>
+          <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
+            <sc-for list="{{queue}}" as="q" hint-placeholder-count="5">
+              <li style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid #1a2332">
+                <sc-if value="{{q.isOverdue}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Overdue" style="flex: none"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg></sc-if><sc-if value="{{q.isReview}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="To review" style="flex: none"><rect width="8" height="4" x="8" y="2" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path></svg></sc-if><sc-if value="{{q.isIssue}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Ready to issue" style="flex: none"><path d="M14.5 21.7a.5.5 0 0 0 .9 0l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0 0 .9l7.9 3.2a2 2 0 0 1 1.1 1.1z"></path><path d="m21.9 2.1-11 11"></path></svg></sc-if><sc-if value="{{q.isDispute}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Disputed" style="flex: none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M12 7v2"></path><path d="M12 13h.01"></path></svg></sc-if><sc-if value="{{q.isMatch}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="To match" style="flex: none"><path d="M8 3 4 7l4 4"></path><path d="M4 7h16"></path><path d="m16 21 4-4-4-4"></path><path d="M20 17H4"></path></svg></sc-if>
+                <div style="flex: 1 1 200px; min-width: 0">
+                  <div style="font-size: 14px; font-weight: 500">{{q.title}}</div>
+                  <div style="font-size: 13px; color: #9ca3af; margin-top: 2px">{{q.why}}</div>
+                </div>
+                <a href="{{q.href}}" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; gap: 6px"><sc-if value="{{q.isOverdue}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg></sc-if><sc-if value="{{q.isReview}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="8" height="4" x="8" y="2" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path></svg></sc-if><sc-if value="{{q.isIssue}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 13h4"></path><path d="M10 17h4"></path></svg></sc-if><sc-if value="{{q.isDispute}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M12 7v2"></path><path d="M12 13h.01"></path></svg></sc-if><sc-if value="{{q.isMatch}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M8 3 4 7l4 4"></path><path d="M4 7h16"></path><path d="m16 21 4-4-4-4"></path><path d="M20 17H4"></path></svg></sc-if>{{q.action}}</a>
+              </li>
+            </sc-for>
+          </ul>
+        </section>
+
+        <section aria-label="Agreement changes" style="flex: 1 1 320px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 600">Next 12 months: changes</h2>
+          <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
+            <li style="display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #1a2332; font-size: 13px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="2" stroke-linecap="round" role="img" aria-label="Ending" style="flex: none; margin-top: 1px"><path d="M3 7l6 6 4-4 8 8"></path><path d="M21 11v6h-6"></path></svg>
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+                <div style="display: flex; justify-content: space-between; gap: 8px"><span style="font-weight: 600; font-size: 14px">Summit Dental ends Feb 28</span><span style="font-variant-numeric: tabular-nums; white-space: nowrap">−$2,500/mo</span></div>
+                <div style="color: #9ca3af">Drops off from March 2027</div>
+                <a href="#" style="font-size: 13px; display: inline-flex; align-items: center; gap: 6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 13h4"></path><path d="M10 17h4"></path></svg>Draft a renewal proposal</a>
+              </div>
+            </li>
+            <li style="display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #1a2332; font-size: 13px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" role="img" aria-label="Starting" style="flex: none; margin-top: 1px"><path d="M3 17l6-6 4 4 8-8"></path><path d="M21 13V7h-6"></path></svg>
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+                <div style="display: flex; justify-content: space-between; gap: 8px"><span style="font-weight: 600; font-size: 14px">Harbor Logistics starts Jan 1</span><span style="font-variant-numeric: tabular-nums; white-space: nowrap">+$1,500/mo</span></div>
+                <div style="color: #9ca3af">Signed · counted from its start date, not before</div>
+              </div>
+            </li>
+          </ul>
+        </section>
+      </div>
+    </main>
+
+    <sc-if value="{{helpOpen}}" hint-placeholder-val="{{false}}">
+      <aside aria-label="Help for this page" style="flex: 1 1 340px; min-width: 300px; max-width: 380px; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px; font-size: 14px">
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 600">Help · Dashboard</h2>
+          <button type="button" onClick="{{toggleHelp}}" aria-label="Close help" style="border: 0; background: transparent; font-size: 20px; cursor: pointer; color: #9ca3af; width: 32px; height: 32px">×</button>
+        </div>
+        <input type="search" aria-label="Search help" placeholder="Search help" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 12px; font-size: 14px; font-family: inherit">
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em">On this page</div>
+        <sc-for list="{{helpTopics}}" as="h" hint-placeholder-count="4">
+          <details style="border: 1px solid #1f2937; border-radius: 8px; padding: 10px 12px">
+            <summary style="cursor: pointer; font-weight: 500">{{h.q}}</summary>
+            <p style="margin: 8px 0 0; color: #cbd5e1; line-height: 1.55; font-size: 13px">{{h.a}}</p>
+          </details>
+        </sc-for>
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em">Words we use</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px">
+          <sc-for list="{{glossary}}" as="g" hint-placeholder-count="6">
+            <a href="Help.dc.html" style="border: 1px solid #1f2937; border-radius: 999px; padding: 4px 10px; font-size: 12px; color: #cbd5e1; text-decoration: none">{{g}}</a>
+          </sc-for>
+        </div>
+        <a href="Help.dc.html" style="font-size: 13px">Open the full guide →</a>
+      </aside>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { basis: 'invoiced', overage: true, expenses: true, sel: 12, tip: null, help: false }; }
+  renderVals() {
+    const st = this.state;
+    const months = ['Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov'];
+    const yearOf = (i) => i < 2 ? 2025 : (i < 14 ? 2026 : 2027);
+    const rec = [16800,16800,17200,17200,17200,18450,18450,18450,18450,18450,18450,18450,18450,18450,19950,19950,17450,17450,17450,17450,17450,17450,17450,17450,17450];
+    const ovr = [2100,3400,1800,2600,4100,2900,1500,3800,2200,3100,2700,3300,0];
+    const exp = [240,0,410,180,0,620,90,0,350,200,0,280,0];
+    const proj = (i) => i < 16 ? 2930 : 2400;
+    const fmt = (n) => '$' + Math.round(n).toLocaleString('en-US');
+    const fmtK = (n) => '$' + (n / 1000).toFixed(1) + 'k';
+    const collected = (i) => i === 0 ? 18900 : Math.round((rec[i-1] + ovr[i-1] + exp[i-1]) * 0.985);
+    const scale = 200 / 24000;
+    const seg = (amt, css) => 'display:block;width:100%;height:' + Math.max(0, Math.round(amt * scale)) + 'px;' + css;
+    const REC = 'background:#3b82f6;';
+    const OVR = 'background:#fb923c;';
+    const EXP = 'background:#6b7280;';
+    const COL = 'background:#14b8a6;';
+    const FUT = 'background:#172f5e;box-shadow:inset 0 0 0 1.5px #3b82f6;';
+    const PRJ = 'background:repeating-linear-gradient(45deg,#c2410c 0 3px,#2a1606 3px 7px);box-shadow:inset 0 0 0 1.5px #f97316;';
+    const bars = months.map((m, i) => {
+      let segs = []; let total = 0;
+      if (i < 12) {
+        if (st.basis === 'collected') { const c = collected(i); segs = [seg(c, COL)]; total = c; }
+        else {
+          segs = [seg(rec[i], REC), seg(ovr[i], OVR)]; total = rec[i] + ovr[i];
+          if (st.expenses) { segs.push(seg(exp[i], EXP)); total += exp[i]; }
+        }
+      } else if (i === 12) {
+        segs = [seg(rec[i], REC)]; total = rec[i];
+        if (st.overage) { segs.push(seg(proj(i), PRJ)); total += proj(i); }
+      } else {
+        segs = [seg(rec[i], FUT)]; total = rec[i];
+        if (st.overage) { segs.push(seg(proj(i), PRJ)); total += proj(i); }
+      }
+      const selected = st.sel === i;
+      const colStyle = 'flex:1;min-width:0;height:100%;display:flex;flex-direction:column-reverse;gap:1px;border:0;padding:0;cursor:pointer;position:relative;background:' + (selected ? '#1a2332' : 'transparent') + ';border-radius:4px 4px 0 0;' + (i === 12 ? 'outline:1.5px dashed #94a3b8;outline-offset:2px;' : '');
+      return { label: m, year: (i === 0 || m === 'Jan') ? String(yearOf(i)) : '', segs, colStyle, isNow: i === 12,
+        aria: m + ' ' + yearOf(i) + ': ' + fmt(total) + (i > 12 ? ' projected' : ''),
+        pick: () => this.setState({ sel: i }) };
+    });
+    const i = st.sel;
+    const lumen = (k) => rec[k] - 8000 - 3950 - (k <= 15 ? 2500 : 0) - (k >= 14 ? 1500 : 0);
+    const recRows = (k) => {
+      const r = [{ name: 'Acme Veterinary', amount: fmt(8000) }, { name: 'Lumen Studio', amount: fmt(lumen(k)) }, { name: 'Bayside Bakery', amount: fmt(3950) }];
+      if (k <= 15) r.push({ name: 'Summit Dental', amount: fmt(2500) });
+      if (k >= 14) r.push({ name: 'Harbor Logistics', amount: fmt(1500) });
+      return r;
+    };
+    let sel;
+    const title = months[i] + ' ' + yearOf(i);
+    if (i < 12 && st.basis === 'collected') {
+      sel = { title, kind: 'Collected (payments received, net of refunds)', rows: [{ name: 'Payments received', amount: fmt(collected(i)) }], total: fmt(collected(i)), note: 'Mostly last month’s invoices, paid this month.', link: 'See payments for ' + title + ' →' };
+    } else if (i < 12) {
+      const rows = recRows(i).concat([{ name: 'Overage & other', amount: fmt(ovr[i]) }]);
+      let t = rec[i] + ovr[i];
+      if (st.expenses) { rows.push({ name: 'Expenses passed through', amount: fmt(exp[i]) }); t += exp[i]; }
+      sel = { title, kind: 'Invoiced · by service month · tax excluded', rows, total: fmt(t), note: 'Recurring charges by client, then everything else that was billed.', link: 'See invoices for ' + title + ' →' };
+    } else {
+      const rows = recRows(i);
+      let t = rec[i];
+      if (st.overage) { rows.push({ name: 'Projected overage', amount: fmt(proj(i)) }); t += proj(i); }
+      sel = { title, kind: i === 12 ? 'This month · invoiced so far plus what is contracted' : 'Projected · contracted recurring charges', rows, total: fmt(t), note: st.overage ? 'Projected overage is each client’s average billed overage over the last 6 months. Harbor Logistics has no history yet, so it projects $0.' : 'Turn on Projected overage to add each client’s 6-month average.', link: 'See agreements →' };
+    }
+    const sum = (a, b, f) => { let s = 0; for (let k = a; k <= b; k++) s += f(k); return s; };
+    const inv = (k) => rec[k] + (ovr[k] || 0) + (st.expenses ? (exp[k] || 0) : 0);
+    const val = (k) => st.basis === 'collected' && k < 12 ? collected(k) : inv(k);
+    const ytd = sum(2, 12, val);
+    const lastYtd = Math.round(ytd / 1.14);
+    const ttm = sum(1, 12, val);
+    const n12c = sum(13, 24, (k) => rec[k]);
+    const n12o = sum(13, 24, proj);
+    const tipFor = (key) => () => this.setState({ tip: st.tip === key ? null : key });
+    const basisWord = st.basis === 'collected' ? 'collected' : 'invoiced';
+    const kpis = [
+      { key: 'ytd', label: 'Year to date', value: fmt(ytd), context: '▲ 14% vs. Jan 1–Nov 6, 2025 (' + fmtK(lastYtd) + ')', help: 'Everything ' + basisWord + ' from January 1 to today, excluding tax. Switch between Invoiced and Collected at the top of the page.' },
+      { key: 'ttm', label: 'Last 12 months', value: fmt(ttm), context: 'Dec 2025 – today · ▲ 9% vs. prior year', help: 'The last 12 months, so a slow December or a big January doesn’t skew the picture the way year to date can.' },
+      { key: 'n12', label: 'Next 12 months', value: fmt(n12c + (st.overage ? n12o : 0)), context: st.overage ? fmt(n12c) + ' contracted + ' + fmt(n12o) + ' projected overage' : 'Contracted recurring charges only', help: 'What your active and signed agreements will bill from December through next November. It stops at each end date. Projected overage, when on, adds each client’s 6-month average.' },
+      { key: 'ar', label: 'Unpaid', value: '$14,820', context: '$3,300 overdue on 2 invoices', help: 'Issued invoices not yet paid in full. Overdue means past the due date.' }
+    ].map((k) => Object.assign(k, { tip: tipFor(k.key), open: st.tip === k.key, tipLabel: 'What is ' + k.label + '?' }));
+    const pill = (on) => 'display:flex;align-items:center;gap:8px;border:1px solid ' + (on ? '#3b82f6' : '#374151') + ';background:' + (on ? '#172554' : '#111827') + ';color:#e5e7eb;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:500;cursor:pointer;min-height:34px;';
+    const seg2 = (on) => 'border:0;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;background:' + (on ? '#111827' : 'transparent') + ';color:#e5e7eb;box-shadow:' + (on ? '0 1px 2px rgba(0,0,0,.5)' : 'none') + ';';
+    const dot = (on, c) => 'width:10px;height:10px;border-radius:3px;' + (on ? c : 'background:#111827;box-shadow:inset 0 0 0 1.5px #6b7280;');
+    const sw = (css) => 'display:inline-block;width:12px;height:12px;border-radius:3px;' + css;
+    const legend = st.basis === 'collected'
+      ? [{ label: 'Collected', swatch: sw(COL) }, { label: 'Contracted (ahead)', swatch: sw(FUT) }]
+      : [{ label: 'Recurring', swatch: sw(REC) }, { label: 'Overage & other', swatch: sw(OVR) }];
+    if (st.basis !== 'collected') { if (st.expenses) legend.push({ label: 'Expenses', swatch: sw(EXP) }); legend.push({ label: 'Contracted (ahead)', swatch: sw(FUT) }); }
+    if (st.overage) legend.push({ label: 'Projected overage', swatch: sw(PRJ) });
+    const badge = (bg, fg) => 'font-size:12px;font-weight:600;border-radius:6px;padding:3px 8px;white-space:nowrap;background:' + bg + ';color:' + fg + ';';
+    const queue = [
+      { kind: 'overdue', title: '2 invoices overdue · $3,300', why: 'Bayside #1031 · 23 days, Lumen #1036 · 8 days', action: 'Send reminders…', href: '#' },
+      { kind: 'review', title: 'Rivera Engineering · October · 22.0 h', why: 'To review before Acme approves', action: 'Review', href: 'Review.dc.html' },
+      { kind: 'issue', title: '3 November drafts · $14,450', why: 'Ready to issue', action: 'Review drafts', href: '#' },
+      { kind: 'dispute', title: 'Acme disputed 1 entry on #1040', why: 'Oct 14 · 1.5 h · “Vendor call”', action: 'Open', href: '#' },
+      { kind: 'match', title: '4 Square payments to match', why: 'Unmatched since Nov 3', action: 'Reconcile', href: '#' }
+    ].map((q) => Object.assign(q, { isOverdue: q.kind === 'overdue', isReview: q.kind === 'review', isIssue: q.kind === 'issue', isDispute: q.kind === 'dispute', isMatch: q.kind === 'match' }));
+    const helpTopics = [
+      { q: 'Invoiced or collected: which should I look at?', a: 'Invoiced shows what you billed, in the month the work was for. Collected shows money received, in the month it arrived. Projections always use invoiced, because when a client will pay isn’t known.' },
+      { q: 'Where does “Next 12 months” come from?', a: 'From your active and signed agreements: retainers, plus recurring items on their own schedules (monthly, quarterly, annual). An agreement stops counting at its end date, and a signed one starts counting on its start date.' },
+      { q: 'How is overage projected?', a: 'For each client, the average overage billed over the last 6 months, carried forward while the agreement is active. Clients with less than 3 months of history project $0.' },
+      { q: 'Why don’t I approve my own time?', a: 'Approval belongs to whoever pays. Your client approves your hours in their portal, or by paying the invoice. You review your hours on the draft invoice before issuing.' }
+    ];
+    return {
+      bars, sel, kpis, legend, queue, helpTopics,
+      glossary: ['Draft', 'Submitted', 'Reviewed', 'Invoiced', 'Approved', 'Disputed', 'Retainer', 'Rollover', 'Overage', 'Shared project'],
+      isInvoiced: st.basis === 'invoiced', isCollected: st.basis === 'collected',
+      invBtn: seg2(st.basis === 'invoiced'), colBtn: seg2(st.basis === 'collected'),
+      showOverage: st.overage, showExpenses: st.expenses,
+      ovrBtn: pill(st.overage), expBtn: pill(st.expenses),
+      ovrDot: dot(st.overage, PRJ), expDot: dot(st.expenses, EXP),
+      helpOpen: st.help,
+      chartFoot: st.basis === 'collected' ? 'Past months show payments received. Months ahead always show invoiced amounts. Click a month for its breakdown.' : 'Past months show invoices by the month the work was for, tax excluded. Months ahead are contracted. Click a month for its breakdown.',
+      setInvoiced: () => this.setState({ basis: 'invoiced' }),
+      setCollected: () => this.setState({ basis: 'collected' }),
+      toggleOverage: () => this.setState({ overage: !st.overage }),
+      toggleExpenses: () => this.setState({ expenses: !st.expenses }),
+      toggleHelp: () => this.setState({ help: !st.help })
+    };
+  }
+}
+</script>
+</body>
+</html>
