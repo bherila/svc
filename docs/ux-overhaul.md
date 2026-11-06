@@ -424,7 +424,23 @@ Decided on the design canvas (2026-11-06):
   invoice from the agreement and the time logged so far. They are built on
   the existing period preview (`invoices.preview_period`). A proforma has no
   number, is stamped "Proforma · not an invoice", can't be paid, and is never
-  stored as an invoice.
+  stored as an invoice. It is grouped into **Time** (retainer, work within it,
+  additional hours), **Recurring services** (agreement recurring items such as
+  web hosting, each on its own cadence; an item not charged this period is
+  shown as "next charged …" with no amount) and **Expenses** (approved ones
+  included, with receipts; unapproved ones listed but left out). Tax is
+  computed per taxable line, as on the issued invoice.
+- **Everything billable, not just hours.** Every estimate, projection and
+  chart covers time, recurring services and expenses:
+  - the client overview's "Next invoice" card;
+  - the portal's estimate;
+  - the dashboard's recurring band (retainers and recurring items);
+  - the Overage & other band (additional hours, milestones, adjustments);
+  - the expenses band, which has its own toggle.
+
+  Monthly recurring and the 12-month projection include recurring items at
+  their own cadence. Projected overage covers additional hours only; expenses
+  are never projected.
 
 ## Delivery slices (stacked commits, one PR)
 
