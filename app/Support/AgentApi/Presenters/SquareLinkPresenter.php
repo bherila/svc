@@ -43,7 +43,7 @@ final class SquareLinkPresenter
             'invoice_version' => AgentApiVersion::for($invoice),
             'link' => $link === null ? null : $this->link($link),
             'covers' => $covers->map(fn (SquareInvoiceCoverage $coverage): array => $this->coverage($coverage) + [
-                'review_href' => SquareConfiguration::fromConfig()->servesWorkspace($invoice->workspace)
+                'review_href' => SquareConfiguration::for($invoice->workspace)->isConfigured()
                     ? route('agent-api.v1.invoices.square-covered-payments.index', [$invoice->workspace, $invoice->public_id, $coverage->square_invoice_id], absolute: false) : null,
             ])->values()->all(),
             'agreement_series_key' => $this->links->agreementSeriesKey($invoice),

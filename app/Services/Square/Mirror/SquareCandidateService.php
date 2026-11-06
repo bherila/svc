@@ -53,7 +53,7 @@ final class SquareCandidateService
     {
         Validator::make(['limit' => $limit], ['limit' => ['integer', 'min:1', 'max:'.self::MAX_LIMIT]])->validate();
         abort_unless($this->access->isWorkspaceManager($actor, $workspace), 403, 'Square candidates are available to workspace managers only.');
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
         $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $invoiceId)->firstOrFail();

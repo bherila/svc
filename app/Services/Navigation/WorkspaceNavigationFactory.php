@@ -109,7 +109,7 @@ final class WorkspaceNavigationFactory
             mcpSetupHref: $isMember ? route('mcp.setup', $workspace) : ($options === [] ? null : route('portal.mcp.setup', $options[0]->id)),
             // The Square mirror's explore screen (#438): managers of the one
             // workspace Square is connected to.
-            squareHref: $manages && SquareConfiguration::fromConfig()->servesWorkspace($workspace) ? route('square.explore', $workspace, absolute: false) : null,
+            squareHref: $manages && SquareConfiguration::for($workspace)->isConfigured() ? route('square.explore', $workspace, absolute: false) : null,
             historyHref: $manages ? route('history.index', $workspace, absolute: false) : null,
             createClientUrl: $manages ? route('agent-api.v1.clients.store', $workspace, absolute: false) : null,
         );

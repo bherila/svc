@@ -17,16 +17,16 @@ final class SquareInvoicePaymentReader
     /** @return list<SquarePaymentFacts> */
     public function read(Workspace $workspace, string $squareInvoiceId, string $currency, bool $refreshMirror = true): array
     {
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
-        $invoice = $this->client->getInvoice($squareInvoiceId)['invoice'] ?? null;
+        $invoice = $this->client->forWorkspace($workspace)->getInvoice($squareInvoiceId)['invoice'] ?? null;
         $row = is_array($invoice) ? $this->mapper->invoice($invoice) : null;
         if ($row === null || $row['square_invoice_id'] !== $squareInvoiceId || ! is_string($row['square_order_id'])
             || ! is_string($row['square_location_id']) || $row['currency'] !== $currency) {
             throw SquareRequestFailed::unreadable();
         }
-        $order = $this->client->retrieveOrder($row['square_order_id'])['order'] ?? null;
+        $order = $this->client->forWorkspace($workspace)->retrieveOrder($row['square_order_id'])['order'] ?? null;
         if (! is_array($order) || ($order['id'] ?? null) !== $row['square_order_id'] || ($order['location_id'] ?? null) !== $row['square_location_id']) {
             throw SquareRequestFailed::unreadable();
         }
@@ -40,7 +40,7 @@ final class SquareInvoicePaymentReader
             if (! is_string($id) || preg_match(SquareClient::ID_PATTERN, $id) !== 1) {
                 throw SquareRequestFailed::unreadable();
             }
-            $payment = $this->client->getPayment($id)['payment'] ?? null;
+            $payment = $this->client->forWorkspace($workspace)->getPayment($id)['payment'] ?? null;
             if (! is_array($payment)) {
                 throw SquareRequestFailed::unreadable();
             }

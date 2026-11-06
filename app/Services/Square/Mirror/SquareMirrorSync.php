@@ -67,7 +67,7 @@ final class SquareMirrorSync
             'trigger' => $trigger,
             'status' => SquareSyncRun::REQUESTED,
             'requested_by_user_id' => $requestedBy?->id,
-            'api_version' => mb_substr(SquareConfiguration::fromConfig()->version, 0, 16),
+            'api_version' => mb_substr(SquareConfiguration::for($workspace)->version, 0, 16),
         ]);
     }
 
@@ -77,7 +77,7 @@ final class SquareMirrorSync
      */
     public function perform(Workspace $workspace, SquareSyncRun $run): SquareSyncRun
     {
-        $configuration = SquareConfiguration::fromConfig();
+        $configuration = SquareConfiguration::for($workspace);
         $claimed = SquareSyncRun::query()
             ->where('workspace_id', $workspace->id)
             ->whereKey($run->getKey())
@@ -154,7 +154,7 @@ final class SquareMirrorSync
     /** @return list<string> the location ids whose invoices to read */
     private function locations(Workspace $workspace, SquareSyncRun $run, SquareConfiguration $configuration, SquareSyncTally $tally): array
     {
-        $response = $this->client->listLocations();
+        $response = $this->client->forWorkspace($workspace)->listLocations();
         $records = self::records($response, 'locations', 300);
         $this->logBatch($workspace, $run, $configuration, 'locations', 1, count($records));
         $rows = array_values(array_filter(array_map($this->mapper->location(...), $records)));
@@ -170,7 +170,7 @@ final class SquareMirrorSync
     private function customers(Workspace $workspace, SquareSyncRun $run, SquareConfiguration $configuration, SquareSyncTally $tally): void
     {
         $this->paginate(
-            fn (?string $cursor): array => $this->client->listCustomers($cursor, self::CUSTOMER_PAGE_SIZE),
+            fn (?string $cursor): array => $this->client->forWorkspace($workspace)->listCustomers($cursor, self::CUSTOMER_PAGE_SIZE),
             'customers',
             self::CUSTOMER_PAGE_SIZE,
             $tally,
@@ -190,7 +190,7 @@ final class SquareMirrorSync
     private function invoices(Workspace $workspace, SquareSyncRun $run, SquareConfiguration $configuration, SquareSyncTally $tally, string $locationId): void
     {
         $this->paginate(
-            fn (?string $cursor): array => $this->client->listInvoices($locationId, $cursor, self::INVOICE_PAGE_SIZE),
+            fn (?string $cursor): array => $this->client->forWorkspace($workspace)->listInvoices($locationId, $cursor, self::INVOICE_PAGE_SIZE),
             'invoices',
             self::INVOICE_PAGE_SIZE,
             $tally,
@@ -210,7 +210,7 @@ final class SquareMirrorSync
     private function paymentIds(Workspace $workspace, SquareSyncTally $tally, int $limit): void
     {
         foreach ($this->mirror->invoicesNeedingPaymentIds($workspace, $limit) as $invoice) {
-            $order = $this->client->retrieveOrder($invoice['square_order_id'])['order'] ?? null;
+            $order = $this->client->forWorkspace($workspace)->retrieveOrder($invoice['square_order_id'])['order'] ?? null;
             // As the reconciler checks it: the order must be the one asked
             // for, at the invoice's location when the mirror knows it.
             if (! is_array($order) || ($order['id'] ?? null) !== $invoice['square_order_id']

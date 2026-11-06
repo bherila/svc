@@ -14,9 +14,10 @@ final class PruneSquarePendingSettlementsCommand extends MutationCommand
 
     public function handle(SquarePendingSettlements $pending): int
     {
-        $publicId = SquareConfiguration::fromConfig()->workspacePublicId;
-        $workspace = $publicId === null ? null : $this->workspaceByPublicId($publicId);
-        $pruned = $workspace === null ? 0 : $this->preview(fn () => $pending->prune($workspace));
+        $pruned = 0;
+        foreach (SquareConfiguration::servedWorkspaces() as $workspace) {
+            $pruned += $this->preview(fn () => $pending->prune($workspace));
+        }
         if ($this->option('format') === 'json') {
             $this->json(['dry_run' => ! $this->applying(), 'pruned' => $pruned]);
         } else {

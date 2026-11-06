@@ -217,7 +217,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
         }
 
         if ($flag === self::SQUARE) {
-            return SquareConfiguration::fromConfig()->isConfigured();
+            return SquareConfiguration::deploymentEnabled();
         }
         if (self::isMcpSwitch($flag)) {
             if ($this->mcp === null) {

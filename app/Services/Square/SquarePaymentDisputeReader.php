@@ -2,6 +2,7 @@
 
 namespace App\Services\Square;
 
+use App\Models\Workspace;
 use App\Support\Square\SquareDisputeFacts;
 
 /** A bounded complete observation; partial dispute listings never authorize recording money. */
@@ -11,14 +12,14 @@ final class SquarePaymentDisputeReader
 
     /** @param list<string> $paymentIds
      * @return array<string,list<SquareDisputeFacts>> */
-    public function read(array $paymentIds): array
+    public function read(Workspace $workspace, array $paymentIds): array
     {
         $groups = [];
         $seenIds = [];
         $seenCursors = [];
         $cursor = null;
         for ($page = 0; $page < 10; $page++) {
-            $response = $this->client->listDisputes($cursor);
+            $response = $this->client->forWorkspace($workspace)->listDisputes($cursor);
             $rows = array_key_exists('disputes', $response) ? $response['disputes'] : [];
             if (! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || ! empty($response['errors'])) {
                 throw SquareRequestFailed::unreadable();

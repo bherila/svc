@@ -53,6 +53,9 @@ use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Middleware\CheckToken;
 
 Route::post('/webhooks/square', SquareWebhookController::class)->name('svc.billing.square.webhook');
+Route::post('/webhooks/square/{endpoint}', SquareWebhookController::class)
+    ->where('endpoint', '[A-Za-z0-9]{40}')
+    ->name('svc.billing.square.workspace-webhook');
 
 /*
  * Every agent operation is declared once in AgentOperationCatalog (#408):

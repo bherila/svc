@@ -2,6 +2,7 @@
 
 namespace App\Services\Square;
 
+use App\Models\Workspace;
 use App\Support\Square\SquareIdentifiers;
 use GuzzleHttp\Exception\TransferException;
 use Illuminate\Http\Client\ConnectionException;
@@ -15,7 +16,7 @@ use InvalidArgumentException;
  *
  * Every request is built from a {@see SquareEndpoint} case, the allow-list of
  * reads, and nothing else: there is no generic request method and no write.
- * Each call re-reads {@see SquareConfiguration}, sends the pinned
+ * Each call re-reads the workspace's {@see SquareConfiguration}, sends the pinned
  * Square-Version, uses bounded timeouts, never follows a redirect (which could
  * carry the credential to another host), and retries only these reads - on a
  * connection failure, 429 or 5xx - with doubling backoff. A failure becomes a
@@ -33,7 +34,23 @@ final class SquareClient
     /** The longest pause between attempts; a longer Retry-After is answered as 429 at once. */
     private const int MAX_PAUSE_MILLISECONDS = 2000;
 
+    /** The workspace's own connection, once {@see forWorkspace()} has bound it. */
+    private ?SquareConfiguration $scope = null;
+
     public function __construct(private readonly HttpFactory $http) {}
+
+    /**
+     * A client that calls Square with this workspace's own token, and no other.
+     * An unscoped client falls back to the environment's single account, and
+     * only until the migration command has run.
+     */
+    public function forWorkspace(Workspace $workspace): self
+    {
+        $scoped = clone $this;
+        $scoped->scope = SquareConfiguration::for($workspace);
+
+        return $scoped;
+    }
 
     /** @return array<string, mixed> */
     public function listLocations(): array
@@ -208,7 +225,7 @@ final class SquareClient
      */
     private function send(SquareEndpoint $endpoint, ?string $id = null, array $query = [], ?array $body = null): array
     {
-        $configuration = SquareConfiguration::fromConfig();
+        $configuration = $this->scope ?? SquareConfiguration::legacy();
         if (! $configuration->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }

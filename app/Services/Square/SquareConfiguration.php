@@ -3,14 +3,21 @@
 namespace App\Services\Square;
 
 use App\Models\Workspace;
+use App\Services\Payments\PaymentConnectionResolver;
+use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Tenancy\WorkspacePublicIdResolver;
+use App\Support\Payments\PaymentProcessor;
 use LogicException;
 use SensitiveParameter;
 
 /**
- * The one Square connection, read from server-side configuration on every
- * use (#438). It is either complete - a token, a known environment, a pinned
- * version and a bound workspace - or the feature is off.
+ * A workspace's Square connection, read on every use (#438). It is either
+ * complete - a token, a known environment, a pinned version and the workspace
+ * it serves - or the feature is off for that workspace.
+ *
+ * {@see for()} resolves it from the workspace's own payment connection. The
+ * environment's single account serves only until the migration command has
+ * run ({@see legacy()}).
  *
  * The token is held privately and never printed: var_dump/print_r show it
  * redacted and the object refuses to serialize, so it cannot reach a log, a
@@ -40,6 +47,81 @@ final readonly class SquareConfiguration
         public int $rateLimitPerMinute = 60,
     ) {}
 
+    /** This workspace's Square configuration, from its own connection and no other. */
+    public static function for(Workspace $workspace): self
+    {
+        $environmentValues = self::fromConfig();
+        $connections = app(WorkspacePaymentConnections::class);
+        $row = $connections->active($workspace, PaymentProcessor::Square);
+        if ($row !== null) {
+            $source = $connections->credentialSource($row);
+            $environment = $source?->environment;
+
+            return $environmentValues->bound(
+                $source?->secret(),
+                is_string($environment) ? $environment : self::PRODUCTION,
+                (string) $workspace->public_id,
+            );
+        }
+        if (app(PaymentConnectionResolver::class)->environmentMayServe($workspace, PaymentProcessor::Square)
+            && $environmentValues->workspacePublicId !== null
+            && hash_equals($environmentValues->workspacePublicId, (string) $workspace->public_id)) {
+            return $environmentValues;
+        }
+
+        return $environmentValues->bound(null, $environmentValues->environment, null);
+    }
+
+    /** The environment's single account, while the migration command has not run; otherwise nothing. */
+    public static function legacy(): self
+    {
+        $environmentValues = self::fromConfig();
+
+        return app(WorkspacePaymentConnections::class)->environmentMigrated(PaymentProcessor::Square)
+            ? $environmentValues->bound(null, $environmentValues->environment, null)
+            : $environmentValues;
+    }
+
+    /** Whether any workspace on this deployment can use Square. */
+    public static function deploymentEnabled(): bool
+    {
+        return self::legacy()->isConfigured()
+            || app(WorkspacePaymentConnections::class)->allActive(PaymentProcessor::Square)->isNotEmpty();
+    }
+
+    /**
+     * Every workspace Square serves: those with their own connection, and the
+     * environment's bound workspace until the migration command has run.
+     *
+     * @return list<Workspace>
+     */
+    public static function servedWorkspaces(): array
+    {
+        $workspaces = [];
+        foreach (app(WorkspacePaymentConnections::class)->allActive(PaymentProcessor::Square) as $row) {
+            $workspace = Workspace::query()->whereKey($row->workspace_id)->first();
+            if ($workspace !== null) {
+                $workspaces[$workspace->id] = $workspace;
+            }
+        }
+        $legacy = self::legacy()->workspace();
+        if ($legacy !== null && ! isset($workspaces[$legacy->id]) && self::for($legacy)->isConfigured()) {
+            $workspaces[$legacy->id] = $legacy;
+        }
+        ksort($workspaces);
+
+        return array_values($workspaces);
+    }
+
+    private function bound(#[SensitiveParameter] ?string $token, string $environment, ?string $workspacePublicId): self
+    {
+        return new self(
+            $token, strtolower($environment), $this->applicationId, $this->version, $workspacePublicId,
+            $this->timeoutSeconds, $this->connectTimeoutSeconds, $this->maxAttempts, $this->retryBaseMilliseconds, $this->rateLimitPerMinute,
+        );
+    }
+
+    /** The raw environment values, which {@see for()} and {@see legacy()} qualify. */
     public static function fromConfig(): self
     {
         $value = static fn (string $key): ?string => is_string($raw = config('services.square.'.$key)) && trim($raw) !== '' ? trim($raw) : null;

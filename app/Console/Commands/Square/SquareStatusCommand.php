@@ -5,10 +5,12 @@ namespace App\Console\Commands\Square;
 use App\Console\Commands\SvcCommand;
 use App\Models\SquareSyncRun;
 use App\Models\Workspace;
+use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Square\Mirror\SquareMirrorPresenter;
 use App\Services\Square\Mirror\SquareMirrorReadService;
 use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\SquareConfiguration;
+use App\Support\Payments\PaymentProcessor;
 use Carbon\CarbonImmutable;
 
 /**
@@ -35,9 +37,11 @@ final class SquareStatusCommand extends SvcCommand
     {
         $format = (string) $this->option('format');
 
-        $configuration = SquareConfiguration::fromConfig();
+        // The first workspace Square serves stands for the deployment; each
+        // workspace's own connection is checked on its own settings page.
+        $workspace = SquareConfiguration::servedWorkspaces()[0] ?? null;
+        $configuration = $workspace === null ? SquareConfiguration::legacy() : SquareConfiguration::for($workspace);
         $configured = $configuration->isConfigured();
-        $workspace = $configured ? $configuration->workspace() : null;
         $freshness = $workspace === null ? ['last_synced_at' => null, 'last_run' => null] : $mirror->freshness($workspace);
         $lastRun = $freshness['last_run'];
         // The authoritative completed generation, as the mirror fences its
@@ -53,7 +57,8 @@ final class SquareStatusCommand extends SvcCommand
             'environment' => $configured ? $configuration->environment : null,
             'square_version' => $configured ? $configuration->version : null,
             'workspace_present' => $workspace !== null,
-            'webhook_signature_key_present' => is_string($key = config('services.square.webhook_signature_key')) && trim($key) !== '',
+            'webhook_signature_key_present' => (is_string($key = config('services.square.webhook_signature_key')) && trim($key) !== '')
+                || ($workspace !== null && app(WorkspacePaymentConnections::class)->active($workspace, PaymentProcessor::Square) !== null),
             'last_synced_at' => $lastSyncedAt,
             'last_run' => $lastRun === null ? null : array_intersect_key($lastRun, array_flip(['id', 'trigger', 'status', 'requested_at', 'finished_at', 'invoices_seen', 'invoices_changed', 'truncated', 'error_code'])),
         ];
