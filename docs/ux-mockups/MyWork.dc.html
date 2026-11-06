@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>My work · Rivera Engineering</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
+input,textarea,select{background:#0b1120;color:#e5e7eb}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <header style="background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 24px">
+      <div style="font-weight: 600; font-size: 15px; white-space: nowrap">⏻  Rivera Engineering</div>
+      <nav aria-label="Workspace" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">My work</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Time</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Shared projects</a>
+      </nav>
+      <span style="font-size: 13px; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">? Help</span>
+      <span style="width: 32px; height: 32px; border-radius: 16px; background: #8b5cf6; color: #111827; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600">LR</span>
+    </div>
+  </header>
+  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 20px">
+    <section aria-label="Getting started" style="background: #111827; border: 1px solid #3730a3; border-radius: 12px; padding: 16px 20px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center">
+      <div style="flex: 1 1 320px; min-width: 0">
+        <div style="font-weight: 600; font-size: 15px">Welcome, Luis. Ben Herila invited you to the Acme platform project.</div>
+        <div style="font-size: 13px; color: #9ca3af; margin-top: 4px">Your own workspace · Ben reviews your hours, never your rate · Acme approves</div>
+      </div>
+      <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
+        <li style="border-radius: 999px; padding: 6px 12px; background: #052e16; color: #86efac; font-weight: 500">✓ Log your first hours</li>
+        <li style="border-radius: 999px; padding: 6px 12px; background: #052e16; color: #86efac; font-weight: 500">✓ Submit a month</li>
+        <li style="border-radius: 999px; padding: 6px 12px; border: 1px solid #374151; color: #cbd5e1">3 · Download an approved timesheet</li>
+      </ol>
+      <button type="button" style="border: 0; background: transparent; color: #9ca3af; font-size: 13px; cursor: pointer; min-height: 32px">Dismiss</button>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <section aria-label="This week" style="flex: 999 1 560px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px">
+        <h2 style="margin: 0 0 12px; font-size: 16px; font-weight: 600">This week</h2>
+        <div style="display: flex; flex-direction: column; font-size: 14px">
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 11px 0; border-top: 1px solid #1a2332"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #450a0a; color: #fca5a5">Due today</span><span style="flex: 1 1 240px; min-width: 0">Load-test the clinic import job</span><span style="font-size: 13px; color: #9ca3af">Acme platform · from Ben Herila</span></div>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 11px 0; border-top: 1px solid #1a2332"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #1a2332; color: #cbd5e1">Tue</span><span style="flex: 1 1 240px; min-width: 0">Rotate staging webhook signing secret</span><span style="font-size: 13px; color: #9ca3af">Acme platform · from Ben Herila</span></div>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 11px 0; border-top: 1px solid #1a2332"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #1a2332; color: #cbd5e1">Thu</span><span style="flex: 1 1 240px; min-width: 0">Waiting on Acme: confirm clinic list</span><span style="font-size: 13px; color: #9ca3af">Acme platform · you asked Dana Okafor</span></div>
+        </div>
+      </section>
+
+      <section aria-label="Log time" style="flex: 1 1 380px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 600">Log time</h2>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <label for="proj" style="font-size: 13px; font-weight: 500">Project</label>
+          <input id="proj" type="text" role="combobox" aria-expanded="{{projOpen}}" aria-controls="proj-list" autocomplete="off" placeholder="Type to search projects" value="{{pq}}" onChange="{{onProj}}" onFocus="{{openProj}}" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 10px; font-size: 14px">
+          <sc-if value="{{projOpen}}" hint-placeholder-val="{{false}}">
+            <ul id="proj-list" role="listbox" style="list-style: none; margin: 0; padding: 4px; border: 1px solid #374151; border-radius: 8px; background: #0b1120; display: flex; flex-direction: column">
+              <sc-for list="{{projects}}" as="p" hint-placeholder-count="2">
+                <li role="option" aria-selected="false"><button type="button" onClick="{{p.pick}}" style="width: 100%; text-align: left; border: 0; background: transparent; color: #e5e7eb; padding: 8px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; min-height: 36px">{{p.name}}<span style="display: block; font-size: 12px; color: #9ca3af">{{p.sub}}</span></button></li>
+              </sc-for>
+            </ul>
+          </sc-if>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <label for="task" style="font-size: 13px; font-weight: 500">Task (optional)</label>
+          <input id="task" type="text" role="combobox" aria-expanded="{{taskOpen}}" aria-controls="task-list" autocomplete="off" placeholder="Type to find a task, or name a new one" value="{{tq}}" onChange="{{onTask}}" onFocus="{{openTask}}" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 10px; font-size: 14px">
+          <sc-if value="{{taskOpen}}" hint-placeholder-val="{{true}}">
+            <ul id="task-list" role="listbox" style="list-style: none; margin: 0; padding: 4px; border: 1px solid #374151; border-radius: 8px; background: #0b1120; display: flex; flex-direction: column">
+              <sc-for list="{{tasks}}" as="t" hint-placeholder-count="2">
+                <li role="option" aria-selected="false"><button type="button" onClick="{{t.pick}}" style="width: 100%; text-align: left; border: 0; background: transparent; color: #e5e7eb; padding: 8px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; min-height: 36px">{{t.name}}<span style="display: block; font-size: 12px; color: #9ca3af">{{t.sub}}</span></button></li>
+              </sc-for>
+              <sc-if value="{{canCreate}}" hint-placeholder-val="{{true}}">
+                <li role="option" aria-selected="false" style="border-top: 1px solid #1f2937; margin-top: 4px; padding-top: 4px"><button type="button" onClick="{{createTask}}" style="width: 100%; text-align: left; border: 0; background: transparent; color: #93c5fd; padding: 8px 10px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 36px">+ Create task “{{tq}}”<span style="display: block; font-size: 12px; color: #9ca3af; font-weight: 400">{{createSub}}</span></button></li>
+              </sc-if>
+            </ul>
+          </sc-if>
+          <sc-if value="{{created}}" hint-placeholder-val="{{false}}">
+            <div style="font-size: 12px; color: #86efac">New task created on {{pq}} and assigned to you. Ben can see it.</div>
+          </sc-if>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500">Date<input type="text" value="Nov 6, 2026" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 10px; font-size: 14px"></label>
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500">Time<input type="text" inputmode="decimal" value="{{hin}}" onChange="{{onHours}}" aria-describedby="hours-hint" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 10px; font-size: 14px"><span id="hours-hint" style="{{hoursHintStyle}}">{{hoursHint}}</span></label>
+        </div>
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500">What did you do?
+          <textarea rows="2" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 10px; font-size: 14px; resize: vertical">Load test at 5k clinics; tuned batch size</textarea>
+        </label>
+        <p style="margin: 0; font-size: 12px; color: #9ca3af">Editable until you submit the month</p>
+        <button type="button" style="border: 0; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600; background: #e5e7eb; color: #111827; cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M20 6 9 17l-5-5"></path></svg>Save hours</button>
+      </section>
+    </div>
+
+    <section aria-label="My months" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px">
+      <h2 style="margin: 0 0 12px; font-size: 16px; font-weight: 600">My months · Acme platform</h2>
+      <p style="margin: 0 0 12px; font-size: 13px; color: #9ca3af">Submit → Ben reviews → Acme approves → download the timesheet</p>
+      <div style="display: flex; flex-direction: column">
+        <sc-for list="{{months}}" as="m" hint-placeholder-count="3">
+          <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 14px 0; border-top: 1px solid #1a2332">
+            <div style="width: 120px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path></svg>{{m.name}}</div>
+            <div style="width: 70px; font-variant-numeric: tabular-nums">{{m.hours}}</div>
+            <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; flex: 1 1 420px; min-width: 0">
+              <sc-for list="{{m.steps}}" as="s" hint-placeholder-count="4"><li style="{{s.style}}">{{s.label}}</li></sc-for>
+            </ol>
+            <button type="button" onClick="{{m.act}}" style="{{m.btnStyle}}"><sc-if value="{{m.icSend}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M14.5 21.7a.5.5 0 0 0 .9 0l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0 0 .9l7.9 3.2a2 2 0 0 1 1.1 1.1z"></path><path d="m21.9 2.1-11 11"></path></svg></sc-if><sc-if value="{{m.icUndo}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></sc-if><sc-if value="{{m.icEye}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg></sc-if><sc-if value="{{m.icDown}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg></sc-if>{{m.btn}}</button>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1220}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { novSubmitted: false, pq: 'Acme platform', projOpen: false, tq: 'clinic', taskOpen: true, created: false, hin: '2:30' }; }
+  renderVals() {
+    const st = this.state;
+    const chip = (state, label) => ({ label: (state === 'done' ? '✓ ' : state === 'now' ? '● ' : '○ ') + label, style: 'font-size:13px;white-space:nowrap;padding:2px 0;' + (state === 'done' ? 'color:#9ca3af;' : state === 'now' ? 'color:#e5e7eb;font-weight:600;' : 'color:#6b7280;') });
+    const primary = 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;min-height:40px;width:190px;background:#e5e7eb;color:#111827;';
+    const quiet = 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #374151;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:500;cursor:pointer;min-height:40px;width:190px;background:#111827;color:#e5e7eb;';
+    const months = [
+      { name: 'November', hours: '18.0 h', steps: st.novSubmitted
+          ? [chip('done', 'Submitted'), chip('now', 'Ben reviews'), chip('todo', 'Acme approves'), chip('todo', 'Timesheet ready')]
+          : [chip('now', 'Drafts · editable'), chip('todo', 'Ben reviews'), chip('todo', 'Acme approves'), chip('todo', 'Timesheet ready')],
+        btn: st.novSubmitted ? 'Withdraw' : 'Submit November', icSend: !st.novSubmitted, icUndo: st.novSubmitted, btnStyle: st.novSubmitted ? quiet : primary,
+        act: () => this.setState({ novSubmitted: !st.novSubmitted }) },
+      { name: 'October', hours: '22.0 h', steps: [chip('done', 'Submitted Nov 2'), chip('done', 'Reviewed by Ben Nov 6'), chip('now', 'Waiting on Acme'), chip('todo', 'Timesheet ready')],
+        btn: 'Preview timesheet', icEye: true, btnStyle: quiet, act: () => {} },
+      { name: 'September', hours: '19.5 h', steps: [chip('done', 'Submitted'), chip('done', 'Reviewed by Ben'), chip('done', 'Approved by Dana Okafor, Oct 8'), chip('done', 'Timesheet ready')],
+        btn: 'Download timesheet', icDown: true, btnStyle: quiet, act: () => {} }
+    ];
+    const allProjects = [
+      { name: 'Acme platform', sub: 'Shared project · hosted by Herila Consulting · client Acme Veterinary' },
+      { name: 'Rivera Engineering · internal', sub: 'Your workspace · not billable' }
+    ];
+    const allTasks = [
+      { name: 'Load-test the clinic import job', sub: 'Assigned to you · due today' },
+      { name: 'Fix duplicate-clinic edge case', sub: 'Done Oct 16' },
+      { name: 'Confirm clinic list for the January import', sub: 'Waiting on Dana Okafor' },
+      { name: 'Rotate staging webhook signing secret', sub: 'Assigned to you · due Tue' }
+    ];
+    const q = (st.tq || '').trim().toLowerCase();
+    const pqq = (st.pq || '').trim().toLowerCase();
+    const projects = allProjects.filter((p) => !pqq || p.name.toLowerCase().indexOf(pqq) >= 0 || p.sub.toLowerCase().indexOf(pqq) >= 0)
+      .map((p) => Object.assign({}, p, { pick: () => this.setState({ pq: p.name, projOpen: false }) }));
+    const tasks = allTasks.filter((t) => !q || t.name.toLowerCase().indexOf(q) >= 0)
+      .map((t) => Object.assign({}, t, { pick: () => this.setState({ tq: t.name, taskOpen: false, created: false }) }));
+    const exact = allTasks.some((t) => t.name.toLowerCase() === q);
+    const parse = (v) => {
+      const t = String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+      let m;
+      if ((m = t.match(/^(\d+):([0-5]\d)$/))) return +m[1] * 60 + +m[2];
+      if ((m = t.match(/^(\d+)h(?:(\d+)m?)?$/))) return +m[1] * 60 + (+m[2] || 0);
+      if ((m = t.match(/^(\d+)m(?:in)?$/))) return +m[1];
+      if ((m = t.match(/^(\d*\.?\d+)h?$/))) return Math.round(parseFloat(m[1]) * 60);
+      return null;
+    };
+    const mins = parse(st.hin);
+    const fmtH = (n) => (Math.round(n / 60 * 100) / 100) + ' h';
+    const hoursHint = mins === null ? 'Try 2:30, 2.5, 2h30m or 150m' : '= ' + fmtH(mins) + ' (' + mins + ' min)';
+    return { months, projects, tasks,
+      hin: st.hin, hoursHint,
+      hoursHintStyle: 'font-size:12px;font-weight:400;color:' + (mins === null ? '#fca5a5' : '#9ca3af') + ';',
+      onHours: (e) => this.setState({ hin: e.target.value }),
+      pq: st.pq, tq: st.tq, projOpen: st.projOpen, taskOpen: st.taskOpen, created: st.created,
+      canCreate: q.length > 0 && !exact,
+      createSub: 'On ' + (st.pq || 'this project') + ', assigned to you',
+      onProj: (e) => this.setState({ pq: e.target.value, projOpen: true }),
+      onTask: (e) => this.setState({ tq: e.target.value, taskOpen: true, created: false }),
+      openProj: () => this.setState({ projOpen: true, taskOpen: false }),
+      openTask: () => this.setState({ taskOpen: true, projOpen: false }),
+      createTask: () => this.setState({ taskOpen: false, created: true }) };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clients</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
+input,textarea,select{background:#0b1120;color:#e5e7eb}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+</style>
+</helmet>
+<div style="min-height: 100%; box-sizing: border-box; font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <header style="background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 24px">
+      <div style="font-weight: 600; font-size: 15px">⏻  Herila Consulting</div>
+      <nav aria-label="Workspace" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
+        <a href="Main.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Dashboard</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">Clients</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Invoices</a>
+        <a href="Review.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Time</a>
+        <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Finance</a>
+      </nav>
+      <button type="button" aria-label="Search (⌘K)" title="Search (⌘K)" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid #1f2937; background: #111827; border-radius: 8px; color: #e5e7eb; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
+      <span style="font-size: 13px; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">? Help</span>
+    </div>
+  </header>
+  <main style="max-width: 1440px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px">
+      <div>
+        <h1 style="margin: 0; font-size: 24px; font-weight: 600">Clients</h1>
+        <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">6 clients · $18,450 a month recurring</p>
+      </div>
+      <a href="#" style="background: #e5e7eb; color: #111827; border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>New client</a>
+    </div>
+    <div role="group" aria-label="Filter clients" style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
+      <span style="border: 1px solid #3b82f6; background: #172554; border-radius: 999px; padding: 6px 12px; font-weight: 500">All · 6</span>
+      <span style="border: 1px solid #374151; border-radius: 999px; padding: 6px 12px">Active · 5</span>
+      <span style="border: 1px solid #374151; border-radius: 999px; padding: 6px 12px">Ending soon · 1</span>
+      <span style="border: 1px solid #374151; border-radius: 999px; padding: 6px 12px">Over retainer · 1</span>
+      <span style="border: 1px solid #374151; border-radius: 999px; padding: 6px 12px">Has overdue · 2</span>
+    </div>
+    <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; overflow: hidden">
+      <div style="overflow-x: auto"><table style="width: 100%; min-width: 980px; border-collapse: collapse; font-size: 14px">
+        <thead>
+          <tr style="background: #0b1120; color: #9ca3af; font-size: 12px; text-align: left">
+            <th scope="col" style="padding: 12px 16px; font-weight: 600; min-width: 220px">Client</th>
+            <th scope="col" style="padding: 12px 16px; font-weight: 600; text-align: right">Monthly recurring<button type="button" aria-label="About this column" title="Quarterly and annual charges converted to a monthly figure. One-time charges are left out." style="display: inline-flex; vertical-align: middle; border: 0; background: transparent; color: #9ca3af; padding: 2px; margin-left: 2px; cursor: pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></button></th>
+            <th scope="col" style="padding: 12px 16px; font-weight: 600; text-align: right">Year to date</th>
+            <th scope="col" style="padding: 12px 16px; font-weight: 600">Last 12 months</th>
+            <th scope="col" style="padding: 12px 16px; font-weight: 600; text-align: right">Unpaid</th>
+            <th scope="col" style="padding: 12px 16px; font-weight: 600; min-width: 260px">This month’s retainer<button type="button" aria-label="About this column" title="Hours used against hours included this month, including rolled-over hours." style="display: inline-flex; vertical-align: middle; border: 0; background: transparent; color: #9ca3af; padding: 2px; margin-left: 2px; cursor: pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></button></th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+            <tr style="border-top: 1px solid #1a2332">
+              <td style="padding: 14px 16px">
+                <a href="{{r.href}}" style="font-weight: 600; color: #e5e7eb; text-decoration: none">{{r.name}}</a>
+                <div style="font-size: 12px; color: #9ca3af; margin-top: 2px">{{r.sub}}</div>
+              </td>
+              <td style="padding: 14px 16px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap">{{r.mrr}}</td>
+              <td style="padding: 14px 16px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap">{{r.ytd}}</td>
+              <td style="padding: 14px 16px">
+                <div style="display: flex; align-items: flex-end; gap: 2px; height: 28px" role="img" aria-label="{{r.sparkLabel}}">
+                  <sc-for list="{{r.spark}}" as="s" hint-placeholder-count="12"><span style="{{s}}"></span></sc-for>
+                </div>
+                <div style="font-size: 12px; color: #9ca3af; margin-top: 2px; font-variant-numeric: tabular-nums">{{r.ttm}}</div>
+              </td>
+              <td style="padding: 14px 16px; text-align: right; white-space: nowrap">
+                <div style="font-variant-numeric: tabular-nums">{{r.open}}</div>
+                <div style="{{r.overdueStyle}}">{{r.overdue}}</div>
+              </td>
+              <td style="padding: 14px 16px">
+                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #cbd5e1"><span>{{r.hours}}</span><span style="{{r.flagStyle}}">{{r.flag}}</span></div>
+                <div style="height: 8px; background: #1f2937; border-radius: 4px; margin-top: 6px; overflow: hidden"><div style="{{r.meter}}"></div></div>
+              </td>
+            </tr>
+          </sc-for>
+          <tr style="border-top: 2px solid #1f2937; background: #0b1120; font-weight: 600">
+            <td style="padding: 12px 16px">Total</td>
+            <td style="padding: 12px 16px; text-align: right; font-variant-numeric: tabular-nums">$18,450</td>
+            <td style="padding: 12px 16px; text-align: right; font-variant-numeric: tabular-nums">$223,520</td>
+            <td style="padding: 12px 16px; font-variant-numeric: tabular-nums">$238,090</td>
+            <td style="padding: 12px 16px; text-align: right; font-variant-numeric: tabular-nums">$14,820</td>
+            <td style="padding: 12px 16px"></td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":920}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sparkOf = (vals) => { const max = Math.max.apply(null, vals); return vals.map((v) => 'flex:1;width:6px;border-radius:1px;background:#3b82f6;height:' + Math.max(2, Math.round(v / max * 28)) + 'px;'); };
+    const meter = (pct, over) => 'height:100%;border-radius:4px;width:' + Math.min(100, pct) + '%;background:' + (over ? '#f97316' : '#3b82f6') + ';';
+    const flag = (t, c) => 'font-weight:600;color:' + c + ';';
+    const rows = [
+      { name: 'Acme Veterinary', sub: 'Retainer · 40 h/mo · rollover 3 mo · shared project with Rivera Engineering', mrr: '$8,000', ytd: '$96,400', ttm: '$104,900', open: '$9,200', overdue: 'None overdue', hours: '31.5 of 46.0 h', flag: 'On track', pct: 68, over: false, fc: '#86efac', s: [8,9,8.5,10,9,8,11,9,8.5,9.8,9.2,8.6], href: 'ClientOverview.dc.html' },
+      { name: 'Lumen Studio', sub: 'Retainer · 20 h/mo', mrr: '$4,000', ytd: '$46,100', ttm: '$49,000', open: '$1,200', overdue: '$1,200 overdue', hours: '23.0 of 20.0 h', flag: 'Over by 3.0 h', pct: 100, over: true, fc: '#fdba74', s: [2.4,2.4,2.8,2.8,2.8,4,4.6,4,4.2,4.4,4,4.8], href: '#' },
+      { name: 'Bayside Bakery', sub: 'Retainer + quarterly hosting', mrr: '$3,950', ytd: '$45,620', ttm: '$49,800', open: '$2,100', overdue: '$2,100 overdue', hours: '9.0 of 15.0 h', flag: 'On track', pct: 60, over: false, fc: '#86efac', s: [4,4.2,3.9,4.6,3.9,4.1,4,4.4,3.9,4.2,4,4.1], href: '#' },
+      { name: 'Summit Dental', sub: 'Retainer · ends Feb 28, 2027', mrr: '$2,500', ytd: '$27,800', ttm: '$30,300', open: '$2,320', overdue: 'None overdue', hours: '6.5 of 10.0 h', flag: 'Ends in 114 days', pct: 65, over: false, fc: '#fdba74', s: [2.5,2.6,2.5,2.7,2.5,2.5,2.9,2.5,2.6,2.5,2.5,2.7], href: '#' },
+      { name: 'Harbor Logistics', sub: 'Signed · starts Jan 1, 2027', mrr: '$1,500', ytd: '$0', ttm: '$0', open: '$0', overdue: 'None overdue', hours: 'Starts Jan 1', flag: 'Not started', pct: 0, over: false, fc: '#9ca3af', s: [0,0,0,0,0,0,0,0,0,0,0,0.01], href: '#' },
+      { name: 'Wexford & Daughters Architecture Collaborative', sub: 'Hourly, no retainer', mrr: '—', ytd: '$7,600', ttm: '$4,090', open: '$0', overdue: 'None overdue', hours: 'Hourly · 12.0 h this month', flag: '', pct: 0, over: false, fc: '#9ca3af', s: [1,0,2,1,0,0,1,0,0,1,0.5,0.6], href: '#' }
+    ].map((r) => Object.assign(r, {
+      spark: sparkOf(r.s), sparkLabel: 'Trend over the last 12 months for ' + r.name,
+      meter: meter(r.pct, r.over), flagStyle: flag(r.flag, r.fc),
+      overdueStyle: 'font-size:12px;margin-top:2px;color:' + (r.overdue === 'None overdue' ? '#9ca3af' : '#f87171') + ';font-weight:' + (r.overdue === 'None overdue' ? '400' : '600') + ';'
+    }));
+    return { rows };
+  }
+}
+</script>
+</body>
+</html>

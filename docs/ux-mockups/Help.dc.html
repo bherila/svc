@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>In-app help patterns</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+input,textarea,select{background:#0b1120;color:#e5e7eb}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 40px 32px 56px; display: flex; flex-direction: column; gap: 24px">
+    <div style="max-width: 860px">
+      <h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.01em">Help that lives where the question comes up</h1>
+      <p style="margin: 10px 0 0; font-size: 16px; color: #cbd5e1; line-height: 1.6">Six patterns, from inline to full page. Each one answers a single question: <em>what is this</em>, <em>what happens next</em>, or <em>why is it like this</em>. All of them are written once, in the repository, and reviewed like code.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px">
+
+      <section style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em">1 · Term tip: “what is this?”</div>
+        <div style="background: #0b1120; border-radius: 10px; padding: 16px; font-size: 14px; display: flex; flex-direction: column; gap: 10px">
+          <div>Rollover · <span style="border-bottom: 1px dashed #9ca3af">6.0 h</span> <span style="display: inline-flex; width: 20px; height: 20px; border-radius: 10px; border: 1px solid #374151; align-items: center; justify-content: center; font-size: 11px; color: #9ca3af">?</span></div>
+          <div role="note" style="background: #111827; border: 1px solid #1f2937; box-shadow: 0 4px 12px rgba(0,0,0,.4); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; max-width: 340px"><strong>Rollover</strong>: retainer hours you didn’t use that carry into later months. These came from August and expire Nov 30. <a href="#">More about rollover</a></div>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.55">For any word a new user may not know. Opens on click or focus, never only on hover, so it works on touch and with a keyboard. The text comes from one glossary, so “Approved” means the same thing on every screen.</p>
+      </section>
+
+      <section style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em">2 · Status with its next step</div>
+        <div style="background: #0b1120; border-radius: 10px; padding: 16px; font-size: 14px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; gap: 8px; align-items: center"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #172f5e; color: #93c5fd">Reviewed</span><span style="color: #cbd5e1">Waiting on Acme to approve</span></div>
+          <div style="display: flex; gap: 8px; align-items: center"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #431407; color: #fdba74">Disputed</span><span style="color: #cbd5e1">Fix with a correction. The issued invoice isn’t edited.</span></div>
+          <div style="display: flex; gap: 8px; align-items: center"><span style="font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 8px; background: #052e16; color: #86efac">Approved</span><span style="color: #cbd5e1">By Dana Okafor, Oct 8 · final</span></div>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.55">A badge never stands alone. It always says who or what it’s waiting on. Every status passes through <code>statusLabel</code>, which now returns a label <em>and</em> a next-step line. A test fails if any status is missing either.</p>
+      </section>
+
+      <section style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em">3 · Consequence before action</div>
+        <div style="background: #0b1120; border-radius: 10px; padding: 16px; font-size: 14px; display: flex; flex-direction: column; gap: 10px">
+          <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px">
+            <div style="font-weight: 600">Issue invoice #1042 for $8,000?</div>
+            <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #cbd5e1; line-height: 1.6"><li>Locks 38.5 h and their rates</li><li>Emails Dana Okafor the invoice and a payment link</li><li>Paying it approves the hours, unless Acme disputes any</li></ul>
+            <div style="display: flex; gap: 8px; justify-content: flex-end"><span style="border: 1px solid #374151; border-radius: 8px; padding: 7px 12px; font-size: 13px">Cancel</span><span style="background: #e5e7eb; color: #111827; border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600">Issue and send</span></div>
+          </div>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.55">For anything that can’t be undone: issue, send, void, approve, end an agreement. The dialog lists what will happen, and the button names the action (“Issue and send”), never “OK”. The server sends this list with the action’s URL, so the dialog can’t describe something different from what happens.</p>
+      </section>
+
+      <section style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em">4 · Empty state that teaches</div>
+        <div style="background: #0b1120; border-radius: 10px; padding: 24px 16px; font-size: 14px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center">
+          <div style="font-weight: 600">No partner hours to review</div>
+          <div style="font-size: 13px; color: #9ca3af; max-width: 360px; line-height: 1.5">When a partner on a shared project submits a month and gives you review access, it shows up here. Invite one from the project’s page.</div>
+          <a href="#" style="font-size: 13px">How shared projects work</a>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.55">An empty list says what would appear there, why it would, and the one step that makes it happen. No mascot artwork.</p>
+      </section>
+
+      <section style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em">5 · Help panel and guide</div>
+        <div style="background: #0b1120; border-radius: 10px; padding: 16px; font-size: 14px; display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; justify-content: space-between"><strong>Help · Hours to approve</strong><span style="color: #9ca3af; font-size: 13px">? or ⌘/</span></div>
+          <div style="border: 1px solid #1f2937; background: #111827; border-radius: 8px; padding: 8px 10px">▸ What does approving a month do?</div>
+          <div style="border: 1px solid #1f2937; background: #111827; border-radius: 8px; padding: 8px 10px">▸ What if I disagree with one entry?</div>
+          <div style="border: 1px solid #1f2937; background: #111827; border-radius: 8px; padding: 8px 10px">▸ Why are two companies’ hours here?</div>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.55">Help opens beside the page and shows questions about that page first, with search across everything. The same articles make up a full guide at /help, which also shows when you’re signed out. Operators, clients and partners each see only the articles written for them.</p>
+      </section>
+
+      <section style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 12px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em">6 · First-run checklist</div>
+        <div style="background: #0b1120; border-radius: 10px; padding: 16px; font-size: 14px; display: flex; flex-direction: column; gap: 8px">
+          <div style="font-weight: 600">Set up your workspace · 2 of 4</div>
+          <div style="color: #86efac">✓ Add your first client</div>
+          <div style="color: #86efac">✓ Create an agreement</div>
+          <div>3 · Connect a way to get paid (Stripe or Square)</div>
+          <div>4 · Invite a client contact to their portal</div>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #cbd5e1; line-height: 1.55">The checklist depends on your role: an operator gets one, a client contact gets one, and an invited partner gets a three-step one. Each step is checked off because the thing actually exists, not because a tour was clicked through. You can dismiss it, and it stays dismissed.</p>
+      </section>
+    </div>
+
+    <section style="background: #1e1b4b; color: #e0e7ff; border-radius: 12px; padding: 24px 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; font-size: 14px; line-height: 1.6">
+      <div>
+        <h2 style="margin: 0 0 12px; font-size: 16px; color: #fafafa">Where it lives</h2>
+        <p style="margin: 0"><code style="color: #fde68a">docs/help/*.md</code>: one Markdown file per article. Its front matter names the audience (operator, client, partner), the routes it belongs to, and the glossary terms it defines. It’s built into the app, so help ships in the same commit as the feature it explains.</p>
+      </div>
+      <div>
+        <h2 style="margin: 0 0 12px; font-size: 16px; color: #fafafa">Kept honest by tests</h2>
+        <p style="margin: 0">Tests fail when a route has no help article, a status has no next-step line, a glossary term is defined twice, or an article links to a heading that doesn’t exist. Numbers in examples come from the same calculation classes the app uses, never typed by hand.</p>
+      </div>
+      <div>
+        <h2 style="margin: 0 0 12px; font-size: 16px; color: #fafafa">Words, once</h2>
+        <p style="margin: 0">Draft · Submitted · Reviewed · Invoiced · Approved · Disputed · Retainer · Rollover · Overage · Shared project · Partner. One definition each, used in the app, in emails, in PDFs and over MCP.</p>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
