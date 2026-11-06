@@ -28,6 +28,7 @@ final class AgentMcpToolsetsTest extends TestCase
         $session->set('svc_toolsets', ['synthetic_forecasting']);
         $this->assertTrue($toolsets->visible('synthetic_forecasting.list', $session));
         $this->assertFalse($toolsets->visible('unregistered.list', $session));
+        $this->assertSame('Synthetic forecasting tools authorized for this connection.', $toolsets->list($this->context($session))['data'][0]['description']);
     }
 
     public function test_counts_exclude_core_and_keep_scope_groups_unique_sorted_and_authorized(): void
@@ -38,14 +39,17 @@ final class AgentMcpToolsetsTest extends TestCase
             $this->tool('projects.update', ['projects:read', 'projects:write', 'tasks:read']),
             $this->tool('square.invoices.list', ['billing:read'], ['mcp.switch:mcp.read.square']),
             $this->tool('only.connection', ['mcp:use']),
+            $this->tool('time.update', ['time:write']),
+            new Operation(id: 'rest.only', title: 'REST', description: 'No MCP binding.', effect: Effect::Read, requirement: new Requirement(scopes: ['rest:read'])),
         ]);
-        $this->assertSame(['projects' => ['projects.update'], 'square' => ['square.invoices.list'], 'tasks' => ['tasks.get', 'projects.update']], $toolsets->groups());
+        $this->assertSame(['projects' => ['projects.update'], 'square' => ['square.invoices.list'], 'tasks' => ['tasks.get', 'projects.update'], 'time' => ['time.update']], $toolsets->groups());
         $session = new Session(new InMemorySessionStore);
         $context = $this->context($session);
         $this->assertSame(['data' => [
             ['name' => 'projects', 'description' => 'Projects tools authorized for this connection.', 'tool_count' => 1, 'enabled' => false],
             ['name' => 'square', 'description' => 'Square tools authorized for this connection.', 'tool_count' => 1, 'enabled' => false],
             ['name' => 'tasks', 'description' => 'Tasks tools authorized for this connection.', 'tool_count' => 2, 'enabled' => false],
+            ['name' => 'time', 'description' => 'Time tools authorized for this connection.', 'tool_count' => 1, 'enabled' => false],
         ]], $toolsets->list($context));
         foreach (AgentMcpToolsets::CORE as $name) {
             $this->assertTrue($toolsets->visible($name, $session));

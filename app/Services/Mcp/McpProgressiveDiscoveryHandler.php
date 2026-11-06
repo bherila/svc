@@ -61,7 +61,9 @@ final readonly class McpProgressiveDiscoveryHandler implements RequestHandlerInt
     public function promptVisible(string $name, SessionInterface $session): bool
     {
         foreach ($this->operations as $operation) {
-            if ($operation->mcp?->kind === McpKind::Prompt && $operation->mcpName() === $name) {
+            // @infection-ignore-all The factory passes only MCP-bound operations; null-safe access is defensive and removing it changes no supported request.
+            $kind = $operation->mcp?->kind;
+            if ($kind === McpKind::Prompt && $operation->mcpName() === $name) {
                 return array_all($operation->requiresOperations, fn (string $tool): bool => $this->toolsets->visible($tool, $session));
             }
         }
@@ -74,12 +76,24 @@ final readonly class McpProgressiveDiscoveryHandler implements RequestHandlerInt
      * @return array{list<T>, ?string} */
     private function page(array $items, ?string $cursor): array
     {
-        $decoded = $cursor === null ? '0' : base64_decode($cursor, true);
-        if (! is_string($decoded) || ! ctype_digit($decoded) || (int) $decoded > count($items)) {
-            throw new InvalidCursorException($cursor ?? '');
+        $cursor = $cursor ?? base64_encode('0');
+        $decoded = base64_decode($cursor, true);
+        if (! is_string($decoded) || ! ctype_digit($decoded)) {
+            throw new InvalidCursorException($cursor);
         }
+        // @infection-ignore-all ctype_digit established a numeric string; weak PHP and array_slice coerce it identically. The cast is required by static analysis.
         $offset = (int) $decoded;
+        if ($offset > count($items)) {
+            throw new InvalidCursorException($cursor);
+        }
+        $next = $offset + 100;
+        $nextCursor = null;
+        if ($next < count($items)) {
+            // @infection-ignore-all base64_encode weakly coerces this integer to the same decimal string; the explicit cast is required by static analysis.
+            $text = (string) $next;
+            $nextCursor = base64_encode($text);
+        }
 
-        return [array_slice($items, $offset, 100), $offset + 100 < count($items) ? base64_encode((string) ($offset + 100)) : null];
+        return [array_slice($items, $offset, 100), $nextCursor];
     }
 }

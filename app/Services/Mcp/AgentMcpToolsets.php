@@ -21,19 +21,23 @@ final readonly class AgentMcpToolsets
     {
         $groups = [];
         foreach ($this->tools as $tool) {
-            if (in_array($tool->mcpName(), self::CORE, true)) {
+            $name = $tool->mcpName();
+            if ($name === null) {
+                continue;
+            }
+            if (in_array($name, self::CORE, true)) {
                 continue;
             }
             // Square has a catalog discovery group while sharing billing scopes.
             if (in_array('mcp.switch:mcp.read.square', $tool->requirement->flags, true)) {
-                $groups['square'][] = (string) $tool->mcpName();
+                $groups['square'][] = $name;
 
                 continue;
             }
             foreach ($tool->requirement->scopes as $scope) {
-                $group = explode(':', $scope, 2)[0];
+                $group = explode(':', $scope)[0];
                 if (! in_array($group, ['mcp'], true)) {
-                    $groups[$group][] = (string) $tool->mcpName();
+                    $groups[$group][] = $name;
                 }
             }
         }

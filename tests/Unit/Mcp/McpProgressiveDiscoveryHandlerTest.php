@@ -61,8 +61,8 @@ final class McpProgressiveDiscoveryHandlerTest extends TestCase
             try {
                 $handler->handle($this->request($cursor), $session);
                 $this->fail('Invalid cursor accepted: '.$cursor);
-            } catch (InvalidCursorException) {
-                $this->addToAssertionCount(1);
+            } catch (InvalidCursorException $error) {
+                $this->assertSame($cursor, $error->cursor);
             }
         }
     }
@@ -92,6 +92,23 @@ final class McpProgressiveDiscoveryHandlerTest extends TestCase
         $this->assertFalse($handler->promptVisible('unknown', $session));
         $ping = PingRequest::fromArray(['jsonrpc' => '2.0', 'id' => 4, 'method' => 'ping']);
         $this->assertFalse($handler->supports($ping));
+    }
+
+    public function test_exactly_one_page_has_no_next_cursor(): void
+    {
+        $registry = new Registry;
+        $operations = [];
+        for ($index = 0; $index < 100; $index++) {
+            $name = 'synthetic.item_'.$index;
+            $operations[] = $this->operation($name);
+            $registry->registerTool(Tool::fromArray(['name' => $name, 'inputSchema' => ['type' => 'object']]), static fn () => null);
+        }
+        $session = new Session(new InMemorySessionStore);
+        $session->set('svc_toolsets', ['synthetic']);
+        $handler = new McpProgressiveDiscoveryHandler($registry, new AgentMcpToolsets($operations), []);
+        $result = $handler->handle($this->request(), $session)->result;
+        $this->assertCount(100, $result->tools);
+        $this->assertNull($result->nextCursor);
     }
 
     private function operation(string $name, string $scope = 'synthetic:read'): Operation
