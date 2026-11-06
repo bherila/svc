@@ -119,6 +119,14 @@ export function AccountMenu({
                         Payments
                     </DropdownMenuItem>
                 )}
+                {navigation?.shared_projects_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.shared_projects_href} />}
+                        data-test="account-shared-projects"
+                    >
+                        Shared projects
+                    </DropdownMenuItem>
+                )}
                 {navigation?.task_labels_href && (
                     <DropdownMenuItem
                         render={<Link href={navigation.task_labels_href} />}

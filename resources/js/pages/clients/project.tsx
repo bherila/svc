@@ -56,6 +56,7 @@ export default function ClientProjectDetail({
     agreements,
     task_management = null,
     files_href = null,
+    sharing_href = null,
     tasks_next_href = null,
     organization_href = null,
 }: {
@@ -71,6 +72,8 @@ export default function ClientProjectDetail({
     tasks: ProjectTask[];
     task_management?: { projects: TaskEditorProject[] } | null;
     files_href?: string | null;
+    /** Owners and admins only: who else takes part in this project. */
+    sharing_href?: string | null;
     tasks_next_href?: string | null;
     organization_href?: string | null;
     time: TimeByStatus[];
@@ -304,6 +307,11 @@ export default function ClientProjectDetail({
                 {files_href && (
                     <Link className="text-sm underline" href={files_href}>
                         Project files
+                    </Link>
+                )}
+                {sharing_href && (
+                    <Link className="text-sm underline" href={sharing_href}>
+                        Sharing with other workspaces
                     </Link>
                 )}
             </main>

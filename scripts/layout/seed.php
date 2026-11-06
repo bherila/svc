@@ -2,6 +2,7 @@
 
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
+use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientContact;
@@ -13,6 +14,7 @@ use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
+use App\Models\ClientTaskAssignment;
 use App\Models\ClientTaskLabel;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceReminderLog;
@@ -31,6 +33,7 @@ use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
 use App\Services\Payments\WorkspacePaymentConnections;
+use App\Services\SharedProjects\SharedProjectParticipations;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquareLinkService;
@@ -762,9 +765,71 @@ if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
     ];
 }
 
+// Shared projects (--shared-projects): the host's project with oversized names,
+// two participating workspaces (one of them administered by the participant
+// who reads the participant page), tasks handed across workspaces, shared and
+// internal comments, an open invitation on the host side and an invitation
+// waiting for a person who owns two workspaces. The host's rates and time are
+// priced in the rows so that one reaching a participant's page would show.
+$sharedPages = [];
+if (getenv('SVC_LAYOUT_SHARED_PROJECTS') === '1') {
+    $project->forceFill(['name' => 'Shared '.str_repeat('UnbrokenProjectName', 6), 'description' => 'SECRET-HOST-PROJECT-NOTE', 'is_visible_to_client' => true])->save();
+    $participations = app(SharedProjectParticipations::class);
+    $partnerOwner = User::factory()->create(['name' => 'Partner '.str_repeat('Owner', 12), 'email' => 'layout-partner-owner@example.test']);
+    $partnerMember = User::factory()->create(['name' => 'Partner '.str_repeat('Member', 12), 'email' => 'layout-partner-member@example.test']);
+    $partnerOne = Workspace::query()->create(['name' => str_repeat('SyntheticPartnerWorkspaceWithoutBreaks', 3), 'slug' => 'layout-partner-one', 'timezone' => 'America/Los_Angeles']);
+    $partnerTwo = Workspace::query()->create(['name' => str_repeat('SyntheticSecondPartnerWithoutBreaks', 3), 'slug' => 'layout-partner-two', 'timezone' => 'America/Los_Angeles']);
+    $partnerOne->memberships()->create(['user_id' => $partnerOwner->id, 'role' => 'owner']);
+    $partnerOne->memberships()->create(['user_id' => $partnerMember->id, 'role' => 'member']);
+    $partnerTwo->memberships()->create(['user_id' => $partnerOwner->id, 'role' => 'admin']);
+    foreach ([$partnerOne, $partnerTwo] as $partner) {
+        $invitation = $participations->invite($owner, $workspace, $project->public_id, (string) $partnerOwner->email);
+        $participations->accept($partnerOwner, $invitation->public_id, $partner);
+    }
+    $partnerCompany = ClientCompany::query()->create(['workspace_id' => $partnerOne->id, 'name' => 'SECRET-PARTNER-CLIENT', 'slug' => 'layout-partner-client']);
+    $partnerLocal = ClientProject::query()->create(['workspace_id' => $partnerOne->id, 'client_company_id' => $partnerCompany->id, 'name' => 'Our own '.str_repeat('LocalProject', 8)]);
+    ClientProject::query()->create(['workspace_id' => $partnerOne->id, 'client_company_id' => $partnerCompany->id, 'name' => 'Another own project']);
+    $participations->linkLocalProject($partnerOwner, $partnerOne, $project->public_id, $partnerLocal->public_id);
+    $inviteeUser = User::factory()->create(['name' => 'Synthetic Invitee', 'email' => 'layout-invitee@example.test']);
+    $inviteeWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticInviteeWorkspaceWithoutBreaks', 3), 'slug' => 'layout-invitee-one', 'timezone' => 'America/Los_Angeles']);
+    $inviteeWorkspace->memberships()->create(['user_id' => $inviteeUser->id, 'role' => 'owner']);
+    $inviteeMember = Workspace::query()->create(['name' => 'Invitee member only', 'slug' => 'layout-invitee-two', 'timezone' => 'America/Los_Angeles']);
+    $inviteeMember->memberships()->create(['user_id' => $inviteeUser->id, 'role' => 'member']);
+    $sharedInvitation = $participations->invite($owner, $workspace, $project->public_id, (string) $inviteeUser->email);
+    $participations->invite($owner, $workspace, $project->public_id, 'layout-open.'.str_repeat('unbroken', 8).'@example.test');
+    $sharedTasks = [];
+    foreach (range(1, 5) as $index) {
+        $task = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'description' => 'Shared details '.str_repeat('Unbroken', 12),
+            'title' => 'Shared task '.str_repeat('UnbrokenTaskTitle', 6).$index, 'status' => $index % 2 === 0 ? 'open' : 'in_progress', 'due_on' => '2026-12-0'.$index, 'is_visible_to_client' => true, 'milestone_price_amount' => 987654]);
+        $sharedTasks[] = $task;
+        foreach ([[$partnerOwner, $partnerOne], [$partnerMember, $partnerOne], [$owner, null]] as [$person, $assigneeWorkspace]) {
+            $assignment = new ClientTaskAssignment;
+            $assignment->forceFill(['workspace_id' => $workspace->id, 'client_task_id' => $task->id, 'user_id' => $person->id, 'assignee_workspace_id' => $assigneeWorkspace?->id])->save();
+        }
+    }
+    ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'SECRET-HOST-INTERNAL-TASK', 'status' => 'open', 'is_visible_to_client' => false]);
+    foreach ([['Host '.str_repeat('SharedUnbrokenComment', 8), true, null], ['SECRET-HOST-INTERNAL-COMMENT', false, null], ['Partner '.str_repeat('ReplyWithoutBreaks', 10), true, $partnerOne]] as [$body, $shared, $authorWorkspace]) {
+        $comment = new ClientComment;
+        $comment->forceFill([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'client_task_id' => $sharedTasks[0]->id,
+            'body' => $body, 'author_user_id' => $authorWorkspace === null ? $owner->id : $partnerOwner->id, 'author_name' => $authorWorkspace === null ? $owner->name : $partnerOwner->name,
+            'is_visible_to_client' => false, 'shared_with_participants' => $shared, 'author_workspace_id' => $authorWorkspace?->id,
+        ])->save();
+    }
+    $sharedPages = [
+        'shared_index' => route('shared-projects.index', $workspace, absolute: false),
+        'shared_host' => route('shared-projects.show', [$workspace, $project->public_id], absolute: false),
+        'shared_participant' => route('shared-projects.show', [$partnerOne, $project->public_id], absolute: false),
+        'shared_invitation' => route('shared-project-invitations.show', $sharedInvitation->public_id, absolute: false),
+        'shared_participant_user_id' => $partnerOwner->id,
+        'shared_invitee_user_id' => $inviteeUser->id,
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
     ...$paymentPages,
     ...$workPortal,
+    ...$sharedPages,
     ...$documentPages,
     'selector' => route('workspaces.index', absolute: false),
     'workspace_create' => route('agent-api.v1.workspaces.store', absolute: false),

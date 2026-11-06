@@ -104,4 +104,6 @@ export type WorkspaceNavigation = {
     operations_href?: string | null;
     /** Owners and admins only; null for anyone else. */
     payments_href?: string | null;
+    /** Shared projects this workspace hosts or takes part in; members only. */
+    shared_projects_href?: string | null;
 };
