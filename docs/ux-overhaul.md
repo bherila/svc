@@ -790,6 +790,37 @@ Settled by the product owner before a period away:
 
 (Appended as they happen: date, PR, question, decision, why.)
 
+- **2026-11-06, #614: does "Still deferred" follow the agreement setting?**
+  Decided by the owner: yes. Client copies show the itemised list only when
+  `show_deferred_backlog_to_client` is on, read as it stands now. With no
+  agreement, nothing is shown. Operator copies always show it.
+- **2026-11-06, #617: revenue lane calls.**
+  - **Placement:** retainer and recurring-item actuals sit in the month of
+    their own `line_date` (the cycle they pay for), not the invoice's service
+    month. Everything else uses the service month, falling back to the issue
+    date.
+  - **No double counting:** a charge already billed in advance shows as an
+    actual in its own month and is not projected again.
+  - **Agreements projected:** active, paused, terminated and expired, the
+    same set generation bills, each stopping at `ends_on`, else
+    `terminated_at`. One-time agreements are never projected.
+  - **Overage average:** only `additional_hours` and `prior_month_billable`
+    feed it. Termination billing and buy-down settlements are one-offs and
+    are left out.
+  - **Credits** net in the "Overage & other" band of their month. Unknown
+    stored line types count as "Overage & other" rather than being dropped.
+  - **Collected basis:** a payment is split across its invoice's pre-tax
+    bands. Refunds net against their payment.
+  - **Open A/R** includes tax, since it is a balance owed rather than revenue.
+  - **Toggle defaults:** projected overage is off and expenses are on, as on
+    the dashboard. A figure that's switched off is `null`.
+  - **`revenue:read` scope:** it joins the read-only preset, and
+    `finance:read` does not imply it.
+  - **Agreement health** builds one capacity ledger per agreement in force, so
+    its cost grows with the number of agreements. Accepted for now, because
+    agreements per workspace are few and the existing ledger is the source of
+    truth. Revisit if a workspace reaches dozens.
+
 ## Open questions
 
 None. Answered on 2026-11-06:
