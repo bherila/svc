@@ -199,9 +199,8 @@ final class WorkspaceNavigationFactory
 
         return new ClientModuleDestinations(
             home: $home,
-            // Client Home carries the agreement; there is no list of agreements
-            // to link to, so the tab is the section of the Overview that holds it.
-            agreements: $home.'#agreements',
+            // The engagement tools: proposals, agreements and billing schedules.
+            agreements: route('clients.agreements', $parameters, absolute: false),
             invoices: route('clients.invoices', $parameters, absolute: false),
             time: route('clients.time', $parameters, absolute: false),
             tasks: route('clients.tasks', $parameters, absolute: false),

@@ -22,3 +22,17 @@ export function formatMoney(
         currency,
     }).format(minorUnits / 100);
 }
+
+/**
+ * A typed amount in major units as minor units, or null when it is empty or not
+ * a number. The write validators own every other bound.
+ */
+export function toMinorUnits(value: string): number | null {
+    if (value.trim() === '') {
+        return null;
+    }
+
+    const amount = Number(value);
+
+    return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}

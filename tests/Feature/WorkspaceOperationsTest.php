@@ -99,8 +99,11 @@ class WorkspaceOperationsTest extends TestCase
                 ->has('workspace.clients.0.projects', 1)
                 ->has('workspace.clients.0.proposals', 1)
                 ->has('workspace.clients.0.agreements', 1)
-                ->has('workspace.clients.0.billing_schedules', 1)
-                ->where('workspace.clients.0.billing_schedules.0.agreement_id', $agreement->public_id)
+                ->where('workspace.clients.0.agreements_href', route('clients.agreements', [$workspace, $company], absolute: false))
+                ->where('workspace.clients.0.invoices_href', route('clients.invoices', [$workspace, $company], absolute: false))
+                ->missing('workspace.clients.0.billing_schedules')
+                ->missing('workspace.clients.0.invoice_create_href')
+                ->missing('workspace.clients.0.create_proposal_href')
                 ->has('workspace.clients.0.invoices', 1));
 
         $this->createInvoiceApi($manager, $workspace, $company,

@@ -95,6 +95,7 @@ class WorkspaceNavigationTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('workspaceNavigation.clients.0.destinations.home', $base)
+                ->where('workspaceNavigation.clients.0.destinations.agreements', $base.'/agreements')
                 ->where('workspaceNavigation.clients.0.destinations.invoices', $base.'/invoices')
                 ->where('workspaceNavigation.clients.0.destinations.time', $base.'/time')
                 ->where('workspaceNavigation.clients.0.destinations.tasks', $base.'/tasks')

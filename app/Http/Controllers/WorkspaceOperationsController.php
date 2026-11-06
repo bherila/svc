@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
-use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
@@ -29,7 +28,6 @@ use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
-use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
 use App\Support\Billing\InvoiceStatus;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -37,8 +35,6 @@ use Inertia\Response;
 
 class WorkspaceOperationsController extends Controller
 {
-    public function __construct(private readonly BillingScheduleReadPresenter $schedules) {}
-
     public function __invoke(Request $request, Workspace $workspace): Response
     {
         $actor = $request->user();
@@ -100,16 +96,6 @@ class WorkspaceOperationsController extends Controller
                 ->latest('id')
                 ->get();
         $agreementsByCompany = $agreements->groupBy('client_company_id');
-
-        $schedules = $companyIds === []
-            ? collect()
-            : ClientBillingSchedule::query()
-                ->where('workspace_id', $workspace->id)
-                ->whereIn('client_company_id', $companyIds)
-                ->with('agreement')
-                ->latest('id')
-                ->get();
-        $schedulesByCompany = $schedules->groupBy('client_company_id');
 
         $invoices = $companyIds === []
             ? collect()
@@ -221,15 +207,13 @@ class WorkspaceOperationsController extends Controller
 
             $clients[] = [
                 ...AgentClientPresenter::identity($company),
-                'invoice_create_href' => $canManage ? route('agent-api.v1.invoices.store', $workspace, absolute: false) : null,
-                'version' => AgentApiVersion::for($company),
-                'create_proposal_href' => $canManage ? route('agent-api.v1.proposals.store', [$workspace], absolute: false) : null,
+                // Where the re-homed tools live now; Operations links to them.
+                'agreements_href' => route('clients.agreements', [$workspace, $company], absolute: false),
+                'invoices_href' => route('clients.invoices', [$workspace, $company], absolute: false),
                 'projects' => $projects,
                 'proposals' => ($proposalsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientProposal $proposal): array => [
                         ...AgentProposalPresenter::summary($proposal),
-                        'version' => AgentApiVersion::for($proposal),
-                        'send_href' => $canManage && $proposal->status === 'draft' ? route('agent-api.v1.proposals.send', [$workspace, $proposal->public_id], absolute: false) : null,
                         'attachments' => $attachmentPayload('proposal', $proposal->public_id),
                         'attachment_panel' => $filePanel('proposal', $proposal->public_id),
                     ])
@@ -237,16 +221,9 @@ class WorkspaceOperationsController extends Controller
                 'agreements' => ($agreementsByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientAgreement $agreement): array => [
                         ...AgreementReadPresenter::summary($agreement),
-                        'version' => AgentApiVersion::for($agreement),
-                        'activate_href' => $canManage && $agreement->status === 'draft' ? route('agent-api.v1.agreements.activate', [$workspace, $agreement->public_id], absolute: false) : null,
-                        'create_schedule_href' => $canManage && $agreement->status === 'active' && ! $schedules->contains('client_agreement_id', $agreement->id) ? route('agent-api.v1.billing-schedules.store', [$workspace], absolute: false) : null,
-                        'currency' => $agreement->currency,
                         'attachments' => $attachmentPayload('agreement', $agreement->public_id),
                         'attachment_panel' => $filePanel('agreement', $agreement->public_id),
                     ])
-                    ->all(),
-                'billing_schedules' => ($schedulesByCompany->get($company->id) ?? collect())
-                    ->map(fn (ClientBillingSchedule $schedule): array => [...$this->schedules->present($schedule), 'generate_href' => $canManage && $schedule->is_active ? route('agent-api.v1.billing-schedules.generate', [$workspace, $schedule->public_id], absolute: false) : null])
                     ->all(),
                 'invoices' => ($invoicesByCompany->get($company->id) ?? collect())
                     ->map(fn (ClientInvoice $invoice): array => [
