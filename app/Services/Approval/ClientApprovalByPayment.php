@@ -8,7 +8,6 @@ use App\Models\ClientTimeEntry;
 use App\Support\Approval\ClientApprovalSource;
 use App\Support\Approval\ClientApprovalVerdict;
 use App\Support\Billing\InvoiceStatus;
-use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
 
@@ -45,57 +44,62 @@ final class ClientApprovalByPayment
      */
     public function approve(int $workspaceId, int $invoiceId, ?int $recordedByUserId = null): array
     {
-        return DB::transaction(function () use ($workspaceId, $invoiceId, $recordedByUserId): array {
-            $invoice = ClientInvoice::query()
-                ->where('workspace_id', $workspaceId)
-                ->whereKey($invoiceId)
-                ->tap(Locks::forUpdate())
-                ->first();
-            // Read again, after commit and under the lock: this runs on what
-            // is true now, not on what the payment expected.
-            if (! $invoice instanceof ClientInvoice || $invoice->status !== InvoiceStatus::Paid->value) {
-                return ['time' => 0, 'expenses' => 0];
-            }
+        // No transaction and no row lock, on purpose. This runs after the
+        // payment committed, and everything it writes is a single compare-and-
+        // set statement on rows that are only ever stamped, never read back for
+        // a decision: whether the stamp still counts is read from the invoice's
+        // status each time ({@see \App\Support\Approval\ClientApprovalVerdict}),
+        // so a refund that lands between the read and the write leaves a stamp
+        // that simply does not hold. Taking locks here would also open a second
+        // transaction while the payment's own is still being closed out.
+        $invoice = ClientInvoice::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereKey($invoiceId)
+            ->first();
+        // Read again, after commit: this runs on what is true now, not on what
+        // the payment expected.
+        if (! $invoice instanceof ClientInvoice || $invoice->status !== InvoiceStatus::Paid->value) {
+            return ['time' => 0, 'expenses' => 0];
+        }
 
-            $now = $this->clock->now($invoice->workspace);
-            $lineIds = $invoice->lines()->where('workspace_id', $workspaceId)->pluck('id');
-            if ($lineIds->isEmpty()) {
-                return ['time' => 0, 'expenses' => 0];
-            }
+        $now = $this->clock->now($invoice->workspace);
+        $lineIds = $invoice->lines()->where('workspace_id', $workspaceId)->pluck('id');
+        if ($lineIds->isEmpty()) {
+            return ['time' => 0, 'expenses' => 0];
+        }
 
-            $entryIds = DB::table('client_invoice_line_time_entries')
-                ->where('workspace_id', $workspaceId)
-                ->whereIn('client_invoice_line_id', $lineIds)
-                ->pluck('client_time_entry_id');
+        $entryIds = DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->pluck('client_time_entry_id');
 
-            $stamp = [
-                'client_approved_at' => $now,
-                'client_approval_source' => ClientApprovalSource::Payment->value,
-                'client_approved_by_user_id' => null,
-                'lock_version' => DB::raw('lock_version + 1'),
-            ];
+        $stamp = [
+            'client_approved_at' => $now,
+            'client_approval_source' => ClientApprovalSource::Payment->value,
+            'client_approved_by_user_id' => null,
+            'lock_version' => DB::raw('lock_version + 1'),
+        ];
 
-            $time = ClientTimeEntry::query()
-                ->where('workspace_id', $workspaceId)
-                ->whereIn('id', $entryIds)
-                ->whereNull('client_disputed_at')
-                ->where(fn ($open) => $open->whereNull('client_approved_at')
-                    ->orWhere('client_approval_source', ClientApprovalSource::Payment->value))
-                ->when($recordedByUserId !== null, fn ($rows) => $rows->where('user_id', '!=', $recordedByUserId))
-                ->update($stamp);
+        $time = ClientTimeEntry::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('id', $entryIds)
+            ->whereNull('client_disputed_at')
+            ->where(fn ($open) => $open->whereNull('client_approved_at')
+                ->orWhere('client_approval_source', ClientApprovalSource::Payment->value))
+            ->when($recordedByUserId !== null, fn ($rows) => $rows->where('user_id', '!=', $recordedByUserId))
+            ->update($stamp);
 
-            $expenses = ClientExpense::query()
-                ->where('workspace_id', $workspaceId)
-                ->whereIn('client_invoice_line_id', $lineIds)
-                ->whereNull('client_disputed_at')
-                ->where(fn ($open) => $open->whereNull('client_approved_at')
-                    ->orWhere('client_approval_source', ClientApprovalSource::Payment->value))
-                // An expense whose creator is unknown has no author to protect.
-                ->when($recordedByUserId !== null, fn ($rows) => $rows->where(fn ($by) => $by
-                    ->whereNull('created_by_user_id')->orWhere('created_by_user_id', '!=', $recordedByUserId)))
-                ->update($stamp);
+        $expenses = ClientExpense::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->whereNull('client_disputed_at')
+            ->where(fn ($open) => $open->whereNull('client_approved_at')
+                ->orWhere('client_approval_source', ClientApprovalSource::Payment->value))
+            // An expense whose creator is unknown has no author to protect.
+            ->when($recordedByUserId !== null, fn ($rows) => $rows->where(fn ($by) => $by
+                ->whereNull('created_by_user_id')->orWhere('created_by_user_id', '!=', $recordedByUserId)))
+            ->update($stamp);
 
-            return ['time' => $time, 'expenses' => $expenses];
-        });
+        return ['time' => $time, 'expenses' => $expenses];
     }
 }
