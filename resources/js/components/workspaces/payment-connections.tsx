@@ -18,6 +18,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { apiRequest } from '@/lib/api';
+import { statusLabel } from '@/lib/labels';
 
 export interface PaymentConnectionView {
     display_name: string | null;
@@ -172,7 +173,7 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                         {connection.environment !== null && (
                             <div>
                                 <dt className="text-muted-foreground">Mode</dt>
-                                <dd>{connection.environment}</dd>
+                                <dd>{statusLabel(connection.environment)}</dd>
                             </div>
                         )}
                         {connection.reused_from !== null && (

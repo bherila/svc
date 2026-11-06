@@ -64,6 +64,9 @@ describe('payment connections', () => {
                 ?.textContent,
         ).toBe('rk_live_…a1b2');
         expect(screen.queryByLabelText(/restricted key/i)).toBeNull();
+        // The stored "live" reads as a word, not as the column.
+        expect(screen.getByText('Live')).toBeTruthy();
+        expect(screen.queryByText('live')).toBeNull();
     });
 
     it('sends the key once through the session API and clears it', async () => {
