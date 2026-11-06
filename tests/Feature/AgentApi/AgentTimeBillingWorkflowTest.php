@@ -47,6 +47,8 @@ final class AgentTimeBillingWorkflowTest extends TestCase
         ]);
         $entry = $logged['structuredContent']['data'][0];
         $this->assertArrayNotHasKey('billing_rate_amount', $entry);
+        // Nobody approves their own time: a colleague's hour is what the owner approves.
+        ClientTimeEntry::query()->where('public_id', $entry['id'])->update(['user_id' => $this->staff($workspace)->id]);
 
         $approved = $this->callTool($session, 'time_entries.approve', [
             'workspace_id' => $workspace->public_id,
@@ -89,7 +91,7 @@ final class AgentTimeBillingWorkflowTest extends TestCase
                 'workspace_id' => $workspace->id,
                 'client_company_id' => $company->id,
                 'client_project_id' => $project->id,
-                'user_id' => $owner->id,
+                'user_id' => $this->staff($workspace)->id,
                 'worked_on' => $case['date'],
                 'minutes' => 60,
                 'description' => 'Effective rate test',
@@ -364,13 +366,27 @@ final class AgentTimeBillingWorkflowTest extends TestCase
         ]);
     }
 
+    private function staff(Workspace $workspace): User
+    {
+        $existing = $workspace->memberships()->where('role', 'member')->value('user_id');
+        if ($existing !== null) {
+            return User::query()->findOrFail($existing);
+        }
+        $staff = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $staff->id, 'role' => 'member']);
+
+        return $staff;
+    }
+
     private function time(User $user, Workspace $workspace, ClientCompany $company, ClientProject $project, bool $billable): ClientTimeEntry
     {
         return ClientTimeEntry::query()->create([
             'workspace_id' => $workspace->id,
             'client_company_id' => $company->id,
             'client_project_id' => $project->id,
-            'user_id' => $user->id,
+            // Whoever the caller names, the author is a colleague: the owner
+            // approves other people's time, never their own.
+            'user_id' => $this->staff($workspace)->id,
             'worked_on' => '2026-08-23',
             'minutes' => 30,
             'description' => 'Approval rate test',
