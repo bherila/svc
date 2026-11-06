@@ -909,17 +909,20 @@ try {
                 name: /^Approve .* from /,
             });
             await expect(approveButtons).toHaveCount(2);
+
             // A checkmark icon on every approve control, and never a filled one:
             // the page's one filled button is Pay.
             for (const button of await approveButtons.all()) {
                 await expect(button.locator('svg.lucide-check')).toHaveCount(1);
                 await expect(button).not.toHaveClass(/bg-primary/);
             }
+
             for (const summary of await toApprove
                 .getByText(/^Show the \d+ rows?$/)
                 .all()) {
                 await summary.click();
             }
+
             await expect(
                 toApprove
                     .getByRole('button', {
