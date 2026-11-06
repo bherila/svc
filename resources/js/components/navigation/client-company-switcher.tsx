@@ -124,7 +124,11 @@ export function ClientCompanySwitcher({
                 variant="secondary"
                 size="sm"
                 // Contains the visible text, as WCAG 2.5.3 (label in name) requires.
-                aria-label={`Current client: ${current?.name ?? 'none selected'}`}
+                aria-label={
+                    current
+                        ? `Current client: ${current.name}`
+                        : 'Select a client'
+                }
                 aria-expanded={open}
                 aria-haspopup="dialog"
                 aria-controls={open ? listId : undefined}

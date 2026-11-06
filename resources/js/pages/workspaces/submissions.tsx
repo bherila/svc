@@ -84,6 +84,12 @@ function RowAction({
     onSubmit: () => void;
     onWithdraw: () => void;
 }) {
+    // An approved row has nothing left to do; it stands, and the refusal words
+    // would only say something untrue about it.
+    if (row.state === 'approved') {
+        return null;
+    }
+
     if (row.can_withdraw) {
         return (
             <Button
@@ -223,7 +229,9 @@ export default function Submissions({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>{workspace.name}</CardTitle>
+                        <CardTitle className="wrap-anywhere">
+                            {workspace.name}
+                        </CardTitle>
                     </CardHeader>
                     <CardContent className="grid grid-cols-1 gap-4">
                         <p
@@ -314,7 +322,7 @@ export default function Submissions({
                                 .
                             </p>
                         ) : (
-                            <Table>
+                            <Table scrollLabel="Hours">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead scope="col">Date</TableHead>
@@ -411,7 +419,7 @@ export default function Submissions({
                             <CardTitle>Expenses</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <Table>
+                            <Table scrollLabel="Expenses">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead scope="col">Date</TableHead>

@@ -482,16 +482,13 @@ function LightWorkspace({
                     approved
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                        variant="outline"
-                        className="min-h-11 md:min-h-8"
-                        render={
-                            <Link href={light.submissions_href}>
-                                <SendIcon aria-hidden="true" />
-                                Submit for review
-                            </Link>
-                        }
-                    />
+                    <Link
+                        href={light.submissions_href}
+                        className="inline-flex min-h-11 items-center gap-1.5 text-sm underline underline-offset-4 md:min-h-8"
+                    >
+                        <SendIcon aria-hidden="true" className="size-4" />
+                        Submit for review
+                    </Link>
                     <Link
                         href={light.timesheet_href}
                         className="inline-flex min-h-11 items-center text-sm underline underline-offset-4 md:min-h-8"

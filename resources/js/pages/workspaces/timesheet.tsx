@@ -5,7 +5,6 @@ import {
     DownloadIcon,
     FileTextIcon,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Table,
@@ -93,34 +92,30 @@ export default function Timesheet({
                             approved in {timesheet.period_label}.
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                                variant="outline"
-                                className="min-h-11 md:min-h-8"
-                                render={
-                                    <a
-                                        href={links.csv_href}
-                                        download
-                                        data-test="export-csv"
-                                    />
-                                }
+                            <a
+                                href={links.csv_href}
+                                download
+                                data-test="export-csv"
+                                className="inline-flex min-h-11 items-center gap-1.5 text-sm underline underline-offset-4 md:min-h-8"
                             >
-                                <DownloadIcon aria-hidden="true" />
+                                <DownloadIcon
+                                    aria-hidden="true"
+                                    className="size-4"
+                                />
                                 Download CSV
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="min-h-11 md:min-h-8"
-                                render={
-                                    <a
-                                        href={links.pdf_href}
-                                        download
-                                        data-test="export-pdf"
-                                    />
-                                }
+                            </a>
+                            <a
+                                href={links.pdf_href}
+                                download
+                                data-test="export-pdf"
+                                className="inline-flex min-h-11 items-center gap-1.5 text-sm underline underline-offset-4 md:min-h-8"
                             >
-                                <FileTextIcon aria-hidden="true" />
+                                <FileTextIcon
+                                    aria-hidden="true"
+                                    className="size-4"
+                                />
                                 Download PDF
-                            </Button>
+                            </a>
                             <Link
                                 href={links.submissions_href}
                                 className="inline-flex min-h-11 items-center text-sm underline underline-offset-4 md:min-h-8"
@@ -140,7 +135,7 @@ export default function Timesheet({
                                 client approves them.
                             </p>
                         ) : (
-                            <Table>
+                            <Table scrollLabel="Approved hours">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead scope="col">Date</TableHead>
