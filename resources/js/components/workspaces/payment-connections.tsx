@@ -159,6 +159,16 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                 </dd>
                             </div>
                         )}
+                        {connection.location_id !== null && (
+                            <div>
+                                <dt className="text-muted-foreground">
+                                    Location
+                                </dt>
+                                <dd className="font-mono wrap-anywhere">
+                                    {connection.location_id}
+                                </dd>
+                            </div>
+                        )}
                         {connection.environment !== null && (
                             <div>
                                 <dt className="text-muted-foreground">Mode</dt>
@@ -336,11 +346,12 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                 <SelectTrigger id={`${view.processor}-reuse`}>
                                     <SelectValue placeholder="Choose a connection" />
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent className="w-auto max-w-[min(28rem,calc(100vw-2rem))] min-w-(--anchor-width)">
                                     {view.reusable.map((item) => (
                                         <SelectItem
                                             key={item.id}
                                             value={item.id}
+                                            className="*:first:shrink *:first:wrap-anywhere *:first:whitespace-normal"
                                         >
                                             {item.label}
                                         </SelectItem>

@@ -56,7 +56,14 @@ $receiptWrite = getenv('SVC_LAYOUT_RECEIPTS') === '1' && is_string($requestPath)
     ($method === 'POST' && $requestPath === ($fixture['receipt_upload'] ?? null))
     || ($method === 'DELETE' && isset($fixture['receipt_prefix']) && preg_match('#^'.preg_quote($fixture['receipt_prefix'], '#').'[0-9a-f-]{36}$#D', $requestPath) === 1)
 );
-if ($method !== 'GET' && ! $projectWrite && ! $workspaceWrite && ! $receiptWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
+// The payments page's validation refusal: a POST of a key that is not a Stripe
+// key is refused before any processor is asked, so it can reach the real route.
+$paymentsWrite = getenv('SVC_LAYOUT_PAYMENTS') === '1' && $method === 'POST' && is_string($requestPath)
+    && preg_match('#^/workspaces/[0-9a-f-]{36}/payments/stripe$#D', $requestPath) === 1
+    && is_array($paymentsBody = json_decode((string) file_get_contents('php://input'), true))
+    && is_string($paymentsBody['secret'] ?? null)
+    && preg_match('/^(?:rk|sk)_/', $paymentsBody['secret']) !== 1;
+if ($method !== 'GET' && ! $paymentsWrite && ! $projectWrite && ! $workspaceWrite && ! $receiptWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }
