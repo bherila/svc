@@ -835,6 +835,30 @@ Settled by the product owner before a period away:
   - **Payments page:** there was no workspace settings page, so it has its own
     page at `/workspaces/{workspace}/payments`. It will move into settings
     when one exists.
+- **2026-11-06, #619: Operations is not retired yet.** The Operations page
+  still hosts live tools with no other home:
+  - proposal draft and send;
+  - agreement activation;
+  - billing schedule creation and generating due invoices;
+  - the per-project manual time form;
+  - the client attachment panels.
+
+  So it stays reachable unchanged from the workspace menu as "Operations
+  (classic tools)", inside the new navbar. Its tests are kept. The Dashboard
+  becomes the landing page and links into it. Operations is retired in a
+  later step, once the client-overview and invoice work has re-homed each
+  tool.
+- **2026-11-06, #619: other navigation calls.**
+  - **Lint:** the repo lints with oxlint, so the UI rules are a local oxlint
+    plugin.
+  - **Agreements tab:** it is an anchor on the client overview until an
+    agreements list exists.
+  - **Cross-client Invoices, Time and Finance pages:** owners and admins
+    only.
+  - **Members' workspace navigation:** Dashboard and Clients.
+- **2026-11-06, #617: mutation gate.** The mutation job can show success
+  while the score is under its 82% threshold. Before every merge, the actual
+  counts in the log are read.
 
 ## Open questions
 
