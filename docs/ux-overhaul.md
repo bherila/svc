@@ -427,6 +427,11 @@ Decided on the design canvas (2026-11-06):
   "Show time as 2.5 h / 2:30", applies to every screen, timesheet and PDF that
   person views. Invoices always use decimal. One shared parser and one shared
   formatter, with a test that fails if a duration is printed without them.
+- **Buttons or links.** A button does something that changes state (approve,
+  pay, issue, log time, submit). A link goes somewhere to look (view,
+  preview, open, see all). Actions in a page's header action bar are
+  outlined buttons even when they navigate; actions inside a card are
+  links.
 - **Buttons.** A page has at most one filled button, and only when one thing
   needs doing now. Every other action is outlined, the same width when they
   are stacked, and right-aligned with the row's main action.
@@ -536,6 +541,21 @@ the same document. They become one:
   own dark modes and printing invert it correctly. The screen and PDF share
   one document component with a `paper` or `screen` surface, and print CSS
   always forces `paper`.
+- **PDF renderer**: generation goes behind an `InvoicePdfRenderer` interface
+  (render an `InvoiceDocument` for an audience, and return bytes plus page
+  count), chosen by configuration. Dompdf is the only implementation for
+  now. A LaTeX engine (Tectonic) or headless Chromium can be added later as
+  more implementations, checked by the same golden-fact tests; both are
+  deferred. A LaTeX engine would need strict escaping of every interpolated
+  value, shell-escape off, a sandbox and a timeout, because invoice text is
+  client-supplied.
+- **Dompdf constraints for the template**: layout uses tables and
+  inline-block only, with no flex or grid. The footer is a fixed-position
+  page footer beside the existing page-number script, not a flex
+  `margin-top: auto`. There is no rotated watermark: the proforma uses the
+  header stamp. Inter is shipped as TTF and registered once, with DejaVu
+  Sans as the fallback. Section headings are kept with their first rows
+  using `page-break-inside: avoid` on small groups.
 - **PDF**: stays on Dompdf, so layout uses tables rather than flex. The cover
   page holds the totals and the pay link. Following pages hold the hours
   statement, still deferred, appendix A (time entries) and appendix B
