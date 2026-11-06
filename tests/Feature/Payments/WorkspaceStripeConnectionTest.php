@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Models\WorkspacePaymentConnection;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
+use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Payments\PaymentConnectionService;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Support\Payments\PaymentProcessor;
@@ -380,6 +381,101 @@ final class WorkspaceStripeConnectionTest extends TestCase
         $reused = $this->activeFor($target);
         $this->assertNull($reused?->secret());
         $this->assertSame(self::KEY_A, app(WorkspacePaymentConnections::class)->credentialSource($reused)?->secret());
+    }
+
+    // ---- publishable key ----
+
+    public function test_a_publishable_key_in_the_restricted_keys_mode_is_stored_and_shown_on_the_page(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => '  pk_live_syntheticpublishable0001  '])->assertNoContent();
+
+        $this->assertSame('pk_live_syntheticpublishable0001', $this->activeFor($workspace)?->publishable_key);
+        $this->actingAs($owner)->get(route('workspaces.payments', $workspace))->assertInertia(fn (Assert $page) => $page
+            ->where('processors.0.connection.publishable_key', 'pk_live_syntheticpublishable0001'));
+    }
+
+    public function test_the_publishable_key_is_optional_and_a_blank_one_is_stored_as_none(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-none');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => ''])->assertNoContent();
+        $this->assertNull($this->activeFor($workspace)?->publishable_key);
+
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => '   '])->assertNoContent();
+        $this->assertNull($this->activeFor($workspace)?->publishable_key);
+    }
+
+    public function test_a_publishable_key_of_the_other_mode_or_of_no_mode_is_refused_and_stores_nothing(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-mode');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => 'pk_live_syntheticpublishable0001'])->assertNoContent();
+        $reads = count($this->callsTo('get', '/v1/account'));
+
+        foreach (['pk_test_syntheticpublishable0002', 'sk_live_not_a_publishable_key', 'pk_live_', 'pk_live_has spaces in it'] as $wrong) {
+            $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_B, 'publishable_key' => $wrong])
+                ->assertSessionHasErrors('publishable_key')
+                ->assertSessionDoesntHaveErrors('secret');
+        }
+
+        // Refused before Stripe is called, and the earlier connection stands.
+        $this->assertSame($reads, count($this->callsTo('get', '/v1/account')));
+        $this->assertSame(self::KEY_A, $this->activeFor($workspace)?->secret());
+        $this->assertSame('pk_live_syntheticpublishable0001', $this->activeFor($workspace)?->publishable_key);
+    }
+
+    public function test_replacing_the_key_without_a_publishable_key_drops_the_old_one(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-replace');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => 'pk_live_syntheticpublishable0001'])->assertNoContent();
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_B])->assertNoContent();
+
+        $this->assertNull($this->activeFor($workspace)?->publishable_key);
+    }
+
+    public function test_a_reused_connection_shows_and_uses_the_sources_publishable_key(): void
+    {
+        [$owner, $source] = $this->tenant('pk-src');
+        $target = $this->secondWorkspace($owner, 'pk-tgt');
+        $this->actingAs($owner)->post($this->url($source), ['secret' => self::KEY_A, 'publishable_key' => 'pk_live_syntheticpublishable0001'])->assertNoContent();
+        $this->actingAs($owner)->post($this->url($target).'/reuse', ['source' => $this->activeFor($source)?->public_id])->assertNoContent();
+
+        $this->assertNull($this->activeFor($target)?->publishable_key);
+        $this->assertSame('pk_live_syntheticpublishable0001', app(PaymentConnectionResolver::class)->stripePublishableKey($target));
+        $this->actingAs($owner)->get(route('workspaces.payments', $target))->assertInertia(fn (Assert $page) => $page
+            ->where('processors.0.connection.publishable_key', 'pk_live_syntheticpublishable0001'));
+    }
+
+    public function test_a_connection_with_no_publishable_key_resolves_none_and_never_the_deployments(): void
+    {
+        config(['services.stripe.publishable_key' => 'pk_live_deployment_key_0001']);
+        [$owner, $workspace] = $this->tenant('pk-fail');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A])->assertNoContent();
+
+        $this->assertNull(app(PaymentConnectionResolver::class)->stripePublishableKey($workspace));
+    }
+
+    public function test_a_connection_made_from_the_environment_uses_the_deployments_publishable_key(): void
+    {
+        config(['services.stripe.publishable_key' => 'pk_live_deployment_key_0001']);
+        [$owner, $workspace] = $this->tenant('pk-env');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A])->assertNoContent();
+        $this->markEnvironmentMigrated($workspace);
+
+        $this->assertSame('pk_live_deployment_key_0001', app(PaymentConnectionResolver::class)->stripePublishableKey($workspace));
+
+        config(['services.stripe.publishable_key' => '']);
+        $this->assertNull(app(PaymentConnectionResolver::class)->stripePublishableKey($workspace));
+    }
+
+    public function test_a_revoked_source_leaves_a_reusing_workspace_with_no_publishable_key(): void
+    {
+        [$owner, $source] = $this->tenant('pk-rev-src');
+        $target = $this->secondWorkspace($owner, 'pk-rev-tgt');
+        $this->actingAs($owner)->post($this->url($source), ['secret' => self::KEY_A, 'publishable_key' => 'pk_live_syntheticpublishable0001'])->assertNoContent();
+        $this->actingAs($owner)->post($this->url($target).'/reuse', ['source' => $this->activeFor($source)?->public_id])->assertNoContent();
+        $this->actingAs($owner)->delete($this->url($source))->assertNoContent();
+
+        $this->assertNull(app(PaymentConnectionResolver::class)->stripePublishableKey($target));
     }
 
     public function test_a_connection_is_not_reusable_across_different_owners(): void

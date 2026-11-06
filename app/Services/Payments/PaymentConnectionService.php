@@ -75,6 +75,7 @@ final class PaymentConnectionService
                     'webhook_secret' => $webhookSecret,
                     'webhook_endpoint_id' => $registered?->endpointId,
                     'location_id' => $account->locationId,
+                    'publishable_key' => $credentials->publishableKey,
                     'endpoint_token' => $token,
                 ]);
                 // The old endpoint is deleted only once this change is final.

@@ -13,6 +13,8 @@ final readonly class PaymentCredentials
         #[SensitiveParameter] private ?string $webhookSecret = null,
         public ?string $locationId = null,
         public ?string $environment = null,
+        /** Stripe: the publishable key, which is not a secret. */
+        public ?string $publishableKey = null,
     ) {}
 
     public function secret(): string

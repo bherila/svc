@@ -48,6 +48,7 @@ describe('payment connections', () => {
                             environment: 'live',
                             key_hint: 'rk_live_…a1b2',
                             location_id: null,
+                            publishable_key: 'pk_live_syntheticpublishable0001',
                             reused_from: null,
                             usable: true,
                             webhook_url: null,
@@ -64,6 +65,11 @@ describe('payment connections', () => {
                 ?.textContent,
         ).toBe('rk_live_…a1b2');
         expect(screen.queryByLabelText(/restricted key/i)).toBeNull();
+        // A publishable key is not a secret, so it is shown as stored.
+        expect(
+            container.querySelector('[data-test="payment-stripe-publishable"]')
+                ?.textContent,
+        ).toBe('pk_live_syntheticpublishable0001');
         // The stored "live" reads as a word, not as the column.
         expect(screen.getByText('Live')).toBeTruthy();
         expect(screen.queryByText('live')).toBeNull();
@@ -84,9 +90,42 @@ describe('payment connections', () => {
         expect(mocks.apiRequest).toHaveBeenCalledWith(
             'POST',
             '/synthetic/save',
-            { secret: 'rk_test_synthetic_key' },
+            { secret: 'rk_test_synthetic_key', publishable_key: '' },
         );
         expect(field.value).toBe('');
+    });
+
+    it('sends the publishable key beside the restricted key and shows its refusal', async () => {
+        mocks.apiRequest.mockResolvedValue({
+            ok: false,
+            status: 422,
+            message: 'Invalid',
+            errors: {
+                publishable_key: ['Use keys from the same mode.'],
+            },
+        });
+        render(<PaymentConnections processors={[stripe()]} />);
+
+        fireEvent.change(screen.getByLabelText('Stripe restricted key'), {
+            target: { value: 'rk_live_synthetic_key' },
+        });
+        fireEvent.change(screen.getByLabelText('Stripe publishable key'), {
+            target: { value: 'pk_test_syntheticpublishable0002' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        expect(
+            await screen.findByText('Use keys from the same mode.'),
+        ).toBeTruthy();
+        expect(mocks.apiRequest).toHaveBeenCalledWith(
+            'POST',
+            '/synthetic/save',
+            {
+                secret: 'rk_live_synthetic_key',
+                publishable_key: 'pk_test_syntheticpublishable0002',
+            },
+        );
+        expect(mocks.reload).not.toHaveBeenCalled();
     });
 
     it('shows the processor refusal and keeps the form', async () => {

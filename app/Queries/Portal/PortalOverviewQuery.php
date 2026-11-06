@@ -13,8 +13,8 @@ use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\Balances\MonthSummary;
 use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\InvoiceLedgerBuilder;
+use App\Services\Billing\InvoicePaymentOptionsReader;
 use App\Services\Portal\NextInvoiceEstimator;
-use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Support\Billing\InvoiceDeferredWorkDisclosure;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
@@ -22,6 +22,7 @@ use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\ClientHome\InvoiceSummary;
 use App\Support\Portal\PortalBalance;
+use App\Support\Portal\PortalPayTarget;
 use App\Support\Portal\RetainerPeriodUse;
 use App\Support\Revenue\ProjectedAgreement;
 use App\Support\Revenue\ProjectionInputs;
@@ -64,6 +65,7 @@ final class PortalOverviewQuery
         private readonly NextInvoiceEstimator $estimator,
         private readonly BillingCycleResolver $cycles,
         private readonly WorkspaceClock $clock,
+        private readonly InvoicePaymentOptionsReader $payments,
     ) {}
 
     /**
@@ -139,9 +141,11 @@ final class PortalOverviewQuery
     }
 
     /**
-     * Where "Pay" goes: the invoice's hosted payment page when one is linked,
-     * and always the invoice itself. Both are finished here; the browser
-     * assembles nothing. A null `href` is a card with no Pay button.
+     * Where "Pay" goes, from the same options the invoice page offers
+     * ({@see InvoicePaymentOptionsReader}): the invoice's pay section when the
+     * workspace takes card payment, Square's hosted page when that is all
+     * there is. The invoice itself is always linked. Both are finished here;
+     * the browser assembles nothing. A null `href` is a card with no Pay button.
      *
      * @param  Collection<int, ClientInvoice>  $open
      * @return array{href: string|null, invoice_href: string|null}
@@ -153,9 +157,11 @@ final class PortalOverviewQuery
             return ['href' => null, 'invoice_href' => null];
         }
 
+        $invoiceHref = route('portal.invoice', [$company, $first], absolute: false);
+
         return [
-            'href' => app(SquareInvoicePage::class)->forInvoice($company->workspace, $first)['url'] ?? null,
-            'invoice_href' => route('portal.invoice', [$company, $first], absolute: false),
+            'href' => PortalPayTarget::href($this->payments->for($company->workspace, $first), $invoiceHref),
+            'invoice_href' => $invoiceHref,
         ];
     }
 

@@ -42,13 +42,17 @@ final class InvoicePaymentOptionsReader
             return InvoicePaymentOptions::compose(false, null, false, false, false, null, '');
         }
 
+        // The key of the account the intent is created on, or null when this
+        // workspace's charging account has none: see stripePublishableKey().
+        $publishableKey = $this->connections->stripePublishableKey($workspace);
+
         return InvoicePaymentOptions::compose(
             true,
             $this->square->forInvoice($workspace, $invoice)['url'] ?? null,
             $this->collection->isSquareCollected($invoice),
             $this->stripe->access($workspace) !== null,
-            $this->connections->stripeServedByEnvironment($workspace),
-            $this->stripe->publishableKey(),
+            $publishableKey !== null,
+            $publishableKey,
             route('svc.billing.invoices.stripe-payment-intent', [$workspace, $invoice], absolute: false),
         );
     }

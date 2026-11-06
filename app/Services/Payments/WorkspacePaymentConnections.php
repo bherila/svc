@@ -221,7 +221,7 @@ final class WorkspacePaymentConnections
      * processor: connecting again replaces the earlier one, which is revoked
      * locally in the same transaction.
      *
-     * @param  array{external_account_id: string, display_name?: string|null, environment?: string|null, secret: string, webhook_secret?: string|null, webhook_endpoint_id?: string|null, location_id?: string|null, endpoint_token?: string}  $account
+     * @param  array{external_account_id: string, display_name?: string|null, environment?: string|null, secret: string, webhook_secret?: string|null, webhook_endpoint_id?: string|null, location_id?: string|null, publishable_key?: string|null, endpoint_token?: string}  $account
      */
     public function connect(Workspace $workspace, PaymentProcessor $processor, ConnectionOrigin $origin, ?User $actor, #[SensitiveParameter] array $account): WorkspacePaymentConnection
     {
@@ -443,6 +443,7 @@ final class WorkspacePaymentConnections
             'webhook_secret' => $account['webhook_secret'] ?? null,
             'webhook_endpoint_id' => $account['webhook_endpoint_id'] ?? null,
             'location_id' => $account['location_id'] ?? null,
+            'publishable_key' => $account['publishable_key'] ?? null,
             'connected_by_user_id' => $actor?->id,
             'connected_at' => $this->clock->now(),
             'active_slot' => $processor->value,

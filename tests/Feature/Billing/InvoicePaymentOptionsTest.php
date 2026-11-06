@@ -3,6 +3,7 @@
 namespace Tests\Feature\Billing;
 
 use App\Models\User;
+use App\Models\Workspace;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
@@ -35,7 +36,7 @@ class InvoicePaymentOptionsTest extends TestCase
      * connected one. `own`: the workspace entered a key of its own. `none`:
      * nothing at all.
      */
-    private function stripe(string $mode, ?string $publishable = 'pk_test_synthetic'): void
+    private function stripe(string $mode, ?string $publishable = 'pk_test_synthetic', ?string $ownPublishable = null): void
     {
         config([
             'services.stripe.publishable_key' => $publishable,
@@ -43,7 +44,7 @@ class InvoicePaymentOptionsTest extends TestCase
         ]);
         if ($mode === 'own' && app(WorkspacePaymentConnections::class)->activeRow($this->workspace, PaymentProcessor::Stripe) === null) {
             app(WorkspacePaymentConnections::class)->connect($this->workspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $this->member, [
-                'external_account_id' => 'acct_synthetic', 'display_name' => 'Synthetic account', 'environment' => 'test', 'secret' => 'sk_test_synthetic_key_0001',
+                'external_account_id' => 'acct_synthetic', 'display_name' => 'Synthetic account', 'environment' => 'test', 'secret' => 'sk_test_synthetic_key_0001', 'publishable_key' => $ownPublishable,
             ]);
         }
     }
@@ -90,6 +91,36 @@ class InvoicePaymentOptionsTest extends TestCase
         // deployment's publishable key cannot confirm.
         $this->actingAs($this->client())->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('payment', ['stripe' => null, 'square' => null]));
+    }
+
+    public function test_a_workspace_with_its_own_stripe_key_and_publishable_key_is_offered_card_payment_with_its_own(): void
+    {
+        $this->stripe('own', 'pk_test_deployment_key', 'pk_test_workspace_key');
+        $url = $this->owing();
+
+        $this->actingAs($this->client())->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('payment.stripe.publishable_key', 'pk_test_workspace_key')
+                ->where('payment.stripe.intent_href', fn (string $href): bool => str_ends_with($href, '/stripe-payment-intent')));
+    }
+
+    public function test_a_workspace_that_reuses_a_connection_is_offered_the_sources_publishable_key(): void
+    {
+        $this->stripe('none', 'pk_test_deployment_key');
+        $owner = User::factory()->create();
+        $other = Workspace::query()->create(['name' => 'Source Workspace', 'slug' => 'source-workspace']);
+        foreach ([$this->workspace, $other] as $workspace) {
+            $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        }
+        $connections = app(WorkspacePaymentConnections::class);
+        $source = $connections->connect($other, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+            'external_account_id' => 'acct_source', 'environment' => 'test', 'secret' => 'sk_test_source_key_0001', 'publishable_key' => 'pk_test_source_key',
+        ]);
+        $connections->reuse($this->workspace, $source, $owner);
+        $url = $this->owing();
+
+        $this->actingAs($this->client())->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('payment.stripe.publishable_key', 'pk_test_source_key'));
     }
 
     public function test_nothing_is_offered_without_a_connection_or_without_a_publishable_key(): void

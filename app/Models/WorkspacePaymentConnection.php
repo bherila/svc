@@ -36,6 +36,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $secret_hint
  * @property string|null $webhook_endpoint_id
  * @property string|null $location_id
+ * @property string|null $publishable_key
  * @property int|null $connected_by_user_id
  * @property Carbon $connected_at
  * @property Carbon|null $revoked_at
@@ -44,7 +45,7 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'workspace_id', 'processor', 'external_account_id', 'display_name', 'environment', 'origin',
     'reuses_connection_id', 'endpoint_token', 'secret', 'webhook_secret', 'secret_hint',
-    'webhook_endpoint_id', 'location_id', 'connected_by_user_id', 'connected_at', 'revoked_at',
+    'webhook_endpoint_id', 'location_id', 'publishable_key', 'connected_by_user_id', 'connected_at', 'revoked_at',
     'revoked_by_user_id', 'active_slot',
 ])]
 #[Hidden([

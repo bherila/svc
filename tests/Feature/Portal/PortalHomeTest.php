@@ -127,6 +127,26 @@ final class PortalHomeTest extends TestCase
             ->where('pay.href', null));
     }
 
+    public function test_pay_goes_to_the_invoice_pages_pay_section_when_the_workspace_takes_card_payment(): void
+    {
+        config(['services.stripe.publishable_key' => 'pk_test_synthetic', 'services.stripe.secret_key' => 'sk_test_environment_key_0001']);
+        $first = $this->invoice('SYN-CARD', ['balance_amount' => 920000, 'due_date' => '2026-11-10']);
+
+        $this->home($this->portalUser())->assertInertia(fn (Assert $page) => $page
+            ->where('pay.href', route('portal.invoice', [$this->company, $first], absolute: false).'#pay')
+            ->where('pay.invoice_href', route('portal.invoice', [$this->company, $first], absolute: false)));
+    }
+
+    public function test_pay_is_withdrawn_but_the_invoice_stays_when_card_payment_has_no_publishable_key(): void
+    {
+        config(['services.stripe.publishable_key' => null, 'services.stripe.secret_key' => 'sk_test_environment_key_0001']);
+        $this->invoice('SYN-NOKEY', ['balance_amount' => 920000, 'due_date' => '2026-11-10']);
+
+        $this->home($this->portalUser())->assertInertia(fn (Assert $page) => $page
+            ->where('pay.href', null)
+            ->where('pay.invoice_href', fn (string $href): bool => str_starts_with($href, '/portal/')));
+    }
+
     public function test_pay_is_the_first_invoices_hosted_payment_page_when_it_is_linked(): void
     {
         config([
