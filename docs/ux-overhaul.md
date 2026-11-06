@@ -447,6 +447,10 @@ Decided on the design canvas (2026-11-06):
   label (and is `aria-hidden`), or is the only content of a button with an
   `aria-label` and a tooltip. Status uses an icon plus words, never colour
   alone.
+  Every action button carries an icon before its label: check for approve and
+  mark reviewed; undo for withdraw and undo; flag; dispute; send for submit
+  and issue; mail for reminders; download; eye for preview; a card for pay
+  and record payment; plus for create and invite.
 - **Accessibility (WCAG 2.2 AA):**
   - real `button`, `a` and `label` elements, with a visible `:focus-visible`
     ring;

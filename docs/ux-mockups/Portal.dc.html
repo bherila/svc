@@ -44,7 +44,7 @@ button{font-family:inherit}
         <div style="font-size: 14px; color: #cbd5e1">Invoice #1041 · October · due Nov 15 (in 9 days)</div>
         <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px">
           <a href="#" style="background: #e5e7eb; color: #111827; border-radius: 8px; padding: 11px 18px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; min-height: 22px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="20" height="14" x="2" y="5" rx="2"></rect><path d="M2 10h20"></path></svg>Pay $9,200</a>
-          <a href="#" style="font-size: 14px">View invoice</a>
+          <a href="#" style="font-size: 14px; display: inline-flex; align-items: center; gap: 6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 13h4"></path><path d="M10 17h4"></path></svg>View invoice</a>
         </div>
         <p style="margin: 4px 0 0; font-size: 13px; color: #9ca3af">Last payment $8,800 · Oct 12</p>
       </section>
@@ -72,7 +72,7 @@ button{font-family:inherit}
             <span style="font-size: 14px; font-variant-numeric: tabular-nums">{{g.hours}}</span>
             <span style="{{g.badgeStyle}}">{{g.badge}}</span>
             <span style="flex: 1 1 200px; font-size: 13px; color: #9ca3af; min-width: 0">{{g.context}}</span>
-            <button type="button" onClick="{{g.approve}}" style="{{g.approveStyle}}">{{g.approveLabel}}</button>
+            <button type="button" onClick="{{g.approve}}" style="{{g.approveStyle}}"><sc-if value="{{g.notOk}}" hint-placeholder-val="{{false}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M20 6 9 17l-5-5"></path></svg></sc-if><sc-if value="{{g.ok}}" hint-placeholder-val="{{false}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></sc-if>{{g.approveLabel}}</button>
           </div>
           <sc-if value="{{g.open}}" hint-placeholder-val="{{true}}">
             <table style="width: 100%; border-collapse: collapse; font-size: 14px">
@@ -83,7 +83,7 @@ button{font-family:inherit}
                     <td style="padding: 10px 16px; white-space: normal; overflow-wrap: anywhere">{{r.desc}}<sc-if value="{{r.disputed}}" hint-placeholder-val="{{false}}"><div style="font-size: 13px; color: #fdba74; margin-top: 4px">You disputed this: “This was Rivera’s call, not ours.” Waiting on Herila.</div></sc-if></td>
                     <td style="padding: 10px 16px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums">{{r.hours}}</td>
                     <td style="padding: 10px 16px; white-space: nowrap; font-size: 13px; color: #cbd5e1">{{r.state}}</td>
-                    <td style="padding: 10px 16px; white-space: nowrap; text-align: right; width: 1%"><button type="button" onClick="{{r.dispute}}" style="{{r.disputeStyle}}">{{r.disputeLabel}}</button></td>
+                    <td style="padding: 10px 16px; white-space: nowrap; text-align: right; width: 1%"><button type="button" onClick="{{r.dispute}}" style="{{r.disputeStyle}}"><sc-if value="{{r.notDisputed}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M12 7v2"></path><path d="M12 13h.01"></path></svg></sc-if><sc-if value="{{r.disputed}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></sc-if>{{r.disputeLabel}}</button></td>
                   </tr>
                 </sc-for>
               </tbody>
@@ -133,17 +133,18 @@ class Component extends DCLogic {
         const key = g.id + i; const d = !!st.disputed[key];
         const state = d ? 'Disputed' : (r[3] || (ok ? 'Approved by you' : 'Waiting for you'));
         if (state === 'Waiting for you') pendingCount++;
-        return { date: r[0], desc: r[1], hours: r[2], state, disputed: d,
+        return { date: r[0], desc: r[1], hours: r[2], state, disputed: d, notDisputed: !d,
           disputeLabel: d ? 'Withdraw dispute' : 'Dispute',
-          disputeStyle: 'border:1px solid #374151;background:#111827;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;min-height:32px;color:#e5e7eb;',
+          disputeStyle: 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #374151;background:#111827;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;min-height:32px;color:#e5e7eb;',
           dispute: () => { const n = Object.assign({}, st.disputed); n[key] = !d; this.setState({ disputed: n }); } };
       });
       const nd = rows.filter((r) => r.disputed).length;
-      return { vendor: g.vendor, hours: g.hours, context: g.context, rows, open, chev: open ? '▾' : '▸',
+      const okFlags = { ok: ok, notOk: !ok };
+      return { ok: okFlags.ok, notOk: okFlags.notOk, vendor: g.vendor, hours: g.hours, context: g.context, rows, open, chev: open ? '▾' : '▸',
         badge: ok ? 'Approved' : (g.id === 'r' ? 'Reviewed ✓' : 'Invoiced'),
         badgeStyle: 'font-size:12px;font-weight:600;border-radius:6px;padding:3px 8px;background:' + (ok ? '#052e16' : '#172f5e') + ';color:' + (ok ? '#86efac' : '#93c5fd') + ';',
         approveLabel: ok ? 'Approved · undo' : (nd ? 'Approve the rest (' + nd + ' disputed)' : 'Approve October'),
-        approveStyle: 'border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;background:' + (ok ? '#1f2937' : '#e5e7eb') + ';color:' + (ok ? '#e5e7eb' : '#111827') + ';',
+        approveStyle: 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;background:transparent;' + (ok ? 'border:1px solid #374151;color:#9ca3af;' : 'border:1.5px solid #93c5fd;color:#e5e7eb;'),
         toggle: () => { const n = Object.assign({}, st.open); n[g.id] = !open; this.setState({ open: n }); },
         approve: () => { const n = Object.assign({}, st.approved); n[g.id] = !ok; this.setState({ approved: n }); } };
     });

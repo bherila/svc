@@ -82,7 +82,7 @@ button{font-family:inherit}
                 </td>
                 <td style="padding: 11px 14px; text-align: right; font-variant-numeric: tabular-nums">{{e.hours}}</td>
                 <td style="padding: 11px 14px; white-space: nowrap">
-                  <button type="button" onClick="{{e.toggle}}" aria-pressed="{{e.flagged}}" style="{{e.btnStyle}}">{{e.btn}}</button>
+                  <button type="button" onClick="{{e.toggle}}" aria-pressed="{{e.flagged}}" style="{{e.btnStyle}}"><sc-if value="{{e.notFlagged}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><path d="M4 22v-7"></path></svg></sc-if><sc-if value="{{e.flagged}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></sc-if>{{e.btn}}</button>
                 </td>
               </tr>
             </sc-for>
@@ -93,7 +93,7 @@ button{font-family:inherit}
 
     <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 14px 16px">
       <div style="font-size: 14px; line-height: 1.5; min-width: 0; flex: 1 1 400px">{{summary}}</div>
-      <button type="button" onClick="{{review}}" style="{{reviewBtn}}">{{reviewLabel}}</button>
+      <button type="button" onClick="{{review}}" style="{{reviewBtn}}"><sc-if value="{{notReviewed}}" hint-placeholder-val="{{false}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M20 6 9 17l-5-5"></path></svg></sc-if><sc-if value="{{reviewed}}" hint-placeholder-val="{{false}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></sc-if>{{reviewLabel}}</button>
     </div>
   </main>
 </div>
@@ -115,10 +115,10 @@ class Component extends DCLogic {
     const nFlag = Object.keys(st.flagged).filter((k) => st.flagged[k]).length;
     const entries = raw.map((r, i) => {
       const f = !!st.flagged[i];
-      return { date: r[0], task: r[1], desc: r[2], hours: r[3], flagged: f,
+      return { date: r[0], task: r[1], desc: r[2], hours: r[3], flagged: f, notFlagged: !f,
         rowStyle: 'border-top:1px solid #1a2332;background:' + (f ? '#2a1606' : '#111827') + ';',
         btn: f ? 'Remove flag' : 'Flag',
-        btnStyle: 'border:1px solid ' + (f ? '#f97316' : '#374151') + ';background:#111827;color:' + (f ? '#fdba74' : '#e5e7eb') + ';border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;min-height:32px;',
+        btnStyle: 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid ' + (f ? '#f97316' : '#374151') + ';background:#111827;color:' + (f ? '#fdba74' : '#e5e7eb') + ';border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;min-height:32px;',
         toggle: () => { const n = Object.assign({}, st.flagged); n[i] = !f; this.setState({ flagged: n, reviewed: false }); } };
     });
     const step = (state, title, sub) => ({ title, sub, current: state === 'now' ? 'step' : 'false',
@@ -136,9 +136,9 @@ class Component extends DCLogic {
     const summary = st.reviewed
       ? 'Reviewed · Acme can approve now' + (nFlag ? ' · ' + nFlag + ' flagged for Rivera' : '')
       : total.toFixed(1) + ' h' + (nFlag ? ' · ' + nFlag + ' flagged' : '');
-    return { entries, steps, summary,
+    return { entries, steps, summary, reviewed: st.reviewed, notReviewed: !st.reviewed,
       reviewLabel: st.reviewed ? 'Undo review' : (nFlag ? 'Mark reviewed, with ' + nFlag + ' flagged' : 'Mark October reviewed'),
-      reviewBtn: 'border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;background:' + (st.reviewed ? '#1f2937' : '#e5e7eb') + ';color:' + (st.reviewed ? '#e5e7eb' : '#111827') + ';',
+      reviewBtn: 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;background:' + (st.reviewed ? '#1f2937' : '#e5e7eb') + ';color:' + (st.reviewed ? '#e5e7eb' : '#111827') + ';',
       review: () => this.setState({ reviewed: !st.reviewed }) };
   }
 }

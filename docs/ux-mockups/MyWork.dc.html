@@ -93,7 +93,7 @@ button,input,select,textarea{font-family:inherit}
           <textarea rows="2" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 10px; font-size: 14px; resize: vertical">Load test at 5k clinics; tuned batch size</textarea>
         </label>
         <p style="margin: 0; font-size: 12px; color: #9ca3af">Editable until you submit the month</p>
-        <button type="button" style="border: 0; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600; background: #e5e7eb; color: #111827; cursor: pointer; min-height: 44px">Save hours</button>
+        <button type="button" style="border: 0; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600; background: #e5e7eb; color: #111827; cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M20 6 9 17l-5-5"></path></svg>Save hours</button>
       </section>
     </div>
 
@@ -108,7 +108,7 @@ button,input,select,textarea{font-family:inherit}
             <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; flex: 1 1 420px; min-width: 0">
               <sc-for list="{{m.steps}}" as="s" hint-placeholder-count="4"><li style="{{s.style}}">{{s.label}}</li></sc-for>
             </ol>
-            <button type="button" onClick="{{m.act}}" style="{{m.btnStyle}}">{{m.btn}}</button>
+            <button type="button" onClick="{{m.act}}" style="{{m.btnStyle}}"><sc-if value="{{m.icSend}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M14.5 21.7a.5.5 0 0 0 .9 0l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0 0 .9l7.9 3.2a2 2 0 0 1 1.1 1.1z"></path><path d="m21.9 2.1-11 11"></path></svg></sc-if><sc-if value="{{m.icUndo}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></sc-if><sc-if value="{{m.icEye}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg></sc-if><sc-if value="{{m.icDown}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg></sc-if>{{m.btn}}</button>
           </div>
         </sc-for>
       </div>
@@ -122,18 +122,18 @@ class Component extends DCLogic {
   renderVals() {
     const st = this.state;
     const chip = (state, label) => ({ label: (state === 'done' ? '✓ ' : state === 'now' ? '● ' : '○ ') + label, style: 'font-size:13px;white-space:nowrap;padding:2px 0;' + (state === 'done' ? 'color:#9ca3af;' : state === 'now' ? 'color:#e5e7eb;font-weight:600;' : 'color:#6b7280;') });
-    const primary = 'border:0;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;min-height:40px;width:190px;background:#e5e7eb;color:#111827;';
-    const quiet = 'border:1px solid #374151;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:500;cursor:pointer;min-height:40px;width:190px;background:#111827;color:#e5e7eb;';
+    const primary = 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;min-height:40px;width:190px;background:#e5e7eb;color:#111827;';
+    const quiet = 'display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #374151;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:500;cursor:pointer;min-height:40px;width:190px;background:#111827;color:#e5e7eb;';
     const months = [
       { name: 'November', hours: '18.0 h', steps: st.novSubmitted
           ? [chip('done', 'Submitted'), chip('now', 'Ben reviews'), chip('todo', 'Acme approves'), chip('todo', 'Timesheet ready')]
           : [chip('now', 'Drafts · editable'), chip('todo', 'Ben reviews'), chip('todo', 'Acme approves'), chip('todo', 'Timesheet ready')],
-        btn: st.novSubmitted ? 'Withdraw submission' : 'Submit November', btnStyle: st.novSubmitted ? quiet : primary,
+        btn: st.novSubmitted ? 'Withdraw' : 'Submit November', icSend: !st.novSubmitted, icUndo: st.novSubmitted, btnStyle: st.novSubmitted ? quiet : primary,
         act: () => this.setState({ novSubmitted: !st.novSubmitted }) },
       { name: 'October', hours: '22.0 h', steps: [chip('done', 'Submitted Nov 2'), chip('done', 'Reviewed by Ben Nov 6'), chip('now', 'Waiting on Acme'), chip('todo', 'Timesheet ready')],
-        btn: 'Preview timesheet', btnStyle: quiet, act: () => {} },
+        btn: 'Preview timesheet', icEye: true, btnStyle: quiet, act: () => {} },
       { name: 'September', hours: '19.5 h', steps: [chip('done', 'Submitted'), chip('done', 'Reviewed by Ben'), chip('done', 'Approved by Dana Okafor, Oct 8'), chip('done', 'Timesheet ready')],
-        btn: 'Download timesheet', btnStyle: quiet, act: () => {} }
+        btn: 'Download timesheet', icDown: true, btnStyle: quiet, act: () => {} }
     ];
     const allProjects = [
       { name: 'Acme platform', sub: 'Shared project · hosted by Herila Consulting · client Acme Veterinary' },
