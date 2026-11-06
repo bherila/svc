@@ -427,11 +427,33 @@ Decided on the design canvas (2026-11-06):
   "Show time as 2.5 h / 2:30", applies to every screen, timesheet and PDF that
   person views. Invoices always use decimal. One shared parser and one shared
   formatter, with a test that fails if a duration is printed without them.
-- **Buttons or links.** A button does something that changes state (approve,
-  pay, issue, log time, submit). A link goes somewhere to look (view,
-  preview, open, see all). Actions in a page's header action bar are
-  outlined buttons even when they navigate; actions inside a card are
-  links.
+- **Cards.** Every card is the shared `Card` component; no page draws its own
+  bordered box (30 hand-rolled `rounded-* border` boxes exist in
+  `resources/js/pages` today). On desktop a card has a 12 px radius, 20 px
+  padding, and a 16 px semibold title with 12 px below it. On phones it has
+  16 px padding and a 15 px title. Stat tiles (key figures) are their own
+  component, with 16×18 px padding. Section headings outside cards are 18 px
+  (17 px on phones).
+- **Buttons or links.**
+  - **Buttons:** an action that commits in place is a button: approve, flag,
+    dispute, mark reviewed, save, submit, pay.
+  - **Links:** an action that goes somewhere is a link, whether to a page
+    (view, preview, open, review) or to a dialog that confirms a change.
+    Dialog links end in "…" ("Send reminders…", "Record a payment…").
+  - **Header bar exception:** actions in a page's header bar are outlined
+    buttons even when they navigate.
+  - **Lists in cards:** the trailing action of each row is a link.
+- **Consistency is tested, not reviewed by eye.**
+  - **Lint (ESLint):** pages may not set a border-and-radius box or card
+    padding on a raw element. They must use `Card`, `StatTile` or `Button`.
+    Likewise, a `Link` may not take `buttonVariants` inside a card.
+  - **Browser checks:** a `uiConsistencyRisks(page)` helper sits next to
+    `horizontalOverflowRisks` and runs in the same layout checks. It reports
+    any `[data-slot=card]` whose radius, padding or title size differs from
+    the token; more than one filled button on a page; a bordered `a`
+    inside a card body; and an action button without an icon or an
+    accessible name.
+  - **Accessibility checks** (axe) run in the same pass.
 - **Buttons.** A page has at most one filled button, and only when one thing
   needs doing now. Every other action is outlined, the same width when they
   are stacked, and right-aligned with the row's main action.

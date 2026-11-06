@@ -85,7 +85,7 @@ button{font-family:inherit}
         </sc-for>
       </section>
 
-      <section aria-label="Revenue by month" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px">
+      <section aria-label="Revenue by month" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
         <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: baseline">
           <h2 style="margin: 0; font-size: 16px; font-weight: 600">Revenue by month</h2>
           <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #cbd5e1">
@@ -128,8 +128,8 @@ button{font-family:inherit}
       </section>
 
       <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
-        <section aria-label="Needs you" style="flex: 999 1 560px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 18px 20px">
-          <h2 style="margin: 0 0 6px; font-size: 16px; font-weight: 600">Needs you</h2>
+        <section aria-label="Needs you" style="flex: 999 1 560px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px">
+          <h2 style="margin: 0 0 12px; font-size: 16px; font-weight: 600">Needs you</h2>
           <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
             <sc-for list="{{queue}}" as="q" hint-placeholder-count="5">
               <li style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid #1a2332">
@@ -138,13 +138,13 @@ button{font-family:inherit}
                   <div style="font-size: 14px; font-weight: 500">{{q.title}}</div>
                   <div style="font-size: 13px; color: #9ca3af; margin-top: 2px">{{q.why}}</div>
                 </div>
-                <a href="{{q.href}}" style="border: 1px solid #374151; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 500; color: #e5e7eb; text-decoration: none; white-space: nowrap; min-height: 24px; display: inline-flex; align-items: center; gap: 6px"><sc-if value="{{q.isOverdue}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg></sc-if><sc-if value="{{q.isReview}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="8" height="4" x="8" y="2" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path></svg></sc-if><sc-if value="{{q.isIssue}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 13h4"></path><path d="M10 17h4"></path></svg></sc-if><sc-if value="{{q.isDispute}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M12 7v2"></path><path d="M12 13h.01"></path></svg></sc-if><sc-if value="{{q.isMatch}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M8 3 4 7l4 4"></path><path d="M4 7h16"></path><path d="m16 21 4-4-4-4"></path><path d="M20 17H4"></path></svg></sc-if>{{q.action}}</a>
+                <a href="{{q.href}}" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; gap: 6px"><sc-if value="{{q.isOverdue}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg></sc-if><sc-if value="{{q.isReview}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="8" height="4" x="8" y="2" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path></svg></sc-if><sc-if value="{{q.isIssue}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 13h4"></path><path d="M10 17h4"></path></svg></sc-if><sc-if value="{{q.isDispute}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M12 7v2"></path><path d="M12 13h.01"></path></svg></sc-if><sc-if value="{{q.isMatch}}" hint-placeholder-val="{{false}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M8 3 4 7l4 4"></path><path d="M4 7h16"></path><path d="m16 21 4-4-4-4"></path><path d="M20 17H4"></path></svg></sc-if>{{q.action}}</a>
               </li>
             </sc-for>
           </ul>
         </section>
 
-        <section aria-label="Agreement changes" style="flex: 1 1 320px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+        <section aria-label="Agreement changes" style="flex: 1 1 320px; min-width: 0; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
           <h2 style="margin: 0; font-size: 16px; font-weight: 600">Next 12 months: changes</h2>
           <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
             <li style="display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #1a2332; font-size: 13px">
@@ -168,7 +168,7 @@ button{font-family:inherit}
     </main>
 
     <sc-if value="{{helpOpen}}" hint-placeholder-val="{{false}}">
-      <aside aria-label="Help for this page" style="flex: 1 1 340px; min-width: 300px; max-width: 380px; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; font-size: 14px">
+      <aside aria-label="Help for this page" style="flex: 1 1 340px; min-width: 300px; max-width: 380px; background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px; font-size: 14px">
         <div style="display: flex; justify-content: space-between; align-items: center">
           <h2 style="margin: 0; font-size: 16px; font-weight: 600">Help · Dashboard</h2>
           <button type="button" onClick="{{toggleHelp}}" aria-label="Close help" style="border: 0; background: transparent; font-size: 20px; cursor: pointer; color: #9ca3af; width: 32px; height: 32px">×</button>
@@ -286,7 +286,7 @@ class Component extends DCLogic {
     if (st.overage) legend.push({ label: 'Projected overage', swatch: sw(PRJ) });
     const badge = (bg, fg) => 'font-size:12px;font-weight:600;border-radius:6px;padding:3px 8px;white-space:nowrap;background:' + bg + ';color:' + fg + ';';
     const queue = [
-      { kind: 'overdue', title: '2 invoices overdue · $3,300', why: 'Bayside #1031 · 23 days, Lumen #1036 · 8 days', action: 'Send reminders', href: '#' },
+      { kind: 'overdue', title: '2 invoices overdue · $3,300', why: 'Bayside #1031 · 23 days, Lumen #1036 · 8 days', action: 'Send reminders…', href: '#' },
       { kind: 'review', title: 'Rivera Engineering · October · 22.0 h', why: 'To review before Acme approves', action: 'Review', href: 'Review.dc.html' },
       { kind: 'issue', title: '3 November drafts · $14,450', why: 'Ready to issue', action: 'Review drafts', href: '#' },
       { kind: 'dispute', title: 'Acme disputed 1 entry on #1040', why: 'Oct 14 · 1.5 h · “Vendor call”', action: 'Open', href: '#' },
