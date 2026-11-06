@@ -96,6 +96,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_proposals', 'client_company_id', 'client_companies', 'cpr_ws_company_fk'),
             TenantReference::enforcedBy('client_agreements', 'client_company_id', 'client_companies', 'cag_ws_company_fk'),
             TenantReference::enforcedBy('client_billing_schedules', 'client_company_id', 'client_companies', 'cbs_ws_company_fk'),
+            TenantReference::enforcedBy('accounting_invoice_entries', 'client_invoice_id', 'client_invoices', 'accounting_invoice_ws_invoice_fk'),
             TenantReference::enforcedBy('client_invoices', 'client_company_id', 'client_companies', 'ci_ws_company_fk'),
             TenantReference::enforcedBy('client_time_entries', 'client_company_id', 'client_companies', 'cte_ws_company_fk'),
             TenantReference::enforcedBy('client_expenses', 'client_company_id', 'client_companies', 'cex_ws_company_fk'),

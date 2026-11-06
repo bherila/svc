@@ -1129,6 +1129,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/accounting/cash-income': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Cash income by payment received date, manual refund/reversal UTC recording date, and processor movement effective date. Reuses the existing finance payment query and signed processor movements; payouts transfer already received money and are not income. Known fees are separate; no fees or missing historical refund dates are invented. Payment rows expose unattributed_refund_amount for cumulative refunds without dated ledger evidence. Manager only. At most 100 records, ordered by change timestamp then stable ID; follow meta.next_cursor. For the next pass send the opaque meta.updated_since as updated_since. It carries a timestamp and ID tiebreaker and is bound to this workspace and operation. Watermarks lag by 120 seconds, as existing finance feeds do. from/to filter effective dates on full reads; sync without date filters, then filter locally. */
+        get: operations['finance.cash_income.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/accounting/income': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Calendar-year income summary: twelve monthly rows of invoiced net and tax, cash received, refunds and reversals, known fees, dispute movements and expenses passed through. Corrections restate the original issue period. Synchronously computed in bounded chunks, no job or external processor call. JSON by default; REST format=csv streams the same rows. MCP returns JSON. All amounts are integer minor units in the workspace currency. */
+        get: operations['finance.income.yearly'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/accounting/invoice-lines': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Issued invoice line accounting, with signed net, tax, effective tax rate, taxable flag, readable line type, service period and client/project public IDs. Original records never change. Corrections append a reversal naming the previous record and a replacement; voids and reopens append reversals. Historical invoices are projected synchronously from correction evidence. The effective date remains the original issue date, so a correction restates its issue period. At most 100 records, ordered by change timestamp then stable ID; follow meta.next_cursor. For the next pass send the opaque meta.updated_since as updated_since. It carries a timestamp and ID tiebreaker and is bound to this workspace and operation. Watermarks lag by 120 seconds, as existing finance feeds do. from/to filter effective dates on full reads; sync without date filters, then filter locally. */
+        get: operations['finance.invoice_lines.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoice-payments': {
         parameters: {
             query?: never;
@@ -10913,6 +10964,257 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.cash_income.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                updated_since?: string;
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': {
+                        data: {
+                            version: string;
+                            id: string;
+                            /** Format: uuid */
+                            source_id: string;
+                            kind: string;
+                            /** Format: uuid */
+                            payment_id: string;
+                            /** Format: uuid */
+                            reverses_id: string | null;
+                            currency: string;
+                            /** Format: date */
+                            effective_on: string | null;
+                            amount: number;
+                            fee_amount: number;
+                            net_amount: number;
+                            unattributed_refund_amount: number;
+                            /** Format: date-time */
+                            updated_at: string | null;
+                        }[];
+                        meta: {
+                            next_cursor: string | null;
+                            /** Format: date-time */
+                            watermark: string;
+                            updated_since: string;
+                        };
+                    };
+                };
+            };
+            /** @description A workspace owner or admin and finance:read are required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Invalid date, year, page size or opaque cursor. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.income.yearly': {
+        parameters: {
+            query: {
+                year: number;
+                format?: 'json' | 'csv';
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Calendar-year income in JSON or streamed CSV. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': {
+                        data: {
+                            year: number;
+                            months: {
+                                month: string;
+                                invoiced_net: number;
+                                invoiced_tax: number;
+                                cash_received: number;
+                                refunds: number;
+                                refund_reversals: number;
+                                fees: number;
+                                expenses_passed_through: number;
+                                dispute_movements: number;
+                                net_cash: number;
+                                unattributed_refunds: number;
+                            }[];
+                        };
+                    };
+                    'text/csv': string;
+                };
+            };
+            /** @description A workspace owner or admin and finance:read are required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Invalid date, year, page size or opaque cursor. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.invoice_lines.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                updated_since?: string;
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': {
+                        data: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            invoice_id: string;
+                            /** Format: uuid */
+                            line_id: string;
+                            /** Format: uuid */
+                            client_id: string;
+                            /** Format: uuid */
+                            project_id: string | null;
+                            /** Format: uuid */
+                            reverses_id: string | null;
+                            kind: string;
+                            currency: string;
+                            line_type: string;
+                            line_type_label: string;
+                            description: string;
+                            quantity: string;
+                            net_amount: number;
+                            tax_amount: number;
+                            total_amount: number;
+                            unit_amount: number;
+                            tax_rate: number | null;
+                            taxable: boolean;
+                            /** Format: date */
+                            effective_on: string | null;
+                            /** Format: date */
+                            service_period_start: string | null;
+                            /** Format: date */
+                            service_period_end: string | null;
+                            /** Format: date-time */
+                            updated_at: string | null;
+                        }[];
+                        meta: {
+                            next_cursor: string | null;
+                            /** Format: date-time */
+                            watermark: string;
+                            updated_since: string;
+                        };
+                    };
+                };
+            };
+            /** @description A workspace owner or admin and finance:read are required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Invalid date, year, page size or opaque cursor. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

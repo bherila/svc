@@ -1006,6 +1006,36 @@
             "mcp.switch:expenses.update"
         ]
     },
+    "finance.cash_income.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.cash_income.list"
+        ]
+    },
+    "finance.income.yearly": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.income.yearly"
+        ]
+    },
+    "finance.invoice_lines.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.invoice_lines.list"
+        ]
+    },
     "finance.invoice_payments.list": {
         "scopes": [
             "finance:read"

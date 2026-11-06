@@ -105,6 +105,9 @@ final class AgentMcpInventoryTest extends TestCase
         'expenses.receipts.upload_url',
         'expenses.unapprove',
         'expenses.update',
+        'finance.cash_income.list',
+        'finance.income.yearly',
+        'finance.invoice_lines.list',
         'finance.invoice_payments.list',
         'finance.payouts.list',
         'finance.processor_movements.list',
@@ -274,7 +277,7 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(189, self::TOOLS);
+        $this->assertCount(192, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),

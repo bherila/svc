@@ -67,6 +67,7 @@ final class AgentOperationCatalog
      * @var array<string, array{0: string, 1: string, 2: list<int>}>
      */
     private const array ROUTES = [
+        ...AccountingOperations::ROUTES,
         ...TaskOrganizationOperations::ROUTES,
         ...TaskPlanningOperations::ROUTES,
         ...AttachmentSharingOperations::ROUTES,
@@ -1752,6 +1753,9 @@ final class AgentOperationCatalog
     {
         $operations = [];
         foreach ([
+            'finance.invoice_lines.list' => ['Read issued invoice line accounting', 'invoiceLines', Effect::Read, 'mcp.read'],
+            'finance.cash_income.list' => ['Read cash income by effective date', 'cashIncome', Effect::Read, 'mcp.read'],
+            'finance.income.yearly' => ['Export calendar-year income', 'yearlyIncome', Effect::Read, 'mcp.read'],
             'finance.invoice_payments.list' => ['List payments for finance reconciliation', 'list', Effect::Read, 'mcp.read'],
             'finance.payouts.list' => ['List processor payouts for finance reconciliation', 'payouts', Effect::Read, 'mcp.read'],
             'finance.processor_movements.list' => ['Read signed processor movements', 'movements', Effect::Read, 'mcp.read'],
@@ -1774,7 +1778,7 @@ final class AgentOperationCatalog
                 rest: $this->rest($id),
                 mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
                 input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
-                output: SchemaRef::responseOf($id),
+                output: isset(AccountingOperations::ROUTES[$id]) ? AccountingOperations::output($id) : SchemaRef::responseOf($id),
                 extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
             );
         }
@@ -1999,7 +2003,7 @@ final class AgentOperationCatalog
             responseSchema: isset($documented['response']) ? SchemaRef::openApi($documented['response']) : null,
             responseDescriptions: isset($documented['response_description']) ? [$status => $documented['response_description']] : [],
             // A download answers with the file itself.
-            responses: (isset($documented['binary']) ? [$status => [
+            responses: ($id === 'finance.income.yearly' ? [200 => ['description' => 'Calendar-year income in JSON or streamed CSV.', 'content' => ['application/json' => ['schema' => AccountingOperations::output($id)], 'text/csv' => ['schema' => ['type' => 'string', 'format' => 'binary']]]]] : []) + (isset($documented['binary']) ? [$status => [
                 'description' => $documented['binary'][1],
                 'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
             ]] : []) + array_map(

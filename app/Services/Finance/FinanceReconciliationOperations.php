@@ -106,6 +106,16 @@ final class FinanceReconciliationOperations
         );
     }
 
+    /** The existing authorized payment query, reused by accounting reads.
+     * @return Builder<ClientInvoicePayment>
+     */
+    public function accountingPayments(FinanceCaller $caller, Workspace $workspace): Builder
+    {
+        Gate::forUser($caller->user)->authorize('manage', $workspace);
+
+        return $this->payments($caller, $workspace, FinancePaymentQuery::fromInput(['status' => FinancePaymentQuery::ANY_STATUS]));
+    }
+
     /**
      * The caller's view of the workspace's payments, filtered and loaded but
      * not yet ordered.
