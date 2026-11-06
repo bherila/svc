@@ -17,7 +17,9 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import AxeBuilder from '@axe-core/playwright';
 import { chromium, expect } from '@playwright/test';
+import { uiConsistencyRisks } from '../resources/js/test/ui-consistency.ts';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -35,6 +37,19 @@ const artifacts = path.join(
     path.basename(runtime),
 );
 const widths = [390, 820, 1440, 1920];
+// Screens built to the UX overhaul conventions: a token violation or a serious
+// axe finding fails the run here. Every other screen is measured and reported in
+// the "UI consistency / axe" column until its own slice lands - they predate the
+// conventions (several filled buttons, 12 px cards, low-contrast text) and a
+// screen leaves this reporting-only state by being added to the set, never by
+// loosening a rule.
+const uiGated = new Set([
+    'dashboard',
+    'workspace_clients',
+    'workspace_invoices',
+    'workspace_time',
+    'workspace_finance',
+]);
 const clientsOnly = process.argv.includes('--clients');
 const resourceChromeOnly = process.argv.includes('--resource-chrome');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
@@ -621,6 +636,23 @@ try {
                 viewport: window.innerWidth,
                 documentWidth: document.documentElement.scrollWidth,
                 navbarHeight: rect?.height ?? null,
+                navbarBoxes: row
+                    ? Array.from(row.children).map((child) => {
+                          const bounds = child.getBoundingClientRect();
+
+                          return {
+                              label: (
+                                  child.getAttribute('aria-label') ||
+                                  child.textContent ||
+                                  child.tagName
+                              )
+                                  .trim()
+                                  .slice(0, 24),
+                              left: Math.round(bounds.left),
+                              right: Math.round(bounds.right),
+                          };
+                      })
+                    : [],
                 navbarChildCenters: row
                     ? Array.from(row.children)
                           .map((child) => {
@@ -640,6 +672,22 @@ try {
             metrics.navbarHeight === 48 &&
             centers.length > 0 &&
             Math.max(...centers) - Math.min(...centers) <= 1;
+        // Radius, padding and font size come from the cascade, so they are
+        // checked here and not in jsdom: cards against the spec tokens, one
+        // filled button per page, no bordered link in a card, every action
+        // button named. Advisory risks (a text button without an icon) are
+        // reported and do not fail. Then axe: serious or critical fails.
+        const uiRisks = await uiConsistencyRisks(page);
+        const uiErrors = uiRisks.filter((risk) => risk.severity === 'error');
+        const axe = await new AxeBuilder({ page }).analyze();
+        const axeSerious = axe.violations
+            .filter((violation) =>
+                ['serious', 'critical'].includes(violation.impact ?? ''),
+            )
+            .map(
+                (violation) =>
+                    `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes)`,
+            );
         const screenshot = `${screen}-${state}-${width}.png`;
         await page.screenshot({
             path: path.join(artifacts, screenshot),
@@ -653,12 +701,29 @@ try {
             measuredOnly,
             passes,
             ...metrics,
+            ui: uiRisks,
+            axe: axeSerious,
             screenshot,
         });
 
         if (!passes && !measuredOnly) {
             failures.push(
                 `${screen}/${state} at ${width}px: overflow or navbar no longer one row.`,
+            );
+        }
+
+        if (!measuredOnly && uiGated.has(screen) && uiErrors.length > 0) {
+            failures.push(
+                `${screen}/${state} at ${width}px: UI consistency: ${uiErrors
+                    .slice(0, 5)
+                    .map((risk) => `${risk.rule} ${risk.detail}`)
+                    .join('; ')}`,
+            );
+        }
+
+        if (!measuredOnly && uiGated.has(screen) && axeSerious.length > 0) {
+            failures.push(
+                `${screen}/${state} at ${width}px: axe: ${axeSerious.join('; ')}`,
             );
         }
     }
@@ -747,6 +812,11 @@ try {
                                                           'proposal',
                                                           'proposal_acceptance',
                                                           'operations',
+                                                          'dashboard',
+                                                          'workspace_clients',
+                                                          'workspace_invoices',
+                                                          'workspace_time',
+                                                          'workspace_finance',
                                                           'time',
                                                           'expenses',
                                                           'receipts',
@@ -3294,7 +3364,7 @@ try {
     );
     const rows = results.map(
         (row) =>
-            `| ${row.screen}/${row.state} | ${row.width} | ${row.documentWidth} | ${row.navbarHeight} | ${row.measuredOnly ? 'measurement only' : row.passes ? 'pass' : 'FAIL'} | [image](${row.screenshot}) |`,
+            `| ${row.screen}/${row.state} | ${row.width} | ${row.documentWidth} | ${row.navbarHeight} | ${row.measuredOnly ? 'measurement only' : row.passes ? 'pass' : 'FAIL'} | ${row.ui.filter((risk) => risk.severity === 'error').length} errors, ${row.ui.filter((risk) => risk.severity === 'advisory').length} advisory / ${row.axe.length} axe | [image](${row.screenshot}) |`,
     );
     writeFileSync(
         path.join(artifacts, 'report.md'),
@@ -3331,11 +3401,11 @@ try {
                                           ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
                                           : engagementOnly
                                             ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+                                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/operations/dashboard/time/expenses are asserted.',
 
             '',
-            '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
-            '| --- | --- | --- | --- | --- | --- |',
+            '| Page/state | Viewport | Document width | Navbar height | Gate | UI consistency / axe | Screenshot |',
+            '| --- | --- | --- | --- | --- | --- | --- |',
             ...rows,
             '',
             '## Manual screenshot review',

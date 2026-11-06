@@ -2,6 +2,7 @@ import { Head, useForm } from '@inertiajs/react';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -163,64 +164,79 @@ export default function ClientProposalDetail({
                 )}
 
                 {acceptHref !== null && (
-                    <section className="rounded-lg border border-border p-4">
-                        <h2 className="font-medium">Accept this proposal</h2>
-                        <form
-                            className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                form.post(acceptHref);
-                            }}
-                        >
-                            {engagementError !== undefined && (
-                                <p
-                                    role="alert"
-                                    className="text-sm text-destructive sm:col-span-3"
+                    <Card className="ring-border">
+                        <CardContent>
+                            <section>
+                                <h2 className="font-medium">
+                                    Accept this proposal
+                                </h2>
+                                <form
+                                    className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+                                    onSubmit={(event) => {
+                                        event.preventDefault();
+                                        form.post(acceptHref);
+                                    }}
                                 >
-                                    {engagementError}
-                                </p>
-                            )}
-                            <div className="grid grid-cols-1 gap-2">
-                                <Label htmlFor="signer-name">Your name</Label>
-                                <Input
-                                    id="signer-name"
-                                    value={form.data.signer_name}
-                                    onChange={(event) =>
-                                        form.setData(
-                                            'signer_name',
-                                            event.target.value,
-                                        )
-                                    }
-                                />
-                                {form.errors.signer_name !== undefined && (
-                                    <p className="text-sm text-destructive">
-                                        {form.errors.signer_name}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="grid grid-cols-1 gap-2">
-                                <Label htmlFor="signer-title">Your title</Label>
-                                <Input
-                                    id="signer-title"
-                                    value={form.data.signer_title}
-                                    onChange={(event) =>
-                                        form.setData(
-                                            'signer_title',
-                                            event.target.value,
-                                        )
-                                    }
-                                />
-                                {form.errors.signer_title !== undefined && (
-                                    <p className="text-sm text-destructive">
-                                        {form.errors.signer_title}
-                                    </p>
-                                )}
-                            </div>
-                            <Button type="submit" disabled={form.processing}>
-                                Accept
-                            </Button>
-                        </form>
-                    </section>
+                                    {engagementError !== undefined && (
+                                        <p
+                                            role="alert"
+                                            className="text-sm text-destructive sm:col-span-3"
+                                        >
+                                            {engagementError}
+                                        </p>
+                                    )}
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="signer-name">
+                                            Your name
+                                        </Label>
+                                        <Input
+                                            id="signer-name"
+                                            value={form.data.signer_name}
+                                            onChange={(event) =>
+                                                form.setData(
+                                                    'signer_name',
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                        {form.errors.signer_name !==
+                                            undefined && (
+                                            <p className="text-sm text-destructive">
+                                                {form.errors.signer_name}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="signer-title">
+                                            Your title
+                                        </Label>
+                                        <Input
+                                            id="signer-title"
+                                            value={form.data.signer_title}
+                                            onChange={(event) =>
+                                                form.setData(
+                                                    'signer_title',
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                        {form.errors.signer_title !==
+                                            undefined && (
+                                            <p className="text-sm text-destructive">
+                                                {form.errors.signer_title}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        disabled={form.processing}
+                                    >
+                                        Accept
+                                    </Button>
+                                </form>
+                            </section>
+                        </CardContent>
+                    </Card>
                 )}
 
                 {proposal.accepted_at !== null && (

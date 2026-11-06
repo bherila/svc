@@ -18,6 +18,7 @@ import {
     CommandItem,
     CommandList,
 } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 import type { SearchResult, SearchResultKind } from '@/types/search';
 
 /**
@@ -96,7 +97,12 @@ export function openCommandPalette(): void {
  * A keyboard shortcut nobody is told about is a feature only its author has,
  * so the bar carries the button and the button carries the shortcut.
  */
-export function CommandPaletteTrigger() {
+export function CommandPaletteTrigger({
+    compact = false,
+}: {
+    /** Always the icon button, however wide the window: the row has no room. */
+    compact?: boolean;
+}) {
     // Read once, lazily, rather than on every render or in an effect. Guarded
     // for the no-navigator case so the component can be rendered outside a
     // browser at all; the non-Mac spelling is the safe default because
@@ -111,11 +117,30 @@ export function CommandPaletteTrigger() {
         <button
             type="button"
             onClick={openCommandPalette}
-            className="hidden h-7 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:flex"
+            // An icon button on a phone and a labelled field with its shortcut
+            // from `lg` up. The name is the visible text (no aria-label that
+            // would disagree with it); on a phone that text is screen-reader only.
+            title={compact ? 'Search' : undefined}
+            className={cn(
+                'flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                !compact &&
+                    'lg:h-7 lg:w-auto lg:justify-start lg:gap-2 lg:border lg:border-border lg:bg-background lg:px-2 lg:text-sm',
+            )}
         >
-            <SearchIcon aria-hidden="true" className="size-3.5" />
-            <span>Search</span>
-            <kbd className="rounded border border-border px-1 font-sans text-xs">
+            <SearchIcon
+                aria-hidden="true"
+                className={cn('size-4', !compact && 'lg:size-3.5')}
+            />
+            <span className={cn('sr-only', !compact && 'lg:not-sr-only')}>
+                Search
+            </span>
+            <kbd
+                className={cn(
+                    'hidden rounded border border-border px-1 font-sans text-xs',
+                    !compact && 'lg:inline',
+                )}
+                aria-hidden="true"
+            >
                 {isMac ? '\u2318K' : 'Ctrl K'}
             </kbd>
         </button>

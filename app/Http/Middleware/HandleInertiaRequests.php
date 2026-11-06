@@ -41,11 +41,16 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'name' => config('app.name'),
+            // Which help articles belong to this page. A route name is a label
+            // the browser matches against article front matter, never a URL.
+            'routeName' => $request->route()?->getName(),
             'auth' => [
                 'user' => $user === null ? null : [
                     'id' => $user->public_id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'duration_style' => $user->duration_style->value,
+                    'preferences_url' => route('account.preferences.update', absolute: false),
                     'email_verified_at' => $user->email_verified_at?->toIso8601String(),
                     'created_at' => $user->created_at?->toIso8601String(),
                     'updated_at' => $user->updated_at?->toIso8601String(),

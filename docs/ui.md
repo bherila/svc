@@ -25,13 +25,23 @@ it, so the outer gutter never moves.
 
 ## The navbar is one row, and never wraps
 
-    ⏻ Workspace  [Client ▾]  Client Home  Invoices  Time  Tasks     ⌘K  ☾  ⚙
+Two tiers, one row. The workspace tier is the row with no client selected; picking a
+client drops into the client tier, where the same row names the client.
+
+    ⏻ Workspace   Dashboard  Clients  Invoices  Time  Finance            ⌕  ?  ☾  ⚙
+    ⏻ Workspace › Acme ▾ ⋯  Overview  Agreements  Invoices  Time  Tasks  Files   ⌕  ?  ☾  ⚙
 
 Read left to right it is a sentence about where the reader is: which tenant,
 which client, then which part of that client — then, pushed to the far end, the
 things that mean the same thing whatever the client is. An item whose meaning
 changes when the switcher does belongs on the left; everything else belongs on
 the right.
+
+The tab set for each tier is chosen on the server per role and arrives as
+finished URLs (`WorkspaceNavigationFactory`); a null is a tab that is not
+rendered. The switcher opens with "All clients", which goes back up to the
+Dashboard, and the menu beside the client's name (⋯) holds its settings and the
+modules that are not tabs (Expenses, Notes, Discussions).
 
 The workspace is named, and the exit control sits to its left. This was an
 "SVC" wordmark that quietly returned to the selector, and it failed twice over:

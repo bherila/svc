@@ -2,6 +2,8 @@ import { render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ClientIndex from '@/pages/clients/index';
+import { sharedPageProps } from '@/test/shared-page-props';
+import { workspaceNavigation } from '@/test/workspace-navigation';
 import type { CompanyRow, RetainerUsage } from '@/types/clients';
 
 vi.mock('@inertiajs/react', () => ({
@@ -9,6 +11,14 @@ vi.mock('@inertiajs/react', () => ({
     Link: ({ href, children }: { href: string; children: ReactNode }) => (
         <a href={href}>{children}</a>
     ),
+    router: { visit: vi.fn() },
+    usePage: () => ({
+        props: sharedPageProps({
+            workspaceNavigation: workspaceNavigation({
+                current_client_id: null,
+            }),
+        }),
+    }),
 }));
 
 function retainer(overrides: Partial<RetainerUsage> = {}): RetainerUsage {

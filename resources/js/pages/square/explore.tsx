@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -100,41 +101,46 @@ function SyncStatus({ sync }: { sync: SquareExploreProps['sync'] }) {
     }
 
     return (
-        <section
-            aria-label="Square sync"
-            className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4"
-        >
-            <div className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                <p>
-                    {sync.last_synced_at === null
-                        ? 'Not synced yet.'
-                        : `Last synced ${formatTimestamp(sync.last_synced_at)}.`}
-                </p>
-                {run !== null && run.status === 'failed' && (
-                    <p className="text-destructive">
-                        Latest sync failed: {run.error ?? run.error_code}
-                    </p>
-                )}
-                {run !== null && run.truncated && (
-                    <p className="text-muted-foreground">
-                        The latest sync stopped at its page limit; some Square
-                        records are not mirrored.
-                    </p>
-                )}
-                <p role="status" className="text-muted-foreground">
-                    {message}
-                </p>
-            </div>
-            <Button
-                type="button"
-                variant="outline"
-                onClick={refresh}
-                disabled={state === 'running'}
-                data-test="square-sync"
-            >
-                {state === 'running' ? 'Syncing…' : 'Sync now'}
-            </Button>
-        </section>
+        <Card className="min-w-0 ring-border">
+            <CardContent>
+                <section
+                    aria-label="Square sync"
+                    className="flex flex-wrap items-center justify-between gap-3"
+                >
+                    <div className="grid min-w-0 grid-cols-1 gap-1 text-sm">
+                        <p>
+                            {sync.last_synced_at === null
+                                ? 'Not synced yet.'
+                                : `Last synced ${formatTimestamp(sync.last_synced_at)}.`}
+                        </p>
+                        {run !== null && run.status === 'failed' && (
+                            <p className="text-destructive">
+                                Latest sync failed:{' '}
+                                {run.error ?? run.error_code}
+                            </p>
+                        )}
+                        {run !== null && run.truncated && (
+                            <p className="text-muted-foreground">
+                                The latest sync stopped at its page limit; some
+                                Square records are not mirrored.
+                            </p>
+                        )}
+                        <p role="status" className="text-muted-foreground">
+                            {message}
+                        </p>
+                    </div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={refresh}
+                        disabled={state === 'running'}
+                        data-test="square-sync"
+                    >
+                        {state === 'running' ? 'Syncing…' : 'Sync now'}
+                    </Button>
+                </section>
+            </CardContent>
+        </Card>
     );
 }
 

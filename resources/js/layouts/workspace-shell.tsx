@@ -1,12 +1,17 @@
 import { usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { AppearanceSelector } from '@/components/appearance-selector';
+import { HelpPanel } from '@/components/help/help-panel';
 import { AccountMenu } from '@/components/navigation/account-menu';
 import { NewClientDialog } from '@/components/navigation/new-client-dialog';
 import { WorkspaceNavbar } from '@/components/navigation/workspace-navbar';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
-import type { ClientModule, WorkspaceNavigation } from '@/types/navigation';
+import type {
+    ClientModule,
+    WorkspaceNavigation,
+    WorkspaceSection,
+} from '@/types/navigation';
 
 /**
  * The chrome every page inside an entered workspace sits in.
@@ -24,16 +29,21 @@ import type { ClientModule, WorkspaceNavigation } from '@/types/navigation';
  * the switcher - the one asking them to choose - was the screen with no
  * switcher on it.
  *
- * Pages take `activeModule` rather than deriving it from the URL, so a detail
- * screen keeps its owning tab lit: an invoice is Invoices, a project or an
- * agreement is Client Home.
+ * Pages take `activeModule` (client tier) or `activeSection` (workspace tier)
+ * rather than deriving it from the URL, so a detail screen keeps its owning tab
+ * lit: an invoice is Invoices, a project or an agreement is the client's
+ * Overview.
  */
 export default function WorkspaceShell({
     activeModule = 'home',
+    activeSection = null,
     selector = false,
     children,
 }: {
+    /** Which client tab is lit, while a client is selected. */
     activeModule?: ClientModule;
+    /** Which workspace tab is lit, while no client is selected. */
+    activeSection?: WorkspaceSection | null;
     selector?: boolean;
     children: React.ReactNode;
 }) {
@@ -82,6 +92,7 @@ export default function WorkspaceShell({
             <WorkspaceNavbar
                 navigation={navigation}
                 activeModule={activeModule}
+                activeSection={activeSection}
                 onCreateClient={
                     navigation.create_client_url
                         ? () => setCreating(true)
@@ -90,6 +101,8 @@ export default function WorkspaceShell({
             />
 
             {children}
+
+            <HelpPanel />
 
             {navigation.create_client_url && (
                 <NewClientDialog

@@ -82,6 +82,16 @@ class WorkspaceEntryController extends Controller
             return redirect()->to(is_string($href) ? $href : $destination->destinations->home);
         }
 
+        // Several clients and none remembered: still no guessing, and no
+        // question to answer either - the Dashboard is the workspace tier's
+        // front page, and its Clients tab is the way into one. Only a viewer
+        // with a workspace tier and something to open is sent there. With no
+        // client at all the explanatory screen below stays, because "none yet"
+        // and "none for you" are different sentences the Dashboard does not say.
+        if ($context->clients !== [] && $context->workspaceDestinations?->dashboard !== null) {
+            return redirect()->to($context->workspaceDestinations->dashboard);
+        }
+
         return Inertia::render('workspaces/enter', [
             // Three different sentences, and which one is right depends on
             // both the data and this viewer's authority: choose one, create the

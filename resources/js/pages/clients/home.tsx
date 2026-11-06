@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatDay, formatShortDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
@@ -173,23 +174,25 @@ export default function ClientHome({
                  * reading it.
                  */}
                 {engagement !== null && engagement.proposal_href !== null && (
-                    <div
-                        role="status"
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
-                    >
-                        <span>
-                            <span className="font-medium">
-                                {engagement.proposal_title}
-                            </span>{' '}
-                            is waiting for a response.
-                        </span>
-                        <Link
-                            href={engagement.proposal_href}
-                            className="underline underline-offset-4"
+                    <Card className="bg-muted/40 text-sm ring-border">
+                        <CardContent
+                            role="status"
+                            className="flex flex-wrap items-center justify-between gap-3"
                         >
-                            Review proposal
-                        </Link>
-                    </div>
+                            <span>
+                                <span className="font-medium">
+                                    {engagement.proposal_title}
+                                </span>{' '}
+                                is waiting for a response.
+                            </span>
+                            <Link
+                                href={engagement.proposal_href}
+                                className="underline underline-offset-4"
+                            >
+                                Review proposal
+                            </Link>
+                        </CardContent>
+                    </Card>
                 )}
 
                 <Section
@@ -200,45 +203,49 @@ export default function ClientHome({
                     isEmpty={latestInvoice === null}
                 >
                     {latestInvoice !== null && (
-                        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
-                            <div className="grid min-w-0 grid-cols-1 gap-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Link
-                                        href={latestInvoice.href}
-                                        className="font-medium wrap-anywhere underline-offset-4 hover:underline"
-                                    >
-                                        {latestInvoice.invoice_number}
-                                    </Link>
-                                    <Badge variant="outline">
-                                        {statusLabel(latestInvoice.status)}
-                                    </Badge>
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                    {latestInvoice.issue_date === null
-                                        ? 'Undated'
-                                        : formatDay(latestInvoice.issue_date)}
-                                    {latestInvoice.due_date !== null &&
-                                        ` · due ${formatDay(latestInvoice.due_date)}`}
-                                </p>
-                            </div>
-                            <div className="text-end">
-                                <p className="font-medium tabular-nums">
-                                    {formatMoney(
-                                        latestInvoice.total_amount,
-                                        latestInvoice.currency,
-                                    )}
-                                </p>
-                                {latestInvoice.balance_amount > 0 && (
-                                    <p className="text-sm text-muted-foreground tabular-nums">
-                                        {formatMoney(
-                                            latestInvoice.balance_amount,
-                                            latestInvoice.currency,
-                                        )}{' '}
-                                        outstanding
+                        <Card className="ring-border">
+                            <CardContent className="flex flex-wrap items-center justify-between gap-4">
+                                <div className="grid min-w-0 grid-cols-1 gap-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Link
+                                            href={latestInvoice.href}
+                                            className="font-medium wrap-anywhere underline-offset-4 hover:underline"
+                                        >
+                                            {latestInvoice.invoice_number}
+                                        </Link>
+                                        <Badge variant="outline">
+                                            {statusLabel(latestInvoice.status)}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground">
+                                        {latestInvoice.issue_date === null
+                                            ? 'Undated'
+                                            : formatDay(
+                                                  latestInvoice.issue_date,
+                                              )}
+                                        {latestInvoice.due_date !== null &&
+                                            ` · due ${formatDay(latestInvoice.due_date)}`}
                                     </p>
-                                )}
-                            </div>
-                        </div>
+                                </div>
+                                <div className="text-end">
+                                    <p className="font-medium tabular-nums">
+                                        {formatMoney(
+                                            latestInvoice.total_amount,
+                                            latestInvoice.currency,
+                                        )}
+                                    </p>
+                                    {latestInvoice.balance_amount > 0 && (
+                                        <p className="text-sm text-muted-foreground tabular-nums">
+                                            {formatMoney(
+                                                latestInvoice.balance_amount,
+                                                latestInvoice.currency,
+                                            )}{' '}
+                                            outstanding
+                                        </p>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
                     )}
                 </Section>
 

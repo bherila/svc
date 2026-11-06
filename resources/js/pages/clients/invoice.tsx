@@ -618,12 +618,13 @@ export default function ClientInvoiceDetail({
 
                     {(mutation.error ?? notice) !== null &&
                         lifecycle === null && (
-                            <p
-                                role="alert"
-                                className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                            >
-                                {mutation.error ?? notice}
-                            </p>
+                            <Card className="mt-2 bg-destructive/10 text-sm text-destructive ring-destructive/40">
+                                <CardContent>
+                                    <p role="alert">
+                                        {mutation.error ?? notice}
+                                    </p>
+                                </CardContent>
+                            </Card>
                         )}
                     {mutation.locked && lifecycle === null && (
                         <Button
@@ -637,437 +638,496 @@ export default function ClientInvoiceDetail({
                     )}
 
                     {editingDates && (
-                        <form
-                            className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-4 sm:grid-cols-[minmax(0,16rem)_minmax(0,16rem)_auto] sm:items-end"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                void saveDates();
-                            }}
-                        >
-                            <div className="grid grid-cols-1 gap-1.5">
-                                <Label htmlFor="draft-due-date">Due date</Label>
-                                <Input
-                                    disabled={mutation.locked}
-                                    id="draft-due-date"
-                                    type="date"
-                                    value={dueDate}
-                                    onChange={(event) =>
-                                        setDueDate(event.target.value)
-                                    }
-                                />
-                            </div>
-                            <div className="grid grid-cols-1 gap-1.5">
-                                <Label htmlFor="draft-scheduled-issue-date">
-                                    Scheduled issue date
-                                </Label>
-                                <Input
-                                    disabled={mutation.locked}
-                                    id="draft-scheduled-issue-date"
-                                    type="date"
-                                    value={scheduledIssueDate}
-                                    aria-describedby="draft-scheduled-issue-date-hint"
-                                    onChange={(event) =>
-                                        setScheduledIssueDate(
-                                            event.target.value,
-                                        )
-                                    }
-                                />
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    type="submit"
-                                    size="sm"
-                                    disabled={mutation.locked}
-                                >
-                                    Save dates
-                                </Button>
-                                <Button
-                                    disabled={mutation.locked}
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setEditingDates(false)}
-                                >
-                                    Cancel
-                                </Button>
-                            </div>
-                            <p
-                                id="draft-scheduled-issue-date-hint"
-                                className="text-xs text-muted-foreground sm:col-span-3"
-                            >
-                                The scheduled issue date is a plan: nothing is
-                                issued or sent on that day. The billing audit
-                                flags the draft once it has passed.
-                            </p>
-                        </form>
-                    )}
-
-                    {paying && (
-                        <form
-                            className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] lg:items-end"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-
-                                const chosenMethod =
-                                    method === PAYMENT_METHOD_OTHER
-                                        ? otherMethod.trim()
-                                        : method;
-
-                                // Refused here rather than sent as an empty
-                                // string for the server to reject: "other"
-                                // with no name is a payment whose method
-                                // nobody would be able to read back.
-                                if (chosenMethod === '') {
-                                    setNotice(
-                                        'Name the payment method, or choose one from the list.',
-                                    );
-
-                                    return;
-                                }
-
-                                post(
-                                    paymentBaseline.current?.href ?? '',
-                                    {
-                                        invoice_id:
-                                            paymentBaseline.current
-                                                ?.invoiceId ?? '',
-                                        confirm: true,
-                                        // Minor units, the way every amount in this
-                                        // system travels. Rounded rather than
-                                        // truncated: 12.34 is not exactly
-                                        // representable, and truncating it records
-                                        // a cent less than the client paid.
-                                        amount: Math.round(
-                                            Number.parseFloat(amount || '0') *
-                                                100,
-                                        ),
-                                        currency:
-                                            paymentBaseline.current?.currency ??
-                                            '',
-                                        method: chosenMethod,
-                                        reference:
-                                            reference === '' ? null : reference,
-                                        // The day the money arrived, which is not
-                                        // the day it was typed in. Sent as the
-                                        // same `YYYY-MM-DD` the operations screen
-                                        // sends, so both doors write the column
-                                        // the same shape.
-                                        received_on: receivedOn,
-                                    },
-                                    paymentBaseline.current?.version ?? '',
-                                );
-                            }}
-                        >
-                            <div className="grid grid-cols-1 gap-2">
-                                <Label htmlFor="payment-amount">Amount</Label>
-                                <Input
-                                    disabled={mutation.locked}
-                                    id="payment-amount"
-                                    inputMode="decimal"
-                                    value={amount}
-                                    onChange={(event) =>
-                                        setAmount(event.target.value)
-                                    }
-                                />
-                            </div>
-                            <div className="grid grid-cols-1 gap-2">
-                                <Label htmlFor="payment-method">Method</Label>
-                                <Select
-                                    disabled={mutation.locked}
-                                    // Without `items` the trigger renders the
-                                    // stored value, so this field read
-                                    // "bank_transfer" back at the operator who
-                                    // had just picked "Bank transfer".
-                                    items={PAYMENT_METHODS}
-                                    value={method}
-                                    onValueChange={(next) => {
-                                        // Base UI can emit null on clear; there
-                                        // is nothing to clear to here, so an
-                                        // empty change leaves the choice alone
-                                        // rather than blanking a required
-                                        // field.
-                                        if (typeof next === 'string') {
-                                            setMethod(next);
-                                        }
+                        <Card className="mt-3 ring-border">
+                            <CardContent>
+                                <form
+                                    onSubmit={(event) => {
+                                        event.preventDefault();
+                                        void saveDates();
                                     }}
+                                    className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,16rem)_minmax(0,16rem)_auto] sm:items-end"
                                 >
-                                    <SelectTrigger
-                                        id="payment-method"
-                                        className="w-full"
-                                    >
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {PAYMENT_METHODS.map((option) => (
-                                            <SelectItem
-                                                key={option.value}
-                                                value={option.value}
-                                            >
-                                                {option.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                {method === PAYMENT_METHOD_OTHER && (
-                                    <Input
-                                        disabled={mutation.locked}
-                                        aria-label="Name of the payment method"
-                                        placeholder="Name the method"
-                                        maxLength={PAYMENT_METHOD_MAX_LENGTH}
-                                        value={otherMethod}
-                                        onChange={(event) =>
-                                            setOtherMethod(event.target.value)
-                                        }
-                                    />
-                                )}
-                            </div>
-                            <div className="grid grid-cols-1 gap-2">
-                                <Label htmlFor="payment-received-on">
-                                    Received
-                                </Label>
-                                <Input
-                                    disabled={mutation.locked}
-                                    id="payment-received-on"
-                                    type="date"
-                                    // Today on the workspace's calendar, not
-                                    // the browser's. No floor here: how far
-                                    // back this workspace records payments is
-                                    // the service's policy, and it names the
-                                    // earliest acceptable date when it
-                                    // refuses one - a bound restated in the
-                                    // browser is a second copy of that policy
-                                    // that can disagree with it.
-                                    max={todayIn(timezone)}
-                                    value={receivedOn}
-                                    onChange={(event) =>
-                                        setReceivedOn(event.target.value)
-                                    }
-                                />
-                                {predatesInvoiceIssue(
-                                    receivedOn,
-                                    invoice.issue_date,
-                                ) && (
-                                    <p
-                                        role="status"
-                                        className="text-xs wrap-anywhere text-amber-700 dark:text-amber-500"
-                                    >
-                                        {predatesInvoiceIssueWarning(
-                                            invoice.issue_date ?? '',
-                                        )}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="grid grid-cols-1 gap-2">
-                                <Label htmlFor="payment-reference">
-                                    Reference
-                                </Label>
-                                <Input
-                                    disabled={mutation.locked}
-                                    id="payment-reference"
-                                    value={reference}
-                                    onChange={(event) =>
-                                        setReference(event.target.value)
-                                    }
-                                />
-                            </div>
-                            <Button type="submit" disabled={mutation.locked}>
-                                Record
-                            </Button>
-                        </form>
-                    )}
-
-                    {correctingInvoice && (
-                        <form
-                            className="mt-3 grid grid-cols-1 gap-4 rounded-lg border border-amber-500/40 p-4"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                post(
-                                    correctionBaseline.current?.href ?? '',
-                                    {
-                                        confirm: true,
-                                        reason: correctionReason,
-                                        due_date:
-                                            correctionDueDate === ''
-                                                ? null
-                                                : correctionDueDate,
-                                        lines: correctionLines.map((line) => ({
-                                            id: line.id,
-                                            description: line.description,
-                                            quantity: line.quantity,
-                                            unit_amount: Math.round(
-                                                Number.parseFloat(
-                                                    line.unit_amount || '0',
-                                                ) * 100,
-                                            ),
-                                            tax_amount: Math.round(
-                                                Number.parseFloat(
-                                                    line.tax_amount || '0',
-                                                ) * 100,
-                                            ),
-                                        })),
-                                    },
-                                    correctionBaseline.current?.version ?? '',
-                                );
-                            }}
-                        >
-                            <p className="text-sm wrap-anywhere text-muted-foreground">
-                                Corrections are limited to an unpaid invoice
-                                that has never been sent to the client. Existing
-                                line identities and allocations stay in place.
-                                Generated and allocated lines allow wording
-                                changes only; use void and regeneration for
-                                accounting changes.
-                            </p>
-                            <div className="grid max-w-xs grid-cols-1 gap-2">
-                                <Label htmlFor="correction-due-date">
-                                    Due date
-                                </Label>
-                                <Input
-                                    disabled={mutation.locked}
-                                    id="correction-due-date"
-                                    type="date"
-                                    value={correctionDueDate}
-                                    onChange={(event) =>
-                                        setCorrectionDueDate(event.target.value)
-                                    }
-                                />
-                            </div>
-                            {correctionLines.map((line, index) => (
-                                <div
-                                    key={line.id}
-                                    className="grid grid-cols-1 gap-2 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_8rem_9rem_9rem]"
-                                >
-                                    <div className="grid grid-cols-1 gap-1">
-                                        <Label
-                                            htmlFor={`correction-description-${line.id}`}
-                                        >
-                                            Description
+                                    <div className="grid grid-cols-1 gap-1.5">
+                                        <Label htmlFor="draft-due-date">
+                                            Due date
                                         </Label>
-                                        <Textarea
+                                        <Input
                                             disabled={mutation.locked}
-                                            id={`correction-description-${line.id}`}
-                                            value={line.description}
+                                            id="draft-due-date"
+                                            type="date"
+                                            value={dueDate}
                                             onChange={(event) =>
-                                                setCorrectionLines((current) =>
-                                                    current.map(
-                                                        (item, itemIndex) =>
-                                                            itemIndex === index
-                                                                ? {
-                                                                      ...item,
-                                                                      description:
-                                                                          event
-                                                                              .target
-                                                                              .value,
-                                                                  }
-                                                                : item,
-                                                    ),
+                                                setDueDate(event.target.value)
+                                            }
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-1.5">
+                                        <Label htmlFor="draft-scheduled-issue-date">
+                                            Scheduled issue date
+                                        </Label>
+                                        <Input
+                                            disabled={mutation.locked}
+                                            id="draft-scheduled-issue-date"
+                                            type="date"
+                                            value={scheduledIssueDate}
+                                            aria-describedby="draft-scheduled-issue-date-hint"
+                                            onChange={(event) =>
+                                                setScheduledIssueDate(
+                                                    event.target.value,
                                                 )
                                             }
                                         />
                                     </div>
-                                    {(
-                                        [
-                                            'quantity',
-                                            'unit_amount',
-                                            'tax_amount',
-                                        ] as const
-                                    ).map((field) => (
-                                        <div
-                                            key={field}
-                                            className="grid grid-cols-1 gap-1"
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            disabled={mutation.locked}
                                         >
-                                            <Label
-                                                htmlFor={`${field}-${line.id}`}
-                                            >
-                                                {field === 'quantity'
-                                                    ? 'Quantity'
-                                                    : field === 'unit_amount'
-                                                      ? 'Unit amount'
-                                                      : 'Tax amount'}
-                                            </Label>
-                                            <Input
-                                                id={`${field}-${line.id}`}
-                                                inputMode="decimal"
-                                                disabled={
-                                                    mutation.locked ||
-                                                    !line.money_correctable
+                                            Save dates
+                                        </Button>
+                                        <Button
+                                            disabled={mutation.locked}
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                                setEditingDates(false)
+                                            }
+                                        >
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                    <p
+                                        id="draft-scheduled-issue-date-hint"
+                                        className="text-xs text-muted-foreground sm:col-span-3"
+                                    >
+                                        The scheduled issue date is a plan:
+                                        nothing is issued or sent on that day.
+                                        The billing audit flags the draft once
+                                        it has passed.
+                                    </p>
+                                </form>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {paying && (
+                        <Card className="mt-3 ring-border">
+                            <CardContent>
+                                <form
+                                    onSubmit={(event) => {
+                                        event.preventDefault();
+
+                                        const chosenMethod =
+                                            method === PAYMENT_METHOD_OTHER
+                                                ? otherMethod.trim()
+                                                : method;
+
+                                        // Refused here rather than sent as an empty
+                                        // string for the server to reject: "other"
+                                        // with no name is a payment whose method
+                                        // nobody would be able to read back.
+                                        if (chosenMethod === '') {
+                                            setNotice(
+                                                'Name the payment method, or choose one from the list.',
+                                            );
+
+                                            return;
+                                        }
+
+                                        post(
+                                            paymentBaseline.current?.href ?? '',
+                                            {
+                                                invoice_id:
+                                                    paymentBaseline.current
+                                                        ?.invoiceId ?? '',
+                                                confirm: true,
+                                                // Minor units, the way every amount in this
+                                                // system travels. Rounded rather than
+                                                // truncated: 12.34 is not exactly
+                                                // representable, and truncating it records
+                                                // a cent less than the client paid.
+                                                amount: Math.round(
+                                                    Number.parseFloat(
+                                                        amount || '0',
+                                                    ) * 100,
+                                                ),
+                                                currency:
+                                                    paymentBaseline.current
+                                                        ?.currency ?? '',
+                                                method: chosenMethod,
+                                                reference:
+                                                    reference === ''
+                                                        ? null
+                                                        : reference,
+                                                // The day the money arrived, which is not
+                                                // the day it was typed in. Sent as the
+                                                // same `YYYY-MM-DD` the operations screen
+                                                // sends, so both doors write the column
+                                                // the same shape.
+                                                received_on: receivedOn,
+                                            },
+                                            paymentBaseline.current?.version ??
+                                                '',
+                                        );
+                                    }}
+                                    className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] lg:items-end"
+                                >
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="payment-amount">
+                                            Amount
+                                        </Label>
+                                        <Input
+                                            disabled={mutation.locked}
+                                            id="payment-amount"
+                                            inputMode="decimal"
+                                            value={amount}
+                                            onChange={(event) =>
+                                                setAmount(event.target.value)
+                                            }
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="payment-method">
+                                            Method
+                                        </Label>
+                                        <Select
+                                            disabled={mutation.locked}
+                                            // Without `items` the trigger renders the
+                                            // stored value, so this field read
+                                            // "bank_transfer" back at the operator who
+                                            // had just picked "Bank transfer".
+                                            items={PAYMENT_METHODS}
+                                            value={method}
+                                            onValueChange={(next) => {
+                                                // Base UI can emit null on clear; there
+                                                // is nothing to clear to here, so an
+                                                // empty change leaves the choice alone
+                                                // rather than blanking a required
+                                                // field.
+                                                if (typeof next === 'string') {
+                                                    setMethod(next);
                                                 }
-                                                value={line[field]}
+                                            }}
+                                        >
+                                            <SelectTrigger
+                                                id="payment-method"
+                                                className="w-full"
+                                            >
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {PAYMENT_METHODS.map(
+                                                    (option) => (
+                                                        <SelectItem
+                                                            key={option.value}
+                                                            value={option.value}
+                                                        >
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                        {method === PAYMENT_METHOD_OTHER && (
+                                            <Input
+                                                disabled={mutation.locked}
+                                                aria-label="Name of the payment method"
+                                                placeholder="Name the method"
+                                                maxLength={
+                                                    PAYMENT_METHOD_MAX_LENGTH
+                                                }
+                                                value={otherMethod}
                                                 onChange={(event) =>
-                                                    setCorrectionLines(
-                                                        (current) =>
-                                                            current.map(
-                                                                (
-                                                                    item,
-                                                                    itemIndex,
-                                                                ) =>
-                                                                    itemIndex ===
-                                                                    index
-                                                                        ? {
-                                                                              ...item,
-                                                                              [field]:
-                                                                                  event
-                                                                                      .target
-                                                                                      .value,
-                                                                          }
-                                                                        : item,
-                                                            ),
+                                                    setOtherMethod(
+                                                        event.target.value,
                                                     )
                                                 }
                                             />
-                                        </div>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="payment-received-on">
+                                            Received
+                                        </Label>
+                                        <Input
+                                            disabled={mutation.locked}
+                                            id="payment-received-on"
+                                            type="date"
+                                            // Today on the workspace's calendar, not
+                                            // the browser's. No floor here: how far
+                                            // back this workspace records payments is
+                                            // the service's policy, and it names the
+                                            // earliest acceptable date when it
+                                            // refuses one - a bound restated in the
+                                            // browser is a second copy of that policy
+                                            // that can disagree with it.
+                                            max={todayIn(timezone)}
+                                            value={receivedOn}
+                                            onChange={(event) =>
+                                                setReceivedOn(
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                        {predatesInvoiceIssue(
+                                            receivedOn,
+                                            invoice.issue_date,
+                                        ) && (
+                                            <p
+                                                role="status"
+                                                className="text-xs wrap-anywhere text-amber-700 dark:text-amber-500"
+                                            >
+                                                {predatesInvoiceIssueWarning(
+                                                    invoice.issue_date ?? '',
+                                                )}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <Label htmlFor="payment-reference">
+                                            Reference
+                                        </Label>
+                                        <Input
+                                            disabled={mutation.locked}
+                                            id="payment-reference"
+                                            value={reference}
+                                            onChange={(event) =>
+                                                setReference(event.target.value)
+                                            }
+                                        />
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        disabled={mutation.locked}
+                                    >
+                                        Record
+                                    </Button>
+                                </form>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {correctingInvoice && (
+                        <Card className="mt-3 ring-amber-500/40">
+                            <CardContent>
+                                <form
+                                    onSubmit={(event) => {
+                                        event.preventDefault();
+                                        post(
+                                            correctionBaseline.current?.href ??
+                                                '',
+                                            {
+                                                confirm: true,
+                                                reason: correctionReason,
+                                                due_date:
+                                                    correctionDueDate === ''
+                                                        ? null
+                                                        : correctionDueDate,
+                                                lines: correctionLines.map(
+                                                    (line) => ({
+                                                        id: line.id,
+                                                        description:
+                                                            line.description,
+                                                        quantity: line.quantity,
+                                                        unit_amount: Math.round(
+                                                            Number.parseFloat(
+                                                                line.unit_amount ||
+                                                                    '0',
+                                                            ) * 100,
+                                                        ),
+                                                        tax_amount: Math.round(
+                                                            Number.parseFloat(
+                                                                line.tax_amount ||
+                                                                    '0',
+                                                            ) * 100,
+                                                        ),
+                                                    }),
+                                                ),
+                                            },
+                                            correctionBaseline.current
+                                                ?.version ?? '',
+                                        );
+                                    }}
+                                    className="grid grid-cols-1 gap-4"
+                                >
+                                    <p className="text-sm wrap-anywhere text-muted-foreground">
+                                        Corrections are limited to an unpaid
+                                        invoice that has never been sent to the
+                                        client. Existing line identities and
+                                        allocations stay in place. Generated and
+                                        allocated lines allow wording changes
+                                        only; use void and regeneration for
+                                        accounting changes.
+                                    </p>
+                                    <div className="grid max-w-xs grid-cols-1 gap-2">
+                                        <Label htmlFor="correction-due-date">
+                                            Due date
+                                        </Label>
+                                        <Input
+                                            disabled={mutation.locked}
+                                            id="correction-due-date"
+                                            type="date"
+                                            value={correctionDueDate}
+                                            onChange={(event) =>
+                                                setCorrectionDueDate(
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                    {correctionLines.map((line, index) => (
+                                        <Card key={line.id}>
+                                            <CardContent className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_8rem_9rem_9rem]">
+                                                <div className="grid grid-cols-1 gap-1">
+                                                    <Label
+                                                        htmlFor={`correction-description-${line.id}`}
+                                                    >
+                                                        Description
+                                                    </Label>
+                                                    <Textarea
+                                                        disabled={
+                                                            mutation.locked
+                                                        }
+                                                        id={`correction-description-${line.id}`}
+                                                        value={line.description}
+                                                        onChange={(event) =>
+                                                            setCorrectionLines(
+                                                                (current) =>
+                                                                    current.map(
+                                                                        (
+                                                                            item,
+                                                                            itemIndex,
+                                                                        ) =>
+                                                                            itemIndex ===
+                                                                            index
+                                                                                ? {
+                                                                                      ...item,
+                                                                                      description:
+                                                                                          event
+                                                                                              .target
+                                                                                              .value,
+                                                                                  }
+                                                                                : item,
+                                                                    ),
+                                                            )
+                                                        }
+                                                    />
+                                                </div>
+                                                {(
+                                                    [
+                                                        'quantity',
+                                                        'unit_amount',
+                                                        'tax_amount',
+                                                    ] as const
+                                                ).map((field) => (
+                                                    <div
+                                                        key={field}
+                                                        className="grid grid-cols-1 gap-1"
+                                                    >
+                                                        <Label
+                                                            htmlFor={`${field}-${line.id}`}
+                                                        >
+                                                            {field ===
+                                                            'quantity'
+                                                                ? 'Quantity'
+                                                                : field ===
+                                                                    'unit_amount'
+                                                                  ? 'Unit amount'
+                                                                  : 'Tax amount'}
+                                                        </Label>
+                                                        <Input
+                                                            id={`${field}-${line.id}`}
+                                                            inputMode="decimal"
+                                                            disabled={
+                                                                mutation.locked ||
+                                                                !line.money_correctable
+                                                            }
+                                                            value={line[field]}
+                                                            onChange={(event) =>
+                                                                setCorrectionLines(
+                                                                    (current) =>
+                                                                        current.map(
+                                                                            (
+                                                                                item,
+                                                                                itemIndex,
+                                                                            ) =>
+                                                                                itemIndex ===
+                                                                                index
+                                                                                    ? {
+                                                                                          ...item,
+                                                                                          [field]:
+                                                                                              event
+                                                                                                  .target
+                                                                                                  .value,
+                                                                                      }
+                                                                                    : item,
+                                                                        ),
+                                                                )
+                                                            }
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </CardContent>
+                                        </Card>
                                     ))}
-                                </div>
-                            ))}
-                            <div className="grid max-w-xl grid-cols-1 gap-2">
-                                <Label htmlFor="correction-reason">
-                                    Reason for correction
-                                </Label>
-                                <Textarea
-                                    disabled={mutation.locked}
-                                    id="correction-reason"
-                                    required
-                                    maxLength={500}
-                                    value={correctionReason}
-                                    onChange={(event) =>
-                                        setCorrectionReason(event.target.value)
-                                    }
-                                />
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    type="submit"
-                                    disabled={mutation.locked}
-                                >
-                                    Save audited correction
-                                </Button>
-                                <Button
-                                    disabled={mutation.locked}
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => setCorrectingInvoice(false)}
-                                >
-                                    Cancel
-                                </Button>
-                            </div>
-                        </form>
+                                    <div className="grid max-w-xl grid-cols-1 gap-2">
+                                        <Label htmlFor="correction-reason">
+                                            Reason for correction
+                                        </Label>
+                                        <Textarea
+                                            disabled={mutation.locked}
+                                            id="correction-reason"
+                                            required
+                                            maxLength={500}
+                                            value={correctionReason}
+                                            onChange={(event) =>
+                                                setCorrectionReason(
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            type="submit"
+                                            disabled={mutation.locked}
+                                        >
+                                            Save audited correction
+                                        </Button>
+                                        <Button
+                                            disabled={mutation.locked}
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() =>
+                                                setCorrectingInvoice(false)
+                                            }
+                                        >
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                </form>
+                            </CardContent>
+                        </Card>
                     )}
                 </header>
 
                 {reopen !== null && reopen.reopened_at !== null && (
-                    <p
-                        role="status"
-                        className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm wrap-anywhere"
-                    >
-                        {invoice.status === 'draft'
-                            ? `Reopened ${formatTimestamp(reopen.reopened_at)}: regenerated from the time approved then. Issue it to reissue it under the same number.`
-                            : reopen.reissued_at !== null
-                              ? `Reissued ${formatTimestamp(reopen.reissued_at)} under the same number, after being reopened ${formatTimestamp(reopen.reopened_at)}.`
-                              : `Reopened ${formatTimestamp(reopen.reopened_at)}.`}
-                        {reopen.reason !== null &&
-                            reopen.reason !== '' &&
-                            ` Reason: ${reopen.reason}`}
-                    </p>
+                    <Card className="bg-muted/40 text-sm wrap-anywhere ring-border">
+                        <CardContent>
+                            <p role="status">
+                                {invoice.status === 'draft'
+                                    ? `Reopened ${formatTimestamp(reopen.reopened_at)}: regenerated from the time approved then. Issue it to reissue it under the same number.`
+                                    : reopen.reissued_at !== null
+                                      ? `Reissued ${formatTimestamp(reopen.reissued_at)} under the same number, after being reopened ${formatTimestamp(reopen.reopened_at)}.`
+                                      : `Reopened ${formatTimestamp(reopen.reopened_at)}.`}
+                                {reopen.reason !== null &&
+                                    reopen.reason !== '' &&
+                                    ` Reason: ${reopen.reason}`}
+                            </p>
+                        </CardContent>
+                    </Card>
                 )}
 
                 {square !== null && <SquareInvoiceCard square={square} />}
@@ -1521,21 +1581,23 @@ export default function ClientInvoiceDetail({
                          */}
                         {predatingPayments > 0 &&
                             invoice.issue_date !== null && (
-                                <p
-                                    role="status"
-                                    className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm wrap-anywhere text-amber-800 dark:text-amber-300"
-                                >
-                                    {predatingPayments === 1
-                                        ? 'One payment above is'
-                                        : `${predatingPayments} payments above are`}{' '}
-                                    dated before this invoice was issued on{' '}
-                                    {formatDay(invoice.issue_date)}. That is
-                                    allowed — a deposit or an advance retainer
-                                    can arrive before the invoice that applies
-                                    it — but a payment reconciles into the
-                                    period its date names, so check the dates
-                                    are the ones you meant.
-                                </p>
+                                <Card className="mt-3 bg-amber-500/10 text-sm wrap-anywhere text-amber-800 ring-amber-500/40 dark:text-amber-300">
+                                    <CardContent>
+                                        <p role="status">
+                                            {predatingPayments === 1
+                                                ? 'One payment above is'
+                                                : `${predatingPayments} payments above are`}{' '}
+                                            dated before this invoice was issued
+                                            on {formatDay(invoice.issue_date)}.
+                                            That is allowed — a deposit or an
+                                            advance retainer can arrive before
+                                            the invoice that applies it — but a
+                                            payment reconciles into the period
+                                            its date names, so check the dates
+                                            are the ones you meant.
+                                        </p>
+                                    </CardContent>
+                                </Card>
                             )}
                     </CardContent>
                 </Card>

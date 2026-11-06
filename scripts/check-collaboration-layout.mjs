@@ -186,19 +186,34 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 await expect(
                     page.getByRole('button', { name: 'Current client' }),
                 ).toContainText(fixture.company_name);
+                // Notes, discussions and expenses are in the menu on the
+                // client's name, not tabs, so no tab is lit on those screens.
                 const activeSection = screen.includes('agreementfiles')
-                    ? width < 640
-                        ? 'Home'
-                        : 'Client Home'
-                    : screen === 'expensefiles'
-                      ? 'Expenses'
-                      : screen === 'taskthread'
-                        ? 'Tasks'
-                        : ['discussion', 'portal'].includes(screen)
-                          ? 'Discussions'
-                          : 'Notes';
+                    ? 'Overview'
+                    : screen === 'taskthread'
+                      ? 'Tasks'
+                      : null;
 
-                if (width < 640) {
+                if (activeSection === null) {
+                    if (width >= 1280) {
+                        await expect(
+                            page.getByRole('button', { name: /^More for / }),
+                        ).toBeVisible();
+                    } else {
+                        // Below xl the client's menu is folded into the
+                        // section menu, after the tabs.
+                        await page
+                            .getByRole('button', { name: /Client sections$/ })
+                            .click();
+                        await expect(
+                            page.getByRole('menuitem', {
+                                name: 'Notes',
+                                exact: true,
+                            }),
+                        ).toBeVisible();
+                        await page.keyboard.press('Escape');
+                    }
+                } else if (width < 1280) {
                     const sectionMenu = page.getByRole('button', {
                         name: 'Client sections',
                     });
@@ -206,13 +221,13 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     await sectionMenu.click();
                     await expect(
                         page.getByRole('menuitem', {
-                            name: 'Notes',
+                            name: 'Invoices',
                             exact: true,
                         }),
                     ).toBeVisible();
                     await expect(
                         page.getByRole('menuitem', {
-                            name: 'Discussions',
+                            name: 'Time',
                             exact: true,
                         }),
                     ).toBeVisible();
@@ -256,7 +271,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     ).toBeVisible();
                 }
 
-                if (width >= 640) {
+                if (width >= 1280 && activeSection !== null) {
                     const strip = page.getByRole('navigation', {
                         name: 'Client sections',
                     });
@@ -284,26 +299,32 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 const header = page.getByRole('banner');
                 await expect(header).toBeVisible();
                 await expect(
-                    header.getByRole('link', { name: '← Workspaces' }),
+                    header.getByRole('link', { name: 'Leave this workspace' }),
                 ).toBeVisible();
-                const navigation = header.getByRole('navigation', {
-                    name: 'Workspace operations',
-                });
-                await expect(
-                    navigation.getByRole('link', {
-                        name: 'Clients',
-                        exact: true,
-                    }),
-                ).toBeVisible();
-                await expect(
-                    navigation.getByRole('link', {
-                        name: 'Time sheet',
-                        exact: true,
-                    }),
-                ).toBeVisible();
-                await expect(
-                    navigation.getByRole('combobox', { name: 'Appearance' }),
-                ).toBeVisible();
+
+                // The workspace tab strip is a strip from `lg` and a menu below
+                // it; Operations lights neither tab.
+                if (width >= 1024) {
+                    const navigation = header.getByRole('navigation', {
+                        name: 'Workspace sections',
+                    });
+                    await expect(
+                        navigation.getByRole('link', {
+                            name: 'Clients',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await expect(
+                        navigation.locator('[aria-current="page"]'),
+                    ).toHaveCount(0);
+                } else {
+                    await expect(
+                        header.getByRole('button', {
+                            name: /Workspace sections$/,
+                        }),
+                    ).toBeVisible();
+                }
+
                 const bounds = await header.evaluate((element) => {
                     const bar = element.getBoundingClientRect();
 

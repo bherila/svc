@@ -10,6 +10,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Square\SquareConfiguration;
 use App\Support\Navigation\ClientModuleDestinations;
 use App\Support\Navigation\ClientNavigationOption;
+use App\Support\Navigation\WorkspaceDestinations;
 use App\Support\Navigation\WorkspaceNavigation;
 use App\Support\Navigation\WorkspaceNavigationPermissions;
 use Illuminate\Database\Eloquent\Collection;
@@ -64,7 +65,7 @@ final class WorkspaceNavigationFactory
                 id: (string) $company->public_id,
                 name: (string) $company->name,
                 destinations: $isOperator
-                    ? $this->operatorDestinations($workspace, $company)
+                    ? $this->operatorDestinations($workspace, $company, $manages)
                     : $this->portalDestinations($company),
             );
         }
@@ -112,6 +113,31 @@ final class WorkspaceNavigationFactory
             squareHref: $manages && SquareConfiguration::fromConfig()->servesWorkspace($workspace) ? route('square.explore', $workspace, absolute: false) : null,
             historyHref: $manages ? route('history.index', $workspace, absolute: false) : null,
             createClientUrl: $manages ? route('agent-api.v1.clients.store', $workspace, absolute: false) : null,
+            workspaceDestinations: $this->workspaceDestinations($workspace, $isMember, $manages),
+            taskLabelsHref: $isMember ? route('tasks.planning.labels.page', $workspace, absolute: false) : null,
+            // The classic tools page, for the members who could always open it.
+            operationsHref: $isMember ? route('workspaces.operations', $workspace, absolute: false) : null,
+        );
+    }
+
+    /**
+     * The workspace tier, by role.
+     *
+     * Every member lands on the Dashboard and may open Clients; what the
+     * Dashboard then shows a member who is not an owner or admin is decided by
+     * the Dashboard itself (their own queue, no revenue). The cross-client
+     * Invoices and Time lists and Finance are for owners and admins only. A
+     * portal user is not a workspace member and has no workspace tier at all:
+     * every destination is null.
+     */
+    private function workspaceDestinations(Workspace $workspace, bool $isMember, bool $manages): WorkspaceDestinations
+    {
+        return new WorkspaceDestinations(
+            dashboard: $isMember ? route('workspaces.dashboard', $workspace, absolute: false) : null,
+            clients: $isMember ? route('clients.index', $workspace, absolute: false) : null,
+            invoices: $manages ? route('workspaces.invoices', $workspace, absolute: false) : null,
+            time: $manages ? route('workspaces.time', $workspace, absolute: false) : null,
+            finance: $manages ? route('workspaces.finance', $workspace, absolute: false) : null,
         );
     }
 
@@ -159,16 +185,23 @@ final class WorkspaceNavigationFactory
         return $query->whereIn('id', $ids)->get();
     }
 
-    private function operatorDestinations(Workspace $workspace, ClientCompany $company): ClientModuleDestinations
+    private function operatorDestinations(Workspace $workspace, ClientCompany $company, bool $manages): ClientModuleDestinations
     {
         $parameters = [$workspace, $company];
+        $home = route('clients.show', $parameters, absolute: false);
 
         return new ClientModuleDestinations(
-            home: route('clients.show', $parameters, absolute: false),
+            home: $home,
+            // Client Home carries the agreement; there is no list of agreements
+            // to link to, so the tab is the section of the Overview that holds it.
+            agreements: $home.'#agreements',
             invoices: route('clients.invoices', $parameters, absolute: false),
             time: route('clients.time', $parameters, absolute: false),
-            expenses: route('clients.expenses', $parameters, absolute: false),
             tasks: route('clients.tasks', $parameters, absolute: false),
+            // The same gate Client Home applies to its own files link.
+            files: $manages ? route('svc.files.parent.show', [$workspace, 'company', $company->public_id], absolute: false) : null,
+            settings: $manages ? route('clients.settings', $parameters, absolute: false) : null,
+            expenses: route('clients.expenses', $parameters, absolute: false),
             notes: route('collaboration.index', [...$parameters, 'kind' => 'note'], absolute: false),
             discussions: route('collaboration.index', [...$parameters, 'kind' => 'discussion'], absolute: false),
         );
@@ -186,8 +219,12 @@ final class WorkspaceNavigationFactory
     {
         return new ClientModuleDestinations(
             home: route('portal.show', $company, absolute: false),
+            // The portal serves no agreements list, files tab or settings.
+            agreements: null,
             invoices: route('portal.invoices', $company, absolute: false),
             time: route('portal.time', $company, absolute: false),
+            files: null,
+            settings: null,
             // Still null for the portal. #75's manager surface arrived first,
             // and an expense carries a receipt and an internal approval trail;
             // whether a client sees any of it is a disclosure decision that
