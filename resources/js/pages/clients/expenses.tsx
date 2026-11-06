@@ -153,12 +153,11 @@ export default function ClientExpenses({
                     </CardHeader>
                     <CardContent>
                         {notice !== null && (
-                            <p
-                                role="alert"
-                                className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm wrap-anywhere text-destructive"
-                            >
-                                {notice}
-                            </p>
+                            <Card className="mb-4 bg-destructive/5 text-sm wrap-anywhere text-destructive ring-destructive/40">
+                                <CardContent>
+                                    <p role="alert">{notice}</p>
+                                </CardContent>
+                            </Card>
                         )}
                         {expenses.length === 0 ? (
                             <p className="text-sm text-muted-foreground">

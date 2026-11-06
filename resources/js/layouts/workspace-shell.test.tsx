@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -81,14 +81,17 @@ describe('workspace shell', () => {
 
         // The exit button carries an icon and no text, so its entry is empty.
         expect(order[0]).toBe('');
-        expect(order[1]).toBe('Aa Synthetic Client');
-        expect(order.slice(2, 8)).toEqual([
-            'Client Home',
+        expect(order[1]).toBe('Synthetic Workspace');
+        expect(order[2]).toBe('Aa Synthetic Client');
+        // The overflow menu on the client's name is an icon button.
+        expect(order[3]).toBe('');
+        expect(order.slice(4, 10)).toEqual([
+            'Overview',
+            'Agreements',
             'Invoices',
             'Time',
             'Tasks',
-            'Notes',
-            'Discussions',
+            'Files',
         ]);
     });
 
@@ -117,7 +120,7 @@ describe('workspace shell', () => {
 
         const order = navbarText();
 
-        expect(order.indexOf('Tasks')).toBeLessThan(
+        expect(order.indexOf('Files')).toBeLessThan(
             order.findIndex((label) => label.startsWith('Search')),
         );
         expect(
@@ -147,18 +150,13 @@ describe('workspace shell', () => {
             'Synthetic Workspace',
         );
 
-        for (const label of [
-            'Overview',
-            'Manage',
-            'All clients',
-            'Operations',
-        ]) {
+        for (const label of ['Manage', 'Operations']) {
             expect(screen.queryByText(label)).not.toBeInTheDocument();
         }
     });
 
     it.each([
-        ['home', 'Client Home'],
+        ['home', 'Overview'],
         ['invoices', 'Invoices'],
         ['time', 'Time'],
         ['tasks', 'Tasks'],
@@ -212,7 +210,7 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
         await userEvent.click(
             screen.getByRole('link', { name: 'Bb Synthetic Client' }),
@@ -238,8 +236,11 @@ describe('workspace shell', () => {
                     name: 'Bb Synthetic Client',
                     destinations: {
                         home: '/portal/company-2',
+                        agreements: null,
                         invoices: null,
                         time: null,
+                        files: null,
+                        settings: null,
                         expenses: null,
                         tasks: null,
                         notes: null,
@@ -256,7 +257,7 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
         await userEvent.click(
             screen.getByRole('link', { name: 'Bb Synthetic Client' }),
@@ -275,7 +276,7 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
         await userEvent.type(
             screen.getByRole('textbox', { name: 'Filter clients' }),
@@ -298,6 +299,8 @@ describe('workspace shell', () => {
     it('still renders the bar when no client is selected', () => {
         navigation = workspaceNavigation({
             current_client_id: null,
+            // No workspace tier (a portal user), so the switcher is the way in.
+            workspace_destinations: null,
         });
 
         render(
@@ -310,7 +313,7 @@ describe('workspace shell', () => {
             screen.getByRole('link', { name: 'Leave this workspace' }),
         ).toBeInTheDocument();
         expect(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         ).toHaveTextContent('Select a client');
         expect(
             screen.queryByRole('link', { name: 'Invoices' }),
@@ -358,7 +361,7 @@ describe('workspace shell', () => {
         );
 
         const trigger = screen.getByRole('button', {
-            name: 'Client sections',
+            name: /Client sections$/,
         });
 
         // The trigger names where the reader is, so the bar still answers
@@ -370,10 +373,15 @@ describe('workspace shell', () => {
         const menu = await screen.findAllByRole('menuitem');
 
         expect(menu.map((item) => item.textContent)).toEqual([
-            'Client Home',
+            'Overview',
+            'Agreements',
             'Invoices',
             'Time',
             'Tasks',
+            'Files',
+            // Not tabs: a phone has no room for the menu beside the client's
+            // name, so they follow the tabs here.
+            'Client settings',
             'Notes',
             'Discussions',
         ]);
@@ -504,11 +512,147 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
 
         expect(
             screen.queryByRole('button', { name: 'Add client' }),
         ).not.toBeInTheDocument();
+    });
+    describe('workspace tier', () => {
+        it('shows the workspace tabs, and no switcher, while no client is selected', () => {
+            navigation = workspaceNavigation({ current_client_id: null });
+
+            render(
+                <WorkspaceShell activeSection="invoices">
+                    <p>Body</p>
+                </WorkspaceShell>,
+            );
+
+            const strip = screen.getByRole('navigation', {
+                name: 'Workspace sections',
+            });
+
+            expect(
+                within(strip)
+                    .getAllByRole('link')
+                    .map((link) => link.textContent),
+            ).toEqual(['Dashboard', 'Clients', 'Invoices', 'Time', 'Finance']);
+            expect(
+                within(strip).getByRole('link', { name: 'Invoices' }),
+            ).toHaveAttribute('aria-current', 'page');
+            expect(
+                screen.queryByRole('button', { name: /^Current client/ }),
+            ).not.toBeInTheDocument();
+        });
+
+        it('renders only the tabs the server sent a URL for', () => {
+            navigation = workspaceNavigation({
+                current_client_id: null,
+                workspace_destinations: {
+                    dashboard: '/workspaces/workspace-1/dashboard',
+                    clients: '/workspaces/workspace-1/clients',
+                    invoices: null,
+                    time: null,
+                    finance: null,
+                },
+            });
+
+            render(
+                <WorkspaceShell activeSection="dashboard">
+                    <p>Body</p>
+                </WorkspaceShell>,
+            );
+
+            const strip = screen.getByRole('navigation', {
+                name: 'Workspace sections',
+            });
+
+            expect(
+                within(strip)
+                    .getAllByRole('link')
+                    .map((link) => link.textContent),
+            ).toEqual(['Dashboard', 'Clients']);
+        });
+
+        it('collapses the workspace tabs into a menu naming the section', async () => {
+            navigation = workspaceNavigation({ current_client_id: null });
+
+            render(
+                <WorkspaceShell activeSection="dashboard">
+                    <p>Body</p>
+                </WorkspaceShell>,
+            );
+
+            const trigger = screen.getByRole('button', {
+                name: /Workspace sections$/,
+            });
+
+            expect(trigger).toHaveTextContent('Dashboard');
+
+            await userEvent.click(trigger);
+
+            expect(
+                (await screen.findAllByRole('menuitem')).map(
+                    (item) => item.textContent,
+                ),
+            ).toEqual(['Dashboard', 'Clients', 'Invoices', 'Time', 'Finance']);
+        });
+
+        it('offers All clients in the switcher, going back to the dashboard', async () => {
+            navigation = workspaceNavigation();
+
+            render(
+                <WorkspaceShell activeModule="home">
+                    <p>Body</p>
+                </WorkspaceShell>,
+            );
+
+            await userEvent.click(
+                screen.getByRole('button', { name: /^Current client/ }),
+            );
+
+            expect(
+                screen.getByRole('link', { name: 'All clients' }),
+            ).toHaveAttribute('href', '/workspaces/workspace-1/dashboard');
+        });
+
+        it('puts settings and the other modules in the menu on the client name', async () => {
+            navigation = workspaceNavigation();
+
+            render(
+                <WorkspaceShell activeModule="home">
+                    <p>Body</p>
+                </WorkspaceShell>,
+            );
+
+            await userEvent.click(
+                screen.getByRole('button', {
+                    name: 'More for Aa Synthetic Client',
+                }),
+            );
+
+            expect(
+                (await screen.findAllByRole('menuitem')).map(
+                    (item) => item.textContent,
+                ),
+            ).toEqual(['Client settings', 'Notes', 'Discussions']);
+        });
+
+        it('opens help from the bar', async () => {
+            navigation = workspaceNavigation();
+
+            render(
+                <WorkspaceShell activeModule="home">
+                    <p>Body</p>
+                </WorkspaceShell>,
+            );
+
+            await userEvent.click(screen.getByRole('button', { name: 'Help' }));
+
+            expect(
+                await screen.findByRole('dialog', { name: 'Help' }),
+            ).toBeInTheDocument();
+        });
     });
 });

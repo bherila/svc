@@ -164,7 +164,7 @@ so the two groups no longer turn on together.
 ### Scope groups, presets and Admin (#582)
 
 The credential picker (personal API tokens and OAuth apps) and the OAuth consent
-screen show the 28 agent scopes in groups rather than one flat list. The catalog is
+screen show the 29 agent scopes in groups rather than one flat list. The catalog is
 `App\Support\AgentApi\AgentApiScopePresentation`, bound as the auth package's
 `ScopePresentation`; `AgentApiScopePresentationTest` pins every id, order and scope.
 It is presentation only: grants, tokens and OAuth clients still store explicit scope
@@ -178,7 +178,7 @@ ids, and no endpoint accepts a group or preset id.
 | Time | `time:read`, `time:write` |
 | Clients & proposals | `clients:read`, `proposals:read` |
 | Billing & payments | `billing:read`, `billing:write`, `payments:read` |
-| Expenses & finance | `expenses:read`, `expenses:write`, `finance:read` |
+| Expenses & finance | `expenses:read`, `expenses:write`, `finance:read`, `revenue:read` |
 | Admin (sensitive) | `billing:deliver`, `payments:record`, `finance:reconcile`, `proposals:write`, `proposals:accept`, `time:approve`, `clients:write`, `files:write`, `workspaces:create` |
 
 A group shows only the scopes the surface offers, and is omitted when it has none.
@@ -195,7 +195,7 @@ boxes stay editable. A preset is offered only where all its scopes are offered.
 
 | Preset | Scopes |
 | --- | --- |
-| Read-only | `identity:read` plus every `:read` scope, derived from the catalog so a new read scope joins it; listed in the order `identity:read`, `projects`, `tasks`, `collaboration`, `files`, `time`, `clients`, `proposals`, `billing`, `payments`, `expenses`, `finance`, then any newer read scope in catalog order |
+| Read-only | `identity:read` plus every `:read` scope, derived from the catalog so a new read scope joins it; listed in the order `identity:read`, `projects`, `tasks`, `collaboration`, `files`, `time`, `clients`, `proposals`, `billing`, `payments`, `expenses`, `finance`, `revenue`, then any newer read scope in catalog order |
 | Time logging | `identity:read`, `projects:read`, `tasks:read`, `time:read`, `time:write` |
 | Project work | Time logging plus `tasks:write`, `collaboration:read`, `collaboration:write`, `files:read` |
 | Invoice drafting | `identity:read`, `projects:read`, `clients:read`, `time:read`, `billing:read`, `billing:write`, `payments:read` |
@@ -375,7 +375,10 @@ see the read-only `square.*` pass-through tools described under
 [Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
 `finance:read` also see `finance.invoice_payments.list`,
 `finance.payouts.list` and `finance.processor_movements.list`, described under
-[Finance reconciliation](#finance-reconciliation-457).
+[Finance reconciliation](#finance-reconciliation-457). Managers holding
+`revenue:read` also see `revenue.summary`, `revenue.monthly`,
+`revenue.projection` and `revenue.clients`, described under
+[Revenue planning reads](#revenue-planning-reads).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
 agreement names the client it is with (`client_id`, `client_name`) and, when it
@@ -523,6 +526,7 @@ resolves authenticated context, validates its DTO, and maps the result.
 | `billing.preflight_schedule_generation`           | `svc:billing:preflight-schedule-generation`; `AgentBillingAuditReadService` over `ScheduleGenerationPreflight`            | `billing:read`; manager; the caller's workspace only                                | Counts per refusal reason and schedule defect, through the workspace's today, at most 60 periods per schedule and 5 calls per ten minutes; `complete` false when a backlog was not fully examined | `mcp.read.billing.preflight_schedule_generation`; parity and tenant-isolation tests                                   |
 | `billing.audit_unlinked_proposal_agreements`      | `svc:engagement:audit-unlinked-proposal-agreements`; `AgentBillingAuditReadService` over `UnlinkedProposalAgreementAuditor` | `billing:read`; manager; the caller's workspace only                              | Counts only; nothing is repaired or guessed                                                                                                                                     | `mcp.read.billing.audit_unlinked_proposal_agreements`; parity and tenant-isolation tests                              |
 | `billing.audit_deferred_lineage_visibility`       | `svc:billing:audit-deferred-lineage-visibility`; `AgentBillingAuditReadService` over `DeferredLineageVisibilityAuditor`     | `billing:read`; manager; the caller's workspace only                              | Counts, up to 100 affected invoice ids and numbers, and the supported fix; nothing about the deferred work, its projects or members; nothing is repaired                        | `mcp.read.billing.audit_deferred_lineage_visibility`; parity and tenant-isolation tests                               |
+| `revenue.summary`, `revenue.monthly`, `revenue.projection`, `revenue.clients` | Dashboard, client roster and client overview figures; `RevenueReadService` over `ProjectionInputsRepository`, `RevenueActualsRepository` and `AgreementLedgerRepository`, computed by `RecurringRevenueProjector` and `RevenueSummaries` | `revenue:read` (not implied by `finance:read`); manager; workspace-scoped reads, `client_id` resolved within the workspace | Aggregates and per-client figures in minor units; every response carries `assumptions`; no invoice or payment identifiers | `mcp.read.revenue`; REST/MCP/DTO parity, schema, isolation and scope tests (`RevenueRestTest`, `RevenueRepositoriesTest`) |
 | Duplicate-time diagnostics                        | No checked-in workflow/service establishes the grouping key                                                               | Deferred from read GA                                                               | Not implemented: a canonical application query, grouping contract, bounded DTO, and privacy review must exist before MCP can adapt it                                           | No flag or release cohort                                                                                             |
 | Session workspace selection                       | Existing clients select an authorized workspace on every scoped call                                                      | Accepted v1 compatibility contract                                                  | Credential/client sessions are bound; every selector is active-membership scoped and reauthorized per call. Session pinning requires a future versioned migration.              | Context, membership-removal, credential-binding, and multi-workspace compatibility tests                              |
 
@@ -1012,6 +1016,67 @@ commands call the same operation.
 - The tool arguments are the REST ones, with the path parameters named
   `payment_id`, `external_system` and `transaction_id`, and the list's invoice
   filter `invoice_id`.
+
+### Revenue planning reads
+
+`revenue.summary`, `revenue.monthly`, `revenue.projection` and `revenue.clients`
+are the planning reads of [the UX overhaul](ux-overhaul.md) (sections 2, 3, 4
+and 13), the figures the dashboard and the client roster draw. They are
+`RevenueOperations` in the operation catalog, gated by `revenue:read` and served
+as MCP tools through `AgentMcpRevenueTools`, which dispatches each tool to its
+REST route with `AgentMcpRestCall`, so a tool, its route and the DTOs
+(`RevenueSummary`, `MonthlyProjection`, `AgreementProjection`, `ClientRevenue`)
+return the same figures (`RevenueRestTest` checks all three against one
+fixture).
+
+All paths start with `/api/v1/workspaces/{workspace}`:
+
+| Tool | REST path | Scope | Query |
+| --- | --- | --- | --- |
+| `revenue.summary` | `GET /revenue/summary` | `revenue:read` | `basis`, `include_expenses`, `include_projected_overage`, `client_id` |
+| `revenue.monthly` | `GET /revenue/monthly` | `revenue:read` | `basis`, `include_expenses`, `include_projected_overage`, `band`, `client_id` |
+| `revenue.projection` | `GET /revenue/projection` | `revenue:read` | `include_projected_overage`, `client_id` |
+| `revenue.clients` | `GET /revenue/clients` | `revenue:read` | `basis`, `include_expenses`, `client_id` |
+
+- **Access.** Workspace owners/admins only; anyone else, another workspace and
+  a `client_id` of another workspace are not found. `finance:read` does not
+  imply `revenue:read`, and the finance integration's Sanctum token never
+  holds it. The reads sit behind no write cutover; the MCP switches
+  (`mcp.read.revenue`, or the tool name) withhold the tools.
+- **Bases.** `invoiced` (default) counts charged invoices (`issued`,
+  `partially_paid`, `paid`, `disputed`; never `draft` or `void`), placed by
+  service month (`service_period_end`, else `issue_date`); a retainer or
+  recurring-item line, sold in advance, is placed on its own `line_date`.
+  Corrections (made in place) and credit lines net in the month of the invoice
+  they apply to. `collected` counts payments net of refunds by `received_on`,
+  each spread over its invoice's bands in proportion to the pre-tax lines. The
+  projection is always invoiced-basis (`assumptions.projection_basis`).
+- **Bands.** `RevenueBand::forLineType()` classifies every `InvoiceLineType`
+  with an exhaustive `match`: `recurring` (retainer, recurring items and the $0
+  retainer-draw lines), `overage_and_other` (additional hours, milestones,
+  subcontractor, adjustments, credits, deferred settlements and the rest) and
+  `expenses`, which `include_expenses=false` leaves out.
+- **Projection.** `RecurringRevenueProjector` covers the current month and the
+  twelve full months after it. Retainers are priced by `RetainerCalculator` on
+  the cycles `BillingCycleResolver` yields (first-cycle proration, cadence and
+  end date honoured), recurring items placed by `RecurringItemBiller` at their
+  own `ChargeCadence`; nothing is projected before `starts_on` or after the end
+  or termination, no renewal is assumed, a charge already on a charged invoice
+  is left out, and expenses are never projected. Projected overage is each
+  agreement's trailing 6-month average of billed overage amount
+  (`additional_hours` and `prior_month_billable` lines), zero below 3 months
+  in force, and only with `include_projected_overage=true`.
+- **Assumptions.** Every response carries `assumptions`: `as_of`, `basis`,
+  `projection_basis`, `currency`, `tax: excluded`, the overage window and
+  minimum history, `renewals_assumed: false` and `method_version`, so a stored
+  figure can be explained later. Revenue excludes tax; receivables are
+  balances owed, tax included.
+- **Bounded reads.** The inputs are read in a fixed number of queries (billed
+  overage and invoiced actuals are grouped aggregates), so the cost grows with
+  agreements and the window, not invoice rows. `revenue.clients` also builds
+  each in-force agreement's capacity ledger for its health, reporting
+  `ledger_status: ledger_unreadable` rather than failing when one refuses.
+  Everything runs in the request.
 
 ### Changing a due date or scheduled issue date
 

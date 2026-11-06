@@ -13,32 +13,54 @@
  * wordmark that gave no sign of leading anywhere.
  */
 
-/** The modules of a client, in the order the tab strip reads them. */
+/**
+ * The modules of a client. The first six are the client tier's tabs, in the
+ * order the strip reads them; the rest live in the menu on the client's name.
+ */
 export type ClientModule =
     | 'home'
+    | 'agreements'
     | 'invoices'
     | 'time'
-    | 'expenses'
     | 'tasks'
+    | 'files'
+    | 'settings'
+    | 'expenses'
     | 'notes'
     | 'discussions';
+
+/** The workspace tier's tabs, shown while no client is selected. */
+export type WorkspaceSection =
+    'dashboard' | 'clients' | 'invoices' | 'time' | 'finance';
 
 /**
  * Finished URLs, generated per viewer after authorization.
  *
- * Only `home` is guaranteed. A route family need not serve every module - the
- * portal is a different family from the operator screens, and expenses are on
- * the operator screens only for now (#75) - and a null hides that tab rather
- * than linking somewhere that does not exist.
+ * Only `home` (the client's Overview) is guaranteed. A route family need not
+ * serve every module - the portal is a different family from the operator
+ * screens, and files and settings are for managers - and a null hides that tab
+ * rather than linking somewhere that does not exist.
  */
 export type ClientModuleDestinations = {
     home: string;
+    agreements: string | null;
     invoices: string | null;
     time: string | null;
-    expenses: string | null;
     tasks: string | null;
+    files: string | null;
+    settings: string | null;
+    expenses: string | null;
     notes: string | null;
     discussions: string | null;
+};
+
+/** The workspace tier, chosen on the server per role; a null is not rendered. */
+export type WorkspaceDestinations = {
+    dashboard: string | null;
+    clients: string | null;
+    invoices: string | null;
+    time: string | null;
+    finance: string | null;
 };
 
 export type ClientNavigationOption = {
@@ -73,4 +95,9 @@ export type WorkspaceNavigation = {
     history_href?: string | null;
     /** The authorized API destination for creating a client. */
     create_client_url?: string | null;
+    /** Null for a viewer with no workspace tier (a portal user). */
+    workspace_destinations?: WorkspaceDestinations | null;
+    task_labels_href?: string | null;
+    /** The classic Operations tools, until each is re-homed. */
+    operations_href?: string | null;
 };

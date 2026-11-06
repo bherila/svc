@@ -10,6 +10,7 @@ import {
 } from '@/components/agreements/engagement-actions';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
+import { Card, CardContent } from '@/components/ui/card';
 import { useInvoiceMutation } from '@/hooks/use-invoice-mutation';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import type { ApiSchema } from '@/lib/api';
@@ -636,30 +637,39 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                 <div>
                                     <h3 className="font-semibold">Time</h3>
                                     {client.projects.map((project) => (
-                                        <div
+                                        <Card
                                             key={project.id}
-                                            className="mt-3 rounded-2xl border border-slate-200 p-4"
+                                            className="mt-3 ring-slate-200"
                                         >
-                                            <h4 className="font-medium">
-                                                {project.name}
-                                            </h4>
-                                            <TimeEntryForm project={project} />
-                                            <ul className="mt-3 space-y-1 text-sm text-slate-600">
-                                                {project.time_entries.map(
-                                                    (entry) => (
-                                                        <li key={entry.id}>
-                                                            {entry.worked_on} ·{' '}
-                                                            {entry.minutes} min
-                                                            ·{' '}
-                                                            {entry.description}
-                                                            {entry.is_deferred
-                                                                ? ' · deferred'
-                                                                : ''}
-                                                        </li>
-                                                    ),
-                                                )}
-                                            </ul>
-                                        </div>
+                                            <CardContent>
+                                                <h4 className="font-medium">
+                                                    {project.name}
+                                                </h4>
+                                                <TimeEntryForm
+                                                    project={project}
+                                                />
+                                                <ul className="mt-3 space-y-1 text-sm text-slate-600">
+                                                    {project.time_entries.map(
+                                                        (entry) => (
+                                                            <li key={entry.id}>
+                                                                {
+                                                                    entry.worked_on
+                                                                }{' '}
+                                                                ·{' '}
+                                                                {entry.minutes}{' '}
+                                                                min ·{' '}
+                                                                {
+                                                                    entry.description
+                                                                }
+                                                                {entry.is_deferred
+                                                                    ? ' · deferred'
+                                                                    : ''}
+                                                            </li>
+                                                        ),
+                                                    )}
+                                                </ul>
+                                            </CardContent>
+                                        </Card>
                                     ))}
                                 </div>
 
@@ -770,30 +780,32 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                     <div className="mt-3 flex flex-wrap gap-2">
                                         {client.billing_schedules.map(
                                             (schedule) => (
-                                                <div
+                                                <Card
                                                     key={schedule.id}
-                                                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                                    className="text-sm ring-slate-200"
                                                 >
-                                                    {schedule.cadence.replace(
-                                                        '_',
-                                                        ' ',
-                                                    )}{' '}
-                                                    · next{' '}
-                                                    {schedule.next_run_on}
-                                                    {schedule.generate_href !==
-                                                        null && (
-                                                        <EngagementAction
-                                                            href={
-                                                                schedule.generate_href
-                                                            }
-                                                            version={
-                                                                schedule.version
-                                                            }
-                                                            label="Generate due"
-                                                            description="Generate invoices for this billing schedule through today. Review its next run and terms before confirming."
-                                                        />
-                                                    )}
-                                                </div>
+                                                    <CardContent>
+                                                        {schedule.cadence.replace(
+                                                            '_',
+                                                            ' ',
+                                                        )}{' '}
+                                                        · next{' '}
+                                                        {schedule.next_run_on}
+                                                        {schedule.generate_href !==
+                                                            null && (
+                                                            <EngagementAction
+                                                                href={
+                                                                    schedule.generate_href
+                                                                }
+                                                                version={
+                                                                    schedule.version
+                                                                }
+                                                                label="Generate due"
+                                                                description="Generate invoices for this billing schedule through today. Review its next run and terms before confirming."
+                                                            />
+                                                        )}
+                                                    </CardContent>
+                                                </Card>
                                             ),
                                         )}
                                     </div>
@@ -807,56 +819,62 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                     />
                                     <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
                                         {client.invoices.map((invoice) => (
-                                            <article
+                                            <Card
                                                 key={invoice.id}
-                                                className="rounded-2xl border border-slate-200 p-4"
+                                                className="ring-slate-200"
                                             >
-                                                <div className="grid min-w-0 grid-cols-1 gap-3">
-                                                    <div className="min-w-0 flex-1 wrap-anywhere">
-                                                        <h4 className="font-semibold">
-                                                            {
-                                                                invoice.invoice_number
-                                                            }
-                                                        </h4>
-                                                        <p className="text-sm text-slate-600">
-                                                            {money(
-                                                                invoice.balance_amount,
-                                                                invoice.currency,
-                                                            )}{' '}
-                                                            due ·{' '}
-                                                            {statusLabel(
-                                                                invoice.status,
-                                                            )}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex max-w-full min-w-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
-                                                        <a
-                                                            href={
-                                                                invoice.pdf_href
-                                                            }
-                                                        >
-                                                            PDF
-                                                        </a>
-                                                        <InvoiceIssueButton
+                                                <CardContent>
+                                                    <article>
+                                                        <div className="grid min-w-0 grid-cols-1 gap-3">
+                                                            <div className="min-w-0 flex-1 wrap-anywhere">
+                                                                <h4 className="font-semibold">
+                                                                    {
+                                                                        invoice.invoice_number
+                                                                    }
+                                                                </h4>
+                                                                <p className="text-sm text-slate-600">
+                                                                    {money(
+                                                                        invoice.balance_amount,
+                                                                        invoice.currency,
+                                                                    )}{' '}
+                                                                    due ·{' '}
+                                                                    {statusLabel(
+                                                                        invoice.status,
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex max-w-full min-w-0 flex-wrap gap-3 text-sm font-semibold text-cyan-700">
+                                                                <a
+                                                                    href={
+                                                                        invoice.pdf_href
+                                                                    }
+                                                                >
+                                                                    PDF
+                                                                </a>
+                                                                <InvoiceIssueButton
+                                                                    invoice={
+                                                                        invoice
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <PaymentForm
                                                             invoice={invoice}
+                                                            timezone={
+                                                                workspace.timezone
+                                                            }
                                                         />
-                                                    </div>
-                                                </div>
-                                                <PaymentForm
-                                                    invoice={invoice}
-                                                    timezone={
-                                                        workspace.timezone
-                                                    }
-                                                />
-                                                <OperationFiles
-                                                    panel={
-                                                        invoice.attachment_panel
-                                                    }
-                                                    attachments={
-                                                        invoice.attachments
-                                                    }
-                                                />
-                                            </article>
+                                                        <OperationFiles
+                                                            panel={
+                                                                invoice.attachment_panel
+                                                            }
+                                                            attachments={
+                                                                invoice.attachments
+                                                            }
+                                                        />
+                                                    </article>
+                                                </CardContent>
+                                            </Card>
                                         ))}
                                     </div>
                                 </div>

@@ -1,8 +1,8 @@
 import { Head, Link, router } from '@inertiajs/react';
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
 import type { TaskEditorProject } from '@/components/tasks/task-editor';
 import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Select,
@@ -295,26 +295,25 @@ export default function ClientTasks({
                                     {pagination.previous_href !== null && (
                                         <Link
                                             href={pagination.previous_href}
-                                            className={buttonVariants({
-                                                variant: 'outline',
-                                                size: 'sm',
-                                            })}
+                                            className="inline-flex items-center gap-1 text-sm underline underline-offset-4"
                                         >
+                                            <ChevronLeftIcon
+                                                aria-hidden="true"
+                                                className="size-4"
+                                            />
                                             Previous tasks
                                         </Link>
                                     )}
                                     {pagination.next_href !== null && (
                                         <Link
                                             href={pagination.next_href}
-                                            className={cn(
-                                                buttonVariants({
-                                                    variant: 'outline',
-                                                    size: 'sm',
-                                                }),
-                                                'ml-auto',
-                                            )}
+                                            className="ml-auto inline-flex items-center gap-1 text-sm underline underline-offset-4"
                                         >
                                             Next tasks
+                                            <ChevronRightIcon
+                                                aria-hidden="true"
+                                                className="size-4"
+                                            />
                                         </Link>
                                     )}
                                 </nav>

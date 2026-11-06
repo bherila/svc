@@ -1,5 +1,6 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import WorkspaceShell from '@/layouts/workspace-shell';
@@ -84,25 +85,26 @@ export default function HistoryIndex({
                         </p>
                     )}
                     {entries.map((entry) => (
-                        <article
-                            key={entry.id}
-                            className="min-w-0 rounded-lg border p-4"
-                        >
-                            <p className="text-xs text-muted-foreground">
-                                {entry.kind}
-                            </p>
-                            <Link
-                                href={entry.href}
-                                className="font-medium wrap-anywhere underline underline-offset-4"
-                            >
-                                {entry.title}
-                            </Link>
-                            <p className="text-sm wrap-anywhere text-muted-foreground">
-                                {[entry.occurred_on, entry.author]
-                                    .filter(Boolean)
-                                    .join(' · ')}
-                            </p>
-                        </article>
+                        <Card key={entry.id} className="min-w-0">
+                            <CardContent>
+                                <article>
+                                    <p className="text-xs text-muted-foreground">
+                                        {entry.kind}
+                                    </p>
+                                    <Link
+                                        href={entry.href}
+                                        className="font-medium wrap-anywhere underline underline-offset-4"
+                                    >
+                                        {entry.title}
+                                    </Link>
+                                    <p className="text-sm wrap-anywhere text-muted-foreground">
+                                        {[entry.occurred_on, entry.author]
+                                            .filter(Boolean)
+                                            .join(' · ')}
+                                    </p>
+                                </article>
+                            </CardContent>
+                        </Card>
                     ))}
                 </div>
                 <nav aria-label="History pages" className="flex gap-4">

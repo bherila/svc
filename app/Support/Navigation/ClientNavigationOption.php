@@ -12,7 +12,7 @@ final class ClientNavigationOption
     ) {}
 
     /**
-     * @return array{id: string, name: string, destinations: array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null}}
+     * @return array{id: string, name: string, destinations: array<string, string|null>}
      */
     public function toArray(): array
     {

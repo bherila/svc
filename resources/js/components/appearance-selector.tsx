@@ -5,7 +5,7 @@ export function AppearanceSelector() {
     const [appearance, setAppearance] = useAppearance();
 
     return (
-        <label className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+        <label className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:inline-flex">
             {/*
              * Redundant with the control beside it, and the first thing to go
              * when the bar is short of room: on a phone the client's name and

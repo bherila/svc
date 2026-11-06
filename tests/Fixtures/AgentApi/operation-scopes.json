@@ -1700,6 +1700,46 @@
             "mcp.switch:current-context"
         ]
     },
+    "revenue.clients": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.clients"
+        ]
+    },
+    "revenue.monthly": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.monthly"
+        ]
+    },
+    "revenue.projection": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.projection"
+        ]
+    },
+    "revenue.summary": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.summary"
+        ]
+    },
     "search": {
         "scopes": [
             "identity:read"

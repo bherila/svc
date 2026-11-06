@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountPreferencesController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientTaskController;
@@ -13,9 +14,13 @@ use App\Http\Controllers\OpenApiDocumentController;
 use App\Http\Controllers\Payments\WorkspacePaymentConnectionController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SquareExploreController;
+use App\Http\Controllers\WorkspaceDashboardController;
 use App\Http\Controllers\WorkspaceEntryController;
+use App\Http\Controllers\WorkspaceFinanceController;
+use App\Http\Controllers\WorkspaceInvoiceListController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
+use App\Http\Controllers\WorkspaceTimeQueueController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PublishApiDocumentation;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
@@ -53,6 +58,11 @@ Route::middleware('auth')->group(function (): void {
     // question this screen asks has exactly one answer per row.
     Route::get('/app', WorkspaceSelectorController::class)->name('workspaces.index');
 
+    // The caller's own display preferences (how time is read). No id in the
+    // path: it can only ever write the signed-in person's row.
+    Route::patch('/account/preferences', [AccountPreferencesController::class, 'update'])
+        ->name('account.preferences.update');
+
     // What the command palette asks as you type. Throttled rather than
     // debounced-and-trusted: the debounce lives in the browser and a browser
     // is not where a rate limit belongs.
@@ -81,6 +91,28 @@ Route::middleware('auth')->group(function (): void {
     // inside the Inertia middleware. Attaching it here is also what keeps the
     // switcher's queries off the screens that show no switcher - the workspace
     // selector, webhooks, PDFs and downloads.
+    // The workspace tier: Dashboard (the landing page), the cross-client Invoices
+    // and Time lists, and Finance. The binding resolves the workspace through
+    // TenantRouteBinding, so a workspace this person is not in is a 404; each
+    // controller then authorizes its own audience (members for the Dashboard,
+    // owners and admins for the rest).
+    Route::get('/workspaces/{workspace}/dashboard', WorkspaceDashboardController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.dashboard');
+    Route::get('/workspaces/{workspace}/all/invoices', WorkspaceInvoiceListController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.invoices');
+    Route::get('/workspaces/{workspace}/all/time', WorkspaceTimeQueueController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.time');
+    Route::get('/workspaces/{workspace}/finance', WorkspaceFinanceController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.finance');
+    // Operations, kept exactly as it was: until the client overview and invoice
+    // lanes re-home each of its tools (draft proposals, proposal send, agreement
+    // activation, billing schedules, the per-project time form, per-client file
+    // panels) it is the only UI for them. Reached from the settings menu as
+    // "Operations (classic tools)"; no tab is lit.
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.operations');

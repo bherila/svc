@@ -10,6 +10,7 @@ import ClientProposalDetail from '@/pages/clients/proposal';
 import ClientSettings from '@/pages/clients/settings';
 import ClientTasks from '@/pages/clients/tasks';
 import Operations from '@/pages/operations';
+import Dashboard from '@/pages/workspaces/dashboard';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { clientOption, workspaceNavigation } from '@/test/workspace-navigation';
@@ -120,7 +121,64 @@ describe('client screens under data that does not fit', () => {
         ).toHaveAttribute('href', '/app');
         expect(
             screen.getByRole('navigation', { name: 'Client sections' }),
-        ).toContainElement(screen.getByRole('link', { name: 'Client Home' }));
+        ).toContainElement(screen.getByRole('link', { name: 'Overview' }));
+        expect(screen.getByRole('link', { name: 'Time' })).toHaveAttribute(
+            'href',
+            '/workspaces/workspace-1/clients/company-1/time',
+        );
+        expect(screen.getAllByRole('banner')).toHaveLength(1);
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
+    it('keeps the Dashboard queue and all existing navigation inside the window', () => {
+        const { container } = render(
+            <Dashboard
+                workspace={{ id: 'synthetic-workspace', name: 'Synthetic' }}
+                audience="workspace"
+                revenue={{ slot: 'revenue' }}
+                queue={[
+                    {
+                        id: 'overdue-1',
+                        kind: 'overdue_invoice',
+                        title: `Invoice ${LONG_INVOICE_NUMBER}`,
+                        client: LONG_NAME,
+                        href: '/workspaces/workspace-1/clients/company-1/invoices/invoice-1',
+                        action: 'Review',
+                        amount: 123456789,
+                        currency: 'USD',
+                        date: '2026-08-01',
+                        count: null,
+                        minutes: null,
+                    },
+                    {
+                        id: 'time-1',
+                        kind: 'unapproved_time',
+                        title: 'Time to approve',
+                        client: LONG_NAME,
+                        href: '/workspaces/workspace-1/clients/company-1/time',
+                        action: 'Review',
+                        amount: null,
+                        currency: null,
+                        date: null,
+                        count: 400,
+                        minutes: 90000,
+                    },
+                ]}
+            />,
+        );
+
+        expect(screen.getByRole('main')).toContainElement(
+            screen.getByRole('heading', { level: 1, name: 'Dashboard' }),
+        );
+        expect(screen.getByRole('banner')).not.toContainElement(
+            screen.getByRole('main'),
+        );
+        expect(
+            screen.getByRole('link', { name: 'Leave this workspace' }),
+        ).toHaveAttribute('href', '/app');
+        expect(
+            screen.getByRole('navigation', { name: 'Client sections' }),
+        ).toContainElement(screen.getByRole('link', { name: 'Overview' }));
         expect(screen.getByRole('link', { name: 'Time' })).toHaveAttribute(
             'href',
             '/workspaces/workspace-1/clients/company-1/time',

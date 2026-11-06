@@ -166,208 +166,218 @@ function CapacityStrip({ capacity }: { capacity: Capacity[] }) {
                         row.rollover_months !== null && row.rollover_months > 0;
 
                     return (
-                        <div
+                        <Card
                             key={`${row.agreement}-${row.cycle_start}-${index}`}
                             // Bounded as well as flexible: a labelled figure
                             // and its value on one row are only readable near
                             // each other, and a single agreement on a wide
                             // screen otherwise stretched the pair a thousand
                             // pixels apart.
-                            className="max-w-md min-w-64 flex-1 rounded-lg border border-border bg-muted/40 p-3"
+                            className="max-w-md min-w-64 flex-1 bg-muted/40"
                         >
-                            {/*
-                             * Wrapped, not truncated. The title is what tells
-                             * two cards apart, and capping the card's width
-                             * made `truncate` clip it on a page with room to
-                             * spare - with the full value nowhere. Truncation
-                             * is for an identity string in fixed chrome that
-                             * is one click from its full form; this is neither.
-                             */}
-                            <p className="text-xs font-medium wrap-anywhere text-muted-foreground">
-                                {row.agreement}
-                                {shareTheName && row.cycle_start !== '' && (
-                                    <span className="ml-1 font-normal">
-                                        · cycle from{' '}
-                                        {formatShortDay(row.cycle_start)}
-                                    </span>
-                                )}
-                            </p>
-                            <p className="mt-1 font-medium tabular-nums">
-                                <span
-                                    className={
-                                        over ? 'text-destructive' : undefined
-                                    }
-                                >
-                                    {formatDecimalHours(used)}
-                                </span>
-                                <span className="text-muted-foreground">
-                                    {' '}
-                                    / {formatDecimalHours(available)} h
-                                </span>
-                            </p>
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
-                                <div
-                                    className={cn(
-                                        'h-full rounded-full',
-                                        over
-                                            ? 'bg-destructive'
-                                            : 'bg-emerald-500',
-                                    )}
-                                    style={{ width: `${fraction * 100}%` }}
-                                />
-                            </div>
-                            {/*
-                             * Where the availability came from. The ledger has
-                             * computed these since the port and the screen
-                             * showed none of them, so a month living on hours
-                             * carried in read exactly like one with a large
-                             * retainer - and the hours spent repaying an
-                             * earlier overrun were invisible, which left the
-                             * headline figure with no derivation at all.
-                             */}
-                            <div className="mt-3 grid grid-cols-1 gap-1">
-                                <CapacityLine
-                                    label="Included this cycle"
-                                    value={`${formatDecimalHours(row.retainer_hours)} h`}
-                                />
-                                {row.spent_earlier_in_cycle_hours > 0 && (
-                                    <CapacityLine
-                                        label="Used earlier in this cycle"
-                                        value={signedHours(
-                                            -row.spent_earlier_in_cycle_hours,
-                                        )}
-                                    />
-                                )}
-                                {row.deficit_offset_hours > 0 && (
-                                    <CapacityLine
-                                        label="Repaid earlier overrun"
-                                        value={signedHours(
-                                            -row.deficit_offset_hours,
-                                        )}
-                                        emphasis="over"
-                                    />
-                                )}
-                                {row.rollover_in_hours > 0 && (
-                                    <CapacityLine
-                                        label="Carried in"
-                                        value={signedHours(
-                                            row.rollover_in_hours,
-                                        )}
-                                    />
-                                )}
-                                <div className="mt-0.5 border-t border-border pt-1">
-                                    <CapacityLine
-                                        label="Available"
-                                        value={`${formatDecimalHours(available)} h`}
-                                        emphasis="total"
-                                    />
-                                </div>
-                                <CapacityLine
-                                    label="Used"
-                                    value={signedHours(-used)}
-                                    emphasis={over ? 'over' : 'normal'}
-                                />
+                            <CardContent>
                                 {/*
-                                 * The one figure that says where the agreement
-                                 * stands. Unused hours, unspent carry-in and a
-                                 * deficit were three separate numbers on this
-                                 * card, and no arrangement of them told a
-                                 * reader whether the client was ahead of the
-                                 * retainer or behind it.
+                                 * Wrapped, not truncated. The title is what tells
+                                 * two cards apart, and capping the card's width
+                                 * made `truncate` clip it on a page with room to
+                                 * spare - with the full value nowhere. Truncation
+                                 * is for an identity string in fixed chrome that
+                                 * is one click from its full form; this is neither.
                                  */}
-                                <div className="mt-0.5 border-t border-border pt-1">
-                                    <CapacityLine
-                                        label={
-                                            carriesForward
-                                                ? 'Carryover balance'
-                                                : 'Closing balance'
+                                <p className="text-xs font-medium wrap-anywhere text-muted-foreground">
+                                    {row.agreement}
+                                    {shareTheName && row.cycle_start !== '' && (
+                                        <span className="ml-1 font-normal">
+                                            · cycle from{' '}
+                                            {formatShortDay(row.cycle_start)}
+                                        </span>
+                                    )}
+                                </p>
+                                <p className="mt-1 font-medium tabular-nums">
+                                    <span
+                                        className={
+                                            over
+                                                ? 'text-destructive'
+                                                : undefined
                                         }
-                                        value={signedHours(row.balance_hours)}
-                                        emphasis={
-                                            row.balance_hours < 0
-                                                ? 'over'
-                                                : 'total'
-                                        }
+                                    >
+                                        {formatDecimalHours(used)}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        {' '}
+                                        / {formatDecimalHours(available)} h
+                                    </span>
+                                </p>
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
+                                    <div
+                                        className={cn(
+                                            'h-full rounded-full',
+                                            over
+                                                ? 'bg-destructive'
+                                                : 'bg-emerald-500',
+                                        )}
+                                        style={{ width: `${fraction * 100}%` }}
                                     />
                                 </div>
-                            </div>
-                            {row.balance_hours >= 0 &&
-                                row.remaining_rollover > 0 && (
+                                {/*
+                                 * Where the availability came from. The ledger has
+                                 * computed these since the port and the screen
+                                 * showed none of them, so a month living on hours
+                                 * carried in read exactly like one with a large
+                                 * retainer - and the hours spent repaying an
+                                 * earlier overrun were invisible, which left the
+                                 * headline figure with no derivation at all.
+                                 */}
+                                <div className="mt-3 grid grid-cols-1 gap-1">
+                                    <CapacityLine
+                                        label="Included this cycle"
+                                        value={`${formatDecimalHours(row.retainer_hours)} h`}
+                                    />
+                                    {row.spent_earlier_in_cycle_hours > 0 && (
+                                        <CapacityLine
+                                            label="Used earlier in this cycle"
+                                            value={signedHours(
+                                                -row.spent_earlier_in_cycle_hours,
+                                            )}
+                                        />
+                                    )}
+                                    {row.deficit_offset_hours > 0 && (
+                                        <CapacityLine
+                                            label="Repaid earlier overrun"
+                                            value={signedHours(
+                                                -row.deficit_offset_hours,
+                                            )}
+                                            emphasis="over"
+                                        />
+                                    )}
+                                    {row.rollover_in_hours > 0 && (
+                                        <CapacityLine
+                                            label="Carried in"
+                                            value={signedHours(
+                                                row.rollover_in_hours,
+                                            )}
+                                        />
+                                    )}
+                                    <div className="mt-0.5 border-t border-border pt-1">
+                                        <CapacityLine
+                                            label="Available"
+                                            value={`${formatDecimalHours(available)} h`}
+                                            emphasis="total"
+                                        />
+                                    </div>
+                                    <CapacityLine
+                                        label="Used"
+                                        value={signedHours(-used)}
+                                        emphasis={over ? 'over' : 'normal'}
+                                    />
+                                    {/*
+                                     * The one figure that says where the agreement
+                                     * stands. Unused hours, unspent carry-in and a
+                                     * deficit were three separate numbers on this
+                                     * card, and no arrangement of them told a
+                                     * reader whether the client was ahead of the
+                                     * retainer or behind it.
+                                     */}
+                                    <div className="mt-0.5 border-t border-border pt-1">
+                                        <CapacityLine
+                                            label={
+                                                carriesForward
+                                                    ? 'Carryover balance'
+                                                    : 'Closing balance'
+                                            }
+                                            value={signedHours(
+                                                row.balance_hours,
+                                            )}
+                                            emphasis={
+                                                row.balance_hours < 0
+                                                    ? 'over'
+                                                    : 'total'
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                                {row.balance_hours >= 0 &&
+                                    row.remaining_rollover > 0 && (
+                                        <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                                            Including{' '}
+                                            {formatDecimalHours(
+                                                row.remaining_rollover,
+                                            )}{' '}
+                                            h carried in from earlier cycles.
+                                        </p>
+                                    )}
+                                {row.balance_hours < 0 && carriedDebt > 0 && (
                                     <p className="mt-1 text-xs text-muted-foreground tabular-nums">
                                         Including{' '}
-                                        {formatDecimalHours(
-                                            row.remaining_rollover,
-                                        )}{' '}
-                                        h carried in from earlier cycles.
+                                        {formatDecimalHours(carriedDebt)} h owed
+                                        from earlier cycles.
                                     </p>
                                 )}
-                            {row.balance_hours < 0 && carriedDebt > 0 && (
-                                <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                                    Including {formatDecimalHours(carriedDebt)}{' '}
-                                    h owed from earlier cycles.
-                                </p>
-                            )}
-                            {row.expired_hours > 0 && (
-                                <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                                    <span className="text-destructive">
-                                        {formatDecimalHours(row.expired_hours)}{' '}
-                                        h
-                                    </span>{' '}
-                                    expired before this cycle opened.
-                                </p>
-                            )}
-                            {/*
-                             * What the client actually bought. Hours worked
-                             * over the retainer and carried forward as a
-                             * deficit are unpaid; hours worked over it and
-                             * invoiced are paid. A card reporting only what the
-                             * retainer included and how far the work went past
-                             * it draws the two the same way.
-                             */}
-                            {row.billed_hours !== null && (
-                                <div className="mt-2 grid grid-cols-1 gap-1 border-t border-border pt-2">
-                                    <CapacityLine
-                                        label="Billed"
-                                        value={`${formatDecimalHours(row.billed_hours)} h`}
-                                    />
-                                    {row.billed_overage_hours !== null &&
-                                        row.billed_overage_hours !== 0 && (
-                                            <CapacityLine
-                                                label={
-                                                    row.billed_overage_hours > 0
-                                                        ? 'Overage at the hourly rate'
-                                                        : 'Reversed by a correction'
-                                                }
-                                                value={signedHours(
-                                                    row.billed_overage_hours,
-                                                )}
-                                            />
-                                        )}
-                                </div>
-                            )}
-                            {row.pending_minutes > 0 && (
+                                {row.expired_hours > 0 && (
+                                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                                        <span className="text-destructive">
+                                            {formatDecimalHours(
+                                                row.expired_hours,
+                                            )}{' '}
+                                            h
+                                        </span>{' '}
+                                        expired before this cycle opened.
+                                    </p>
+                                )}
+                                {/*
+                                 * What the client actually bought. Hours worked
+                                 * over the retainer and carried forward as a
+                                 * deficit are unpaid; hours worked over it and
+                                 * invoiced are paid. A card reporting only what the
+                                 * retainer included and how far the work went past
+                                 * it draws the two the same way.
+                                 */}
+                                {row.billed_hours !== null && (
+                                    <div className="mt-2 grid grid-cols-1 gap-1 border-t border-border pt-2">
+                                        <CapacityLine
+                                            label="Billed"
+                                            value={`${formatDecimalHours(row.billed_hours)} h`}
+                                        />
+                                        {row.billed_overage_hours !== null &&
+                                            row.billed_overage_hours !== 0 && (
+                                                <CapacityLine
+                                                    label={
+                                                        row.billed_overage_hours >
+                                                        0
+                                                            ? 'Overage at the hourly rate'
+                                                            : 'Reversed by a correction'
+                                                    }
+                                                    value={signedHours(
+                                                        row.billed_overage_hours,
+                                                    )}
+                                                />
+                                            )}
+                                    </div>
+                                )}
+                                {row.pending_minutes > 0 && (
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                        <span className="font-medium text-foreground tabular-nums">
+                                            {formatHours(row.pending_minutes)}
+                                        </span>{' '}
+                                        awaiting approval
+                                    </p>
+                                )}
+                                {/*
+                                 * The rule behind the arithmetic above, so the
+                                 * numbers can be read rather than only observed.
+                                 * Null months is not zero months: it says the
+                                 * agreement states no rollover, which reaches the
+                                 * same outcome by a different route.
+                                 */}
                                 <p className="mt-2 text-xs text-muted-foreground">
-                                    <span className="font-medium text-foreground tabular-nums">
-                                        {formatHours(row.pending_minutes)}
-                                    </span>{' '}
-                                    awaiting approval
+                                    {row.rollover_months === null
+                                        ? 'Unused hours do not carry forward.'
+                                        : row.rollover_months === 0
+                                          ? 'Unused hours expire at the end of the cycle.'
+                                          : `Unused hours carry forward ${row.rollover_months} month${row.rollover_months === 1 ? '' : 's'}.`}
                                 </p>
-                            )}
-                            {/*
-                             * The rule behind the arithmetic above, so the
-                             * numbers can be read rather than only observed.
-                             * Null months is not zero months: it says the
-                             * agreement states no rollover, which reaches the
-                             * same outcome by a different route.
-                             */}
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                {row.rollover_months === null
-                                    ? 'Unused hours do not carry forward.'
-                                    : row.rollover_months === 0
-                                      ? 'Unused hours expire at the end of the cycle.'
-                                      : `Unused hours carry forward ${row.rollover_months} month${row.rollover_months === 1 ? '' : 's'}.`}
-                            </p>
-                        </div>
+                            </CardContent>
+                        </Card>
                     );
                 })}
             </div>
@@ -575,19 +585,21 @@ export default function TimeSheet({
                 </header>
 
                 {notice !== null && (
-                    <div
-                        role="alert"
-                        className="mt-6 flex items-start justify-between gap-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-                    >
-                        <p>{notice}</p>
-                        <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => setNotice(null)}
+                    <Card className="mt-6 bg-destructive/10 text-sm text-destructive ring-destructive/40">
+                        <CardContent
+                            role="alert"
+                            className="flex items-start justify-between gap-4"
                         >
-                            Dismiss
-                        </Button>
-                    </div>
+                            <p>{notice}</p>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => setNotice(null)}
+                            >
+                                Dismiss
+                            </Button>
+                        </CardContent>
+                    </Card>
                 )}
 
                 {selectionMode === 'invoice' && (
@@ -599,68 +611,69 @@ export default function TimeSheet({
                 )}
 
                 {selectedEntries.length > 0 && (
-                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
-                        <p className="text-sm">
-                            {selectedEntries.length} selected ·{' '}
-                            <span className="tabular-nums">
-                                {formatHours(
-                                    selectedEntries.reduce(
-                                        (total, entry) => total + entry.minutes,
-                                        0,
-                                    ),
-                                )}
-                            </span>
-                        </p>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setSelected([])}
-                            >
-                                Clear
-                            </Button>
-                            {selectionMode === 'invoice' ? (
+                    <Card className="mt-6 bg-muted/40">
+                        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-sm">
+                                {selectedEntries.length} selected ·{' '}
+                                <span className="tabular-nums">
+                                    {formatHours(
+                                        selectedEntries.reduce(
+                                            (total, entry) =>
+                                                total + entry.minutes,
+                                            0,
+                                        ),
+                                    )}
+                                </span>
+                            </p>
+                            <div className="flex gap-2">
                                 <Button
-                                    size="sm"
-                                    onClick={() => {
-                                        if (invoiceDraft !== null) {
-                                            setInvoiceSelection(
-                                                structuredClone({
-                                                    entries: selectedEntries,
-                                                    url: invoiceDraft.url,
-                                                    companyId:
-                                                        invoiceDraft.company_id,
-                                                    target: invoiceDraft.target,
-                                                    timezone:
-                                                        workspace.timezone,
-                                                }),
-                                            );
+                                    variant="outline"
+                                    onClick={() => setSelected([])}
+                                >
+                                    Clear
+                                </Button>
+                                {selectionMode === 'invoice' ? (
+                                    <Button
+                                        onClick={() => {
+                                            if (invoiceDraft !== null) {
+                                                setInvoiceSelection(
+                                                    structuredClone({
+                                                        entries:
+                                                            selectedEntries,
+                                                        url: invoiceDraft.url,
+                                                        companyId:
+                                                            invoiceDraft.company_id,
+                                                        target: invoiceDraft.target,
+                                                        timezone:
+                                                            workspace.timezone,
+                                                    }),
+                                                );
+                                            }
+                                        }}
+                                    >
+                                        Review draft invoice
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        disabled={approving}
+                                        onClick={() =>
+                                            approve(
+                                                selectedEntries.slice(
+                                                    0,
+                                                    approvalLimit,
+                                                ),
+                                            )
                                         }
-                                    }}
-                                >
-                                    Review draft invoice
-                                </Button>
-                            ) : (
-                                <Button
-                                    size="sm"
-                                    disabled={approving}
-                                    onClick={() =>
-                                        approve(
-                                            selectedEntries.slice(
-                                                0,
-                                                approvalLimit,
-                                            ),
-                                        )
-                                    }
-                                >
-                                    <CheckIcon />
-                                    {selectedEntries.length > approvalLimit
-                                        ? `Approve ${approvalLimit} of ${selectedEntries.length}`
-                                        : 'Approve'}
-                                </Button>
-                            )}
-                        </div>
-                    </div>
+                                    >
+                                        <CheckIcon />
+                                        {selectedEntries.length > approvalLimit
+                                            ? `Approve ${approvalLimit} of ${selectedEntries.length}`
+                                            : 'Approve'}
+                                    </Button>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
                 )}
 
                 {company !== undefined && months.length === 0 && (

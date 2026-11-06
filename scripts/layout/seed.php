@@ -535,6 +535,11 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'expenses' => route('clients.expenses', [$workspace, $company], absolute: false),
     'time' => route('clients.time', [$workspace, $company], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
+    'dashboard' => route('workspaces.dashboard', $workspace, absolute: false),
+    'workspace_clients' => route('clients.index', $workspace, absolute: false),
+    'workspace_invoices' => route('workspaces.invoices', $workspace, absolute: false),
+    'workspace_time' => route('workspaces.time', $workspace, absolute: false),
+    'workspace_finance' => route('workspaces.finance', $workspace, absolute: false),
 ], JSON_THROW_ON_ERROR));
 // Wayfinder runs Artisan from the repository during the asset build. Give it
 // this already-sanitized configuration so it skips the repository's .env too.

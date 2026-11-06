@@ -90,6 +90,8 @@ The resource families have these responsibilities:
 
 **`finance`:** Manager payment-allocation, payout and processor-movement reads and reconciliation writes under separate finance scopes. See the [inventory](mcp.md#public-capability-inventory).
 
+**`revenue`:** Manager planning reads under `revenue:read`, which `finance:read` does not imply: key figures, monthly actuals by client and band, the per-agreement projection and the client roster with agreement health, each with its assumptions. See [Revenue planning reads](mcp.md#revenue-planning-reads).
+
 **`expenses`:** Authorized expense recording, approval, withdrawal, draft deletion and dedicated receipt access. See the [inventory](mcp.md#public-capability-inventory).
 
 **`expense_schedules`:** Recurring-expense reads, configuration and bounded generation under the expense cutover. See the [inventory](mcp.md#public-capability-inventory).

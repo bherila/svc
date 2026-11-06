@@ -1,6 +1,7 @@
 import { Head, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useExpenseMutation } from '@/hooks/use-expense-mutation';
@@ -86,151 +87,170 @@ function ScheduleForm({
     );
 
     return (
-        <form
-            className="grid min-w-0 grid-cols-1 gap-4 rounded border p-4"
-            onSubmit={async (event) => {
-                event.preventDefault();
+        <Card className="min-w-0">
+            <CardContent>
+                <form
+                    onSubmit={async (event) => {
+                        event.preventDefault();
 
-                if (mutation.busy) {
-                    return;
-                }
-
-                const data = form.data;
-                const facts = {
-                    description: data.description,
-                    amount: data.amount,
-                    currency: data.currency,
-                    project_id: data.project_id || null,
-                };
-                await mutation.submit(
-                    baseline.method,
-                    baseline.url,
-                    baseline.method === 'PATCH'
-                        ? {
-                              ...facts,
-                              active: data.active,
-                              expected_version: baseline.version,
-                          }
-                        : {
-                              ...facts,
-                              company_id: baseline.companyId,
-                              expected_version: baseline.version,
-                              starts_on: data.starts_on,
-                              cadence: data.cadence,
-                          },
-                    onDone,
-                );
-            }}
-        >
-            <fieldset disabled={mutation.locked} className="contents">
-                {field('description', 'Description')}
-                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-                    {field('amount', 'Amount in minor units')}
-                    {field('currency', 'Currency')}
-                </div>
-                <label className="grid min-w-0 grid-cols-1 gap-1">
-                    Project
-                    <select
-                        className="w-full min-w-0 rounded border bg-background p-2"
-                        value={form.data.project_id}
-                        onChange={(event) =>
-                            form.setData('project_id', event.target.value)
+                        if (mutation.busy) {
+                            return;
                         }
-                    >
-                        <option value="">Company expense</option>
-                        {page.projects.map((project) => (
-                            <option key={project.value} value={project.value}>
-                                {project.label}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                {schedule ? (
-                    <label className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            checked={form.data.active}
-                            onChange={(event) =>
-                                form.setData('active', event.target.checked)
-                            }
-                        />
-                        Active
-                    </label>
-                ) : (
-                    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+
+                        const data = form.data;
+                        const facts = {
+                            description: data.description,
+                            amount: data.amount,
+                            currency: data.currency,
+                            project_id: data.project_id || null,
+                        };
+                        await mutation.submit(
+                            baseline.method,
+                            baseline.url,
+                            baseline.method === 'PATCH'
+                                ? {
+                                      ...facts,
+                                      active: data.active,
+                                      expected_version: baseline.version,
+                                  }
+                                : {
+                                      ...facts,
+                                      company_id: baseline.companyId,
+                                      expected_version: baseline.version,
+                                      starts_on: data.starts_on,
+                                      cadence: data.cadence,
+                                  },
+                            onDone,
+                        );
+                    }}
+                    className="grid grid-cols-1 gap-4"
+                >
+                    <fieldset disabled={mutation.locked} className="contents">
+                        {field('description', 'Description')}
+                        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                            {field('amount', 'Amount in minor units')}
+                            {field('currency', 'Currency')}
+                        </div>
                         <label className="grid min-w-0 grid-cols-1 gap-1">
-                            First occurrence
-                            <Input
-                                type="date"
-                                required
-                                value={form.data.starts_on}
+                            Project
+                            <select
+                                className="w-full min-w-0 rounded border bg-background p-2"
+                                value={form.data.project_id}
                                 onChange={(event) =>
                                     form.setData(
-                                        'starts_on',
+                                        'project_id',
                                         event.target.value,
                                     )
                                 }
-                            />
-                        </label>
-                        <label className="grid min-w-0 grid-cols-1 gap-1">
-                            Repeats
-                            <select
-                                className="w-full min-w-0 rounded border bg-background p-2"
-                                value={form.data.cadence}
-                                onChange={(event) =>
-                                    form.setData('cadence', event.target.value)
-                                }
                             >
-                                {page.cadences.map((cadence) => (
+                                <option value="">Company expense</option>
+                                {page.projects.map((project) => (
                                     <option
-                                        key={cadence.value}
-                                        value={cadence.value}
+                                        key={project.value}
+                                        value={project.value}
                                     >
-                                        {cadence.label}
+                                        {project.label}
                                     </option>
                                 ))}
                             </select>
                         </label>
+                        {schedule ? (
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={form.data.active}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'active',
+                                            event.target.checked,
+                                        )
+                                    }
+                                />
+                                Active
+                            </label>
+                        ) : (
+                            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                                <label className="grid min-w-0 grid-cols-1 gap-1">
+                                    First occurrence
+                                    <Input
+                                        type="date"
+                                        required
+                                        value={form.data.starts_on}
+                                        onChange={(event) =>
+                                            form.setData(
+                                                'starts_on',
+                                                event.target.value,
+                                            )
+                                        }
+                                    />
+                                </label>
+                                <label className="grid min-w-0 grid-cols-1 gap-1">
+                                    Repeats
+                                    <select
+                                        className="w-full min-w-0 rounded border bg-background p-2"
+                                        value={form.data.cadence}
+                                        onChange={(event) =>
+                                            form.setData(
+                                                'cadence',
+                                                event.target.value,
+                                            )
+                                        }
+                                    >
+                                        {page.cadences.map((cadence) => (
+                                            <option
+                                                key={cadence.value}
+                                                value={cadence.value}
+                                            >
+                                                {cadence.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                        )}
+                        <p className="text-sm text-muted-foreground">
+                            Changes apply only to occurrences generated
+                            afterward, including catch-up drafts. The original
+                            calendar and existing expenses stay fixed.
+                        </p>
+                    </fieldset>
+                    {mutation.error && (
+                        <p
+                            role="alert"
+                            className="wrap-anywhere text-destructive"
+                        >
+                            {mutation.error}
+                        </p>
+                    )}
+                    {Object.entries(form.errors).map(([key, error]) => (
+                        <p
+                            role="alert"
+                            key={key}
+                            className="wrap-anywhere text-destructive"
+                        >
+                            {error}
+                        </p>
+                    ))}
+                    <div className="flex flex-wrap gap-2">
+                        <Button type="submit" disabled={mutation.busy}>
+                            {mutation.saved
+                                ? 'Refresh saved result'
+                                : mutation.locked
+                                  ? 'Check original request'
+                                  : 'Save schedule'}
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={mutation.locked}
+                            onClick={onDone}
+                        >
+                            Cancel
+                        </Button>
                     </div>
-                )}
-                <p className="text-sm text-muted-foreground">
-                    Changes apply only to occurrences generated afterward,
-                    including catch-up drafts. The original calendar and
-                    existing expenses stay fixed.
-                </p>
-            </fieldset>
-            {mutation.error && (
-                <p role="alert" className="wrap-anywhere text-destructive">
-                    {mutation.error}
-                </p>
-            )}
-            {Object.entries(form.errors).map(([key, error]) => (
-                <p
-                    role="alert"
-                    key={key}
-                    className="wrap-anywhere text-destructive"
-                >
-                    {error}
-                </p>
-            ))}
-            <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={mutation.busy}>
-                    {mutation.saved
-                        ? 'Refresh saved result'
-                        : mutation.locked
-                          ? 'Check original request'
-                          : 'Save schedule'}
-                </Button>
-                <Button
-                    type="button"
-                    variant="outline"
-                    disabled={mutation.locked}
-                    onClick={onDone}
-                >
-                    Cancel
-                </Button>
-            </div>
-        </form>
+                </form>
+            </CardContent>
+        </Card>
     );
 }
 
@@ -324,64 +344,70 @@ export default function ExpenseSchedules(page: Props) {
                 )}
                 <div className="grid min-w-0 grid-cols-1 gap-4">
                     {page.schedules.map((schedule) => (
-                        <section
-                            key={schedule.id}
-                            className="min-w-0 space-y-3 rounded border p-4"
-                        >
-                            <h2 className="font-semibold wrap-anywhere">
-                                {schedule.description}
-                            </h2>
-                            <p>
-                                {formatScheduleAmount(
-                                    schedule.amount_exact,
-                                    schedule.currency,
-                                )}{' '}
-                                ·{' '}
-                                {
-                                    page.cadences.find(
-                                        (cadence) =>
-                                            cadence.value === schedule.cadence,
-                                    )?.label
-                                }{' '}
-                                · {schedule.status_label}
-                            </p>
-                            <p>Next occurrence: {schedule.next_on}</p>
-                            {schedule.pending && (
-                                <p>
-                                    Due occurrences remain. Generate the next
-                                    batch of drafts, then review and approve
-                                    them in Expenses.
-                                </p>
-                            )}
-                            <div className="flex flex-wrap gap-2">
-                                <Button
-                                    variant="outline"
-                                    disabled={locked}
-                                    onClick={() => setEditing(schedule.id)}
-                                >
-                                    Edit schedule
-                                </Button>
-                                <ScheduleGeneration
-                                    schedule={schedule}
-                                    pageLocked={locked}
-                                    onLockedChange={(pending) =>
-                                        setGenerationLocks((current) => ({
-                                            ...current,
-                                            [schedule.id]: pending,
-                                        }))
-                                    }
-                                />
-                            </div>
-                            {editing === schedule.id && (
-                                <ScheduleForm
-                                    key={schedule.id}
-                                    page={page}
-                                    schedule={schedule}
-                                    onLockedChange={setFormLocked}
-                                    onDone={() => setEditing(null)}
-                                />
-                            )}
-                        </section>
+                        <Card key={schedule.id} className="min-w-0">
+                            <CardContent>
+                                <section className="space-y-3">
+                                    <h2 className="font-semibold wrap-anywhere">
+                                        {schedule.description}
+                                    </h2>
+                                    <p>
+                                        {formatScheduleAmount(
+                                            schedule.amount_exact,
+                                            schedule.currency,
+                                        )}{' '}
+                                        ·{' '}
+                                        {
+                                            page.cadences.find(
+                                                (cadence) =>
+                                                    cadence.value ===
+                                                    schedule.cadence,
+                                            )?.label
+                                        }{' '}
+                                        · {schedule.status_label}
+                                    </p>
+                                    <p>Next occurrence: {schedule.next_on}</p>
+                                    {schedule.pending && (
+                                        <p>
+                                            Due occurrences remain. Generate the
+                                            next batch of drafts, then review
+                                            and approve them in Expenses.
+                                        </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            variant="outline"
+                                            disabled={locked}
+                                            onClick={() =>
+                                                setEditing(schedule.id)
+                                            }
+                                        >
+                                            Edit schedule
+                                        </Button>
+                                        <ScheduleGeneration
+                                            schedule={schedule}
+                                            pageLocked={locked}
+                                            onLockedChange={(pending) =>
+                                                setGenerationLocks(
+                                                    (current) => ({
+                                                        ...current,
+                                                        [schedule.id]: pending,
+                                                    }),
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                    {editing === schedule.id && (
+                                        <ScheduleForm
+                                            key={schedule.id}
+                                            page={page}
+                                            schedule={schedule}
+                                            onLockedChange={setFormLocked}
+                                            onDone={() => setEditing(null)}
+                                        />
+                                    )}
+                                </section>
+                            </CardContent>
+                        </Card>
                     ))}
                 </div>
                 <nav

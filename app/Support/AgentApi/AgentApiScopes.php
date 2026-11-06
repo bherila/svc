@@ -44,6 +44,13 @@ final class AgentApiScopes
     /** The finance reconciliation surface (#457); a Sanctum finance.reconcile token holds it there. */
     public const string FINANCE_RECONCILE = 'finance:reconcile';
 
+    /**
+     * The revenue planning reads (docs/ux-overhaul.md section 13). Its own
+     * scope: `finance:read` (reconciliation) does not imply it, and the
+     * Sanctum finance token never holds it.
+     */
+    public const string REVENUE_READ = 'revenue:read';
+
     public const string CLIENTS_READ = 'clients:read';
 
     public const string CLIENTS_WRITE = 'clients:write';
@@ -116,6 +123,7 @@ final class AgentApiScopes
             self::PAYMENTS_RECORD => 'Record money already received and correct a recorded payment\'s method, reference or date; never initiate a charge',
             self::FINANCE_READ => 'Read received payments with their finance reconciliation allocations, and the processor payouts that settled them, as a workspace owner or admin',
             self::FINANCE_RECONCILE => 'Record and withdraw finance reconciliation allocations against received payments as a workspace owner or admin; never moves money',
+            self::REVENUE_READ => 'Read revenue figures, monthly actuals, the contracted and projected revenue of agreements, and per-client revenue and agreement health as a workspace owner or admin',
             self::CLIENTS_READ => 'Read client companies as a workspace manager',
             self::CLIENTS_WRITE => 'Create, edit and archive client companies and their agreements as a workspace manager',
             self::PROPOSALS_READ => 'Read authorized proposals and their commercial terms',
