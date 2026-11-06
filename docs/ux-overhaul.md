@@ -397,6 +397,35 @@ changes in the same commit as the feature it explains. Tests fail when:
 
 The glossary is also the vocabulary for emails, PDFs and MCP descriptions.
 
+## 9. Conventions from mockup review
+
+Decided on the design canvas (2026-11-06):
+
+- **Dark mode is the design baseline.** Light mode stays supported through
+  the existing theme tokens.
+- **Time.** Every time field accepts `2:30`, `2.5`, `2h30m` and `150m`, and
+  shows what it understood under the field ("= 2.5 h (150 min)"). Storage
+  stays whole minutes. Display defaults to decimal hours. A per-user setting,
+  "Show time as 2.5 h / 2:30", applies to every screen, timesheet and PDF that
+  person views. Invoices always use decimal. One shared parser and one shared
+  formatter, with a test that fails if a duration is printed without them.
+- **Buttons.** A page has at most one filled button, and only when one thing
+  needs doing now. Every other action is outlined, the same width when they
+  are stacked, and right-aligned with the row's main action.
+- **Status and progress.** No background colours for status in lists. Use an
+  icon, or a flow of steps joined by arrows with a pointer on the current
+  step. Reserve coloured badges for one status per table row, as in the
+  client overview's invoice table, which is the reference table.
+- **Pickers.** Project and task pickers are search-as-you-type comboboxes.
+  The task picker offers "Create task" inline when nothing matches; the new
+  task is created on the selected project and assigned to its creator.
+- **Proforma invoice.** "View proforma invoice" on the client overview, and
+  "Next invoice · estimate" in the portal, both render the next cadence
+  invoice from the agreement and the time logged so far. They are built on
+  the existing period preview (`invoices.preview_period`). A proforma has no
+  number, is stamped "Proforma · not an invoice", can't be paid, and is never
+  stored as an invoice.
+
 ## Delivery slices (stacked commits, one PR)
 
 0. **Help scaffolding** (section 8): the `docs/help` loader, glossary,
