@@ -476,6 +476,15 @@ final class AgentRestDocumentation
                 'response' => 'StaleAndMissingInvoiceAuditResponse',
                 'response_description' => 'Authorized result',
             ],
+            'billing.audit_deferred_lineage_visibility' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Counts the workspace\'s client-visible charged invoices whose stored deferred-work snapshot predates project lineage and still lists work, and those a project-scoped portal member is now refused (not found) although every other project on the invoice is granted to them, as svc:billing:audit-deferred-lineage-visibility reports for every workspace. Names up to 100 of those invoices by id and number, with hidden_invoices_truncated when there are more, and states the supported fix: regenerate or reopen and reissue the invoice to capture lineage, then grant the projects it names, or give the member company-wide access. Read-only; nothing about the deferred work, its projects or the members is returned.',
+                'parameters' => ['WorkspaceId'],
+                'response' => 'DeferredLineageVisibilityAuditResponse',
+                'response_description' => 'Counts and the affected invoices for the workspace',
+                'errors' => self::BILLING_AUDIT_ERRORS['audit'],
+            ],
             'billing.audit_missing_billed_overage' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],

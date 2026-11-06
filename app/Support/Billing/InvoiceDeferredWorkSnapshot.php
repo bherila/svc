@@ -9,15 +9,26 @@ use App\Models\ClientTimeEntry;
  *
  * Client-facing wording is snapshotted only when it is explicitly visible;
  * internal descriptions are never stored in this document snapshot.
+ *
+ * Version 2 also freezes each entry's project at capture (#610), so the
+ * invoice's portal grant decision can include the projects whose work the
+ * document discloses without reading the live, editable time entry. Version 1
+ * stored no project: it still reads, so a legacy document keeps its "Still
+ * deferred" section, but each of its entries is marked as unknown lineage and
+ * it is written back as version 1. An unknown project is never laundered into
+ * "no project" by a later rewrite.
  */
 final readonly class InvoiceDeferredWorkSnapshot
 {
-    public const int VERSION = 1;
+    public const int VERSION = 2;
+
+    /** The legacy shape, written before project lineage was captured. */
+    public const int LEGACY_VERSION = 1;
 
     /**
-     * @param  list<array{id: int, workedOn: string, minutes: int, description: string|null}>  $entries
+     * @param  list<array{id: int, workedOn: string, minutes: int, description: string|null, projectId: int|null, lineageKnown: bool}>  $entries
      */
-    private function __construct(public array $entries) {}
+    private function __construct(public array $entries, public int $version) {}
 
     /** @param iterable<ClientTimeEntry> $entries */
     public static function fromEntries(iterable $entries): ?self
@@ -34,26 +45,36 @@ final readonly class InvoiceDeferredWorkSnapshot
                     && trim($description) !== ''
                     ? trim($description)
                     : null,
+                'projectId' => $entry->client_project_id,
+                'lineageKnown' => true,
             ];
         }
 
-        usort($rows, static fn (array $left, array $right): int => [$left['workedOn'], $left['id']] <=> [$right['workedOn'], $right['id']]);
-
-        return $rows === [] ? null : new self($rows);
+        return self::make($rows, self::VERSION);
     }
 
-    /** @return array{version: int, entries: list<array{id: int, workedOn: string, minutes: int, description: string|null}>} */
+    /** @return array{version: int, entries: list<array<string, int|string|null>>} */
     public function toArray(): array
     {
-        return ['version' => self::VERSION, 'entries' => $this->entries];
+        $legacy = $this->version === self::LEGACY_VERSION;
+
+        return ['version' => $this->version, 'entries' => array_map(static fn (array $entry): array => [
+            'id' => $entry['id'],
+            'workedOn' => $entry['workedOn'],
+            'minutes' => $entry['minutes'],
+            'description' => $entry['description'],
+            ...($legacy ? [] : ['projectId' => $entry['projectId']]),
+        ], $this->entries)];
     }
 
     /** @param array<array-key, mixed>|null $stored */
     public static function fromArray(?array $stored): ?self
     {
-        if (($stored['version'] ?? null) !== self::VERSION || ! is_array($stored['entries'] ?? null)) {
+        $version = $stored['version'] ?? null;
+        if (! in_array($version, [self::LEGACY_VERSION, self::VERSION], true) || ! is_array($stored['entries'] ?? null)) {
             return null;
         }
+        $legacy = $version === self::LEGACY_VERSION;
 
         $entries = [];
         foreach ($stored['entries'] as $entry) {
@@ -62,7 +83,8 @@ final readonly class InvoiceDeferredWorkSnapshot
                 || ! is_string($entry['workedOn'] ?? null)
                 || ! is_int($entry['minutes'] ?? null)
                 || $entry['minutes'] < 0
-                || (! is_string($entry['description'] ?? null) && ($entry['description'] ?? null) !== null)) {
+                || (! is_string($entry['description'] ?? null) && ($entry['description'] ?? null) !== null)
+                || (! $legacy && (! array_key_exists('projectId', $entry) || (! is_int($entry['projectId']) && $entry['projectId'] !== null)))) {
                 return null;
             }
             $entries[] = [
@@ -70,10 +92,12 @@ final readonly class InvoiceDeferredWorkSnapshot
                 'workedOn' => $entry['workedOn'],
                 'minutes' => $entry['minutes'],
                 'description' => $entry['description'] ?? null,
+                'projectId' => $legacy ? null : $entry['projectId'],
+                'lineageKnown' => ! $legacy,
             ];
         }
 
-        return $entries === [] ? null : new self($entries);
+        return self::make($entries, $version);
     }
 
     /** @param list<int> $settledEntryIds */
@@ -85,7 +109,47 @@ final readonly class InvoiceDeferredWorkSnapshot
             static fn (array $entry): bool => ! isset($settled[$entry['id']]),
         ));
 
-        return $remaining === [] ? null : new self($remaining);
+        return self::make($remaining, $this->version);
+    }
+
+    /**
+     * Whether any disclosed entry's project could not be established.
+     *
+     * Only a legacy snapshot can be unverifiable, and only while it still lists
+     * an entry: an empty snapshot discloses nothing (and is never stored).
+     */
+    public function hasUnverifiableLineage(): bool
+    {
+        foreach ($this->entries as $entry) {
+            if (! $entry['lineageKnown']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The distinct projects whose work this snapshot discloses, ascending.
+     *
+     * Entries recorded with no project contribute none, exactly as an invoice
+     * line without a project does. Unknown legacy lineage is not a project and
+     * is reported by {@see hasUnverifiableLineage()} instead.
+     *
+     * @return list<int>
+     */
+    public function projectIds(): array
+    {
+        $projects = [];
+        foreach ($this->entries as $entry) {
+            if ($entry['lineageKnown'] && $entry['projectId'] !== null) {
+                $projects[$entry['projectId']] = true;
+            }
+        }
+        $ids = array_keys($projects);
+        sort($ids);
+
+        return $ids;
     }
 
     /** @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null}>} */
@@ -94,7 +158,7 @@ final readonly class InvoiceDeferredWorkSnapshot
         $entries = array_map(static fn (array $entry): array => [
             'worked_on' => $entry['workedOn'],
             'hours' => round($entry['minutes'] / 60, 4),
-            'description' => $entry['description'] ?? null,
+            'description' => $entry['description'],
         ], $this->entries);
 
         return [
@@ -103,5 +167,16 @@ final readonly class InvoiceDeferredWorkSnapshot
             'oldest_worked_on' => $entries[0]['worked_on'],
             'entries' => $entries,
         ];
+    }
+
+    /** @param list<array{id: int, workedOn: string, minutes: int, description: string|null, projectId: int|null, lineageKnown: bool}> $rows */
+    private static function make(array $rows, int $version): ?self
+    {
+        if ($rows === []) {
+            return null;
+        }
+        usort($rows, static fn (array $left, array $right): int => [$left['workedOn'], $left['id']] <=> [$right['workedOn'], $right['id']]);
+
+        return new self($rows, $version);
     }
 }

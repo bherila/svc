@@ -227,6 +227,23 @@ export interface paths {
         patch: operations['attachments.visibility.update'];
         trace?: never;
     };
+    '/workspaces/{workspace}/billing-audits/deferred-lineage-visibility': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Counts the workspace's client-visible charged invoices whose stored deferred-work snapshot predates project lineage and still lists work, and those a project-scoped portal member is now refused (not found) although every other project on the invoice is granted to them, as svc:billing:audit-deferred-lineage-visibility reports for every workspace. Names up to 100 of those invoices by id and number, with hidden_invoices_truncated when there are more, and states the supported fix: regenerate or reopen and reissue the invoice to capture lineage, then grant the projects it names, or give the member company-wide access. Read-only; nothing about the deferred work, its projects or the members is returned. */
+        get: operations['billing.audit_deferred_lineage_visibility'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/billing-audits/missing-billed-overage': {
         parameters: {
             query?: never;
@@ -3264,6 +3281,21 @@ export interface components {
         };
         DeferredBuyDownPreviewResponse: {
             data: components['schemas']['DeferredBuyDownPreview'];
+        };
+        DeferredLineageVisibilityAudit: {
+            with_unverifiable_lineage: number;
+            hidden_from_project_scoped_members: number;
+            affected_project_scoped_memberships: number;
+            hidden_invoices: {
+                /** Format: uuid */
+                id: string;
+                invoice_number: string | null;
+            }[];
+            hidden_invoices_truncated: boolean;
+            remedy: string;
+        };
+        DeferredLineageVisibilityAuditResponse: {
+            data: components['schemas']['DeferredLineageVisibilityAudit'];
         };
         DeletionReceipt: {
             deleted_id: components['schemas']['Uuid'];
@@ -7027,6 +7059,65 @@ export interface operations {
             };
             /** @description The retained local privacy latch is unavailable; no write was performed. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_deferred_lineage_visibility': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Counts and the affected invoices for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['DeferredLineageVisibilityAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

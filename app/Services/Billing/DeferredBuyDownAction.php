@@ -31,6 +31,7 @@ final class DeferredBuyDownAction
         private readonly InvoiceNumberAllocator $numbers,
         private readonly WorkspaceClock $clock,
         private readonly ClientActivityRecorder $activities,
+        private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
     ) {}
 
     public function preview(Workspace $workspace, ClientAgreement $agreement, DeferredBuyDownRequest $request, ?string $expectedVersion = null): DeferredBuyDownSnapshot
@@ -245,7 +246,7 @@ final class DeferredBuyDownAction
         }
 
         if ($deferred !== null) {
-            $invoice->forceFill(['deferred_work_statement' => $deferred->withoutSettledEntries($ids)?->toArray()]);
+            $this->deferredWorkStatements->write($invoice, $deferred->withoutSettledEntries($ids));
         }
     }
 
