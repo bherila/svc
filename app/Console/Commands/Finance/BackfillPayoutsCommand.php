@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\Workspace;
 use App\Services\Billing\StripeGateway;
 use App\Services\Billing\StripeSettlementSync;
+use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareRequestFailed;
@@ -114,20 +115,29 @@ final class BackfillPayoutsCommand extends MutationCommand
     private function stripe(StripeGateway $gateway, StripeSettlementSync $sync, ?CarbonImmutable $since, ?Workspace $only, bool $apply, WorkspaceClock $clock): void
     {
         $counts = $this->counts();
-        if ($gateway->mode() === null) {
+        $targets = app(PaymentConnectionResolver::class)->stripeTargets();
+        if ($targets === []) {
             $this->report['stripe'] = $counts;
             $this->notes['stripe'] = 'skipped: not configured';
 
             return;
         }
         try {
-            // What Stripe says now is at least as current as any event
-            // already applied, so it is stamped with the time it was read.
-            foreach ($sync->payouts($since, (int) $clock->now()->utc()->getTimestampMs()) as $payout) {
-                $counts['payouts_read']++;
-                $this->tally($counts, $sync->apply($payout, $sync->members($payout), $apply, $only?->id));
+            // One pass per connected Stripe account, each restricted to the
+            // workspaces connected to it. What Stripe says now is at least as
+            // current as any event already applied, so it is stamped with the
+            // time it was read.
+            foreach ($targets as $target) {
+                foreach ($sync->payouts($since, (int) $clock->now()->utc()->getTimestampMs(), $target->access()) as $payout) {
+                    $counts['payouts_read']++;
+                    $this->tally($counts, $sync->apply($payout, $sync->members($payout, $target->access()), $apply, $only?->id, $target->workspaceIds));
+                }
             }
-            foreach ($this->unsettled('stripe', $only)->lazyById(100) as $payment) {
+            foreach ($this->unsettled('stripe', $only)->with('workspace')->lazyById(100) as $payment) {
+                // A workspace with no Stripe connection has nothing to read.
+                if ($payment->workspace === null || $gateway->access($payment->workspace) === null) {
+                    continue;
+                }
                 $counts['charges_read']++;
                 if ($sync->recordCharge($payment, $apply)) {
                     $counts['charges_changed']++;
@@ -143,11 +153,14 @@ final class BackfillPayoutsCommand extends MutationCommand
     private function square(SquareSettlementSync $sync, SquareClient $client, ?CarbonImmutable $since, ?Workspace $only, bool $apply): void
     {
         $counts = $this->counts();
-        $configuration = SquareConfiguration::fromConfig();
-        $workspace = $configuration->isConfigured() ? $configuration->workspace() : null;
-        if ($workspace === null || ($only !== null && $only->id !== $workspace->id)) {
+        // One workspace per run: --workspace picks it, otherwise the first one Square serves.
+        $served = SquareConfiguration::servedWorkspaces();
+        $workspace = $only !== null
+            ? (SquareConfiguration::for($only)->isConfigured() ? $only : null)
+            : ($served[0] ?? null);
+        if ($workspace === null) {
             $this->report['square'] = $counts;
-            $this->notes['square'] = 'skipped: '.($workspace === null ? 'not configured' : 'connected to another workspace');
+            $this->notes['square'] = 'skipped: '.($only === null && $served === [] ? 'not configured' : 'not connected to this workspace');
 
             return;
         }
@@ -160,7 +173,7 @@ final class BackfillPayoutsCommand extends MutationCommand
                 $counts['charges_read']++;
                 $id = (string) $payment->provider_payment_identifier;
                 try {
-                    $read = $client->getPayment($id)['payment'] ?? null;
+                    $read = $client->forWorkspace($workspace)->getPayment($id)['payment'] ?? null;
                     $facts = is_array($read) ? SquarePaymentFacts::from($read, $id) : throw SquareRequestFailed::unreadable();
                 } catch (SquareRequestFailed $failure) {
                     if (! $failure->isRecordSpecific()) {

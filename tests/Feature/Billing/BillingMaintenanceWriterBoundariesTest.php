@@ -11,16 +11,17 @@ use App\Services\AgentApi\AgentInvoiceOperations;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\Billing\StripeWebhookService;
+use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
+use DomainException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
-use RuntimeException;
 use Stripe\Event;
 use Tests\Concerns\FakesStripeApi;
 use Tests\TestCase;
@@ -45,8 +46,8 @@ final class BillingMaintenanceWriterBoundariesTest extends TestCase
         try {
             app(StripePaymentIntentService::class)->create($invoice, $workspace, null, 'synthetic-maintenance-intent');
             $this->fail('An unconfigured adapter was called.');
-        } catch (RuntimeException $exception) {
-            $this->assertSame('Stripe is not configured.', $exception->getMessage());
+        } catch (DomainException $exception) {
+            $this->assertSame('Stripe is not connected for this workspace.', $exception->getMessage());
         }
         $this->assertShareBeforeBilling();
         $this->assertDatabaseCount('client_invoice_payments', 0);
@@ -73,7 +74,7 @@ final class BillingMaintenanceWriterBoundariesTest extends TestCase
             ])]);
         }
         LockOrderRecorder::start();
-        $this->assertTrue(app(StripeWebhookService::class)->process(Event::constructFrom($data), json_encode($data, JSON_THROW_ON_ERROR)));
+        $this->assertTrue(app(StripeWebhookService::class)->process(Event::constructFrom($data), json_encode($data, JSON_THROW_ON_ERROR), app(PaymentConnectionResolver::class)->legacyStripeRoute()));
         $this->assertShareBeforeBilling();
         $this->assertSame(1, $invoice->payments()->where('workspace_id', $workspace->id)->count());
     }

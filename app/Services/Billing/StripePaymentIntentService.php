@@ -113,6 +113,13 @@ final class StripePaymentIntentService
             throw new DomainException('A pending payment already reserves the remaining invoice balance.');
         }
 
+        // The invoice's own workspace decides which Stripe account is charged:
+        // never the deployment's configuration, and never another workspace's.
+        $access = $this->gateway->access($invoice->workspace);
+        if ($access === null) {
+            throw new DomainException('Stripe is not connected for this workspace.');
+        }
+
         $params = [
             'amount' => $chargeAmount,
             'currency' => strtolower($invoice->currency),
@@ -134,7 +141,7 @@ final class StripePaymentIntentService
         }
 
         $options = ['idempotency_key' => $idempotencyKey];
-        $intent = $this->gateway->client()->paymentIntents->create($params, $options);
+        $intent = $access->client()->paymentIntents->create($params, $options);
         $intentId = (string) $intent->id;
         if ($intentId === '') {
             throw new DomainException('Stripe returned an invalid payment intent.');

@@ -129,6 +129,15 @@ final class SyncProcessorMovementsCommand extends MutationCommand
                 $rows->pop();
             }
             foreach ($rows as $row) {
+                // Nothing to read for a workspace with no Stripe connection:
+                // step past it without counting it as a refusal.
+                if ($gateway->access($row->workspace) === null) {
+                    if ($apply && $payment === null && ! Cache::forever($cursorKey, ['last' => $row->id, 'incomplete' => $cycleIncomplete])) {
+                        throw new DomainException;
+                    }
+
+                    continue;
+                }
                 try {
                     $result = $sync->sync($row->workspace, $row->id, $apply, $budget, recoverDisputes: true);
                     $counts['records_read']++;
@@ -178,10 +187,12 @@ final class SyncProcessorMovementsCommand extends MutationCommand
     private function square(SquareProcessorMovementSync $sync, ?Workspace $only, CarbonImmutable $since, CarbonImmutable $until, int $limit, ProcessorReadBudget $budget, bool $apply): array
     {
         $counts = $this->counts();
-        $configuration = SquareConfiguration::fromConfig();
-        $workspace = $configuration->workspace();
-        if ($workspace === null || ($only !== null && $workspace->id !== $only->id)) {
-            $counts['note'] = $workspace === null ? 'not_configured' : 'different_workspace';
+        // One workspace per run: --workspace picks it, otherwise the first one Square serves.
+        $workspace = $only !== null
+            ? (SquareConfiguration::for($only)->isConfigured() ? $only : null)
+            : (SquareConfiguration::servedWorkspaces()[0] ?? null);
+        if ($workspace === null) {
+            $counts['note'] = $only === null ? 'not_configured' : 'different_workspace';
 
             return $counts;
         }
