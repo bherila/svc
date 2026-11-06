@@ -192,7 +192,6 @@ final class PortalInvoiceQuery
      * stored JSON itself, so a snapshot the document reader cannot render is
      * unverifiable too: a missing section never decides access. One that lists
      * nothing discloses nothing and does not hide the invoice.
-     *
      */
     private function unverifiableDeferredLineage(QueryBuilder $query): QueryBuilder
     {
