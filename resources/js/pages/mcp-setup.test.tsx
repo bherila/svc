@@ -12,6 +12,8 @@ vi.mock('@/layouts/workspace-shell', () => ({
 
 const serverUrl = 'https://svc.example.test/api/v1/mcp';
 
+const noCredentials = { connections: [], tokens: [] };
+
 function rest(overrides: Partial<RestLinks> = {}): RestLinks {
     return {
         api_base_url: 'https://svc.example.test/api/v1',
@@ -53,6 +55,7 @@ describe('MCP setup guide', () => {
             <McpSetup
                 serverUrl={`https://${'synthetic'.repeat(50)}.example.test/api/v1/mcp`}
                 available
+                credentials={noCredentials}
                 rest={rest({
                     openapi_url: `https://${'synthetic'.repeat(50)}.example.test/openapi.json`,
                 })}
@@ -65,7 +68,14 @@ describe('MCP setup guide', () => {
     it('copies the endpoint and renders OAuth setup for each assistant', async () => {
         const user = userEvent.setup();
         const writeText = vi.spyOn(navigator.clipboard, 'writeText');
-        render(<McpSetup serverUrl={serverUrl} available rest={rest()} />);
+        render(
+            <McpSetup
+                serverUrl={serverUrl}
+                available
+                credentials={noCredentials}
+                rest={rest()}
+            />,
+        );
 
         for (const name of ['ChatGPT', 'Claude', 'Codex']) {
             expect(screen.getByRole('heading', { name })).toBeInTheDocument();
@@ -87,7 +97,12 @@ describe('MCP setup guide', () => {
             new Error('denied'),
         );
         render(
-            <McpSetup serverUrl={serverUrl} available={false} rest={rest()} />,
+            <McpSetup
+                serverUrl={serverUrl}
+                available={false}
+                credentials={noCredentials}
+                rest={rest()}
+            />,
         );
         await user.click(
             screen.getByRole('button', { name: 'Copy Server URL' }),

@@ -18,6 +18,8 @@ The history library holds imported records from before this system.
 
 The MCP guide shows how to connect an assistant to your workspace with the access you choose.
 
+Under Your connections, each connected app and MCP token has a Show all tools switch. An assistant normally starts with a short list of tools and asks for more; turn the switch on for one that cannot, and it lists every tool you may use. It grants nothing, it applies to that one connection only, and it takes effect the next time the assistant connects.
+
 ## Square
 
 Square invoices mirrored from Square are shown for reference and can be linked to invoices here.

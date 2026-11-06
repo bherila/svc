@@ -480,7 +480,53 @@ with a query string, so `/api/v1/mcp?toolsets=all` would fail for exactly the
 clients that follow the resource-indicator rules. It was chosen over a setting on
 the OAuth client record because clients register themselves, so there is no
 record an operator could set before the first connection, and the record lives in
-the shared authentication package.
+the shared authentication package. The per-credential setting below covers the
+clients that cannot send a header either.
+
+### Opting out per credential: "Show all tools"
+
+Some hosted connector UIs can neither set a header nor handle
+`notifications/tools/list_changed`. For those the signed-in owner of a credential
+turns on **Show all tools** for it on the MCP setup page, under "Your
+connections", where every connected app and every personal token that opens MCP
+connections is listed with its own switch.
+
+- **Same effect as the header.** At `initialize`, a credential with the setting on
+  is treated exactly as one that sent `X-SVC-Toolsets: all`: the full list,
+  `tools.listChanged` not advertised, no toolset talk in the instructions. The
+  rule lives in `McpToolsetSelection::forConnection()`: the header **or** the
+  setting turns the full list on, and neither can turn it off. The header still
+  works with the setting off, and the setting works with no header.
+- **Applies at the next `initialize`.** The choice is stored in the session when
+  the session opens, so a session that is already open keeps the selection it
+  stored: turning the setting on does not add tools to it, and turning it off does
+  not remove them. The owner reconnects the assistant (or starts a new session) for
+  the change to be seen.
+- **Per credential, never per person.** An OAuth connection is identified by its
+  client for that person (the access token changes at every refresh, the
+  connection does not, so the setting survives a refresh); a personal token is
+  identified by its access-token id. Two credentials of one person, and the same
+  app connected by two people, each have their own setting.
+- **Grants nothing.** It changes what `tools/list` shows and nothing else. Every
+  call is authorized again against the credential's scopes, the person's role and
+  the deployment switches, so a tool the credential may not call is not listed
+  with the setting on either.
+- **Owner only, browser only.** `PUT /account/mcp-credentials/connections/{client}`
+  and `PUT /account/mcp-credentials/tokens/{token}` take `{"show_all_tools": bool}`
+  from the signed-in browser session and look the credential up among *that
+  person's* live credentials, so another person's, a revoked, an expired or an
+  unknown credential is a 404 that changes nothing. An agent credential cannot
+  change it (the routes are classified browser-only in `WebApiParityTest`, like
+  the other credential routes). Each change is logged as
+  `mcp_credential.show_all_tools_changed` with the person's public id and a
+  fingerprint of the credential, like credential revocation.
+- **Storage.** The credential tables belong to the Passport and
+  `bherila-auth` packages, so the setting lives in SVC's own
+  `mcp_credential_settings` table: one row per credential, foreign keys to the
+  user and to the OAuth client or access token (both cascade, so the setting goes
+  with its credential), and unique indexes on `(user_id, oauth_client_id)` and on
+  `access_token_id`. It is per person, like the credential, and holds no
+  workspace data.
 
 ### Prompts
 
@@ -496,6 +542,13 @@ is granted, and an unknown or unavailable prompt enables nothing. Fetching
 fetching `log-time-across-projects` enables nothing, since its tools are core.
 
 ### Tests
+
+`McpShowAllToolsSettingTest` pins the per-credential setting: off gives the core set,
+on gives the full list without `listChanged`, the header still works with the
+setting off, neither turns the other off, one credential's setting never reaches
+another (same person, two tokens, another person, a refreshed token), an open
+session keeps its selection, and only the owner can change it. The selection rule
+has boundary cases in `McpToolsetSelectionTest`.
 
 `AgentMcpProgressiveDiscoveryTest` pins, for every scope preset: the core set
 plus every toolset equals the full list the opt-out connection gets (same

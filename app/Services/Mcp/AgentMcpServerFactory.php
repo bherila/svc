@@ -78,6 +78,7 @@ final class AgentMcpServerFactory
         private readonly AgentMcpRestCall $rest,
         private readonly AgentMcpPrompts $prompts,
         private readonly RequestArguments $requestArguments,
+        private readonly McpCredentialSettings $credentialSettings,
     ) {}
 
     public function make(Request $request): Server
@@ -197,7 +198,16 @@ final class AgentMcpServerFactory
         // core tools and enables toolsets as it needs them, unless it asked for
         // the full list when it connected. Both are views of the same
         // authorized tools; neither grants anything.
-        $initialSelection = McpToolsetSelection::fromConnectHeader($request->header(McpToolsetSelection::CONNECT_HEADER));
+        // A credential's own "Show all tools" setting counts exactly like the
+        // header: either turns the full list on, neither turns it off. It is
+        // read only while connecting, since only `initialize` records the
+        // choice; a session already open keeps what it stored.
+        $connectHeader = $request->header(McpToolsetSelection::CONNECT_HEADER);
+        $initialSelection = McpToolsetSelection::forConnection(
+            is_string($connectHeader) ? $connectHeader : null,
+            $request->json('method') === 'initialize'
+                && $this->credentialSettings->showsAllTools($context->principal->subject->id, $context->principal->credentialId, $context->principal->clientId),
+        );
         $scopesByTool = [];
         foreach ($exposedTools as $operation) {
             $name = (string) $operation->mcpName();

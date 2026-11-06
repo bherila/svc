@@ -1,5 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { useState } from 'react';
+import { McpCredentialSettings } from '@/components/mcp-credential-settings';
+import type { McpCredentials } from '@/components/mcp-credential-settings';
 import { RestCredentials } from '@/components/rest-credentials';
 import type { RestLinks } from '@/components/rest-credentials';
 import { Button } from '@/components/ui/button';
@@ -11,6 +13,7 @@ import { cn } from '@/lib/utils';
 interface McpSetupProps {
     serverUrl: string;
     available: boolean;
+    credentials: McpCredentials;
     rest: RestLinks;
 }
 
@@ -61,6 +64,7 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
 export default function McpSetup({
     serverUrl,
     available,
+    credentials,
     rest,
 }: McpSetupProps) {
     return (
@@ -248,6 +252,7 @@ export default function McpSetup({
                             invoice links to pay. MCP does not upload files.
                         </p>
                     </section>
+                    <McpCredentialSettings credentials={credentials} />
                     <RestCredentials rest={rest} />
                     <section className="grid grid-cols-1 gap-4">
                         <h2 className="text-lg font-semibold">
