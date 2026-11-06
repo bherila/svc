@@ -671,6 +671,10 @@ confined to that workspace, until the operator re-points them. A follow-up remov
 the environment path. The command and its tests target local disposable databases
 only.
 
+The step-by-step procedure (prerequisites, preview, verification on the Payments page
+and with `svc:square:status`, and rollback) is in
+[`docs/runbooks/payment-connections-migration.md`](runbooks/payment-connections-migration.md).
+
 ## Acknowledge an allocation review
 
 `finance.reconciliations.acknowledge` is an explicit finance API action for a
