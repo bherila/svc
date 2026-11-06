@@ -49,15 +49,18 @@ return new class extends Migration
         Schema::create('client_project_participation_invitations', function (Blueprint $table): void {
             $table->id();
             $table->uuid('public_id')->unique('cppinv_public_id_unique');
-            $table->foreignId('host_workspace_id')->constrained('workspaces', indexName: 'cppinv_host_workspace_fk')->cascadeOnDelete();
+            $table->unsignedBigInteger('host_workspace_id');
+            $table->foreign('host_workspace_id', 'cppinv_host_workspace_fk')->references('id')->on('workspaces')->cascadeOnDelete();
             $table->unsignedBigInteger('client_project_id');
             $table->string('email', 255);
-            $table->foreignId('invited_by_user_id')->nullable()->constrained('users', indexName: 'cppinv_inviter_fk')->nullOnDelete();
+            $table->unsignedBigInteger('invited_by_user_id')->nullable();
+            $table->foreign('invited_by_user_id', 'cppinv_inviter_fk')->references('id')->on('users')->nullOnDelete();
             $table->timestamp('expires_at');
             $table->timestamp('accepted_at')->nullable();
             $table->timestamp('declined_at')->nullable();
             $table->timestamp('revoked_at')->nullable();
-            $table->foreignId('resolved_by_user_id')->nullable()->constrained('users', indexName: 'cppinv_resolver_fk')->nullOnDelete();
+            $table->unsignedBigInteger('resolved_by_user_id')->nullable();
+            $table->foreign('resolved_by_user_id', 'cppinv_resolver_fk')->references('id')->on('users')->nullOnDelete();
             $table->timestamps();
             $table->foreign(['host_workspace_id', 'client_project_id'], 'cppinv_host_project_fk')
                 ->references(['workspace_id', 'id'])->on('client_projects')->cascadeOnDelete();
@@ -68,18 +71,25 @@ return new class extends Migration
         Schema::create('client_project_participations', function (Blueprint $table): void {
             $table->id();
             $table->uuid('public_id')->unique('cppart_public_id_unique');
-            $table->foreignId('host_workspace_id')->constrained('workspaces', indexName: 'cppart_host_workspace_fk')->cascadeOnDelete();
+            $table->unsignedBigInteger('host_workspace_id');
+            $table->foreign('host_workspace_id', 'cppart_host_workspace_fk')->references('id')->on('workspaces')->cascadeOnDelete();
             $table->unsignedBigInteger('client_project_id');
-            $table->foreignId('participant_workspace_id')->constrained('workspaces', indexName: 'cppart_participant_fk')->cascadeOnDelete();
-            $table->foreignId('invitation_id')->nullable()->constrained('client_project_participation_invitations', indexName: 'cppart_invitation_fk')->nullOnDelete();
-            $table->foreignId('granted_by_user_id')->nullable()->constrained('users', indexName: 'cppart_granter_fk')->nullOnDelete();
+            $table->unsignedBigInteger('participant_workspace_id');
+            $table->foreign('participant_workspace_id', 'cppart_participant_fk')->references('id')->on('workspaces')->cascadeOnDelete();
+            $table->unsignedBigInteger('invitation_id')->nullable();
+            $table->foreign('invitation_id', 'cppart_invitation_fk')->references('id')->on('client_project_participation_invitations')->nullOnDelete();
+            $table->unsignedBigInteger('granted_by_user_id')->nullable();
+            $table->foreign('granted_by_user_id', 'cppart_granter_fk')->references('id')->on('users')->nullOnDelete();
             $table->timestamp('granted_at');
-            $table->foreignId('accepted_by_user_id')->nullable()->constrained('users', indexName: 'cppart_accepter_fk')->nullOnDelete();
+            $table->unsignedBigInteger('accepted_by_user_id')->nullable();
+            $table->foreign('accepted_by_user_id', 'cppart_accepter_fk')->references('id')->on('users')->nullOnDelete();
             $table->timestamp('accepted_at');
             $table->timestamp('revoked_at')->nullable();
-            $table->foreignId('revoked_by_user_id')->nullable()->constrained('users', indexName: 'cppart_revoker_fk')->nullOnDelete();
+            $table->unsignedBigInteger('revoked_by_user_id')->nullable();
+            $table->foreign('revoked_by_user_id', 'cppart_revoker_fk')->references('id')->on('users')->nullOnDelete();
             $table->timestamp('left_at')->nullable();
-            $table->foreignId('left_by_user_id')->nullable()->constrained('users', indexName: 'cppart_leaver_fk')->nullOnDelete();
+            $table->unsignedBigInteger('left_by_user_id')->nullable();
+            $table->foreign('left_by_user_id', 'cppart_leaver_fk')->references('id')->on('users')->nullOnDelete();
             $table->unsignedTinyInteger('active_marker')->nullable();
             $table->timestamps();
             $table->foreign(['host_workspace_id', 'client_project_id'], 'cppart_host_project_fk')
@@ -90,18 +100,20 @@ return new class extends Migration
         });
 
         Schema::table('client_projects', function (Blueprint $table): void {
-            $table->foreignId('shared_participation_id')->nullable()
-                ->constrained('client_project_participations', indexName: 'cp_shared_participation_fk')->nullOnDelete();
+            $table->unsignedBigInteger('shared_participation_id')->nullable();
+            $table->foreign('shared_participation_id', 'cp_shared_participation_fk')->references('id')->on('client_project_participations')->nullOnDelete();
             $table->unique('shared_participation_id', 'cp_shared_participation_unique');
         });
 
         Schema::table('client_comments', function (Blueprint $table): void {
             $table->boolean('shared_with_participants')->default(false);
-            $table->foreignId('author_workspace_id')->nullable()->constrained('workspaces', indexName: 'cc_author_workspace_fk')->nullOnDelete();
+            $table->unsignedBigInteger('author_workspace_id')->nullable();
+            $table->foreign('author_workspace_id', 'cc_author_workspace_fk')->references('id')->on('workspaces')->nullOnDelete();
         });
 
         Schema::table('client_task_assignments', function (Blueprint $table): void {
-            $table->foreignId('assignee_workspace_id')->nullable()->constrained('workspaces', indexName: 'cta_assignee_workspace_fk')->cascadeOnDelete();
+            $table->unsignedBigInteger('assignee_workspace_id')->nullable();
+            $table->foreign('assignee_workspace_id', 'cta_assignee_workspace_fk')->references('id')->on('workspaces')->cascadeOnDelete();
         });
     }
 
