@@ -41,6 +41,7 @@ final class AgentMcpReadToolSchemaContractTest extends TestCase
      * @var array<string, array<string, string>>
      */
     private const array REST_ONLY = [
+        'finance.income.yearly' => ['format' => 'CSV is a streamed REST download; MCP always returns the equivalent JSON representation.'],
         'attachments.list' => [
             'presentation' => 'Trusted first-party native panel representation; not selectable by MCP callers.',
             'client' => 'Trusted first-party portal preview context; not selectable by MCP callers.',

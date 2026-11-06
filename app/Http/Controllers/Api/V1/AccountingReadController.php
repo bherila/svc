@@ -12,6 +12,7 @@ use App\Support\Finance\FinanceCaller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Laravel\Passport\AccessToken;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class AccountingReadController extends Controller
@@ -36,6 +37,9 @@ final class AccountingReadController extends Controller
 
         return response()->streamDownload(static function () use ($result): void {
             $stream = fopen('php://output', 'w');
+            if ($stream === false) {
+                throw new \RuntimeException('The CSV output stream could not be opened.');
+            }
             fputcsv($stream, array_keys($result->months[0]), escape: '');
             foreach ($result->months as $month) {
                 fputcsv($stream, array_values($month), escape: '');
@@ -48,7 +52,8 @@ final class AccountingReadController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof AgentPrincipal || $user instanceof User, 401);
-        $clientId = $user instanceof AgentPrincipal ? $user->token()?->oauth_client_id : 'accounting-api';
+        $token = $user instanceof AgentPrincipal ? $user->token() : null;
+        $clientId = $token instanceof AccessToken ? $token->oauth_client_id : 'accounting-api';
 
         return FinanceCaller::oauth(User::query()->findOrFail($user->id), (string) $clientId);
     }

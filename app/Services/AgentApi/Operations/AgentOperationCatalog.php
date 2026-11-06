@@ -1778,7 +1778,7 @@ final class AgentOperationCatalog
                 rest: $this->rest($id),
                 mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
                 input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
-                output: isset(AccountingOperations::ROUTES[$id]) ? AccountingOperations::output($id) : SchemaRef::responseOf($id),
+                output: isset(AccountingOperations::ROUTES[$id]) ? SchemaRef::openApi(AccountingOperations::COMPONENTS[$id]) : SchemaRef::responseOf($id),
                 extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
             );
         }
@@ -2003,7 +2003,7 @@ final class AgentOperationCatalog
             responseSchema: isset($documented['response']) ? SchemaRef::openApi($documented['response']) : null,
             responseDescriptions: isset($documented['response_description']) ? [$status => $documented['response_description']] : [],
             // A download answers with the file itself.
-            responses: ($id === 'finance.income.yearly' ? [200 => ['description' => 'Calendar-year income in JSON or streamed CSV.', 'content' => ['application/json' => ['schema' => AccountingOperations::output($id)], 'text/csv' => ['schema' => ['type' => 'string', 'format' => 'binary']]]]] : []) + (isset($documented['binary']) ? [$status => [
+            responses: ($id === 'finance.income.yearly' ? [200 => ['description' => 'Calendar-year income in JSON or streamed CSV.', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/'.AccountingOperations::COMPONENTS[$id]]], 'text/csv' => ['schema' => ['type' => 'string', 'format' => 'binary']]]]] : []) + (isset($documented['binary']) ? [$status => [
                 'description' => $documented['binary'][1],
                 'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
             ]] : []) + array_map(

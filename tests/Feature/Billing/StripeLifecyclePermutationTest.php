@@ -467,6 +467,7 @@ class StripeLifecyclePermutationTest extends TestCase
         DB::table('client_stripe_events')->whereIn('stripe_event_id', $eventIds)->delete();
         DB::table('client_invoice_payments')->where('workspace_id', $this->workspace->id)->delete();
         DB::table('client_invoice_lines')->where('workspace_id', $this->workspace->id)->delete();
+        DB::table('accounting_invoice_entries')->where('workspace_id', $this->workspace->id)->delete();
         DB::table('client_invoices')->where('workspace_id', $this->workspace->id)->delete();
 
         $service = app(InvoiceLifecycleService::class);

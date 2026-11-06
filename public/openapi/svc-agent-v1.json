@@ -8263,116 +8263,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "data",
-                                        "meta"
-                                    ],
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "maxItems": 100,
-                                            "items": {
-                                                "type": "object",
-                                                "additionalProperties": false,
-                                                "required": [
-                                                    "version",
-                                                    "id",
-                                                    "source_id",
-                                                    "kind",
-                                                    "payment_id",
-                                                    "reverses_id",
-                                                    "currency",
-                                                    "effective_on",
-                                                    "amount",
-                                                    "fee_amount",
-                                                    "net_amount",
-                                                    "unattributed_refund_amount",
-                                                    "updated_at"
-                                                ],
-                                                "properties": {
-                                                    "version": {
-                                                        "type": "string"
-                                                    },
-                                                    "id": {
-                                                        "type": "string"
-                                                    },
-                                                    "source_id": {
-                                                        "type": "string",
-                                                        "format": "uuid"
-                                                    },
-                                                    "kind": {
-                                                        "type": "string"
-                                                    },
-                                                    "payment_id": {
-                                                        "type": "string",
-                                                        "format": "uuid"
-                                                    },
-                                                    "reverses_id": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "uuid"
-                                                    },
-                                                    "currency": {
-                                                        "type": "string"
-                                                    },
-                                                    "effective_on": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "date"
-                                                    },
-                                                    "amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "fee_amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "net_amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "unattributed_refund_amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "updated_at": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "date-time"
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        "meta": {
-                                            "type": "object",
-                                            "additionalProperties": false,
-                                            "required": [
-                                                "next_cursor",
-                                                "watermark",
-                                                "updated_since"
-                                            ],
-                                            "properties": {
-                                                "next_cursor": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "watermark": {
-                                                    "type": "string",
-                                                    "format": "date-time"
-                                                },
-                                                "updated_since": {
-                                                    "type": "string"
-                                                }
-                                            }
-                                        }
-                                    }
+                                    "$ref": "#/components/schemas/AccountingCashIncomeListResponse"
                                 }
                             }
                         }
@@ -8466,84 +8357,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "data"
-                                    ],
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": false,
-                                            "required": [
-                                                "year",
-                                                "months"
-                                            ],
-                                            "properties": {
-                                                "year": {
-                                                    "type": "integer"
-                                                },
-                                                "months": {
-                                                    "type": "array",
-                                                    "minItems": 12,
-                                                    "maxItems": 12,
-                                                    "items": {
-                                                        "type": "object",
-                                                        "additionalProperties": false,
-                                                        "required": [
-                                                            "month",
-                                                            "invoiced_net",
-                                                            "invoiced_tax",
-                                                            "cash_received",
-                                                            "refunds",
-                                                            "refund_reversals",
-                                                            "fees",
-                                                            "expenses_passed_through",
-                                                            "dispute_movements",
-                                                            "net_cash",
-                                                            "unattributed_refunds"
-                                                        ],
-                                                        "properties": {
-                                                            "month": {
-                                                                "type": "string",
-                                                                "pattern": "^\\d{4}-\\d{2}$"
-                                                            },
-                                                            "invoiced_net": {
-                                                                "type": "integer"
-                                                            },
-                                                            "invoiced_tax": {
-                                                                "type": "integer"
-                                                            },
-                                                            "cash_received": {
-                                                                "type": "integer"
-                                                            },
-                                                            "refunds": {
-                                                                "type": "integer"
-                                                            },
-                                                            "refund_reversals": {
-                                                                "type": "integer"
-                                                            },
-                                                            "fees": {
-                                                                "type": "integer"
-                                                            },
-                                                            "expenses_passed_through": {
-                                                                "type": "integer"
-                                                            },
-                                                            "dispute_movements": {
-                                                                "type": "integer"
-                                                            },
-                                                            "net_cash": {
-                                                                "type": "integer"
-                                                            },
-                                                            "unattributed_refunds": {
-                                                                "type": "integer"
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    "$ref": "#/components/schemas/AccountingYearlyIncomeResponse"
                                 }
                             },
                             "text/csv": {
@@ -8667,169 +8481,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "data",
-                                        "meta"
-                                    ],
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "maxItems": 100,
-                                            "items": {
-                                                "type": "object",
-                                                "additionalProperties": false,
-                                                "required": [
-                                                    "id",
-                                                    "invoice_id",
-                                                    "line_id",
-                                                    "client_id",
-                                                    "project_id",
-                                                    "reverses_id",
-                                                    "kind",
-                                                    "currency",
-                                                    "line_type",
-                                                    "line_type_label",
-                                                    "description",
-                                                    "quantity",
-                                                    "net_amount",
-                                                    "tax_amount",
-                                                    "total_amount",
-                                                    "unit_amount",
-                                                    "tax_rate",
-                                                    "taxable",
-                                                    "effective_on",
-                                                    "service_period_start",
-                                                    "service_period_end",
-                                                    "updated_at"
-                                                ],
-                                                "properties": {
-                                                    "id": {
-                                                        "type": "string",
-                                                        "format": "uuid"
-                                                    },
-                                                    "invoice_id": {
-                                                        "type": "string",
-                                                        "format": "uuid"
-                                                    },
-                                                    "line_id": {
-                                                        "type": "string",
-                                                        "format": "uuid"
-                                                    },
-                                                    "client_id": {
-                                                        "type": "string",
-                                                        "format": "uuid"
-                                                    },
-                                                    "project_id": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "uuid"
-                                                    },
-                                                    "reverses_id": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "uuid"
-                                                    },
-                                                    "kind": {
-                                                        "type": "string"
-                                                    },
-                                                    "currency": {
-                                                        "type": "string"
-                                                    },
-                                                    "line_type": {
-                                                        "type": "string"
-                                                    },
-                                                    "line_type_label": {
-                                                        "type": "string"
-                                                    },
-                                                    "description": {
-                                                        "type": "string"
-                                                    },
-                                                    "quantity": {
-                                                        "type": "string"
-                                                    },
-                                                    "net_amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "tax_amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "total_amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "unit_amount": {
-                                                        "type": "integer"
-                                                    },
-                                                    "tax_rate": {
-                                                        "type": [
-                                                            "number",
-                                                            "null"
-                                                        ]
-                                                    },
-                                                    "taxable": {
-                                                        "type": "boolean"
-                                                    },
-                                                    "effective_on": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "date"
-                                                    },
-                                                    "service_period_start": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "date"
-                                                    },
-                                                    "service_period_end": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "date"
-                                                    },
-                                                    "updated_at": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ],
-                                                        "format": "date-time"
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        "meta": {
-                                            "type": "object",
-                                            "additionalProperties": false,
-                                            "required": [
-                                                "next_cursor",
-                                                "watermark",
-                                                "updated_since"
-                                            ],
-                                            "properties": {
-                                                "next_cursor": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "watermark": {
-                                                    "type": "string",
-                                                    "format": "date-time"
-                                                },
-                                                "updated_since": {
-                                                    "type": "string"
-                                                }
-                                            }
-                                        }
-                                    }
+                                    "$ref": "#/components/schemas/AccountingInvoiceLineListResponse"
                                 }
                             }
                         }
@@ -18643,6 +18295,363 @@
             }
         },
         "schemas": {
+            "AccountingCashIncomeListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "version",
+                                "id",
+                                "source_id",
+                                "kind",
+                                "payment_id",
+                                "reverses_id",
+                                "currency",
+                                "effective_on",
+                                "amount",
+                                "fee_amount",
+                                "net_amount",
+                                "unattributed_refund_amount",
+                                "updated_at"
+                            ],
+                            "properties": {
+                                "version": {
+                                    "type": "string"
+                                },
+                                "id": {
+                                    "type": "string"
+                                },
+                                "source_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "kind": {
+                                    "type": "string"
+                                },
+                                "payment_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "reverses_id": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "uuid"
+                                },
+                                "currency": {
+                                    "type": "string"
+                                },
+                                "effective_on": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "integer"
+                                },
+                                "fee_amount": {
+                                    "type": "integer"
+                                },
+                                "net_amount": {
+                                    "type": "integer"
+                                },
+                                "unattributed_refund_amount": {
+                                    "type": "integer"
+                                },
+                                "updated_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor",
+                            "watermark",
+                            "updated_since"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "watermark": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "updated_since": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "AccountingInvoiceLineListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "invoice_id",
+                                "line_id",
+                                "client_id",
+                                "project_id",
+                                "reverses_id",
+                                "kind",
+                                "currency",
+                                "line_type",
+                                "line_type_label",
+                                "description",
+                                "quantity",
+                                "net_amount",
+                                "tax_amount",
+                                "total_amount",
+                                "unit_amount",
+                                "tax_rate",
+                                "taxable",
+                                "effective_on",
+                                "service_period_start",
+                                "service_period_end",
+                                "updated_at"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "invoice_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "line_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "client_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "project_id": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "uuid"
+                                },
+                                "reverses_id": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "uuid"
+                                },
+                                "kind": {
+                                    "type": "string"
+                                },
+                                "currency": {
+                                    "type": "string"
+                                },
+                                "line_type": {
+                                    "type": "string"
+                                },
+                                "line_type_label": {
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": "string"
+                                },
+                                "quantity": {
+                                    "type": "string"
+                                },
+                                "net_amount": {
+                                    "type": "integer"
+                                },
+                                "tax_amount": {
+                                    "type": "integer"
+                                },
+                                "total_amount": {
+                                    "type": "integer"
+                                },
+                                "unit_amount": {
+                                    "type": "integer"
+                                },
+                                "tax_rate": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ]
+                                },
+                                "taxable": {
+                                    "type": "boolean"
+                                },
+                                "effective_on": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "service_period_start": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "service_period_end": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "updated_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor",
+                            "watermark",
+                            "updated_since"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "watermark": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "updated_since": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "AccountingYearlyIncomeResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "year",
+                            "months"
+                        ],
+                        "properties": {
+                            "year": {
+                                "type": "integer"
+                            },
+                            "months": {
+                                "type": "array",
+                                "minItems": 12,
+                                "maxItems": 12,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "month",
+                                        "invoiced_net",
+                                        "invoiced_tax",
+                                        "cash_received",
+                                        "refunds",
+                                        "refund_reversals",
+                                        "fees",
+                                        "expenses_passed_through",
+                                        "dispute_movements",
+                                        "net_cash",
+                                        "unattributed_refunds"
+                                    ],
+                                    "properties": {
+                                        "month": {
+                                            "type": "string",
+                                            "pattern": "^\\d{4}-\\d{2}$"
+                                        },
+                                        "invoiced_net": {
+                                            "type": "integer"
+                                        },
+                                        "invoiced_tax": {
+                                            "type": "integer"
+                                        },
+                                        "cash_received": {
+                                            "type": "integer"
+                                        },
+                                        "refunds": {
+                                            "type": "integer"
+                                        },
+                                        "refund_reversals": {
+                                            "type": "integer"
+                                        },
+                                        "fees": {
+                                            "type": "integer"
+                                        },
+                                        "expenses_passed_through": {
+                                            "type": "integer"
+                                        },
+                                        "dispute_movements": {
+                                            "type": "integer"
+                                        },
+                                        "net_cash": {
+                                            "type": "integer"
+                                        },
+                                        "unattributed_refunds": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             "Agreement": {
                 "type": "object",
                 "additionalProperties": false,
@@ -32849,7 +32858,7 @@
                     "worked_on": {
                         "type": "string",
                         "format": "date",
-                        "description": "Workspace calendar date within the time sheet’s twelve-month window, through the end of the current month."
+                        "description": "Workspace calendar date within the time sheet\u2019s twelve-month window, through the end of the current month."
                     },
                     "minutes": {
                         "type": "integer",
@@ -32883,7 +32892,7 @@
                             "null"
                         ],
                         "format": "uuid",
-                        "description": "Omit to preserve the task; null clears it. A task must belong to this entry’s project."
+                        "description": "Omit to preserve the task; null clears it. A task must belong to this entry\u2019s project."
                     }
                 },
                 "allOf": [

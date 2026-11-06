@@ -6,6 +6,8 @@ use App\Models\AccountingInvoiceEntry;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Support\Accounting\AccountingQuery;
+use App\Support\Concurrency\Locks;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -21,12 +23,12 @@ final readonly class AccountingReadRepository
     {
         ClientInvoice::query()->where('workspace_id', $workspace->id)
             ->where(fn (Builder $rows) => $rows->whereIn('status', ['issued', 'paid', 'partially_paid'])->orWhereNotNull('issued_at')->orWhere('document_revision', '>', 0))
-            ->when($year !== null, fn (Builder $rows) => $rows->whereBetween('issue_date', [$year.'-01-01', $year.'-12-31']))
+            ->when($year !== null, fn (Builder $rows) => $rows->whereBetween('issue_date', [CarbonImmutable::create($year, 1, 1)->toDateString(), CarbonImmutable::create($year, 12, 31)->toDateString()]))
             ->whereNotIn('id', AccountingInvoiceEntry::query()->where('workspace_id', $workspace->id)->select('client_invoice_id'))
             ->select('id')->orderBy('id')->chunkById(100, function ($invoices) use ($workspace): void {
                 foreach ($invoices as $invoice) {
                     DB::transaction(function () use ($invoice, $workspace): void {
-                        $locked = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+                        $locked = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)->tap(Locks::forUpdate())->firstOrFail();
                         $this->journal->ensure($locked);
                     });
                 }

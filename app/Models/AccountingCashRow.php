@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /** A read-only SQL union over the existing finance records, never persisted.
+ * @property Carbon|null $updated_at
  * @property int $id
  * @property string $source_id
  * @property string $kind

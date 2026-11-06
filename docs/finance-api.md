@@ -667,6 +667,10 @@ mutable cash rows, version. Full reads may filter effective dates with `from`
 and `to`; incremental passes refuse date filters because payment dates can be
 corrected. Sync unfiltered and apply date filters to the local copy.
 
+The accounting response components are code-owned in `AccountingOperations`.
+After changing their schemas, run `php scripts/generate-accounting-contract.php`
+and `pnpm run api:types`; the generation test pins them to the published document.
+
 The calendar-year export returns twelve month rows in JSON. REST `format=csv`
 streams exactly the same columns and figures; MCP always returns JSON. It is
 computed in the request in chunks of 100, without a queued export. Invoiced tax

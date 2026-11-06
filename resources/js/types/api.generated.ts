@@ -2696,6 +2696,94 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccountingCashIncomeListResponse: {
+            data: {
+                version: string;
+                id: string;
+                /** Format: uuid */
+                source_id: string;
+                kind: string;
+                /** Format: uuid */
+                payment_id: string;
+                /** Format: uuid */
+                reverses_id: string | null;
+                currency: string;
+                /** Format: date */
+                effective_on: string | null;
+                amount: number;
+                fee_amount: number;
+                net_amount: number;
+                unattributed_refund_amount: number;
+                /** Format: date-time */
+                updated_at: string | null;
+            }[];
+            meta: {
+                next_cursor: string | null;
+                /** Format: date-time */
+                watermark: string;
+                updated_since: string;
+            };
+        };
+        AccountingInvoiceLineListResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                invoice_id: string;
+                /** Format: uuid */
+                line_id: string;
+                /** Format: uuid */
+                client_id: string;
+                /** Format: uuid */
+                project_id: string | null;
+                /** Format: uuid */
+                reverses_id: string | null;
+                kind: string;
+                currency: string;
+                line_type: string;
+                line_type_label: string;
+                description: string;
+                quantity: string;
+                net_amount: number;
+                tax_amount: number;
+                total_amount: number;
+                unit_amount: number;
+                tax_rate: number | null;
+                taxable: boolean;
+                /** Format: date */
+                effective_on: string | null;
+                /** Format: date */
+                service_period_start: string | null;
+                /** Format: date */
+                service_period_end: string | null;
+                /** Format: date-time */
+                updated_at: string | null;
+            }[];
+            meta: {
+                next_cursor: string | null;
+                /** Format: date-time */
+                watermark: string;
+                updated_since: string;
+            };
+        };
+        AccountingYearlyIncomeResponse: {
+            data: {
+                year: number;
+                months: {
+                    month: string;
+                    invoiced_net: number;
+                    invoiced_tax: number;
+                    cash_received: number;
+                    refunds: number;
+                    refund_reversals: number;
+                    fees: number;
+                    expenses_passed_through: number;
+                    dispute_movements: number;
+                    net_cash: number;
+                    unattributed_refunds: number;
+                }[];
+            };
+        };
         Agreement: {
             version: string;
             /** Format: uuid */
@@ -10992,34 +11080,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': {
-                        data: {
-                            version: string;
-                            id: string;
-                            /** Format: uuid */
-                            source_id: string;
-                            kind: string;
-                            /** Format: uuid */
-                            payment_id: string;
-                            /** Format: uuid */
-                            reverses_id: string | null;
-                            currency: string;
-                            /** Format: date */
-                            effective_on: string | null;
-                            amount: number;
-                            fee_amount: number;
-                            net_amount: number;
-                            unattributed_refund_amount: number;
-                            /** Format: date-time */
-                            updated_at: string | null;
-                        }[];
-                        meta: {
-                            next_cursor: string | null;
-                            /** Format: date-time */
-                            watermark: string;
-                            updated_since: string;
-                        };
-                    };
+                    'application/json': components['schemas']['AccountingCashIncomeListResponse'];
                 };
             };
             /** @description A workspace owner or admin and finance:read are required. */
@@ -11072,24 +11133,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': {
-                        data: {
-                            year: number;
-                            months: {
-                                month: string;
-                                invoiced_net: number;
-                                invoiced_tax: number;
-                                cash_received: number;
-                                refunds: number;
-                                refund_reversals: number;
-                                fees: number;
-                                expenses_passed_through: number;
-                                dispute_movements: number;
-                                net_cash: number;
-                                unattributed_refunds: number;
-                            }[];
-                        };
-                    };
+                    'application/json': components['schemas']['AccountingYearlyIncomeResponse'];
                     'text/csv': string;
                 };
             };
@@ -11146,48 +11190,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': {
-                        data: {
-                            /** Format: uuid */
-                            id: string;
-                            /** Format: uuid */
-                            invoice_id: string;
-                            /** Format: uuid */
-                            line_id: string;
-                            /** Format: uuid */
-                            client_id: string;
-                            /** Format: uuid */
-                            project_id: string | null;
-                            /** Format: uuid */
-                            reverses_id: string | null;
-                            kind: string;
-                            currency: string;
-                            line_type: string;
-                            line_type_label: string;
-                            description: string;
-                            quantity: string;
-                            net_amount: number;
-                            tax_amount: number;
-                            total_amount: number;
-                            unit_amount: number;
-                            tax_rate: number | null;
-                            taxable: boolean;
-                            /** Format: date */
-                            effective_on: string | null;
-                            /** Format: date */
-                            service_period_start: string | null;
-                            /** Format: date */
-                            service_period_end: string | null;
-                            /** Format: date-time */
-                            updated_at: string | null;
-                        }[];
-                        meta: {
-                            next_cursor: string | null;
-                            /** Format: date-time */
-                            watermark: string;
-                            updated_since: string;
-                        };
-                    };
+                    'application/json': components['schemas']['AccountingInvoiceLineListResponse'];
                 };
             };
             /** @description A workspace owner or admin and finance:read are required. */

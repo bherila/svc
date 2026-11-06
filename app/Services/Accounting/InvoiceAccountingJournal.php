@@ -10,6 +10,7 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Accounting\InvoiceLineFacts;
+use Carbon\CarbonImmutable;
 
 /** Appends under the invoice lock in the same transaction as the document change. */
 final class InvoiceAccountingJournal
@@ -33,8 +34,9 @@ final class InvoiceAccountingJournal
                 }
             }
         }
+        $issuedAt = $invoice->getRawOriginal('issued_at') ?? $invoice->getRawOriginal('created_at');
         foreach ($lines as $id => $facts) {
-            $this->append($invoice, 'original:'.$id, $facts, $invoice->issued_at ?? $invoice->created_at);
+            $this->append($invoice, 'original:'.$id, $facts, is_string($issuedAt) ? CarbonImmutable::parse($issuedAt, 'UTC') : null);
         }
         foreach ($corrections as $correction) {
             $this->correction($invoice, $correction);

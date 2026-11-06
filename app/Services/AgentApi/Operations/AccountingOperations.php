@@ -11,7 +11,13 @@ final class AccountingOperations
         'finance.income.yearly' => ['finance.income.yearly', '/workspaces/{workspace}/accounting/income', [200]],
     ];
 
-    /** @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, errors: array<int, string>}> */
+    public const array COMPONENTS = [
+        'finance.invoice_lines.list' => 'AccountingInvoiceLineListResponse',
+        'finance.cash_income.list' => 'AccountingCashIncomeListResponse',
+        'finance.income.yearly' => 'AccountingYearlyIncomeResponse',
+    ];
+
+    /** @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, response: string, errors: array<int, string>}> */
     public static function documentation(): array
     {
         $common = ['method' => 'GET', 'scopes' => ['finance:read'], 'parameters' => ['WorkspaceId'], 'errors' => [
@@ -26,6 +32,7 @@ final class AccountingOperations
         ] as $id => $description) {
             $entry = $common;
             $entry['description'] = $description;
+            $entry['response'] = self::COMPONENTS[$id];
             if ($id === 'finance.income.yearly') {
                 $entry['parameters'][] = self::parameter('year', ['type' => 'integer', 'minimum' => 1900, 'maximum' => 9999], true);
                 $entry['parameters'][] = self::parameter('format', ['type' => 'string', 'enum' => ['json', 'csv'], 'default' => 'json']);
