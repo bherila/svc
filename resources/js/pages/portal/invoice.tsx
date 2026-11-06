@@ -1,327 +1,102 @@
 import { Head } from '@inertiajs/react';
-import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
-import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
+import { CreditCardIcon, DownloadIcon } from 'lucide-react';
+import { InvoiceDocument } from '@/components/billing/invoice-document';
+import type { InvoiceDocumentData } from '@/components/billing/invoice-document';
+import { InvoicePaymentState } from '@/components/billing/invoice-rail';
+import { StripeCardPayment } from '@/components/billing/stripe-card-payment';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { formatDay } from '@/lib/datetime';
-import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
-import { formatMoney } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import type { AttachmentPanel } from '@/types/files';
 
-type PortalLine = {
-    id: string;
-    description: string;
-    quantity: number;
-    hours: number | null;
-    line_date: string | null;
-    unit_amount: number;
-    total_amount: number;
-};
-
-type PortalInvoice = {
-    id: string;
-    invoice_number: string | null;
-    status: string;
-    currency: string | null;
-    issue_date: string | null;
-    due_date: string | null;
-    service_period_start: string | null;
-    service_period_end: string | null;
-    subtotal_amount: number;
-    tax_amount: number;
-    total_amount: number;
-    paid_amount: number;
-    balance_amount: number;
-    pdf_url: string;
-    deferred_work: {
-        entry_count: number;
-        total_hours: number;
-        oldest_worked_on: string;
-        entries: {
-            worked_on: string;
-            hours: number;
-            description: string | null;
-        }[];
-    } | null;
+/**
+ * What this workspace's connections can take payment with: finished values from
+ * the server, or null. Nothing here is a flag the browser interprets.
+ */
+export type PortalPaymentOptions = {
+    stripe: { intent_href: string; publishable_key: string } | null;
+    square: { href: string } | null;
 };
 
 /**
  * One invoice, as the client it was sent to.
  *
- * The portal's list answers "what do I owe"; this answers "what for", which is
- * the question a client actually opens a portal to ask. It is read-only, like
- * every client-reachable route — there is no action on this page, and that is a
- * property of the surface rather than an omission.
- *
- * Hours appear beside quantity only where the line has them. A fee line has a
- * quantity and no hours, and showing a dash rather than a zero keeps the two
- * apart for the person being billed.
+ * The same document the operator and the PDF show, for the client's audience,
+ * with an action rail beside it: where the invoice stands and how to pay it.
+ * Paying is offered through whatever the workspace has connected (its own
+ * Stripe account, Square's hosted page for a linked invoice) and not at all
+ * for an invoice that cannot be paid. Which work each line was billed from is
+ * Appendix A of the document, narrowed on the server to entries written to be
+ * read by this client.
  */
 export default function PortalInvoice({
     attachment_panel = null,
-    invoice,
-    lines,
-    line_detail: lineDetail,
-    square_page_url: squarePageUrl = null,
+    document,
+    payment,
+    pdf_url: pdfUrl,
 }: {
     attachment_panel?: AttachmentPanel | null;
     company: { id: string; name: string };
     home_href: string;
-    invoice: PortalInvoice;
-    lines: PortalLine[];
-    square_page_url?: string | null;
-    /**
-     * The work behind each line, keyed by line id.
-     *
-     * Narrowed on the server to entries written to be read by this client, and
-     * a line with none is simply absent - there is no row here announcing work
-     * the client is not being told about.
-     */
-    line_detail: Record<string, InvoiceLineItem[]>;
+    document: InvoiceDocumentData;
+    payment: PortalPaymentOptions;
+    pdf_url: string;
 }) {
-    const period =
-        invoice.service_period_start === null &&
-        invoice.service_period_end === null
-            ? null
-            : `${invoice.service_period_start === null ? 'open' : formatDay(invoice.service_period_start)} → ${invoice.service_period_end === null ? 'open' : formatDay(invoice.service_period_end)}`;
+    const stripe = payment.stripe;
+    const square = payment.square;
 
     return (
         <WorkspaceShell activeModule="invoices">
-            <Head title={invoice.invoice_number ?? 'Invoice'} />
+            <Head title={document.invoice_number ?? 'Invoice'} />
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
-                <div className="grid grid-cols-1 gap-1">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="min-w-0 text-2xl font-semibold wrap-anywhere">
-                            {invoice.invoice_number ?? 'Invoice'}
-                        </h1>
-                        <Badge variant="outline">
-                            {statusLabel(invoice.status)}
-                        </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                        {invoice.issue_date === null
-                            ? 'Not dated'
-                            : `Issued ${formatDay(invoice.issue_date)}`}
-                        {invoice.due_date !== null &&
-                            ` · due ${formatDay(invoice.due_date)}`}
-                        {period !== null && ` · covering ${period}`}
-                    </p>
-                    <p className="text-sm">
-                        <a
-                            href={invoice.pdf_url}
-                            className="underline underline-offset-4"
-                        >
-                            Download PDF
-                        </a>
-                    </p>
-                    {squarePageUrl !== null && (
-                        <p className="text-sm">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+                    <InvoiceDocument document={document} />
+                    <aside
+                        aria-label="Invoice actions"
+                        className="grid grid-cols-1 gap-4"
+                    >
+                        <InvoicePaymentState document={document}>
+                            {stripe !== null && (
+                                <StripeCardPayment
+                                    intentHref={stripe.intent_href}
+                                    publishableKey={stripe.publishable_key}
+                                    primary
+                                />
+                            )}
+                            {square !== null && (
+                                <Button
+                                    variant={
+                                        stripe === null ? 'default' : 'outline'
+                                    }
+                                    render={
+                                        <a
+                                            href={square.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        />
+                                    }
+                                >
+                                    <CreditCardIcon aria-hidden="true" />
+                                    Pay in Square
+                                </Button>
+                            )}
                             <a
-                                href={squarePageUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline underline-offset-4"
+                                href={pdfUrl}
+                                className="inline-flex items-center gap-1.5 text-sm underline underline-offset-4"
                             >
-                                View or pay in Square
+                                <DownloadIcon
+                                    aria-hidden="true"
+                                    className="size-4 shrink-0"
+                                />
+                                Download PDF
                             </a>
-                        </p>
-                    )}
+                        </InvoicePaymentState>
+                    </aside>
                 </div>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>What this covers</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {lines.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">
-                                This invoice has no itemised lines.
-                            </p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            {/* The disclosure column. */}
-                                            <TableHead className="w-8" />
-                                            <TableHead className="min-w-64">
-                                                Description
-                                            </TableHead>
-                                            <TableHead>Date</TableHead>
-                                            <TableHead>Quantity</TableHead>
-                                            <TableHead>Hours</TableHead>
-                                            <TableHead>Rate</TableHead>
-                                            <TableHead>Amount</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {lines.map((line) => (
-                                            <InvoiceLineRows
-                                                key={line.id}
-                                                line={line}
-                                                items={lineDetail[line.id]}
-                                                columns={6}
-                                            >
-                                                <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
-                                                    {line.description}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {formatDay(line.line_date)}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {line.quantity}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {line.hours ?? '—'}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {formatMoney(
-                                                        line.unit_amount,
-                                                        invoice.currency,
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {formatMoney(
-                                                        line.total_amount,
-                                                        invoice.currency,
-                                                    )}
-                                                </TableCell>
-                                            </InvoiceLineRows>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Totals</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">
-                                    Subtotal
-                                </dt>
-                                <dd className="tabular-nums">
-                                    {formatMoney(
-                                        invoice.subtotal_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">Tax</dt>
-                                <dd className="tabular-nums">
-                                    {formatMoney(
-                                        invoice.tax_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">Total</dt>
-                                <dd className="tabular-nums">
-                                    {formatMoney(
-                                        invoice.total_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">Paid</dt>
-                                <dd className="tabular-nums">
-                                    {formatMoney(
-                                        invoice.paid_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">
-                                    Balance
-                                </dt>
-                                <dd className="font-medium tabular-nums">
-                                    {formatMoney(
-                                        invoice.balance_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                        </dl>
-                    </CardContent>
-                </Card>
-                {invoice.deferred_work !== null && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Still deferred</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-1 gap-3">
-                            <p className="text-sm text-muted-foreground">
-                                {invoice.deferred_work.entry_count}{' '}
-                                {invoice.deferred_work.entry_count === 1
-                                    ? 'entry'
-                                    : 'entries'}{' '}
-                                · {invoice.deferred_work.total_hours.toFixed(4)}{' '}
-                                hours · oldest worked date{' '}
-                                {formatDay(
-                                    invoice.deferred_work.oldest_worked_on,
-                                )}
-                            </p>
-                            <div className="overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Date</TableHead>
-                                            <TableHead className="min-w-64">
-                                                Work
-                                            </TableHead>
-                                            <TableHead>Hours</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {invoice.deferred_work.entries.map(
-                                            (entry, index) => (
-                                                <TableRow
-                                                    key={`${entry.worked_on}-${index}`}
-                                                >
-                                                    <TableCell>
-                                                        {formatDay(
-                                                            entry.worked_on,
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
-                                                        {entry.description ??
-                                                            '—'}
-                                                    </TableCell>
-                                                    <TableCell className="tabular-nums">
-                                                        {entry.hours.toFixed(4)}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ),
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
                 {attachment_panel && (
                     <AttachmentSharingPanel panel={attachment_panel} />
                 )}

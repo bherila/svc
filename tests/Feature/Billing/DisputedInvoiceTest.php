@@ -75,7 +75,7 @@ final class DisputedInvoiceTest extends TestCase
         $portalUser = User::factory()->create();
         $company->portalUsers()->attach($portalUser->id, ['workspace_id' => $workspace->id]);
         $this->actingAs($portalUser)->get(route('portal.invoice', [$company, $invoice]))->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('invoice.status', 'disputed')->where('square_page_url', null));
+            ->assertInertia(fn (Assert $page) => $page->where('document.status', 'disputed')->where('payment', ['stripe' => null, 'square' => null]));
         $this->actingAs($portalUser)->postJson(route('svc.billing.invoices.stripe-payment-intent', [$workspace, $invoice]), ['idempotency_key' => 'synthetic-disputed-intent'])->assertForbidden();
         try {
             app(StripePaymentIntentService::class)->create($invoice->fresh(), $workspace, null, 'synthetic-disputed-service-intent');

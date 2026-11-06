@@ -10,6 +10,10 @@ The portal opens on two cards: what you owe, and how this period is going. Below
 
 The Balance card adds up your open invoices, says if any are overdue, shows the one due first and the last payment received. Pay opens that invoice's payment page when it has one; View invoice shows the invoice itself.
 
+## An invoice
+
+An invoice opens as the document itself: what it covers, the totals, the hours statement for retainer work and, where your agreement allows it, the work still deferred. Appendix A lists the time behind each line. Beside it, the payment card shows what is owed and offers Pay by card or Pay in Square, whichever the business has set up. Download PDF gives you the same document on white paper.
+
 ## This period and the next invoice
 
 The This period card shows hours used against the hours available, including any rolled over. Under it, Next invoice (estimate) lists what the next invoice is expected to carry: the retainer, recurring charges and any hours past the retainer so far. It is an estimate before tax and excludes expenses, and it looks no further ahead than the next invoice.

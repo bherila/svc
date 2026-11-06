@@ -40,13 +40,13 @@ final class SquareHostedInvoicePageTest extends TestCase
         $client = $this->client($company);
         $portalUrl = route('portal.invoice', [$company, $invoice]);
         $this->actingAs($client)->get($portalUrl)->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('square_page_url', $url)
+            ->where('payment.square.href', $url)
             ->missing('square'));
         Http::assertNotSent(static fn ($request): bool => $request->method() !== 'GET');
 
         $snapshot = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv:0-fixture1')->firstOrFail();
         $snapshot->forceFill(['public_url' => 'https://untrusted.example.test/inv_fixture_1'])->save();
-        $this->actingAs($client)->get($portalUrl)->assertOk()->assertInertia(fn (Assert $page) => $page->where('square_page_url', null));
+        $this->actingAs($client)->get($portalUrl)->assertOk()->assertInertia(fn (Assert $page) => $page->where('payment.square', null));
         $snapshot->forceFill(['public_url' => null])->save();
         $this->assertNull(app(SquareInvoicePage::class)->forInvoice($workspace, $invoice), 'Never build a pay URL from a Square identifier.');
     }
@@ -93,7 +93,7 @@ final class SquareHostedInvoicePageTest extends TestCase
         $this->actingAs($client)->get(route('portal.invoice', [$company, $invoice]))->assertNotFound();
         $invoice->forceFill(['status' => 'issued'])->save();
         config(['services.square.access_token' => null]);
-        $this->actingAs($client)->get(route('portal.invoice', [$company, $invoice]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('square_page_url', null));
+        $this->actingAs($client)->get(route('portal.invoice', [$company, $invoice]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('payment.square', null));
         $this->connectSquare($workspace);
         $unlinked = $this->invoice($company, 'SYNTHETIC-UNLINKED');
         $this->assertNull(app(SquareInvoicePage::class)->forInvoice($workspace, $unlinked));

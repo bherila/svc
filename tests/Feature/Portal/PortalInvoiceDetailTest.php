@@ -61,9 +61,14 @@ final class PortalInvoiceDetailTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('portal/invoice')
-                ->where('invoice.invoice_number', 'SENT-1')
-                ->has('lines', 1)
-                ->where('lines.0.description', 'Synthetic consulting work'));
+                ->where('document.invoice_number', 'SENT-1')
+                ->where('document.audience', 'client')
+                ->has('document.sections', 1)
+                // The fixture's own type is not a billing line type, which still prints.
+                ->where('document.sections.0.key', 'adjustments')
+                ->where('document.sections.0.lines.0.description', 'Synthetic consulting work')
+                ->where('payment', ['stripe' => null, 'square' => null])
+                ->where('pdf_url', "/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}/pdf"));
     }
 
     public function test_a_client_sees_only_the_saved_deferred_work_snapshot(): void
@@ -81,11 +86,11 @@ final class PortalInvoiceDetailTest extends TestCase
             ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('invoice.deferred_work.entry_count', 2)
-                ->where('invoice.deferred_work.total_hours', 3)
-                ->where('invoice.deferred_work.oldest_worked_on', '2026-04-01')
-                ->where('invoice.deferred_work.entries.1.description', 'Synthetic client-safe work')
-                ->where('invoice.deferred_work.entries.0.description', null))
+                ->where('document.deferred_work.entry_count', 2)
+                ->where('document.deferred_work.total_hours', 3)
+                ->where('document.deferred_work.oldest_worked_on', '2026-04-01')
+                ->where('document.deferred_work.entries.1.description', 'Synthetic client-safe work')
+                ->where('document.deferred_work.entries.0.description', null))
             ->assertDontSee('123456')
             ->assertDontSee('123457');
     }
@@ -101,7 +106,7 @@ final class PortalInvoiceDetailTest extends TestCase
         $this->actingAs($this->portalUser())
             ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('invoice.deferred_work', null))
+            ->assertInertia(fn (Assert $page) => $page->where('document.deferred_work', null))
             ->assertDontSee('Synthetic private backlog work');
     }
 
