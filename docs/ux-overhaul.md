@@ -820,6 +820,21 @@ Settled by the product owner before a period away:
     its cost grows with the number of agreements. Accepted for now, because
     agreements per workspace are few and the existing ledger is the source of
     truth. Revisit if a workspace reaches dozens.
+- **2026-11-06, #618: payment connection calls.**
+  - **Reuse** is a second row that holds no key and reads credentials from its
+    source. Both workspaces must have the same owner, and the person setting
+    it up must be owner or admin of both. Revoking the source revokes every
+    workspace that reuses it, in the same transaction.
+  - **Environment keys** keep serving a workspace only until that workspace
+    has ever had a connection, or the migration command has run.
+  - **Stripe webhook endpoints** are created by SVC through the API. **Square
+    endpoints** are registered by the owner at the URL SVC shows, after which
+    they enter the signature key.
+  - **No API exposure:** payment keys are saved through browser-only routes,
+    never REST or MCP.
+  - **Payments page:** there was no workspace settings page, so it has its own
+    page at `/workspaces/{workspace}/payments`. It will move into settings
+    when one exists.
 
 ## Open questions
 
