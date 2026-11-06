@@ -877,11 +877,13 @@ Settled by the product owner before a period away:
   - **Portal rail:** approve or dispute hours is not offered, because
     client approval (slice 8) has not landed.
   - **Stripe:** the browser confirms the payment with Stripe.js, loaded when
-    the client asks to pay, using the deployment's publishable key
-    (`services.stripe.publishable_key`). A workspace on its own Stripe
-    account whose publishable key is not the deployment's is not offered card
-    payment until the key is stored per connection; the connection stores the
-    secret only.
+    the client asks to pay. Card payment is offered only when the deployment's
+    publishable key (`services.stripe.publishable_key`) is known to belong to
+    the account that creates the intent: the workspace has no connection and
+    the environment may serve it, or its connection is, or borrows, the
+    environment one. A workspace on a key of its own gets no card option
+    (Square's page still shows). A per-connection publishable key is the
+    follow-up that lifts this.
 - **2026-11-06, #617: mutation gate.** The mutation job can show success
   while the score is under its 82% threshold. Before every merge, the actual
   counts in the log are read.
