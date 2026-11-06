@@ -207,6 +207,88 @@ below.
   top-level tabs, so the portal tab set shrinks to Overview, Invoices, Time
   and Tasks.
 
+## 7. Who approves whose time
+
+### The problem
+
+Approving a time entry today does two jobs at once. It fixes the entry's
+billing rate (`TimeEntryMutationService` stamps `billing_rate_amount` on
+approval), and it is the gate a draft invoice reads (`status = 'approved'`).
+So the consultant has to "approve" their own hours to bill them, and the
+record then claims an approval that nobody gave. The person whose acceptance
+actually matters, the client, never appears in it.
+
+Approval authority follows whoever **pays** for the time, not whoever owns the
+workspace.
+
+### Worked example: vetvet
+
+- **The fractional CTO (the workspace owner)** contracts with vetvet for a
+  monthly retainer with carry-forward. Vetvet pays the fCTO, so **vetvet
+  accepts the fCTO's hours**. It does that by paying the invoice.
+- **Another engineer** contracts directly with vetvet at their own rate. The
+  fCTO introduced them, and SVC gives them a place to log time. Vetvet pays the
+  engineer, and before it does, **vetvet asks the fCTO to approve the
+  engineer's hours**. So the fCTO approves them, and vetvet relies on that
+  approval. This is the existing `SubcontractorBillingMode::Direct`.
+- A subcontractor the fCTO pays and re-bills (`FlatHourly`, `Retainer`) is
+  approved by the fCTO, and then accepted by vetvet through the fCTO's invoice,
+  like the fCTO's own time.
+
+| Time | Logged by | Locked / approved by | Accepted by |
+| --- | --- | --- | --- |
+| Consultant (no mode) | fCTO | Nobody separately: issuing the invoice locks it | Client, by paying the invoice |
+| `Retainer` / `FlatHourly` sub | Sub | fCTO (project owner/manager) | Client, by paying the invoice |
+| `Direct` sub | Sub | fCTO (project owner/manager), on the client's behalf | Client, by paying the sub outside SVC |
+
+### Defaults (to confirm)
+
+1. **Own time has no approval step.** A draft invoice pulls in all unbilled
+   consultant time in its service period, whatever its status. The fCTO reviews
+   the hours on the draft. Issuing the invoice fixes the rate and moves the
+   entries to `invoiced`. The "Approve" button is not shown on consultant time.
+   This moves the rate stamp from approval to issue for consultant time only.
+   The billing rate is still resolved by `AgreementBillingRateResolver`, so the
+   amount is the same either way. The draft-invoice regenerator already re-reads
+   time on change.
+2. **Acceptance is derived, not stored.** An entry on an invoice reads as
+   *Accepted* when the invoice is `paid`, *Disputed* when it is `disputed`, and
+   *Awaiting payment* otherwise. Because it is computed from invoice status, a
+   refund, reopen or void updates it with no extra state to keep in sync. The
+   mapping over `InvoiceStatus` is an exhaustive `match`. Partial payment reads
+   as *Awaiting payment*, because hours are not split across a partial payment.
+3. **Subcontractor time keeps its approval step**, and the approval queue on
+   the workspace Time tab and the dashboard holds only time that someone other
+   than its author must approve. A person can never approve their own entry.
+   The server refuses it, even for owners.
+4. **Direct-billed contractors.**
+   - They sign in to "My work" (section 5), scoped to the projects they belong
+     to.
+   - The fCTO approves their hours per period from the approval queue.
+   - Vetvet sees the approved direct hours in the portal, in their own section
+     apart from the fCTO's, labelled "Approved by <name> on <date>". This is the
+     evidence vetvet asked for before paying.
+   - The engineer can download a timesheet (PDF and CSV) of approved hours for a
+     period to attach to their own invoice to vetvet. Hours only: SVC does not
+     record the engineer's rate with vetvet, because SVC is not a party to that
+     contract.
+   - Direct hours never draw on the fCTO's retainer. The client overview shows
+     them next to the retainer meter, not inside it.
+5. **Labels.** The words used in the interface are *Draft*, *Submitted*
+   (subcontractor time awaiting approval), *Approved* (subcontractor only),
+   *Invoiced*, *Accepted*, and *Disputed*, all printed through `statusLabel`.
+   Consultant time never shows "Approved".
+
+### Migration
+
+- Existing self-approved consultant entries keep `approved` in the database.
+  They are only relabelled. Nothing is rewritten in place.
+- Writes to approve consultant time return 409 with a message pointing to the
+  draft invoice. MCP `time_entries.log` stops accepting `approve: true` for an
+  entry the actor authored, and the MCP contract docs change with it.
+- `scopeApproved()` and the retainer ledgers are unchanged, so rollover history
+  is not rebuilt.
+
 ## Delivery slices (stacked commits, one PR)
 
 1. **Navigation tiers.** Workspace and client tiers, role-specific tab sets,
@@ -220,19 +302,22 @@ below.
 5. **Client overview.**
 6. **Subcontractor "My work".**
 7. **Portal home.**
+8. **Time approval model** (section 7): separating locking from approval,
+   acceptance derived from payment, the direct-billed contractor workflow.
+
+## Settled answers
+
+- **Fiscal year**: YTD runs from January 1.
+- **Tax**: revenue figures exclude tax collected.
+- **Expenses**: pass-through expense lines are shown in "Overage and other",
+  with a switch on the dashboard and on the client overview to exclude them.
+- **Signed but not yet started agreements** count as contracted, but only from
+  their start date. Nothing is projected before `starts_on`.
+- **Currency**: a workspace is single-currency.
+- **Subcontractor identity** is decided by project membership and the time's
+  billing mode, not by workspace role (see section 7).
 
 ## Open questions
 
-1. **Fiscal year.** Does YTD start on January 1, or on a configurable fiscal
-   year start for the workspace?
-2. **Tax.** Should revenue figures exclude tax collected on taxable recurring
-   items? The proposal is to exclude it.
-3. **Expenses.** Are pass-through expense lines revenue? The proposal is to
-   show them in "Overage and other" with a toggle to exclude them.
-4. **Draft agreements.** Should signed but not-yet-active agreements count as
-   contracted? The proposal is to show them as a separate "signed, starting
-   later" band.
-5. **Subcontractor identity.** Is a subcontractor any workspace `Member`, or
-   do we need an explicit flag or role? This decides who lands on "My work".
-6. **Currency.** Is a workspace always single-currency? The proposal assumes
-   yes.
+None outstanding for slices 1 to 7. Section 7 records the defaults chosen for
+time approval. Confirm or correct them before slice 8.
