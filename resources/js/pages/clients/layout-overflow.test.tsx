@@ -6,10 +6,10 @@ import ExpenseSchedules from '@/pages/clients/expense-schedules';
 import ClientHome from '@/pages/clients/home';
 import ClientInvoiceDetail from '@/pages/clients/invoice';
 import ClientInvoices from '@/pages/clients/invoices';
+import ClientProjectDetail from '@/pages/clients/project';
 import ClientProposalDetail from '@/pages/clients/proposal';
 import ClientSettings from '@/pages/clients/settings';
 import ClientTasks from '@/pages/clients/tasks';
-import Operations from '@/pages/operations';
 import Dashboard from '@/pages/workspaces/dashboard';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { documentFixture } from '@/test/invoice-document-fixtures';
@@ -99,36 +99,36 @@ const LONG_REPOSITORY =
 const company = { id: 'company-1', name: LONG_NAME };
 
 describe('client screens under data that does not fit', () => {
-    it('keeps the Operations workspace title in content and all existing navigation available', () => {
-        const workspaceName = 'SyntheticUnbrokenWorkspace'.repeat(10);
+    it('keeps a project with an unbroken name and its Log time link inside the window', () => {
+        const project = `Project ${'LongProjectName'.repeat(8)}`;
         const { container } = render(
-            <Operations
-                workspace={{
-                    id: 'synthetic-workspace',
-                    name: workspaceName,
-                    clients: [],
-                    timezone: 'UTC',
+            <ClientProjectDetail
+                workspace={{ id: 'workspace-1' }}
+                company={company}
+                project={{
+                    id: 'project-1',
+                    name: project,
+                    description: LONG_DESCRIPTION,
+                    status: 'active',
+                    is_visible_to_client: true,
                 }}
+                tasks={[]}
+                time={[
+                    { status: 'approved', minutes: 90000, entries: 400 },
+                    { status: 'draft', minutes: 30, entries: 1 },
+                ]}
+                agreements={[]}
+                log_time_href="/workspaces/workspace-1/clients/company-1/time?log_project=project-1"
             />,
         );
 
-        expect(screen.getByRole('main')).toContainElement(
-            screen.getByRole('heading', { level: 1, name: workspaceName }),
-        );
-        expect(screen.getByRole('banner')).not.toContainElement(
-            screen.getByRole('main'),
-        );
-        expect(
-            screen.getByRole('link', { name: 'Leave this workspace' }),
-        ).toHaveAttribute('href', '/app');
-        expect(
-            screen.getByRole('navigation', { name: 'Client sections' }),
-        ).toContainElement(screen.getByRole('link', { name: 'Overview' }));
-        expect(screen.getByRole('link', { name: 'Time' })).toHaveAttribute(
+        expect(screen.getByRole('link', { name: 'Log time' })).toHaveAttribute(
             'href',
-            '/workspaces/workspace-1/clients/company-1/time',
+            '/workspaces/workspace-1/clients/company-1/time?log_project=project-1',
         );
-        expect(screen.getAllByRole('banner')).toHaveLength(1);
+        expect(screen.getByRole('main')).toContainElement(
+            screen.getByRole('heading', { level: 1, name: project }),
+        );
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 

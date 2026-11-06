@@ -56,7 +56,7 @@ final class AgentProjectPresenter
             'status' => $summary['status'],
             'is_visible_to_client' => $summary['is_visible_to_client'],
             'version' => AgentApiVersion::for($project),
-            'web_url' => route('workspaces.operations', $workspace).'?project='.$project->public_id,
+            'web_url' => route('clients.project', [$workspace, $project->clientCompany, $project]),
         ];
     }
 }

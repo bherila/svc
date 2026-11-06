@@ -169,7 +169,6 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                   'nativeportalagreementfiles',
                   'dualportalagreementfiles',
                   'expensefiles',
-                  'operationsfiles',
               ]) {
             await page.setExtraHTTPHeaders({
                 ...headers,
@@ -182,7 +181,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             await page.goto(origin + fixture[screen]);
             await expect(page.locator('main')).toBeVisible();
 
-            if (screen !== 'operationsfiles') {
+            {
                 await expect(
                     page.getByRole('button', { name: 'Current client' }),
                 ).toContainText(fixture.company_name);
@@ -292,86 +291,6 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                             );
                         })
                         .toBe(true);
-                }
-            }
-
-            if (screen === 'operationsfiles') {
-                const header = page.getByRole('banner');
-                await expect(header).toBeVisible();
-                await expect(
-                    header.getByRole('link', { name: 'Leave this workspace' }),
-                ).toBeVisible();
-
-                // The workspace tab strip is a strip from `lg` and a menu below
-                // it; Operations lights neither tab.
-                if (width >= 1024) {
-                    const navigation = header.getByRole('navigation', {
-                        name: 'Workspace sections',
-                    });
-                    await expect(
-                        navigation.getByRole('link', {
-                            name: 'Clients',
-                            exact: true,
-                        }),
-                    ).toBeVisible();
-                    await expect(
-                        navigation.locator('[aria-current="page"]'),
-                    ).toHaveCount(0);
-                } else {
-                    await expect(
-                        header.getByRole('button', {
-                            name: /Workspace sections$/,
-                        }),
-                    ).toBeVisible();
-                }
-
-                const bounds = await header.evaluate((element) => {
-                    const bar = element.getBoundingClientRect();
-
-                    return Array.from(
-                        element.querySelectorAll('a, button, select'),
-                    )
-                        .filter(
-                            (control) =>
-                                control.getBoundingClientRect().width > 0,
-                        )
-                        .map((control) => {
-                            const box = control.getBoundingClientRect();
-                            const text = document.createRange();
-                            text.selectNodeContents(control);
-
-                            return {
-                                name:
-                                    control.getAttribute('aria-label') ??
-                                    control.textContent?.trim(),
-                                contained:
-                                    box.left >= bar.left &&
-                                    box.right <= bar.right &&
-                                    box.top >= bar.top &&
-                                    box.bottom <= bar.bottom,
-                                textHeight:
-                                    control.tagName === 'A'
-                                        ? text.getBoundingClientRect().height
-                                        : null,
-                                lineHeight: Number.parseFloat(
-                                    getComputedStyle(control).lineHeight,
-                                ),
-                            };
-                        });
-                });
-
-                for (const control of bounds) {
-                    expect(
-                        control.contained,
-                        `Operations ${control.name} bounds at ${width}`,
-                    ).toBe(true);
-
-                    if (control.textHeight !== null) {
-                        expect(
-                            control.textHeight,
-                            `Operations ${control.name} one line at ${width}`,
-                        ).toBeLessThanOrEqual(control.lineHeight + 1);
-                    }
                 }
             }
 

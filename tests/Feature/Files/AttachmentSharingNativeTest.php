@@ -109,29 +109,36 @@ final class AttachmentSharingNativeTest extends TestCase
         $this->actingAs($contributor, 'web')->get(route('svc.files.parent.show', [$workspace, 'project', $project->public_id]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('attachment_panel.upload', null)->missing('legacy_upload_href'));
     }
 
-    public function test_financial_detail_and_operations_use_shared_seeded_controls_without_per_record_queries(): void
+    public function test_financial_detail_pages_use_shared_seeded_controls_without_per_file_queries(): void
     {
         [$workspace, $company, , $owner] = $this->fixture();
         $this->actingAs($owner, 'web');
-        $counts = [];
-        foreach (range(1, 4) as $index) {
-            $proposal = ClientProposal::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
-                'title' => 'Synthetic shared file proposal '.$index, 'status' => 'draft', 'currency' => 'USD', 'is_visible_to_client' => true]);
-            $file = app(AttachmentStorageService::class)->store($workspace, $proposal, UploadedFile::fake()->createWithContent('synthetic-proposal-'.$index.'.txt', 'Synthetic proposal bytes'), $owner);
-            if ($index === 1) {
-                $this->get(route('clients.proposal', [$workspace, $company, $proposal]))->assertOk()->assertInertia(fn (Assert $page) => $page
-                    ->has('attachment_panel.files', 1)->where('attachment_panel.files.0.id', $file->public_id)->where('attachment_panel.files.0.sharing.effective_visible_to_client', false));
+        $proposal = ClientProposal::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'title' => 'Synthetic shared file proposal', 'status' => 'draft', 'currency' => 'USD', 'is_visible_to_client' => true]);
+        $invoice = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'invoice_number' => 'SYNTHETIC-SHARED-FILES', 'status' => 'issued', 'currency' => 'USD', 'is_visible_to_client' => true]);
+        $pages = [
+            'proposal' => [$proposal, route('clients.proposal', [$workspace, $company, $proposal])],
+            'invoice' => [$invoice, route('clients.invoice', [$workspace, $company, $invoice])],
+        ];
+        foreach ($pages as $type => [$parent, $url]) {
+            $counts = [];
+            // Primed first: a first request can pay a one-time write or read no later one does.
+            $this->get($url)->assertOk();
+            foreach (range(1, 4) as $index) {
+                $file = app(AttachmentStorageService::class)->store($workspace, $parent, UploadedFile::fake()->createWithContent('synthetic-'.$type.'-'.$index.'.txt', 'Synthetic '.$type.' bytes'), $owner);
+                DB::enableQueryLog();
+                DB::flushQueryLog();
+                $response = $this->get($url);
+                $counts[] = count(array_filter(DB::getQueryLog(), fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select')));
+                DB::disableQueryLog();
+                $response->assertOk()->assertInertia(fn (Assert $page) => $page
+                    ->has('attachment_panel.files', $index)->where('attachment_panel.files.0.id', $file->public_id)
+                    ->where('attachment_panel.files.0.sharing.is_visible_to_client', false)
+                    ->where('attachment_panel.files.0.sharing.effective_visible_to_client', false));
             }
-            DB::enableQueryLog();
-            DB::flushQueryLog();
-            $response = $this->get(route('workspaces.operations', $workspace));
-            $counts[] = count(array_filter(DB::getQueryLog(), fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select')));
-            DB::disableQueryLog();
-            $response->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->has('workspace.clients.0.proposals', $index)->has('workspace.clients.0.proposals.0.attachment_panel.files', 1)
-                ->where('workspace.clients.0.proposals.0.attachment_panel.files.0.sharing.is_visible_to_client', false));
+            $this->assertSame($counts[0], $counts[3], 'Growing the files of a '.$type.' must not grow SQL query count.');
         }
-        $this->assertSame($counts[0], $counts[3], 'Growing native file parents must not grow SQL query count.');
     }
 
     public function test_portal_commercial_file_panels_are_bounded_read_only_and_reauthorize_before_names_and_bytes(): void

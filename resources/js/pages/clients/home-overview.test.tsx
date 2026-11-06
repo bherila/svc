@@ -243,6 +243,16 @@ describe('client overview', () => {
         expect(log.parentElement).toHaveClass('flex', 'flex-wrap');
     });
 
+    it("shows the client's recorded activity, which the retired Operations screen held", () => {
+        render(<ClientHome {...props({ overview: clientOverview() })} />);
+
+        expect(screen.getByText('Activity')).toBeInTheDocument();
+        expect(
+            screen.getByText('The latest 100 recorded events for this client.'),
+        ).toBeInTheDocument();
+        expect(screen.getByText('Invoice issued')).toBeInTheDocument();
+    });
+
     it('lists proposals, and teaches when a client has none', () => {
         const { rerender } = render(
             <ClientHome {...props({ overview: clientOverview() })} />,

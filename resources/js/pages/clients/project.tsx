@@ -59,6 +59,7 @@ export default function ClientProjectDetail({
     sharing_href = null,
     tasks_next_href = null,
     organization_href = null,
+    log_time_href = null,
 }: {
     workspace: { id: string };
     company: { id: string; name: string };
@@ -76,6 +77,8 @@ export default function ClientProjectDetail({
     sharing_href?: string | null;
     tasks_next_href?: string | null;
     organization_href?: string | null;
+    /** The time sheet with its log form open on this project; null when the viewer cannot log time here. */
+    log_time_href?: string | null;
     time: TimeByStatus[];
     agreements: CompanyAgreement[];
 }) {
@@ -114,7 +117,20 @@ export default function ClientProjectDetail({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Time logged</CardTitle>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <CardTitle>Time logged</CardTitle>
+                            {log_time_href !== null && (
+                                <Link
+                                    href={log_time_href}
+                                    className={buttonVariants({
+                                        variant: 'outline',
+                                        size: 'sm',
+                                    })}
+                                >
+                                    Log time
+                                </Link>
+                            )}
+                        </div>
                     </CardHeader>
                     <CardContent>
                         {time.length === 0 ? (

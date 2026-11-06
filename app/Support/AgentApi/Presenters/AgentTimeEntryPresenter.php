@@ -65,7 +65,10 @@ final class AgentTimeEntryPresenter
             'is_visible_to_client' => $entry->is_visible_to_client,
             'client_visible_description' => $compact ? null : $entry->client_visible_description,
             'version' => AgentApiVersion::for($entry),
-            'web_url' => route('workspaces.operations', $workspace).'?time_entry='.$entry->public_id,
+            // The time sheet is per client, and an entry here has not loaded its
+            // client; naming it would cost a query per row. The Dashboard is
+            // the workspace's front page, which every member can open.
+            'web_url' => route('workspaces.dashboard', $workspace),
         ];
 
         if ($includeFinancials) {

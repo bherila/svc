@@ -1542,7 +1542,6 @@ try {
                           : invoiceRecoveryOnly
                             ? [
                                   'invoice',
-                                  'operations',
                                   'client_invoices',
                                   'draft_time',
                                   'time',
@@ -1627,7 +1626,6 @@ try {
                                                                         'draft_time',
                                                                         'proposal',
                                                                         'proposal_acceptance',
-                                                                        'operations',
                                                                         'client_agreements',
                                                                         'client_invoices',
                                                                         'dashboard',
@@ -2849,39 +2847,6 @@ try {
                             exact: true,
                         }),
                     );
-                } else if (screen === 'operations') {
-                    const payment = page
-                        .locator('form')
-                        .filter({
-                            has: page.getByLabel('Payment amount', {
-                                exact: true,
-                            }),
-                        })
-                        .first();
-                    await payment
-                        .getByPlaceholder('Payment reference', { exact: true })
-                        .fill('SyntheticUnbrokenReference'.repeat(10));
-                    await checkInvoiceRecovery(
-                        screen,
-                        width,
-                        'payment',
-                        '**/api/v1/workspaces/*/payments',
-                        payment.getByRole('button', {
-                            name: 'Record payment',
-                            exact: true,
-                        }),
-                        payment.getByLabel('Payment amount', { exact: true }),
-                    );
-                    await checkInvoiceRecovery(
-                        screen,
-                        width,
-                        'issue',
-                        '**/api/v1/workspaces/*/invoices/*/issue',
-                        page
-                            .getByRole('button', { name: 'Issue', exact: true })
-                            .first(),
-                        null,
-                    );
                 } else if (screen === 'draft_time' || screen === 'time') {
                     if (invoiceHistoryOnly) {
                         // Enter by Inertia so Back exercises same-document history,
@@ -2963,6 +2928,19 @@ try {
                             exact: true,
                         }),
                         page.getByLabel('Due date', { exact: true }),
+                    );
+                    // Issue lived on the retired Operations screen as well;
+                    // this page's own button is the one left to recover.
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'issue',
+                        '**/api/v1/workspaces/*/invoices/*/issue',
+                        page.getByRole('button', {
+                            name: 'Issue',
+                            exact: true,
+                        }),
+                        null,
                     );
                 } else if (screen === 'invoice_review') {
                     await page
@@ -3182,7 +3160,7 @@ try {
                 };
                 page.on('request', recordCreation);
                 await page.route(
-                    '**/workspaces/*/operations',
+                    '**/workspaces/*/dashboard',
                     (route) => route.abort('failed'),
                     { times: 1 },
                 );
@@ -3220,7 +3198,7 @@ try {
                 await page.waitForURL(body.data.web_url);
                 await expect(
                     page.getByRole('heading', {
-                        name: createdName,
+                        name: 'Dashboard',
                         exact: true,
                     }),
                 ).toBeVisible();
@@ -4261,7 +4239,7 @@ try {
                                             ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
                                             : engagementOnly
                                               ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                              : 'Synthetic local fixtures only. Invoice review/settings/proposal/operations/dashboard/time/expenses are asserted.',
+                                              : 'Synthetic local fixtures only. Invoice review/settings/proposal/dashboard/time/expenses are asserted.',
 
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | UI consistency / axe | Screenshot |',

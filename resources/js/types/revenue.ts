@@ -5,6 +5,8 @@
  * never adds, subtracts or re-derives one.
  */
 
+import type { CompanyActivity } from '@/components/activity-timeline';
+
 export type RevenueBasis = 'invoiced' | 'collected';
 
 export type RevenueFilters = {
@@ -171,6 +173,8 @@ export type ClientOverview = {
         sent_at: string | null;
         href: string;
     }[];
+    /** The latest recorded events for this client, newest first. */
+    activities: CompanyActivity[];
 };
 
 export type RosterRow = {

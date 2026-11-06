@@ -1388,6 +1388,45 @@ class ClientDirectoryTest extends TestCase
     }
 
     /**
+     * The per-project time form lived on the retired Operations screen as a
+     * link to the time sheet; the project's own page now carries it. The
+     * server sends the finished URL, and only to a viewer the sheet would let
+     * log on this project.
+     */
+    public function test_the_project_page_links_to_the_time_sheet_only_for_a_viewer_who_can_log_time(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Log Link', 'synthetic-log-link', $manager);
+        $company = $this->company($workspace, 'Synthetic Log Client', 'synthetic-log-client');
+        $project = $this->project($workspace, $company, 'Synthetic Log Project');
+        $url = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$project->public_id}";
+        $expected = "/workspaces/{$workspace->public_id}/clients/{$company->public_id}/time?log_project={$project->public_id}";
+
+        $this->actingAs($manager)->get($url)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('log_time_href', $expected));
+        $this->actingAs($manager)->get($expected)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('log_project_id', $project->public_id));
+
+        foreach (['contributor' => $expected, 'viewer' => null] as $role => $href) {
+            $member = User::factory()->create();
+            $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+            ClientProjectMembership::query()->create([
+                'workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+                'user_id' => $member->id, 'role' => $role,
+            ]);
+            $this->actingAs($member)->get($url)->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->where('log_time_href', $href));
+        }
+
+        // Another workspace's project is not a project of this client.
+        $foreignOwner = User::factory()->create();
+        $foreign = $this->workspace('Synthetic Log Foreign', 'synthetic-log-foreign', $foreignOwner);
+        $foreignProject = $this->project($foreign, $this->company($foreign, 'Synthetic Foreign Client', 'synthetic-foreign-log'), 'Foreign Log Project');
+        $this->actingAs($manager)->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/projects/{$foreignProject->public_id}")->assertNotFound();
+        $this->actingAs($manager)->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/time?log_project={$foreignProject->public_id}")->assertNotFound();
+    }
+
+    /**
      * Granting project access is what makes #157's scoping administrable.
      *
      * Until this endpoint existed the reachability rule could be tightened but

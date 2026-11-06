@@ -1062,7 +1062,6 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
     'expenses' => route('clients.expenses', [$workspace, $company], absolute: false),
     'time' => route('clients.time', [$workspace, $company], absolute: false),
-    'operations' => route('workspaces.operations', $workspace, absolute: false),
     'client_agreements' => route('clients.agreements', [$workspace, $company], absolute: false),
     'client_invoices' => route('clients.invoices', [$workspace, $company], absolute: false),
     'dashboard' => route('workspaces.dashboard', $workspace, absolute: false),

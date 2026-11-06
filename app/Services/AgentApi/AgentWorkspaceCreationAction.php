@@ -48,7 +48,7 @@ final class AgentWorkspaceCreationAction
                 });
 
             return ['data' => ['id' => $workspace->public_id, 'name' => $workspace->name,
-                'web_url' => rtrim((string) config('app.url'), '/').route('workspaces.operations', $workspace, false)]];
+                'web_url' => rtrim((string) config('app.url'), '/').route('workspaces.dashboard', $workspace, false)]];
         });
     }
 }
