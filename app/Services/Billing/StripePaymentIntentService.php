@@ -115,7 +115,11 @@ final class StripePaymentIntentService
 
         // The invoice's own workspace decides which Stripe account is charged:
         // never the deployment's configuration, and never another workspace's.
-        $access = $this->gateway->access($invoice->workspace);
+        $invoiceWorkspace = $invoice->workspace;
+        if ($invoiceWorkspace === null) {
+            throw new DomainException('The invoice has no workspace, so no Stripe account can be charged.');
+        }
+        $access = $this->gateway->access($invoiceWorkspace);
         if ($access === null) {
             throw new DomainException('Stripe is not connected for this workspace.');
         }
@@ -126,7 +130,7 @@ final class StripePaymentIntentService
             'description' => 'Invoice '.$invoice->invoice_number,
             'metadata' => [
                 'invoice_public_id' => $invoice->public_id,
-                'workspace_public_id' => $invoice->workspace->public_id,
+                'workspace_public_id' => $invoiceWorkspace->public_id,
             ],
         ];
         $customer = ClientStripeCustomer::query()

@@ -11,6 +11,7 @@ use App\Policies\ClientProjectPolicy;
 use App\Policies\WorkspacePolicy;
 use App\Services\Access\DelegatedStaffAccess;
 use App\Services\AgentApi\Operations\AgentAvailability;
+use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\AgentPrincipalResolver;
 use App\Services\ApiCredentials\OpenApiGrantableScopes;
@@ -19,6 +20,7 @@ use App\Services\Billing\Mail\LaravelInvoiceMailSender;
 use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
+use App\Services\Payments\WorkspacePaymentConnections;
 use App\Support\AgentApi\AgentApiScopePresentation;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\InternalApiDispatch;
@@ -26,6 +28,7 @@ use App\Support\AgentApi\MarkedInternalAgentApiTransport;
 use App\Support\AgentApi\ProviderIdentityWrites;
 use App\Support\Auth\OAuthClient;
 use App\Support\Auth\PersonalAccessTokenIdentity;
+use App\Support\Payments\PaymentProcessor;
 use Bherila\McpLaravelBridge\Capabilities\Availability;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use Bherila\McpLaravelBridge\Capabilities\PrincipalResolver;
@@ -37,6 +40,7 @@ use BWH\Auth\OAuth\Credentials\GrantableScopes;
 use BWH\Auth\OAuth\Credentials\ScopePresentation;
 use BWH\Auth\OAuth\DelegatedAccess\ApplicationAccessAdapter;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\Connection;
@@ -64,6 +68,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Read once per request: every write goes through the service, which clears it.
+        $this->app->scoped(WorkspacePaymentConnections::class);
+        // Whether any workspace has its own Square connection is a database
+        // question, so it is bound here and asked by the flags only when bound.
+        $this->app->bind(AgentDeploymentFlags::SQUARE_CONNECTIONS_PROBE, fn ($app): Closure => static fn (): bool => $app->make(WorkspacePaymentConnections::class)->anyActive(PaymentProcessor::Square));
+
         // Existing UUID and foreign-UUID columns are char(36). MariaDB 10.7+
         // otherwise changes newly compiled UUID columns to an incompatible native type.
         Connection::resolverFor('mariadb', static fn ($pdo, $database, $prefix, $config): CharacterUuidMariaDbConnection => new CharacterUuidMariaDbConnection($pdo, $database, $prefix, $config));

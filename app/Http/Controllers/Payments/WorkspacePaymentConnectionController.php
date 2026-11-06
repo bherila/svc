@@ -12,6 +12,7 @@ use App\Services\Payments\PaymentConnectionService;
 use App\Services\Payments\PaymentCredentials;
 use App\Services\Payments\PaymentCredentialsRejected;
 use App\Services\Payments\WorkspacePaymentConnections;
+use App\Services\Square\SquareConfiguration;
 use App\Support\Payments\PaymentProcessor;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -53,7 +54,7 @@ class WorkspacePaymentConnectionController extends Controller
                 'processor' => $processor->value,
                 'label' => $processor->label(),
                 'connection' => $row === null ? null : $this->present($row, $manages),
-                'environment_path_active' => $row === null && $this->resolver->environmentMayServe($workspace, $processor),
+                'environment_path_active' => $row === null && $this->environmentCredentialsServe($workspace, $processor),
                 'reusable' => $reusable->map(fn (WorkspacePaymentConnection $source): array => [
                     'id' => $source->public_id,
                     'label' => 'Use the '.$processor->label().' account connected to '.($names[$source->workspace_id] ?? 'another workspace'),
@@ -144,6 +145,19 @@ class WorkspacePaymentConnectionController extends Controller
             'usable' => $source !== null,
             'webhook_url' => $manages && ! $row->isReused() ? $this->service->webhookUrl($row->processorEnum(), $row->endpoint_token) : null,
         ];
+    }
+
+    /** Whether the deployment's own credentials really are what this workspace's payments use today. */
+    private function environmentCredentialsServe(Workspace $workspace, PaymentProcessor $processor): bool
+    {
+        if (! $this->resolver->environmentMayServe($workspace, $processor)) {
+            return false;
+        }
+
+        return match ($processor) {
+            PaymentProcessor::Stripe => $this->resolver->stripeEnvironment() !== null,
+            PaymentProcessor::Square => SquareConfiguration::for($workspace)->isConfigured(),
+        };
     }
 
     private function user(Request $request): User

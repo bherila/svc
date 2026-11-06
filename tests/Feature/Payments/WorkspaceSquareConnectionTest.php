@@ -6,9 +6,10 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspacePaymentConnection;
 use App\Services\Payments\WorkspacePaymentConnections;
-use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareRequestFailed;
+use App\Services\Square\SquareWorkspaceClients;
+use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -16,7 +17,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Monolog\Handler\TestHandler;
 use Tests\TestCase;
@@ -90,9 +90,9 @@ final class WorkspaceSquareConnectionTest extends TestCase
         [$ownerB, $b] = $this->tenant('b');
         $this->actingAs($ownerA)->post($this->url($a), $this->form(self::TOKEN_A, 'LOC_A'))->assertNoContent();
         $this->actingAs($ownerB)->post($this->url($b), $this->form(self::TOKEN_B, 'LOC_B'))->assertNoContent();
-        $client = app(SquareClient::class);
-        $client->forWorkspace($a)->listLocations();
-        $client->forWorkspace($b)->listLocations();
+        $clients = app(SquareWorkspaceClients::class);
+        $clients->for($a)->listLocations();
+        $clients->for($b)->listLocations();
         $sent = array_map(static fn (array $pair): string => $pair[0]->header('Authorization')[0], Http::recorded()->all());
         $this->assertSame(['Bearer '.self::TOKEN_A, 'Bearer '.self::TOKEN_B], array_slice($sent, -2));
 
@@ -100,7 +100,7 @@ final class WorkspaceSquareConnectionTest extends TestCase
         [, $none] = $this->tenant('none');
         $sentBefore = count(Http::recorded());
         try {
-            $client->forWorkspace($none)->listLocations();
+            $clients->for($none)->listLocations();
             $this->fail('A workspace without a connection must not reach Square.');
         } catch (SquareRequestFailed) {
             $this->assertCount($sentBefore, Http::recorded());
@@ -109,7 +109,7 @@ final class WorkspaceSquareConnectionTest extends TestCase
         // Removing the connection stops the very next read.
         $this->actingAs($ownerA)->delete($this->url($a))->assertNoContent();
         $this->expectException(SquareRequestFailed::class);
-        $client->forWorkspace($a)->listLocations();
+        $clients->for($a)->listLocations();
     }
 
     public function test_the_environment_account_serves_only_until_the_migration_has_run(): void
@@ -121,12 +121,10 @@ final class WorkspaceSquareConnectionTest extends TestCase
         $this->assertTrue(SquareConfiguration::for($bound)->isConfigured());
         $this->assertFalse(SquareConfiguration::for($other)->isConfigured());
 
-        DB::table('workspace_payment_connections')->insert([
-            'public_id' => (string) Str::uuid(), 'workspace_id' => $bound->id, 'processor' => 'square', 'external_account_id' => 'MERCH_A',
-            'origin' => 'environment', 'endpoint_token' => str_repeat('e', 40), 'secret' => encrypt('EAAAenvironment_token', false), 'connected_at' => now(),
-            'created_at' => now(), 'updated_at' => now(), 'active_slot' => 'square',
+        $connection = app(WorkspacePaymentConnections::class)->connect($bound, PaymentProcessor::Square, ConnectionOrigin::Environment, $owner, [
+            'external_account_id' => 'MERCH_A', 'secret' => 'EAAAenvironment_token',
         ]);
-        DB::table('workspace_payment_connections')->update(['revoked_at' => now(), 'active_slot' => null]);
+        app(WorkspacePaymentConnections::class)->revoke($connection, $owner);
 
         // Migrated, then revoked: neither the connection nor the environment serves it.
         $this->assertFalse(SquareConfiguration::for($bound)->isConfigured());
@@ -180,11 +178,28 @@ final class WorkspaceSquareConnectionTest extends TestCase
         $this->actingAs($stranger)->post($this->url($foreign).'/reuse', ['source' => $sourceId])->assertSessionHasErrors('source');
         $this->actingAs($owner)->post($this->url($target).'/reuse', ['source' => $sourceId])->assertNoContent();
 
-        app(SquareClient::class)->forWorkspace($target)->listLocations();
+        app(SquareWorkspaceClients::class)->for($target)->listLocations();
         $this->assertSame('Bearer '.self::TOKEN_A, Http::recorded()->last()[0]->header('Authorization')[0]);
 
         $this->actingAs($owner)->delete($this->url($source))->assertNoContent();
         $this->assertNull(app(WorkspacePaymentConnections::class)->active($target, PaymentProcessor::Square));
+    }
+
+    public function test_the_navigation_links_square_only_for_a_workspace_with_a_connection_and_the_hint_follows_revocation(): void
+    {
+        [$owner, $workspace] = $this->tenant('nav');
+        [$otherOwner, $other] = $this->tenant('nav-other');
+        $link = fn (Workspace $w, User $u) => $this->actingAs($u)->get(route('mcp.setup', $w))->viewData('page')['props']['workspaceNavigation']['square_href'] ?? null;
+
+        $this->assertNull($link($workspace, $owner));
+        $this->actingAs($owner)->post($this->url($workspace), $this->form(self::TOKEN_A, 'LOC_A'))->assertNoContent();
+        $this->assertTrue((bool) Workspace::query()->whereKey($workspace->id)->value('has_square_connection'));
+        $this->assertSame(route('square.explore', $workspace, absolute: false), $link($workspace, $owner));
+        $this->assertNull($link($other, $otherOwner), 'Another workspace gets no Square link from it.');
+
+        $this->actingAs($owner)->delete($this->url($workspace))->assertNoContent();
+        $this->assertFalse((bool) Workspace::query()->whereKey($workspace->id)->value('has_square_connection'));
+        $this->assertNull($link($workspace, $owner));
     }
 
     // ---- helpers ----

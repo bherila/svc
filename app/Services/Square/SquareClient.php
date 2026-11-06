@@ -2,7 +2,6 @@
 
 namespace App\Services\Square;
 
-use App\Models\Workspace;
 use App\Support\Square\SquareIdentifiers;
 use GuzzleHttp\Exception\TransferException;
 use Illuminate\Http\Client\ConnectionException;
@@ -34,23 +33,13 @@ final class SquareClient
     /** The longest pause between attempts; a longer Retry-After is answered as 429 at once. */
     private const int MAX_PAUSE_MILLISECONDS = 2000;
 
-    /** The workspace's own connection, once {@see forWorkspace()} has bound it. */
-    private ?SquareConfiguration $scope = null;
-
-    public function __construct(private readonly HttpFactory $http) {}
-
     /**
-     * A client that calls Square with this workspace's own token, and no other.
-     * An unscoped client falls back to the environment's single account, and
-     * only until the migration command has run.
+     * Built unscoped by the container (the environment's single account, only
+     * until the migration command has run) or, for a workspace, by
+     * {@see SquareWorkspaceClients}, which hands it that workspace's own
+     * configuration. This class stays only Square reads.
      */
-    public function forWorkspace(Workspace $workspace): self
-    {
-        $scoped = clone $this;
-        $scoped->scope = SquareConfiguration::for($workspace);
-
-        return $scoped;
-    }
+    public function __construct(private readonly HttpFactory $http, private readonly ?SquareConfiguration $scope = null) {}
 
     /** @return array<string, mixed> */
     public function listLocations(): array

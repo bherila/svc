@@ -109,7 +109,7 @@ final class WorkspaceNavigationFactory
             mcpSetupHref: $isMember ? route('mcp.setup', $workspace) : ($options === [] ? null : route('portal.mcp.setup', $options[0]->id)),
             // The Square mirror's explore screen (#438): managers of the one
             // workspace Square is connected to.
-            squareHref: $manages && SquareConfiguration::for($workspace)->isConfigured() ? route('square.explore', $workspace, absolute: false) : null,
+            squareHref: $manages && self::mayHaveSquare($workspace) && SquareConfiguration::for($workspace)->isConfigured() ? route('square.explore', $workspace, absolute: false) : null,
             historyHref: $manages ? route('history.index', $workspace, absolute: false) : null,
             createClientUrl: $manages ? route('agent-api.v1.clients.store', $workspace, absolute: false) : null,
         );
@@ -197,5 +197,16 @@ final class WorkspaceNavigationFactory
             notes: route('portal.collaboration.index', [$company, 'kind' => 'note'], absolute: false),
             discussions: route('portal.collaboration.index', [$company, 'kind' => 'discussion'], absolute: false),
         );
+    }
+
+    /**
+     * Whether to ask about Square for this workspace at all: it has a connection
+     * of its own (a hint on the workspace row) or is the one the environment
+     * names. Neither needs a query, so a workspace without Square costs none.
+     */
+    private static function mayHaveSquare(Workspace $workspace): bool
+    {
+        return (bool) $workspace->getAttribute('has_square_connection')
+            || SquareConfiguration::fromConfig()->workspacePublicId === $workspace->public_id;
     }
 }

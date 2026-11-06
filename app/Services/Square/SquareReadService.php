@@ -37,7 +37,7 @@ final class SquareReadService
     public const string RFC3339 = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/D';
 
     public function __construct(
-        private readonly SquareClient $client,
+        private readonly SquareWorkspaceClients $clients,
         private readonly SquarePresenter $presenter,
         private readonly AgentAccess $access,
         private readonly RateLimiter $limiter,
@@ -47,7 +47,7 @@ final class SquareReadService
     public function locations(User|AgentPrincipal $actor, Workspace $workspace): array
     {
         $configuration = $this->admit($actor, $workspace);
-        $response = $this->client->forWorkspace($workspace)->listLocations();
+        $response = $this->clients->for($workspace)->listLocations();
 
         return $this->deliver($configuration, [
             'data' => array_map($this->presenter->location(...), self::records($response, 'locations', self::MAX_LOCATIONS)),
@@ -59,7 +59,7 @@ final class SquareReadService
     {
         $this->validate(compact('limit', 'cursor'), ['limit' => self::limitRule(self::MAX_CUSTOMER_LIMIT), 'cursor' => self::cursorRule()]);
         $configuration = $this->admit($actor, $workspace);
-        $response = $this->client->forWorkspace($workspace)->listCustomers($cursor, $limit);
+        $response = $this->clients->for($workspace)->listCustomers($cursor, $limit);
 
         return $this->page($configuration, $response, 'customers', self::MAX_CUSTOMER_LIMIT, $this->presenter->customer(...));
     }
@@ -87,7 +87,7 @@ final class SquareReadService
         if ($phone !== null) {
             $filter['phone_number'] = [$match => $phone];
         }
-        $response = $this->client->forWorkspace($workspace)->searchCustomers($filter, $cursor, $limit);
+        $response = $this->clients->for($workspace)->searchCustomers($filter, $cursor, $limit);
 
         return $this->page($configuration, $response, 'customers', self::MAX_CUSTOMER_LIMIT, $this->presenter->customer(...));
     }
@@ -98,7 +98,7 @@ final class SquareReadService
         $this->validate(['customer_id' => $customerId], ['customer_id' => self::idRule()]);
         $configuration = $this->admit($actor, $workspace);
 
-        return $this->deliver($configuration, ['data' => $this->presenter->customer(self::record($this->client->forWorkspace($workspace)->retrieveCustomer($customerId), 'customer'))]);
+        return $this->deliver($configuration, ['data' => $this->presenter->customer(self::record($this->clients->for($workspace)->retrieveCustomer($customerId), 'customer'))]);
     }
 
     /** @return array{data: list<array<string, mixed>>, meta: array{next_cursor: string|null}} */
@@ -106,7 +106,7 @@ final class SquareReadService
     {
         $this->validate(['location_id' => $locationId, 'limit' => $limit, 'cursor' => $cursor], ['location_id' => self::idRule(), 'limit' => self::limitRule(self::MAX_INVOICE_LIMIT), 'cursor' => self::cursorRule()]);
         $configuration = $this->admit($actor, $workspace);
-        $response = $this->client->forWorkspace($workspace)->listInvoices($locationId, $cursor, $limit);
+        $response = $this->clients->for($workspace)->listInvoices($locationId, $cursor, $limit);
 
         return $this->page($configuration, $response, 'invoices', self::MAX_INVOICE_LIMIT, $this->presenter->invoice(...));
     }
@@ -126,7 +126,7 @@ final class SquareReadService
             'cursor' => self::cursorRule(),
         ]);
         $configuration = $this->admit($actor, $workspace);
-        $response = $this->client->forWorkspace($workspace)->searchInvoices($locationId, $customerId, $sortOrder === 'desc', $cursor, $limit);
+        $response = $this->clients->for($workspace)->searchInvoices($locationId, $customerId, $sortOrder === 'desc', $cursor, $limit);
 
         return $this->page($configuration, $response, 'invoices', self::MAX_INVOICE_LIMIT, $this->presenter->invoice(...));
     }
@@ -137,7 +137,7 @@ final class SquareReadService
         $this->validate(['invoice_id' => $invoiceId], ['invoice_id' => SquareIdentifiers::invoiceIdRule()]);
         $configuration = $this->admit($actor, $workspace);
 
-        return $this->deliver($configuration, ['data' => $this->presenter->invoice(self::record($this->client->forWorkspace($workspace)->getInvoice($invoiceId), 'invoice'))]);
+        return $this->deliver($configuration, ['data' => $this->presenter->invoice(self::record($this->clients->for($workspace)->getInvoice($invoiceId), 'invoice'))]);
     }
 
     /** @return array{data: array<string, mixed>} */
@@ -146,7 +146,7 @@ final class SquareReadService
         $this->validate(['order_id' => $orderId], ['order_id' => self::idRule()]);
         $configuration = $this->admit($actor, $workspace);
 
-        return $this->deliver($configuration, ['data' => $this->presenter->order(self::record($this->client->forWorkspace($workspace)->retrieveOrder($orderId), 'order'))]);
+        return $this->deliver($configuration, ['data' => $this->presenter->order(self::record($this->clients->for($workspace)->retrieveOrder($orderId), 'order'))]);
     }
 
     /** @return array{data: list<array<string, mixed>>, meta: array{next_cursor: string|null}} */
@@ -161,7 +161,7 @@ final class SquareReadService
             'cursor' => self::cursorRule(),
         ]);
         $configuration = $this->admit($actor, $workspace);
-        $response = $this->client->forWorkspace($workspace)->listPayments($beginTime, $endTime, $locationId, $sortOrder === 'desc', $cursor, $limit);
+        $response = $this->clients->for($workspace)->listPayments($beginTime, $endTime, $locationId, $sortOrder === 'desc', $cursor, $limit);
 
         return $this->page($configuration, $response, 'payments', self::MAX_PAYMENT_LIMIT, $this->presenter->payment(...));
     }
@@ -172,7 +172,7 @@ final class SquareReadService
         $this->validate(['payment_id' => $paymentId], ['payment_id' => self::idRule()]);
         $configuration = $this->admit($actor, $workspace);
 
-        return $this->deliver($configuration, ['data' => $this->presenter->payment(self::record($this->client->forWorkspace($workspace)->getPayment($paymentId), 'payment'))]);
+        return $this->deliver($configuration, ['data' => $this->presenter->payment(self::record($this->clients->for($workspace)->getPayment($paymentId), 'payment'))]);
     }
 
     /**

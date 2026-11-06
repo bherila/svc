@@ -63,9 +63,10 @@ final readonly class SquareConfiguration
                 (string) $workspace->public_id,
             );
         }
-        if (app(PaymentConnectionResolver::class)->environmentMayServe($workspace, PaymentProcessor::Square)
-            && $environmentValues->workspacePublicId !== null
-            && hash_equals($environmentValues->workspacePublicId, (string) $workspace->public_id)) {
+        // Cheap checks first: only the workspace the environment names ever asks the database.
+        if ($environmentValues->workspacePublicId !== null
+            && hash_equals($environmentValues->workspacePublicId, (string) $workspace->public_id)
+            && app(PaymentConnectionResolver::class)->environmentMayServe($workspace, PaymentProcessor::Square)) {
             return $environmentValues;
         }
 
@@ -80,13 +81,6 @@ final readonly class SquareConfiguration
         return app(WorkspacePaymentConnections::class)->environmentMigrated(PaymentProcessor::Square)
             ? $environmentValues->bound(null, $environmentValues->environment, null)
             : $environmentValues;
-    }
-
-    /** Whether any workspace on this deployment can use Square. */
-    public static function deploymentEnabled(): bool
-    {
-        return self::legacy()->isConfigured()
-            || app(WorkspacePaymentConnections::class)->allActive(PaymentProcessor::Square)->isNotEmpty();
     }
 
     /**

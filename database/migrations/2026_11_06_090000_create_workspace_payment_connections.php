@@ -8,6 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // A hint kept by WorkspacePaymentConnections so a page can tell whether
+        // to look at a workspace's Square connection without a query of its own.
+        Schema::table('workspaces', function (Blueprint $table): void {
+            $table->boolean('has_square_connection')->default(false);
+        });
+
         Schema::create('workspace_payment_connections', function (Blueprint $table): void {
             $table->id();
             $table->uuid('public_id')->unique();
@@ -62,5 +68,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('workspace_payment_connections');
+        Schema::table('workspaces', function (Blueprint $table): void {
+            $table->dropColumn('has_square_connection');
+        });
     }
 };

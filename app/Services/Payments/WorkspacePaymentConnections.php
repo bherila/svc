@@ -12,6 +12,7 @@ use App\Support\Payments\PaymentProcessor;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use SensitiveParameter;
@@ -28,15 +29,74 @@ use SensitiveParameter;
  */
 final class WorkspacePaymentConnections
 {
+    private const string ANY_KEY = 'payments:any-active:';
+
+    /**
+     * A workspace's rows at a processor, read once per request. The service is
+     * scoped to the request and every write here clears this, so a page that asks
+     * several times (navigation, flags, a presenter) costs one query.
+     *
+     * @var array<string, Collection<int, WorkspacePaymentConnection>>
+     */
+    private array $rows = [];
+
+    /** @var array<string, bool> */
+    private array $migrated = [];
+
     public function __construct(private readonly WorkspaceClock $clock = new WorkspaceClock) {}
+
+    /** Drop what this request has read; for anything that changes connections without this service. */
+    public function forget(): void
+    {
+        $this->rows = [];
+        $this->migrated = [];
+        foreach (PaymentProcessor::cases() as $processor) {
+            Cache::forget(self::ANY_KEY.$processor->value);
+        }
+    }
+
+    /**
+     * Whether any workspace on the deployment has an active connection to the
+     * processor. A cheap, briefly cached answer for pages that only decide
+     * whether to look further (the navigation, the deployment flags); a write
+     * through this service clears it, and anything that acts for a workspace
+     * still asks {@see active()}.
+     */
+    public function anyActive(PaymentProcessor $processor): bool
+    {
+        return (bool) Cache::remember(self::ANY_KEY.$processor->value, 60, fn (): bool => WorkspacePaymentConnection::query()
+            ->where('processor', $processor->value)
+            ->whereNull('revoked_at')
+            ->exists());
+    }
+
+    /**
+     * Keep `workspaces.has_square_connection` in step with the rows, so the
+     * navigation can skip the lookup for the workspaces that have none.
+     */
+    private function syncSquareHint(int $workspaceId): void
+    {
+        $has = WorkspacePaymentConnection::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('processor', PaymentProcessor::Square->value)
+            ->whereNull('revoked_at')
+            ->exists();
+        DB::table('workspaces')->where('id', $workspaceId)->update(['has_square_connection' => $has]);
+    }
+
+    /** @return Collection<int, WorkspacePaymentConnection> */
+    private function rowsFor(Workspace $workspace, PaymentProcessor $processor): Collection
+    {
+        return $this->rows[$workspace->id.':'.$processor->value] ??= WorkspacePaymentConnection::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('processor', $processor->value)
+            ->get();
+    }
 
     /** Whether the workspace has ever had a connection at this processor, revoked or not. */
     public function everConnected(Workspace $workspace, PaymentProcessor $processor): bool
     {
-        return WorkspacePaymentConnection::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('processor', $processor->value)
-            ->exists();
+        return $this->rowsFor($workspace, $processor)->isNotEmpty();
     }
 
     /**
@@ -46,7 +106,7 @@ final class WorkspacePaymentConnections
      */
     public function environmentMigrated(PaymentProcessor $processor): bool
     {
-        return WorkspacePaymentConnection::query()
+        return $this->migrated[$processor->value] ??= WorkspacePaymentConnection::query()
             ->where('processor', $processor->value)
             ->where('origin', ConnectionOrigin::Environment->value)
             ->exists();
@@ -55,11 +115,7 @@ final class WorkspacePaymentConnections
     /** The workspace's own active row, whether or not the credentials behind it still work. */
     public function activeRow(Workspace $workspace, PaymentProcessor $processor): ?WorkspacePaymentConnection
     {
-        return WorkspacePaymentConnection::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('processor', $processor->value)
-            ->whereNull('revoked_at')
-            ->first();
+        return $this->rowsFor($workspace, $processor)->first(fn (WorkspacePaymentConnection $row): bool => $row->isActive());
     }
 
     /**
@@ -173,11 +229,20 @@ final class WorkspacePaymentConnections
             throw new DomainException('A reused connection is made with reuse().');
         }
 
-        return DB::transaction(function () use ($workspace, $processor, $origin, $actor, $account): WorkspacePaymentConnection {
-            $this->retireActive($workspace, $processor, $actor);
+        $this->forget();
 
-            return $this->insert($workspace, $processor, $origin, $actor, $account);
-        });
+        try {
+            return DB::transaction(function () use ($workspace, $processor, $origin, $actor, $account): WorkspacePaymentConnection {
+                $this->retireActive($workspace, $processor, $actor);
+
+                $created = $this->insert($workspace, $processor, $origin, $actor, $account);
+                $this->syncSquareHint($workspace->id);
+
+                return $created;
+            });
+        } finally {
+            $this->forget();
+        }
     }
 
     /**
@@ -197,24 +262,32 @@ final class WorkspacePaymentConnections
             throw new DomainException('A connection can be reused only between workspaces with the same owner.');
         }
         $processor = $origin->processorEnum();
+        $this->forget();
 
-        return DB::transaction(function () use ($target, $origin, $processor, $actor): WorkspacePaymentConnection {
-            $this->retireActive($target, $processor, $actor);
+        try {
+            return DB::transaction(function () use ($target, $origin, $processor, $actor): WorkspacePaymentConnection {
+                $this->retireActive($target, $processor, $actor);
 
-            return WorkspacePaymentConnection::query()->create([
-                'workspace_id' => $target->id,
-                'processor' => $processor->value,
-                'external_account_id' => $origin->external_account_id,
-                'display_name' => $origin->display_name,
-                'environment' => $origin->environment,
-                'origin' => ConnectionOrigin::Reused->value,
-                'reuses_connection_id' => $origin->id,
-                'endpoint_token' => Str::random(40),
-                'connected_by_user_id' => $actor->id,
-                'connected_at' => $this->clock->now(),
-                'active_slot' => $processor->value,
-            ]);
-        });
+                $created = WorkspacePaymentConnection::query()->create([
+                    'workspace_id' => $target->id,
+                    'processor' => $processor->value,
+                    'external_account_id' => $origin->external_account_id,
+                    'display_name' => $origin->display_name,
+                    'environment' => $origin->environment,
+                    'origin' => ConnectionOrigin::Reused->value,
+                    'reuses_connection_id' => $origin->id,
+                    'endpoint_token' => Str::random(40),
+                    'connected_by_user_id' => $actor->id,
+                    'connected_at' => $this->clock->now(),
+                    'active_slot' => $processor->value,
+                ]);
+                $this->syncSquareHint($target->id);
+
+                return $created;
+            });
+        } finally {
+            $this->forget();
+        }
     }
 
     /**
@@ -224,6 +297,8 @@ final class WorkspacePaymentConnections
      */
     public function revoke(WorkspacePaymentConnection $connection, ?User $actor): bool
     {
+        $this->forget();
+
         return DB::transaction(function () use ($connection, $actor): bool {
             $revoked = $this->markRevoked($connection, $actor);
             if (! $revoked) {
@@ -346,6 +421,8 @@ final class WorkspacePaymentConnections
                 'updated_at' => $this->clock->now(),
             ]);
         $connection->refresh();
+        $this->syncSquareHint((int) $connection->workspace_id);
+        $this->forget();
 
         return $updated === 1;
     }

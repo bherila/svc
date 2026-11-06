@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareRequestFailed;
+use App\Services\Square\SquareWorkspaceClients;
 use App\Support\Finance\ProcessorMovementFacts;
 use App\Support\Finance\ProcessorReadBudget;
 use App\Support\Square\SquareProcessorMovementFacts;
@@ -38,7 +39,7 @@ final class SquareProcessorMovementSync
     private const int MAX_DISCOVERY_ROWS = 10000;
 
     public function __construct(
-        private readonly SquareClient $client,
+        private readonly SquareWorkspaceClients $clients,
         private readonly ProcessorMovementRecorder $recorder,
         private readonly WorkspaceClock $clock,
     ) {}
@@ -97,7 +98,7 @@ final class SquareProcessorMovementSync
                     throw SquareRequestFailed::unreadable();
                 }
                 $budget->consume();
-                $page = $this->client->forWorkspace($workspace)->listPayouts($location, $beginTime, $cursor, 100, $endTime);
+                $page = $this->clients->for($workspace)->listPayouts($location, $beginTime, $cursor, 100, $endTime);
                 $rows = array_key_exists('payouts', $page) ? $page['payouts'] : [];
                 if (! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || ! empty($page['errors'])) {
                     throw SquareRequestFailed::unreadable();
@@ -219,7 +220,7 @@ final class SquareProcessorMovementSync
                 $budget->consume();
                 // begin/end remain identical throughout THIS cursor chain even
                 // though completing rows changes the durable next-run boundary.
-                $page = $this->client->forWorkspace($workspace)->listPayouts($location, $beginTime, $cursor, 100, $position['until'], newestFirst: false);
+                $page = $this->clients->for($workspace)->listPayouts($location, $beginTime, $cursor, 100, $position['until'], newestFirst: false);
                 $rows = array_key_exists('payouts', $page) ? $page['payouts'] : [];
                 if (! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || ! empty($page['errors'])) {
                     throw SquareRequestFailed::unreadable();
@@ -348,7 +349,7 @@ final class SquareProcessorMovementSync
     private function payoutInAccount(#[SensitiveParameter] Workspace $workspace, #[SensitiveParameter] string $payoutId, bool $apply, ProcessorReadBudget $budget, #[SensitiveParameter] string $accountKey, array $locations, ?string $expectedLocation = null): array
     {
         $budget->consume();
-        $payout = $this->client->forWorkspace($workspace)->getPayout($payoutId)['payout'] ?? null;
+        $payout = $this->clients->for($workspace)->getPayout($payoutId)['payout'] ?? null;
         if (! is_array($payout) || ($payout['id'] ?? null) !== $payoutId
             || ! is_string($payout['location_id'] ?? null) || ! in_array($payout['location_id'], $locations, true)
             || ($expectedLocation !== null && $payout['location_id'] !== $expectedLocation)) {
@@ -368,7 +369,7 @@ final class SquareProcessorMovementSync
                 if (! isset($sources[$key])) {
                     // Budget failure must escape; it is not an unreadable record.
                     $budget->consume();
-                    $response = $type === 'refund' ? $this->client->forWorkspace($workspace)->getPaymentRefund($id) : $this->client->forWorkspace($workspace)->getDispute($id);
+                    $response = $type === 'refund' ? $this->clients->for($workspace)->getPaymentRefund($id) : $this->clients->for($workspace)->getDispute($id);
                     $value = $response[$type] ?? null;
                     if (! is_array($value)) {
                         throw SquareRequestFailed::unreadable();
@@ -421,7 +422,7 @@ final class SquareProcessorMovementSync
     private function account(Workspace $workspace, #[SensitiveParameter] SquareConfiguration $configuration, ?ProcessorReadBudget $budget): array
     {
         $budget?->consume();
-        $response = $this->client->forWorkspace($workspace)->listLocations();
+        $response = $this->clients->for($workspace)->listLocations();
         $locations = $response['locations'] ?? null;
         if (! is_array($locations) || ! array_is_list($locations) || $locations === [] || count($locations) > self::MAX_LOCATIONS
             || ! empty($response['cursor']) || ! empty($response['errors'])) {
@@ -456,7 +457,7 @@ final class SquareProcessorMovementSync
                 throw SquareRequestFailed::unreadable();
             }
             $budget?->consume();
-            $page = $this->client->forWorkspace($workspace)->listPayoutEntries($payoutId, $cursor, 100);
+            $page = $this->clients->for($workspace)->listPayoutEntries($payoutId, $cursor, 100);
             $rows = array_key_exists('payout_entries', $page) ? $page['payout_entries'] : [];
             if (! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || ! empty($page['errors'])) {
                 throw SquareRequestFailed::unreadable();

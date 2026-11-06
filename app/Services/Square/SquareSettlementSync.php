@@ -28,7 +28,7 @@ final class SquareSettlementSync
     private const int MAX_ENTRY_PAGES = 200;
 
     public function __construct(
-        private readonly SquareClient $client,
+        private readonly SquareWorkspaceClients $clients,
         private readonly ProcessorSettlementRecorder $recorder,
         private readonly SquarePendingSettlements $pending,
     ) {}
@@ -41,7 +41,7 @@ final class SquareSettlementSync
     public function payout(Workspace $workspace, string $payoutId, bool $apply = true): PayoutSyncResult
     {
         $this->assertServes($workspace);
-        $payout = $this->client->forWorkspace($workspace)->getPayout($payoutId)['payout'] ?? null;
+        $payout = $this->clients->for($workspace)->getPayout($payoutId)['payout'] ?? null;
 
         $facts = is_array($payout) ? SquarePayoutFacts::from($payout, $payoutId) : throw SquareRequestFailed::unreadable();
 
@@ -60,7 +60,7 @@ final class SquareSettlementSync
     public function payouts(Workspace $workspace, ?CarbonImmutable $since, bool $apply = true): iterable
     {
         $this->assertServes($workspace);
-        $locations = $this->client->forWorkspace($workspace)->listLocations()['locations'] ?? [];
+        $locations = $this->clients->for($workspace)->listLocations()['locations'] ?? [];
         foreach (is_array($locations) ? $locations : [] as $location) {
             $locationId = is_array($location) ? ($location['id'] ?? null) : null;
             if (! is_string($locationId)) {
@@ -68,7 +68,7 @@ final class SquareSettlementSync
             }
             $cursor = null;
             do {
-                $page = $this->client->forWorkspace($workspace)->listPayouts($locationId, $since?->utc()->toRfc3339String(), $cursor, 100);
+                $page = $this->clients->for($workspace)->listPayouts($locationId, $since?->utc()->toRfc3339String(), $cursor, 100);
                 foreach (is_array($page['payouts'] ?? null) ? $page['payouts'] : [] as $payout) {
                     $id = is_array($payout) ? ($payout['id'] ?? null) : null;
                     if (! is_string($id)) {
@@ -115,7 +115,7 @@ final class SquareSettlementSync
             if (++$pages > self::MAX_ENTRY_PAGES) {
                 throw SquareRequestFailed::unreadable();
             }
-            $page = $this->client->forWorkspace($workspace)->listPayoutEntries($payout->identifier, $cursor, 100);
+            $page = $this->clients->for($workspace)->listPayoutEntries($payout->identifier, $cursor, 100);
             $rows = $page['payout_entries'] ?? [];
             if (! is_array($rows) || ! array_is_list($rows)) {
                 throw SquareRequestFailed::unreadable();
