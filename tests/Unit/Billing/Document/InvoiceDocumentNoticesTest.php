@@ -4,6 +4,7 @@ namespace Tests\Unit\Billing\Document;
 
 use App\Support\Billing\Document\DocumentMode;
 use App\Support\Billing\Document\InvoiceDocument;
+use App\Support\Billing\Document\InvoiceDocumentGrouper;
 use App\Support\Billing\Document\InvoiceDocumentLine;
 use App\Support\Billing\Document\InvoiceDocumentNotices;
 use App\Support\Billing\InvoiceLineDetail;
@@ -131,6 +132,44 @@ final class InvoiceDocumentNoticesTest extends TestCase
         $this->assertSame(1.5, $full['deferred_work']['total_hours']);
         $this->assertNull($full['invoice_number']);
         $this->assertSame('—', $this->document(number: null)->identity());
+    }
+
+    public function test_the_whole_serialised_document_is_exactly_what_the_screen_draws(): void
+    {
+        $line = new InvoiceDocumentLine('a', 'retainer', 'Retainer', '1.0000', null, null, 100, 0, 100);
+        $document = new InvoiceDocument(
+            mode: DocumentMode::Invoice, audience: InvoiceLineDetail::CLIENT, issuerName: 'Synthetic workspace', invoiceNumber: 'INV-SYN-1',
+            status: 'void', currency: 'USD', billTo: 'Synthetic Client', issueDate: '2026-08-15', dueDate: '2026-09-14',
+            servicePeriodStart: '2026-08-01', servicePeriodEnd: '2026-08-31', reissuedOn: '2026-08-18', voidedOn: '2026-08-20',
+            sections: InvoiceDocumentGrouper::group([$line]), lines: [$line], subtotal: 100, tax: 0, total: 100, paid: 0, balance: 0,
+            statement: [], statementIntro: 'intro', deferredWork: null,
+            appendix: [['line_id' => 'a', 'description' => 'd', 'minutes' => 30, 'entries' => []]], genericLabelUsed: true, payUrl: null,
+        );
+
+        $this->assertSame('', $document->banner());
+        $this->assertSame('Reissued 2026-08-18 under the same invoice number; this replaces the earlier version.', $document->reissueNotice());
+        $this->assertSame('This invoice was voided on 2026-08-20. Nothing is owed on it.', $document->voidNotice());
+        $this->assertSame('Retainer', $line->typeLabel());
+        $this->assertSame([
+            'mode' => 'invoice', 'heading' => 'Invoice', 'stamp' => null, 'audience' => 'client', 'banner' => '',
+            'issuer_name' => 'Synthetic workspace', 'invoice_number' => 'INV-SYN-1', 'status' => 'void', 'currency' => 'USD',
+            'bill_to' => 'Synthetic Client', 'issue_date' => '2026-08-15', 'due_date' => '2026-09-14',
+            'service_period_start' => '2026-08-01', 'service_period_end' => '2026-08-31',
+            'reissue_notice' => 'Reissued 2026-08-18 under the same invoice number; this replaces the earlier version.',
+            'void_notice' => 'This invoice was voided on 2026-08-20. Nothing is owed on it.',
+            'sections' => [[
+                'key' => 'time', 'title' => 'Time', 'subtotal' => 100, 'tax' => 0,
+                'lines' => [$line->toArray()],
+            ]],
+            'totals' => ['subtotal' => 100, 'tax' => 0, 'total' => 100, 'paid' => 0, 'balance' => 0],
+            'statement' => null,
+            'deferred_work' => null,
+            'appendix' => [
+                'generic_label_used' => true, 'generic_label' => 'Professional services',
+                'blocks' => [['line_id' => 'a', 'description' => 'd', 'minutes' => 30, 'entries' => []]],
+            ],
+            'pay_url' => null,
+        ], $document->toArray());
     }
 
     private function line(string $id, string $description): InvoiceDocumentLine
