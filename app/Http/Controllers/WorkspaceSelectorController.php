@@ -6,6 +6,7 @@ use App\Models\ClientProjectParticipationInvitation;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\AccessibleWorkspacesQuery;
+use App\Services\Review\ReviewerGrants;
 use App\Services\SharedProjects\SharedProjectParticipations;
 use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use Illuminate\Http\Request;
@@ -30,7 +31,7 @@ use Inertia\Response;
  */
 class WorkspaceSelectorController extends Controller
 {
-    public function __invoke(Request $request, AccessibleWorkspacesQuery $accessible, SharedProjectParticipations $sharing): Response
+    public function __invoke(Request $request, AccessibleWorkspacesQuery $accessible, SharedProjectParticipations $sharing, ReviewerGrants $grants): Response
     {
         $user = $request->user();
         abort_if(! $user instanceof User, 401);
@@ -45,6 +46,7 @@ class WorkspaceSelectorController extends Controller
                     'host_workspace_name' => $invitation->hostWorkspace->name,
                     'href' => route('shared-project-invitations.show', $invitation->public_id, absolute: false),
                 ])->values()->all(),
+            'approvals_href' => $grants->approvalsAvailable($user) ? route('approvals.index', absolute: false) : null,
             'workspaces' => $accessible->for($user)
                 ->map(fn (Workspace $workspace): array => AgentWorkspacePresenter::identity($workspace) + [
                     // Entering resolves which client to open, so the row links

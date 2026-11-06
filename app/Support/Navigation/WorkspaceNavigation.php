@@ -40,6 +40,8 @@ final class WorkspaceNavigation
         public readonly ?string $operationsHref = null,
         public readonly ?string $paymentsHref = null,
         public readonly ?string $sharedProjectsHref = null,
+        public readonly ?string $reviewersHref = null,
+        public readonly ?string $approvalsHref = null,
     ) {}
 
     /** The option the viewer is standing in, or null outside one. */
@@ -71,6 +73,8 @@ final class WorkspaceNavigation
      *     operations_href: string|null,
      *     payments_href: string|null,
      *     shared_projects_href: string|null,
+     *     reviewers_href: string|null,
+     *     approvals_href: string|null,
      * }
      */
     public function toArray(): array
@@ -94,6 +98,8 @@ final class WorkspaceNavigation
             'operations_href' => $this->operationsHref,
             'payments_href' => $this->paymentsHref,
             'shared_projects_href' => $this->sharedProjectsHref,
+            'reviewers_href' => $this->reviewersHref,
+            'approvals_href' => $this->approvalsHref,
         ];
     }
 }

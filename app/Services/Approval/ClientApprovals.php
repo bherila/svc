@@ -5,9 +5,14 @@ namespace App\Services\Approval;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientTimeEntry;
+use App\Models\ReviewerGrant;
 use App\Models\User;
 use App\Queries\Approval\PortalApprovalQueue;
+use App\Services\Access\AccessAuditLog;
 use App\Services\Authorization\PortalAccess;
+use App\Services\Review\ReviewerGrants;
+use App\Support\Access\AccessAuditAction;
+use App\Support\Access\AccessMutationContext;
 use App\Support\Approval\ApprovalPeriod;
 use App\Support\Approval\ClientApprovalSource;
 use App\Support\Approval\SelfApproval;
@@ -41,6 +46,8 @@ final class ClientApprovals
         private readonly PortalApprovalAuthority $authority,
         private readonly PortalApprovalQueue $queue,
         private readonly PortalAccess $access,
+        private readonly ReviewerGrants $grants,
+        private readonly AccessAuditLog $audit,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -54,14 +61,87 @@ final class ClientApprovals
     public function approve(ClientCompany $company, User $viewer, ?string $periodKey, array $timeIds = [], array $expenseIds = []): array
     {
         abort_unless($this->authority->may($company, $viewer), 403, 'You do not approve hours and expenses for this client.');
+
+        return $this->decide($company, $viewer, $this->access->visibleProjectIds($company, $viewer), ClientApprovalSource::Portal, null, $periodKey, $timeIds, $expenseIds);
+    }
+
+    /**
+     * The same approval, made through a reviewer grant instead of a portal
+     * membership. The rows are the grant's client's, in the granting workspace,
+     * narrowed to its project; the approval is recorded there, against those
+     * rows, with the reviewer as the person who approved. A grant that does not
+     * reach this person - never given, revoked, or not theirs - is a 404.
+     *
+     * @param  list<string>  $timeIds
+     * @param  list<string>  $expenseIds
+     * @return array{time: int, expenses: int, skipped_own: int}
+     */
+    public function approveThroughGrant(User $viewer, string $grantPublicId, ?string $periodKey, array $timeIds = [], array $expenseIds = []): array
+    {
+        $grant = $this->reachingGrant($viewer, $grantPublicId);
+
+        return $this->decide($this->companyOf($grant), $viewer, $grant->projectScope(), ClientApprovalSource::Reviewer, $grant, $periodKey, $timeIds, $expenseIds);
+    }
+
+    /**
+     * Dispute one row, with or without a note.
+     *
+     * @param  'time'|'expense'  $kind
+     */
+    public function dispute(ClientCompany $company, User $viewer, string $kind, string $id, ?string $note): void
+    {
+        abort_unless($this->authority->may($company, $viewer), 403, 'You do not approve hours and expenses for this client.');
+
+        $this->dispose($company, $viewer, $this->access->visibleProjectIds($company, $viewer), null, $kind, $id, $note);
+    }
+
+    /**
+     * Dispute one row through a reviewer grant.
+     *
+     * @param  'time'|'expense'  $kind
+     */
+    public function disputeThroughGrant(User $viewer, string $grantPublicId, string $kind, string $id, ?string $note): void
+    {
+        $grant = $this->reachingGrant($viewer, $grantPublicId);
+
+        $this->dispose($this->companyOf($grant), $viewer, $grant->projectScope(), $grant, $kind, $id, $note);
+    }
+
+    private function reachingGrant(User $viewer, string $grantPublicId): ReviewerGrant
+    {
+        $grant = $this->grants->reachingOne($viewer, $grantPublicId);
+        abort_if($grant === null, 404);
+
+        return $grant;
+    }
+
+    private function companyOf(ReviewerGrant $grant): ClientCompany
+    {
+        $company = $grant->company;
+        abort_if($company === null || $grant->granterWorkspace === null, 404);
+        // The granting workspace is the client's; no second lookup is needed to stamp its clock.
+        $company->setRelation('workspace', $grant->granterWorkspace);
+
+        return $company;
+    }
+
+    /**
+     * @param  list<int>|null  $scope
+     * @param  list<string>  $timeIds
+     * @param  list<string>  $expenseIds
+     * @return array{time: int, expenses: int, skipped_own: int}
+     */
+    private function decide(ClientCompany $company, User $viewer, ?array $scope, ClientApprovalSource $source, ?ReviewerGrant $grant, ?string $periodKey, array $timeIds, array $expenseIds): array
+    {
         $explicit = $timeIds !== [] || $expenseIds !== [];
         $period = $periodKey === null ? null : ApprovalPeriod::fromKey($periodKey);
         abort_if(! $explicit && $period === null, 422, 'Name a month, or the rows to approve.');
         abort_if($periodKey !== null && $period === null, 422, 'A month is written as YYYY-MM.');
 
-        $scope = $this->access->visibleProjectIds($company, $viewer);
-
-        return DB::transaction(function () use ($company, $viewer, $period, $timeIds, $expenseIds, $explicit, $scope): array {
+        return DB::transaction(function () use ($company, $viewer, $period, $timeIds, $expenseIds, $explicit, $scope, $source, $grant): array {
+            // The grant is read again as the first statement of the transaction,
+            // so a revocation that committed before this one began always wins.
+            $this->stillReaches($viewer, $grant);
             $time = $this->resolveTime($company, $scope, $period, $timeIds, $explicit);
             $expenses = $this->resolveExpenses($company, $scope, $period, $expenseIds, $explicit);
 
@@ -75,33 +155,34 @@ final class ClientApprovals
             $stamp = [
                 'client_approved_at' => $this->clock->now($company->workspace),
                 'client_approved_by_user_id' => $viewer->id,
-                'client_approval_source' => ClientApprovalSource::Portal->value,
+                'client_approval_source' => $source->value,
                 'client_disputed_at' => null,
                 'client_disputed_by_user_id' => null,
                 'client_dispute_note' => null,
                 'lock_version' => DB::raw('lock_version + 1'),
             ];
 
-            return [
+            $result = [
                 'time' => $this->write(ClientTimeEntry::query(), $company, $time->reject(fn (ClientTimeEntry $row): bool => SelfApproval::refuses($row->user_id, $viewer->id)), $stamp),
                 'expenses' => $this->write(ClientExpense::query(), $company, $expenses->reject(fn (ClientExpense $row): bool => SelfApproval::refuses($row->created_by_user_id, $viewer->id)), $stamp),
                 'skipped_own' => $ownTime->count() + $ownExpenses->count(),
             ];
+            $this->record($grant, $viewer, $company, AccessAuditAction::ReviewerApproved, $result);
+
+            return $result;
         });
     }
 
     /**
-     * Dispute one row, with or without a note.
-     *
+     * @param  list<int>|null  $scope
      * @param  'time'|'expense'  $kind
      */
-    public function dispute(ClientCompany $company, User $viewer, string $kind, string $id, ?string $note): void
+    private function dispose(ClientCompany $company, User $viewer, ?array $scope, ?ReviewerGrant $grant, string $kind, string $id, ?string $note): void
     {
-        abort_unless($this->authority->may($company, $viewer), 403, 'You do not approve hours and expenses for this client.');
-        $scope = $this->access->visibleProjectIds($company, $viewer);
         $note = $note === null || trim($note) === '' ? null : trim($note);
 
-        DB::transaction(function () use ($company, $viewer, $kind, $id, $scope, $note): void {
+        DB::transaction(function () use ($company, $viewer, $kind, $id, $scope, $note, $grant): void {
+            $this->stillReaches($viewer, $grant);
             $time = $kind === 'time' ? $this->resolveTime($company, $scope, null, [$id], true) : collect();
             $expenses = $kind === 'expense' ? $this->resolveExpenses($company, $scope, null, [$id], true) : collect();
 
@@ -119,7 +200,29 @@ final class ClientApprovals
             ];
             $this->write(ClientTimeEntry::query(), $company, $time, $stamp);
             $this->write(ClientExpense::query(), $company, $expenses, $stamp);
+            $this->record($grant, $viewer, $company, AccessAuditAction::ReviewerDisputed, ['kind' => $kind]);
         });
+    }
+
+    private function stillReaches(User $viewer, ?ReviewerGrant $grant): void
+    {
+        abort_if($grant !== null && $this->grants->reachingOne($viewer, $grant->public_id) === null, 404);
+    }
+
+    /**
+     * What a grant did, written in the granting workspace in the same
+     * transaction as the decision. A portal decision (no grant) writes nothing
+     * here, as before.
+     *
+     * @param  array<string, mixed>  $outcome  counts and kinds only
+     */
+    private function record(?ReviewerGrant $grant, User $viewer, ClientCompany $company, AccessAuditAction $action, array $outcome): void
+    {
+        if ($grant === null) {
+            return;
+        }
+
+        $this->audit->record(AccessMutationContext::user($viewer), $company->workspace, $action, $viewer, null, ['grant' => $grant->public_id] + $outcome, $company->public_id);
     }
 
     /**

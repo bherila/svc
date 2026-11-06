@@ -7,6 +7,7 @@ use App\Models\ClientCompanyMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Review\ReviewerGrants;
 use App\Services\Square\SquareConfiguration;
 use App\Support\Navigation\ClientModuleDestinations;
 use App\Support\Navigation\ClientNavigationOption;
@@ -37,7 +38,10 @@ use Illuminate\Support\Facades\Gate;
  */
 final class WorkspaceNavigationFactory
 {
-    public function __construct(private readonly ProjectAccess $projectAccess) {}
+    public function __construct(
+        private readonly ProjectAccess $projectAccess,
+        private readonly ReviewerGrants $reviewerGrants,
+    ) {}
 
     public function for(Workspace $workspace, User $user, ?ClientCompany $current): WorkspaceNavigation
     {
@@ -122,6 +126,13 @@ final class WorkspaceNavigationFactory
             paymentsHref: $manages ? route('workspaces.payments', $workspace, absolute: false) : null,
             // Projects this workspace hosts for other workspaces, and ones it takes part in.
             sharedProjectsHref: $isMember ? route('shared-projects.index', $workspace, absolute: false) : null,
+            // Who outside the team may vouch for this workspace's hours. Managers only.
+            reviewersHref: $manages ? route('workspaces.reviewers', $workspace, absolute: false) : null,
+            // Everything waiting for this person across providers, when a grant or
+            // more than one client's portal says there could be.
+            approvalsHref: $this->reviewerGrants->approvalsAvailable($user)
+                ? route('approvals.index', absolute: false)
+                : null,
         );
     }
 
