@@ -27,7 +27,6 @@ final class InvoicePageApiTest extends TestCase
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic draft project', 'slug' => 'synthetic-draft-project']);
         $this->signedIn($owner);
         $create = route('agent-api.v1.invoices.store', $workspace, absolute: false);
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view->where('workspace.clients.0.invoice_create_href', $create));
         $this->get(route('clients.time', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $view) => $view->where('invoice_draft.url', $create)->where('invoice_draft.company_id', $company->public_id));
         $body = ['company_id' => $company->public_id, 'invoice_number' => 'INV-SYNTHETIC-API-CREATE', 'currency' => 'USD', 'is_visible_to_client' => false, 'manual_lines' => [['type' => 'service', 'description' => 'Synthetic draft service', 'quantity' => '1', 'unit_amount' => 12345, 'tax_amount' => 0]]];
         $created = $this->postJson($create, $body, ['Idempotency-Key' => 'synthetic-create-manual'])->assertCreated()->json('data.id');
@@ -46,7 +45,6 @@ final class InvoicePageApiTest extends TestCase
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
         $this->signedIn($member);
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view->where('workspace.clients.0.invoice_create_href', null));
         $this->postJson($create, $body, ['Idempotency-Key' => 'synthetic-create-member'])->assertForbidden();
         $this->assertSame(3, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
     }
@@ -59,10 +57,6 @@ final class InvoicePageApiTest extends TestCase
         $issue = route('agent-api.v1.invoices.issue', [$workspace, $invoice->public_id], absolute: false);
         $this->actingAs($owner)->get($page)->assertOk()->assertInertia(fn (Assert $view) => $view
             ->where('actions.issue', $issue)->where('version', AgentApiVersion::for($invoice->fresh())));
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view
-            ->where('workspace.clients.0.invoices.0.issue_href', $issue)
-            ->where('workspace.clients.0.invoices.0.payment_href', null)
-            ->where('workspace.clients.0.invoices.0.version', AgentApiVersion::for($invoice->fresh())));
         $this->signedIn($owner);
         $body = ['expected_version' => AgentApiVersion::for($invoice->fresh()), 'confirm' => true];
         $this->postJson($issue, $body)->assertUnprocessable();
@@ -94,8 +88,6 @@ final class InvoicePageApiTest extends TestCase
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
         $this->signedIn($member);
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view
-            ->where('workspace.clients.0.invoices.0.issue_href', null)->where('workspace.clients.0.invoices.0.payment_href', null));
         $this->postJson(route('agent-api.v1.invoices.issue', [$workspace, $invoice->public_id], absolute: false), [
             'expected_version' => AgentApiVersion::for($invoice->fresh()), 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-member-issue'])->assertForbidden();

@@ -107,9 +107,7 @@ class TimeSheetTest extends TestCase
     {
         $project = $this->otherProject();
         $url = route('clients.time', [$this->workspace, $this->company, 'log_project' => $project->public_id], absolute: false);
-        $this->actingAs($this->manager, 'web')->get(route('workspaces.operations', $this->workspace))
-            ->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('workspace.clients.0.projects', fn ($rows): bool => collect($rows)->firstWhere('id', $project->public_id)['time_url'] === $url));
+        $this->actingAs($this->manager, 'web');
         $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->where('log_project_id', $project->public_id));
         $foreign = $this->foreignWorkspace();
         $this->get(route('clients.time', [$this->workspace, $this->company, 'log_project' => $foreign['project']->public_id]))->assertNotFound();
@@ -2816,11 +2814,6 @@ class TimeSheetTest extends TestCase
         // be left open; the browser reads the clock against this.
         $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
-
-        $this->actingAs($this->manager, 'web')
-            ->get("/workspaces/{$this->workspace->public_id}/operations")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
 

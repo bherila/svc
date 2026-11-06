@@ -13,12 +13,16 @@ use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SquareExploreController;
+use App\Http\Controllers\WorkspaceDashboardController;
 use App\Http\Controllers\WorkspaceEntryController;
-use App\Http\Controllers\WorkspaceOperationsController;
+use App\Http\Controllers\WorkspaceFinanceController;
+use App\Http\Controllers\WorkspaceInvoiceListController;
 use App\Http\Controllers\WorkspaceSelectorController;
+use App\Http\Controllers\WorkspaceTimeQueueController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PublishApiDocumentation;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
+use App\Models\Workspace;
 use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
 use Illuminate\Support\Facades\Route;
@@ -86,8 +90,27 @@ Route::middleware('auth')->group(function (): void {
     // inside the Inertia middleware. Attaching it here is also what keeps the
     // switcher's queries off the screens that show no switcher - the workspace
     // selector, webhooks, PDFs and downloads.
-    Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
+    // The workspace tier: Dashboard (the landing page), the cross-client Invoices
+    // and Time lists, and Finance. The binding resolves the workspace through
+    // TenantRouteBinding, so a workspace this person is not in is a 404; each
+    // controller then authorizes its own audience (members for the Dashboard,
+    // owners and admins for the rest).
+    Route::get('/workspaces/{workspace}/dashboard', WorkspaceDashboardController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.dashboard');
+    Route::get('/workspaces/{workspace}/all/invoices', WorkspaceInvoiceListController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.invoices');
+    Route::get('/workspaces/{workspace}/all/time', WorkspaceTimeQueueController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.time');
+    Route::get('/workspaces/{workspace}/finance', WorkspaceFinanceController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.finance');
+    // The retired Operations screen. Kept as a redirect so bookmarks and the
+    // `web_url` values the API has handed out still land somewhere real; the
+    // route name stays because those URLs are built from it.
+    Route::get('/workspaces/{workspace}/operations', fn (Workspace $workspace) => redirect()->route('workspaces.dashboard', $workspace))
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {

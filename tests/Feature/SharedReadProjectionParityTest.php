@@ -16,7 +16,6 @@ use App\Services\AgentApi\AgentProposalReadService;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -82,35 +81,5 @@ final class SharedReadProjectionParityTest extends TestCase
         $this->assertSame(Arr::except(Arr::only($canonicalProposal, array_keys($nativeProposal['proposal'])), ['sent_at', 'accepted_at']), Arr::except($nativeProposal['proposal'], ['sent_at', 'accepted_at']));
         $this->assertSame('2026-10-28T09:10:11.000000Z', $nativeProposal['proposal']['sent_at']);
         $this->assertSame([Arr::except($canonicalProposal['items'][0], ['sort_order'])], $nativeProposal['items']);
-
-        $operationsWorkspace = $this->get(route('workspaces.operations', $workspace))->assertOk()->viewData('page')['props']['workspace'];
-        $this->assertSame(['id' => $workspace->public_id, 'name' => $workspace->name], Arr::only($operationsWorkspace, ['id', 'name']));
-        $operations = $operationsWorkspace['clients'][0];
-        $this->assertSame(Arr::only($canonicalProposal, ['id', 'title', 'status', 'total_amount', 'currency']) + ['version' => $canonicalProposal['version'], 'send_href' => null], Arr::except($operations['proposals'][0], ['attachments', 'attachment_panel']));
-        $this->assertSame(Arr::only($canonicalInvoice, ['id', 'invoice_number', 'status', 'total_amount', 'paid_amount', 'balance_amount', 'currency', 'issue_date', 'due_date']) + [
-            'version' => $canonicalInvoice['version'],
-            'pdf_href' => "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/pdf",
-            'issue_href' => null,
-            'payment_href' => "/api/v1/workspaces/{$workspace->public_id}/payments",
-        ], Arr::except($operations['invoices'][0], ['attachments', 'attachment_panel']));
-        $this->assertSame("/api/v1/workspaces/{$workspace->public_id}/invoices", $operations['invoice_create_href']);
-        $this->assertSame(['Synthetic internal second', 'Synthetic internal first'], array_column($operations['projects'][0]['time_entries'], 'description'));
-        $this->assertArrayNotHasKey('notes', $operations['invoices'][0]);
-        $this->assertSame([['id' => $attachment->public_id, 'name' => 'synthetic-shared-file.txt', 'media_type' => 'text/plain', 'bytes' => 32,
-            'download_url' => "/workspaces/{$workspace->public_id}/attachments/{$attachment->public_id}"]], $operations['proposals'][0]['attachments']);
-        $this->assertArrayNotHasKey('sha256', $operations['proposals'][0]['attachments'][0]);
-        $this->assertArrayNotHasKey('object_key', $operations['proposals'][0]['attachments'][0]);
-        $this->assertArrayNotHasKey('billing_email', $operations);
-
-        DB::enableQueryLog();
-        DB::flushQueryLog();
-        $this->get(route('workspaces.operations', $workspace))->assertOk();
-        $oneCompanyQueries = count(DB::getQueryLog());
-        foreach (range(1, 4) as $number) {
-            ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic extra '.$number, 'slug' => 'synthetic-extra-'.$number]);
-        }
-        DB::flushQueryLog();
-        $this->get(route('workspaces.operations', $workspace))->assertOk();
-        $this->assertLessThanOrEqual($oneCompanyQueries, count(DB::getQueryLog()), 'More company rows must not add presenter queries.');
     }
 }

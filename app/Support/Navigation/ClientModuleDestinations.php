@@ -13,36 +13,44 @@ namespace App\Support\Navigation;
  * client" is not a function of the ids, it is a function of the ids and the
  * viewer.
  *
- * Only `home` is guaranteed. A route family need not offer every module - a
- * module arrives on the portal in a different commit from the one that adds it
- * for operators, which is where expenses stand now (#75): operators have the
- * screen, the portal does not. A null hides that tab rather than linking to a
- * page that does not exist, so the tab strip is always exactly the set of
- * screens the viewer can actually open.
+ * Only `home` (the client's Overview) is guaranteed. A route family need not
+ * offer every module, and a null hides that tab rather than linking to a page
+ * that does not exist, so the tab strip is always exactly the set of screens
+ * the viewer can actually open.
+ *
+ * The client tier's tabs are Overview, Agreements, Invoices, Time, Tasks and
+ * Files. `settings`, `expenses`, `notes` and `discussions` are not tabs: they
+ * live in the menu on the client's name.
  */
 final class ClientModuleDestinations
 {
     public function __construct(
         public readonly string $home,
+        public readonly ?string $agreements,
         public readonly ?string $invoices,
         public readonly ?string $time,
-        public readonly ?string $expenses,
         public readonly ?string $tasks,
+        public readonly ?string $files,
+        public readonly ?string $settings,
+        public readonly ?string $expenses,
         public readonly ?string $notes,
         public readonly ?string $discussions,
     ) {}
 
     /**
-     * @return array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null, notes: string|null, discussions: string|null}
+     * @return array{home: string, agreements: string|null, invoices: string|null, time: string|null, tasks: string|null, files: string|null, settings: string|null, expenses: string|null, notes: string|null, discussions: string|null}
      */
     public function toArray(): array
     {
         return [
             'home' => $this->home,
+            'agreements' => $this->agreements,
             'invoices' => $this->invoices,
             'time' => $this->time,
-            'expenses' => $this->expenses,
             'tasks' => $this->tasks,
+            'files' => $this->files,
+            'settings' => $this->settings,
+            'expenses' => $this->expenses,
             'notes' => $this->notes,
             'discussions' => $this->discussions,
         ];

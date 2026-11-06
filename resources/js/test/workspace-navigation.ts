@@ -22,10 +22,13 @@ export function clientOption(
         name,
         destinations: {
             home: `/workspaces/workspace-1/clients/${id}`,
+            agreements: `/workspaces/workspace-1/clients/${id}#agreements`,
             invoices: `/workspaces/workspace-1/clients/${id}/invoices`,
             time: `/workspaces/workspace-1/clients/${id}/time`,
-            expenses: null,
             tasks: `/workspaces/workspace-1/clients/${id}/tasks`,
+            files: `/workspaces/workspace-1/attachment-records/company/${id}/files`,
+            settings: `/workspaces/workspace-1/clients/${id}/settings`,
+            expenses: null,
             notes: `/workspaces/workspace-1/clients/${id}/collaboration?kind=note`,
             discussions: `/workspaces/workspace-1/clients/${id}/collaboration?kind=discussion`,
             ...overrides,
@@ -57,6 +60,14 @@ export function workspaceNavigation(
         workspace_settings_href: null,
         mcp_setup_href: '/workspaces/workspace-1/mcp',
         square_href: null,
+        workspace_destinations: {
+            dashboard: '/workspaces/workspace-1/dashboard',
+            clients: '/workspaces/workspace-1/clients',
+            invoices: '/workspaces/workspace-1/all/invoices',
+            time: '/workspaces/workspace-1/all/time',
+            finance: '/workspaces/workspace-1/finance',
+        },
+        task_labels_href: '/workspaces/workspace-1/task-labels',
         ...overrides,
     };
 }

@@ -138,7 +138,7 @@ final class AttachmentPaginationTest extends TestCase
         $this->get($next)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files_next_href', null));
     }
 
-    public function test_agreement_route_families_and_operations_supply_finished_continuation_links(): void
+    public function test_agreement_route_families_supply_finished_continuation_links(): void
     {
         Storage::fake('svc_files');
         config(['svc.filesystem_disk' => 'svc_files']);
@@ -167,10 +167,5 @@ final class AttachmentPaginationTest extends TestCase
             $this->assertStringStartsWith('/', $previous);
             $this->get($previous)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 100)->where('files_previous_href', null));
         }
-        $operations = $this->actingAs($owner)->get(route('workspaces.operations', $workspace))->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->has('workspace.clients.0.agreements.0.attachments', 300)->where('workspace.files_previous_href', null));
-        $next = $operations->viewData('page')['props']['workspace']['files_next_href'];
-        $this->assertStringContainsString('files_page=2#files-pagination', $next);
-        $this->get($next)->assertOk()->assertInertia(fn (Assert $page) => $page->has('workspace.clients.0.agreements.0.attachments', 1)->where('workspace.files_next_href', null));
     }
 }

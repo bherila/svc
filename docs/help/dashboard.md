@@ -1,7 +1,7 @@
 ---
 title: Dashboard
 audience: [operator]
-routes: [workspaces.operations]
+routes: [workspaces.dashboard]
 terms: []
 ---
 The dashboard is where a workspace starts. It lists what needs you now, newest trouble first.

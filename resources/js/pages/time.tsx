@@ -611,7 +611,7 @@ export default function TimeSheet({
                 )}
 
                 {selectedEntries.length > 0 && (
-                    <Card size="sm" className="mt-6 bg-muted/40">
+                    <Card className="mt-6 bg-muted/40">
                         <CardContent className="flex flex-wrap items-center justify-between gap-3">
                             <p className="text-sm">
                                 {selectedEntries.length} selected ·{' '}

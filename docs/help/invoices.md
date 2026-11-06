@@ -1,7 +1,7 @@
 ---
 title: Invoices
 audience: [operator]
-routes: [clients.invoices, clients.invoice, svc.billing.invoices.index, svc.billing.invoices.show, svc.billing.schedules.show]
+routes: [workspaces.invoices, workspaces.finance, clients.invoices, clients.invoice, svc.billing.invoices.index, svc.billing.invoices.show, svc.billing.schedules.show]
 terms: []
 ---
 An invoice bills approved work for one period.

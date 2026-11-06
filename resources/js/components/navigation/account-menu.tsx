@@ -1,4 +1,4 @@
-import { Link, router, usePage } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { SettingsIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,7 +12,10 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { apiRequest } from '@/lib/api';
+import { isAppearance, useAppearance } from '@/lib/appearance';
 import { DEFAULT_DURATION_STYLE, isDurationStyle } from '@/lib/duration';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import type { WorkspaceNavigation } from '@/types/navigation';
 
 /**
@@ -35,6 +38,7 @@ export function AccountMenu({
     workspaceSettingsHref?: string | null;
 }) {
     const page = usePage();
+    const [appearance, setAppearance] = useAppearance();
     const auth = page.props.auth;
     const applications = page.props.applications;
     const navigation = page.props
@@ -99,6 +103,14 @@ export function AccountMenu({
                         History
                     </DropdownMenuItem>
                 )}
+                {navigation?.task_labels_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.task_labels_href} />}
+                        data-test="account-task-labels"
+                    >
+                        Task labels
+                    </DropdownMenuItem>
+                )}
                 {navigation?.square_href && (
                     <DropdownMenuGroup>
                         <DropdownMenuItem asChild>
@@ -122,6 +134,34 @@ export function AccountMenu({
                     </DropdownMenuGroup>
                 )}
 
+                {/*
+                 * Below `sm` the bar has no room for the theme control, so the
+                 * same choice lives here. From `sm` up this group is hidden and
+                 * the control in the bar is used.
+                 */}
+                <DropdownMenuSeparator className="sm:hidden" />
+                <DropdownMenuGroup className="sm:hidden">
+                    <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                        value={appearance}
+                        onValueChange={(value) => {
+                            if (isAppearance(value)) {
+                                setAppearance(value);
+                            }
+                        }}
+                    >
+                        <DropdownMenuRadioItem value="system">
+                            System
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="light">
+                            Light
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="dark">
+                            Dark
+                        </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+
                 {typeof preferencesUrl === 'string' && (
                     <>
                         <DropdownMenuSeparator />
@@ -130,11 +170,18 @@ export function AccountMenu({
                             <DropdownMenuRadioGroup
                                 value={durationStyle}
                                 onValueChange={(value) => {
-                                    router.patch(
-                                        preferencesUrl,
-                                        { duration_style: value },
-                                        { preserveScroll: true },
-                                    );
+                                    // A display preference: saved with fetch and
+                                    // the shared props reloaded, not an Inertia
+                                    // mutation (business writes use /api/v1).
+                                    void apiRequest('PATCH', preferencesUrl, {
+                                        duration_style: value,
+                                    }).then((result) => {
+                                        if (result.ok) {
+                                            return refreshPageProps({
+                                                only: ['auth'],
+                                            });
+                                        }
+                                    });
                                 }}
                             >
                                 <DropdownMenuRadioItem

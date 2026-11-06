@@ -395,7 +395,9 @@ require `manage`:
 ```
 GET    /app                                                  workspace selector
 GET    /workspaces/{workspace}                               entry
-GET    /workspaces/{workspace}/operations
+GET    /workspaces/{workspace}/dashboard                     workspace landing (operations redirects here)
+GET    /workspaces/{workspace}/all/{invoices,time}           owners and admins, across clients
+GET    /workspaces/{workspace}/finance                       owners and admins
 GET    /workspaces/{workspace}/clients
 GET    /workspaces/{workspace}/clients/{clientCompany}
 GET    /workspaces/{workspace}/clients/{clientCompany}/{invoices,tasks,settings}
@@ -495,7 +497,7 @@ JSON or a redirect rather than a screen — the operator invoice list is
   `invoice`, `tasks`, `project`, `agreement`, `proposal`, `expenses`,
   `settings`.
 - `pages/portal.tsx` and `pages/portal/` — the client-facing surface.
-- `pages/operations.tsx`, `pages/time.tsx`, `pages/workspaces/`.
+- `pages/time.tsx`, `pages/workspaces/` (dashboard, invoices, time, finance).
 - Shared components in `resources/js/components/` (`billing/`, `clients/`,
   `agreements/`, `time/`, `expenses/`, `navigation/`, `ui/`).
 - Shared types in `resources/js/types/`.

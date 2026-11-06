@@ -3,7 +3,6 @@
 namespace Tests\Feature\Account;
 
 use App\Models\User;
-use App\Models\Workspace;
 use App\Support\Time\DurationStyle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -24,8 +23,9 @@ class AccountPreferencesTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->patch('/account/preferences', ['duration_style' => 'clock'])
-            ->assertRedirect();
+            ->patchJson('/account/preferences', ['duration_style' => 'clock'])
+            ->assertOk()
+            ->assertJsonPath('data.duration_style', 'clock');
 
         $this->assertSame(DurationStyle::Clock, $user->fresh()->duration_style);
 
@@ -39,8 +39,9 @@ class AccountPreferencesTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->patch('/account/preferences', ['duration_style' => 'sexagesimal'])
-            ->assertSessionHasErrors('duration_style');
+            ->patchJson('/account/preferences', ['duration_style' => 'sexagesimal'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('duration_style');
 
         $this->assertSame(DurationStyle::Decimal, $user->fresh()->duration_style);
     }
@@ -51,15 +52,14 @@ class AccountPreferencesTest extends TestCase
         $other = User::factory()->create();
 
         $this->actingAs($caller)
-            ->patch('/account/preferences', ['duration_style' => 'clock', 'id' => $other->id, 'user' => $other->public_id])
-            ->assertRedirect();
+            ->patchJson('/account/preferences', ['duration_style' => 'clock', 'id' => $other->id, 'user' => $other->public_id])
+            ->assertOk();
 
         $this->assertSame(DurationStyle::Decimal, $other->fresh()->duration_style);
     }
 
     public function test_guests_cannot_write_it(): void
     {
-        $this->patch('/account/preferences', ['duration_style' => 'clock'])->assertRedirect();
-        $this->assertSame(0, Workspace::query()->count());
+        $this->patchJson('/account/preferences', ['duration_style' => 'clock'])->assertUnauthorized();
     }
 }

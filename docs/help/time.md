@@ -1,7 +1,7 @@
 ---
 title: Time
 audience: [operator, partner]
-routes: [clients.time]
+routes: [workspaces.time, clients.time]
 terms: [Draft, Submitted, Reviewed, Approved, Disputed, Invoiced]
 ---
 Time is stored in whole minutes and shown in the style you choose in the account menu, as 2.5 h or 2:30. Type it any way you like: 2:30, 2.5, 2h30m or 150m all mean the same.
