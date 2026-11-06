@@ -57,7 +57,7 @@ export default function PortalInvoice({
                     <InvoiceDocument document={document} />
                     <aside
                         aria-label="Invoice actions"
-                        className="grid grid-cols-1 gap-4"
+                        className="order-first grid grid-cols-1 gap-4 lg:order-none"
                     >
                         <InvoicePaymentState document={document}>
                             {stripe !== null && (

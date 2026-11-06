@@ -127,7 +127,9 @@ class InvoiceDocumentBuilderTest extends TestCase
         $this->assertNull($this->builder()->build($hidden, InvoiceLineDetail::CLIENT)->payUrl);
         $this->assertNull($this->builder()->build($paid, InvoiceLineDetail::CLIENT)->payUrl);
         $this->assertNull($this->builder()->build($owing, InvoiceLineDetail::CLIENT, DocumentMode::Proforma)->payUrl);
-        $this->assertSame('proforma', $this->builder()->build($owing, InvoiceLineDetail::CLIENT, DocumentMode::Proforma)->toArray()['mode']);
+        $proforma = $this->builder()->build($owing, InvoiceLineDetail::CLIENT, DocumentMode::Proforma)->toArray();
+        $this->assertSame('proforma', $proforma['mode']);
+        $this->assertNull($proforma['invoice_number'], 'A proforma has no number.');
     }
 
     public function test_the_builder_reads_a_bounded_number_of_rows_however_many_lines_there_are(): void

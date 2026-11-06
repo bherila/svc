@@ -84,6 +84,7 @@ class InvoiceProformaTest extends TestCase
                 ->where('document.audience', 'client')
                 ->where('document.status', 'draft')
                 ->where('document.pay_url', null)
+                ->where('document.invoice_number', null)
                 ->where('document.sections.0.key', 'time')
                 ->has('document.statement.sections')
                 ->where('document.totals.total', fn (int $total): bool => $total > 100000));

@@ -66,7 +66,9 @@ final class InvoiceDocumentBuilder
             mode: $mode,
             audience: $audience,
             issuerName: is_string($issuer) ? $issuer : '',
-            invoiceNumber: ((string) $invoice->invoice_number) === '' ? null : (string) $invoice->invoice_number,
+            // A proforma has no number: the preview's draft was numbered inside a
+            // transaction that is rolled back, so the number names nothing.
+            invoiceNumber: $mode === DocumentMode::Proforma || ((string) $invoice->invoice_number) === '' ? null : (string) $invoice->invoice_number,
             status: (string) $invoice->status,
             currency: (string) $invoice->currency,
             billTo: (string) $company?->name,

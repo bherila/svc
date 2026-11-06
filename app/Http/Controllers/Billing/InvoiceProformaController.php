@@ -14,6 +14,7 @@ use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\WorkspaceClock;
+use DomainException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -68,6 +69,9 @@ final class InvoiceProformaController extends Controller
                 $document = $this->operations->previewDocument($user, $workspace, $clientAgreement->public_id, $periodStart, InvoiceLineDetail::CLIENT)->toArray();
             } catch (ValidationException $refused) {
                 $reason = (string) collect($refused->errors())->flatten()->first();
+            } catch (DomainException $refused) {
+                // A billing rule that says the period cannot be priced yet, in its own words.
+                $reason = $refused->getMessage();
             } catch (InvalidArgumentException) {
                 $reason = 'There is no billing period to preview for this agreement yet.';
             } catch (HttpExceptionInterface $refused) {
