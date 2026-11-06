@@ -78,7 +78,7 @@ final class ApprovedTimesheet
             'description' => (string) $entry->client_visible_description,
             'project' => $entry->project?->name,
             'task' => $entry->task?->title,
-            'worked_by' => $entry->user_id === null ? null : ($people[$entry->user_id] ?? null),
+            'worked_by' => $people[$entry->user_id] ?? null,
             'approved_by' => $entry->client_approved_by_user_id === null ? null : ($people[$entry->client_approved_by_user_id] ?? null),
             'approved_at' => $entry->client_approved_at?->toIso8601String(),
             'approved_via' => TimesheetRules::via($entry->client_approval_source),
@@ -89,7 +89,7 @@ final class ApprovedTimesheet
             'period_label' => $period->label(),
             'previous_period' => $period->previousKey(),
             'next_period' => $period->nextKey(),
-            'entries' => $entries->all(),
+            'entries' => array_values($entries->all()),
             'total_minutes' => (int) $entries->sum('minutes'),
             'truncated' => $truncated,
         ];

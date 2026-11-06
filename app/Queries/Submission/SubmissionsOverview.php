@@ -75,8 +75,8 @@ final class SubmissionsOverview
             'period_label' => $period->label(),
             'previous_period' => $period->previousKey(),
             'next_period' => $period->nextKey(),
-            'time' => $timeRows->all(),
-            'expenses' => $expenseRows->all(),
+            'time' => array_values($timeRows->all()),
+            'expenses' => array_values($expenseRows->all()),
             'totals' => $this->totals($timeRows),
             'truncated' => $truncated,
         ];
