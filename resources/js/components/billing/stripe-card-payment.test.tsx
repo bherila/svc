@@ -57,11 +57,12 @@ describe('paying by card', () => {
             { idempotency_key: 'key-fixture' },
             'key-fixture',
         );
+        // Stripe's form is mounted by an effect after the button renders.
+        await waitFor(() => expect(stub.element.mount).toHaveBeenCalled());
         expect(window.Stripe).toHaveBeenCalledWith('pk_test_fixture');
         expect(stub.instance.elements).toHaveBeenCalledWith({
             clientSecret: 'cs_fixture',
         });
-        expect(stub.element.mount).toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: 'Pay now' }));
 
