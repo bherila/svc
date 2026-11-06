@@ -27,7 +27,7 @@ final class WorkspaceEditionController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        Gate::forUser($user)->authorize('manage', $workspace);
+        abort_unless(Gate::forUser($user)->allows('manage', $workspace), 404);
 
         if (WorkspaceEdition::of($workspace->getAttribute('edition'))->isLight()) {
             $workspace->forceFill(['edition' => WorkspaceEdition::Full->value])->save();
