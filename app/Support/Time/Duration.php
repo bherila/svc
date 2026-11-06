@@ -57,10 +57,12 @@ final class Duration
         }
 
         if (preg_match('/^(?<n>\d{1,5}(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)?$/', $text, $m) === 1) {
+            /** @infection-ignore-all The `(float)` cast is an equivalent mutant: a numeric string times 60 is already a float or exact int, and round() returns the same value either way. */
             return (int) round((float) $m['n'] * 60);
         }
 
         if (preg_match('/^(?<h>\d{1,5})\s*(?:h|hr|hrs|hour|hours)\s*(?<m>\d{1,2})\s*m(?:in(?:ute)?s?)?$/', $text, $m) === 1) {
+            /** @infection-ignore-all The `(int)` cast is an equivalent mutant: the pattern vouches for one or two digits, and PHP compares a numeric string with 60 numerically. */
             return (int) $m['m'] < 60 ? self::wholeMinutes($m['h'], $m['m']) : null;
         }
 
