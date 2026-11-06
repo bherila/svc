@@ -486,6 +486,13 @@ the same document. They become one:
   component), with an action rail beside it: payment state, hours approval,
   receipts, activity. Portal: the same document, with Pay and approve or
   dispute hours in its rail.
+- **Theme**: the browser preview follows the app theme. In dark mode the
+  document is drawn from the dark tokens (raised surface, light ink, muted
+  rules), and a "Show as printed" toggle switches it to the paper rendering.
+  The PDF itself is always light (white paper, dark ink), so PDF viewers'
+  own dark modes and printing invert it correctly. The screen and PDF share
+  one document component with a `paper` or `screen` surface, and print CSS
+  always forces `paper`.
 - **PDF**: stays on Dompdf, so layout uses tables rather than flex. The cover
   page holds the totals and the pay link. Following pages hold the hours
   statement, still deferred, appendix A (time entries) and appendix B

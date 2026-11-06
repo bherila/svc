@@ -62,8 +62,14 @@ button{font-family:inherit}
     </ol>
 
     <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
-      <div style="flex: 0 1 816px; min-width: 0; overflow-x: auto; border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.5)">
-        <dc-import name="InvoicePdf" hint-size="816px,1056px"></dc-import>
+      <div style="flex: 0 1 816px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; color: #9ca3af">
+          <span>{{docNote}}</span>
+          <button type="button" onClick="{{togglePaper}}" aria-pressed="{{paper}}" style="border: 1px solid #374151; background: #111827; color: #e5e7eb; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; min-height: 32px">{{paperLabel}}</button>
+        </div>
+        <div style="overflow-x: auto; border-radius: 8px; border: 1px solid #1f2937">
+          <dc-import name="InvoicePdf" dark="{{docDark}}" hint-size="816px,1056px"></dc-import>
+        </div>
       </div>
 
       <aside style="flex: 1 1 320px; min-width: 300px; display: flex; flex-direction: column; gap: 16px; font-size: 14px">
@@ -104,7 +110,9 @@ button{font-family:inherit}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
 class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { paper: false }; }
   renderVals() {
+    const st = this.state;
     const step = (state, title, sub) => ({ title, sub, current: state === 'now' ? 'step' : 'false',
       mark: state === 'done' ? '✓ ' : '',
       pointer: state === 'now' ? 'width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid #e5e7eb;' : 'display:none;',
@@ -116,7 +124,10 @@ class Component extends DCLogic {
       step('done', 'Sent', 'Nov 1 · opened Nov 2'),
       step('now', 'Paid', 'Waiting on Acme · due Nov 15')
     ].map((x, k, all) => Object.assign(x, { arrow: k < all.length - 1 }));
-    return { steps };
+    return { steps, paper: st.paper, docDark: !st.paper,
+      paperLabel: st.paper ? 'Back to dark view' : 'Show as printed',
+      docNote: st.paper ? 'As printed: the PDF is always on white paper.' : 'Dark view of this invoice. The PDF you download is printed on white.',
+      togglePaper: () => this.setState({ paper: !st.paper }) };
   }
 }
 </script>
