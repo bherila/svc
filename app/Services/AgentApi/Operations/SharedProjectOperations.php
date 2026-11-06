@@ -76,7 +76,7 @@ final class SharedProjectOperations
         return $names;
     }
 
-    /** @return array<string, array<string, mixed>> */
+    /** @return array<string, array{method: string, scopes: list<string>, summary: string, description: string, parameters: list<string|array<string, mixed>>, response: string, errors: array<int, string>, request?: string}> */
     public static function documentation(): array
     {
         $shared = 'The path workspace is the caller\'s own. The project is the host workspace\'s, and the caller sees it only as the host, or as a workspace with an accepted, unrevoked participation that has not left; any other workspace is told 404, and so is a pending, declined, revoked or expired invitation. Nothing about money crosses workspaces: no rate, time entry, invoice, payment, agreement, billing contact, internal note, file or other project of the host or of another participant is ever returned. A participant sees only tasks the host already shows its client, with the host\'s workspace name and the assignees\' workspace names. A participant who is not an owner or admin of their workspace sees only the tasks assigned to them.';
