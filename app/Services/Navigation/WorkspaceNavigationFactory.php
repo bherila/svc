@@ -141,6 +141,10 @@ final class WorkspaceNavigationFactory
             invoices: $manages ? route('workspaces.invoices', $workspace, absolute: false) : null,
             time: $manages ? route('workspaces.time', $workspace, absolute: false) : null,
             finance: $manages ? route('workspaces.finance', $workspace, absolute: false) : null,
+            // Members who do not run the workspace: their own tasks, time and
+            // logging, with no billing anywhere on it. An owner or admin has the
+            // Dashboard and the cross-client Time list instead.
+            myWork: $isMember && ! $manages ? route('workspaces.my-work', $workspace, absolute: false) : null,
         );
     }
 

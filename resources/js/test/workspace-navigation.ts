@@ -61,6 +61,7 @@ export function workspaceNavigation(
         mcp_setup_href: '/workspaces/workspace-1/mcp',
         square_href: null,
         workspace_destinations: {
+            my_work: null,
             dashboard: '/workspaces/workspace-1/dashboard',
             clients: '/workspaces/workspace-1/clients',
             invoices: '/workspaces/workspace-1/all/invoices',

@@ -18,10 +18,11 @@ final class WorkspaceDestinations
         public readonly ?string $invoices,
         public readonly ?string $time,
         public readonly ?string $finance,
+        public readonly ?string $myWork = null,
     ) {}
 
     /**
-     * @return array{dashboard: string|null, clients: string|null, invoices: string|null, time: string|null, finance: string|null}
+     * @return array{dashboard: string|null, clients: string|null, invoices: string|null, time: string|null, finance: string|null, my_work: string|null}
      */
     public function toArray(): array
     {
@@ -31,6 +32,7 @@ final class WorkspaceDestinations
             'invoices' => $this->invoices,
             'time' => $this->time,
             'finance' => $this->finance,
+            'my_work' => $this->myWork,
         ];
     }
 }
