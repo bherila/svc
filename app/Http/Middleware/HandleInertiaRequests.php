@@ -46,6 +46,8 @@ class HandleInertiaRequests extends Middleware
                     'id' => $user->public_id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'duration_style' => $user->duration_style->value,
+                    'preferences_url' => route('account.preferences.update', absolute: false),
                     'email_verified_at' => $user->email_verified_at?->toIso8601String(),
                     'created_at' => $user->created_at?->toIso8601String(),
                     'updated_at' => $user->updated_at?->toIso8601String(),

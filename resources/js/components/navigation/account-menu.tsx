@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { SettingsIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -7,9 +7,12 @@ import {
     DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { DEFAULT_DURATION_STYLE, isDurationStyle } from '@/lib/duration';
 import type { WorkspaceNavigation } from '@/types/navigation';
 
 /**
@@ -36,6 +39,11 @@ export function AccountMenu({
     const applications = page.props.applications;
     const navigation = page.props
         .workspaceNavigation as WorkspaceNavigation | null;
+
+    const durationStyle = isDurationStyle(auth.user?.duration_style)
+        ? auth.user.duration_style
+        : DEFAULT_DURATION_STYLE;
+    const preferencesUrl = auth.user?.preferences_url;
 
     return (
         <DropdownMenu>
@@ -112,6 +120,38 @@ export function AccountMenu({
                             </Link>
                         </DropdownMenuItem>
                     </DropdownMenuGroup>
+                )}
+
+                {typeof preferencesUrl === 'string' && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                            <DropdownMenuLabel>Show time as</DropdownMenuLabel>
+                            <DropdownMenuRadioGroup
+                                value={durationStyle}
+                                onValueChange={(value) => {
+                                    router.patch(
+                                        preferencesUrl,
+                                        { duration_style: value },
+                                        { preserveScroll: true },
+                                    );
+                                }}
+                            >
+                                <DropdownMenuRadioItem
+                                    value="decimal"
+                                    data-test="duration-style-decimal"
+                                >
+                                    2.5 h
+                                </DropdownMenuRadioItem>
+                                <DropdownMenuRadioItem
+                                    value="clock"
+                                    data-test="duration-style-clock"
+                                >
+                                    2:30
+                                </DropdownMenuRadioItem>
+                            </DropdownMenuRadioGroup>
+                        </DropdownMenuGroup>
+                    </>
                 )}
 
                 {/*

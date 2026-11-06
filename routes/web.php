@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountPreferencesController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientTaskController;
@@ -51,6 +52,11 @@ Route::middleware('auth')->group(function (): void {
     // Where signing in lands. One row per workspace and nothing else - the
     // question this screen asks has exactly one answer per row.
     Route::get('/app', WorkspaceSelectorController::class)->name('workspaces.index');
+
+    // The caller's own display preferences (how time is read). No id in the
+    // path: it can only ever write the signed-in person's row.
+    Route::patch('/account/preferences', [AccountPreferencesController::class, 'update'])
+        ->name('account.preferences.update');
 
     // What the command palette asks as you type. Throttled rather than
     // debounced-and-trusted: the debounce lives in the browser and a browser
