@@ -271,6 +271,7 @@ Route::prefix('v1')
             'billing.audit_missing_billed_overage' => 'missingBilledOverage',
             'billing.preflight_schedule_generation' => 'scheduleGenerationPreflight',
             'billing.audit_unlinked_proposal_agreements' => 'unlinkedProposalAgreements',
+            'billing.audit_deferred_lineage_visibility' => 'deferredLineageVisibility',
         ] as $operationId => $action) {
             $workspaceOperation($operationId, [AgentBillingAuditController::class, $action]);
         }

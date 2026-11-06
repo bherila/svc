@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\CodedRefusal;
 use App\Exceptions\InvalidAgentApiCursor;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
@@ -139,8 +140,10 @@ return Application::configure(basePath: dirname(__DIR__))
             // State moved under the request and nothing was written: the same
             // request made again is checked against current state. 409 is what
             // the agent contract means by "re-read and retry".
+            // A coded refusal also states its stable code, for an agent to
+            // branch on; the message stays the sentence a person acts on.
             return response()->json(
-                ['message' => $exception->getMessage()],
+                ['message' => $exception->getMessage(), ...($exception instanceof CodedRefusal ? ['code' => $exception->refusalCode()] : [])],
                 $exception instanceof RetryableConflict ? 409 : 422,
             );
         });

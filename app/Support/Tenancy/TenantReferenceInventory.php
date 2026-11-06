@@ -46,6 +46,18 @@ final class TenantReferenceInventory
     public const REASON_LINEAGE = 'nullable attribution column with no referential constraint by design: the invoice record outlives the row that explains it, and SET NULL is barred over the NOT NULL workspace_id (InnoDB errno 1830)';
 
     /**
+     * Why a deferred-work snapshot's frozen project carries no constraint (#610).
+     *
+     * The row records which project's work an issued document disclosed. The
+     * project may later be deleted, and the record must survive that: RESTRICT
+     * would newly block the deletion, CASCADE would erase the lineage and so
+     * widen who may read the invoice, and SET NULL - which would erase it too -
+     * is barred over the NOT NULL workspace_id by InnoDB errno 1830. A row naming
+     * a project that is gone matches no grant and keeps the invoice hidden.
+     */
+    public const REASON_DISCLOSED_LINEAGE = 'frozen deferred-snapshot attribution with no referential constraint by design: RESTRICT would block deleting the project, CASCADE would erase the lineage and widen access, and SET NULL is barred over the NOT NULL workspace_id (InnoDB errno 1830)';
+
+    /**
      * Parent tables that need a unique index on `(workspace_id, id)`.
      *
      * `id` is already the primary key; the extra index exists only so InnoDB has
@@ -147,6 +159,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('invoice_square_links', 'client_invoice_id', 'client_invoices', 'isql_ws_invoice_fk'),
             TenantReference::enforcedBy('square_invoice_coverages', 'client_invoice_id', 'client_invoices', 'sqic_ws_invoice_fk'),
             TenantReference::enforcedBy('invoice_reminder_logs', 'client_invoice_id', 'client_invoices', 'irl_ws_invoice_fk'),
+            TenantReference::enforcedBy('client_invoice_deferred_projects', 'client_invoice_id', 'client_invoices', 'cidp_ws_invoice_fk'),
 
             // Stripe.
             TenantReference::enforcedBy('client_stripe_payment_methods', 'client_stripe_customer_id', 'client_stripe_customers', 'cspm_ws_customer_fk'),
@@ -169,6 +182,10 @@ final class TenantReferenceInventory
             TenantReference::lineage('client_invoices', 'client_billing_schedule_id', 'client_billing_schedules', self::REASON_LINEAGE),
             TenantReference::lineage('client_invoice_lines', 'client_agreement_id', 'client_agreements', self::REASON_LINEAGE),
             TenantReference::lineage('client_invoice_lines', 'client_agreement_recurring_item_id', 'client_agreement_recurring_items', self::REASON_LINEAGE),
+            // The project a deferred-work snapshot disclosed (#610). Frozen
+            // attribution like a line's: a vanished project matches no grant,
+            // so the invoice stays hidden from project-scoped viewers.
+            TenantReference::lineage('client_invoice_deferred_projects', 'client_project_id', 'client_projects', self::REASON_DISCLOSED_LINEAGE),
 
             // stripe_payment_method_states is a webhook-ordering cache whose own
             // workspace_id is nullable: a payment-method event can arrive before

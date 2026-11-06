@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Portal;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
@@ -68,7 +69,7 @@ final class PortalInvoiceDetailTest extends TestCase
     public function test_a_client_sees_only_the_saved_deferred_work_snapshot(): void
     {
         $invoice = $this->invoice('SENT-DEFERRED-1', ['is_visible_to_client' => true, 'status' => 'issued']);
-        $invoice->forceFill(['deferred_work_statement' => [
+        $invoice->forceFill(['client_agreement_id' => $this->agreementShowingBacklog(true)->id, 'deferred_work_statement' => [
             'version' => 1,
             'entries' => [
                 ['id' => 123456, 'workedOn' => '2026-04-01', 'minutes' => 60, 'description' => null],
@@ -87,6 +88,31 @@ final class PortalInvoiceDetailTest extends TestCase
                 ->where('invoice.deferred_work.entries.0.description', null))
             ->assertDontSee('123456')
             ->assertDontSee('123457');
+    }
+
+    public function test_a_client_sees_no_deferred_list_when_the_agreement_keeps_the_backlog_private(): void
+    {
+        $invoice = $this->invoice('SENT-DEFERRED-PRIVATE', ['is_visible_to_client' => true, 'status' => 'issued']);
+        $invoice->forceFill(['client_agreement_id' => $this->agreementShowingBacklog(false)->id, 'deferred_work_statement' => [
+            'version' => 1,
+            'entries' => [['id' => 223456, 'workedOn' => '2026-04-01', 'minutes' => 60, 'description' => 'Synthetic private backlog work']],
+        ]])->save();
+
+        $this->actingAs($this->portalUser())
+            ->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('invoice.deferred_work', null))
+            ->assertDontSee('Synthetic private backlog work');
+    }
+
+    private function agreementShowingBacklog(bool $show): ClientAgreement
+    {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'title' => 'Synthetic portal retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-01-01',
+            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+            'show_deferred_backlog_to_client' => $show,
+        ]);
     }
 
     /**

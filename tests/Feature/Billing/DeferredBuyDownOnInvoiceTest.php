@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Exceptions\DraftRegenerationRequired;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
@@ -27,6 +28,7 @@ use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
 /**
@@ -36,6 +38,7 @@ use Tests\TestCase;
  */
 final class DeferredBuyDownOnInvoiceTest extends TestCase
 {
+    use CallsMcp;
     use RefreshDatabase;
 
     private Workspace $workspace;
@@ -59,7 +62,9 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->project = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Synthetic project']);
         $this->agreement = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
             'title' => 'Synthetic retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-04-01',
-            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000]);
+            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+            // Opted in, so the client copies these tests render list the backlog.
+            'show_deferred_backlog_to_client' => true]);
     }
 
     public function test_cadence_document_lists_the_remaining_deferred_entries_oldest_first(): void
@@ -254,26 +259,110 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame([$waiting->id], $this->backlogIds());
     }
 
-    public function test_attaching_a_settlement_preserves_the_legacy_hours_statement_fallback(): void
+    /**
+     * The reproduction from #609: a legacy aggregate-only draft cannot say
+     * which entries its backlog counts, so a settlement of work approved after
+     * generation is refused until the draft is explicitly regenerated.
+     */
+    public function test_a_legacy_aggregate_only_draft_with_a_backlog_is_refused_until_it_is_regenerated(): void
     {
         $this->ordinary(600, '2026-04-10');
         $this->ordinary(600, '2026-05-10');
-        $this->entry(240, '2026-04-01');
-        $waiting = $this->entry(120, '2026-04-02');
+        $waiting = $this->entry(240, '2026-04-01');
+        $draft = $this->cadenceDraft();
+        $this->assertSame([4.0, 1], [$draft->hoursStatement()?->deferredBacklogHours, $draft->hoursStatement()?->deferredBacklogEntries]);
+        // A legacy draft: the aggregate statement stands, no itemized snapshot.
+        $draft->forceFill(['deferred_work_statement' => null])->save();
+        $newlyApproved = $this->entry(60, '2026-04-02');
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $this->assertSame([$newlyApproved->id], array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $preview->selection->entries), 'FIFO skips the larger entry');
+        $before = $draft->fresh();
+
+        try {
+            $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
+            $this->fail('A legacy draft with a backlog and no itemized snapshot must be refused.');
+        } catch (DraftRegenerationRequired $refusal) {
+            $this->assertSame('Regenerate this draft first; regeneration may change its charges.', $refusal->getMessage());
+            $this->assertSame('draft_regeneration_required', $refusal->refusalCode());
+        }
+
+        // Nothing was reserved, rewritten or regenerated behind the caller's back.
+        $after = $draft->fresh();
+        $this->assertSame($before?->hours_statement, $after?->hours_statement);
+        $this->assertSame($before?->total_amount, $after?->total_amount);
+        $this->assertNull($after?->deferred_work_statement);
+        $this->assertSame(0, $draft->lines()->where('type', 'deferred_buydown')->count());
+        $this->assertSame(0, $newlyApproved->invoiceLines()->count());
+        $this->assertEqualsCanonicalizing([$waiting->id, $newlyApproved->id], $this->backlogIds());
+
+        // The supported path: regenerate explicitly, re-read, preview again.
+        $regenerated = app(ClientInvoicingService::class)->regenerateDraftInvoice($draft->fresh())?->fresh();
+        $this->assertInstanceOf(ClientInvoice::class, $regenerated);
+        $this->assertNotNull($regenerated->deferredWorkSnapshot());
+        $this->assertSame([5.0, 2], [$regenerated->hoursStatement()?->deferredBacklogHours, $regenerated->hoursStatement()?->deferredBacklogEntries]);
+        $again = $billing->preview($this->workspace, $this->agreement, $request);
+        $this->assertSame([$newlyApproved->id], array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $again->selection->entries));
+
+        $host = $billing->create($this->workspace, $this->agreement, $request, $again->version, $regenerated);
+
+        $statement = $host->hoursStatement();
+        $this->assertNotNull($statement);
+        $this->assertSame([4.0, 1], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries], 'The other entry keeps waiting');
+        $this->assertSame([$waiting->id], array_column($host->deferredWorkSnapshot()->entries ?? [], 'id'));
+        $this->assertSame([$newlyApproved->id], $host->lines()->where('type', 'deferred_buydown')->sole()
+            ->timeEntries()->pluck('client_time_entries.id')->all());
+        $this->assertSame(110000, $host->total_amount, 'The settled hour is charged exactly once');
+        $this->assertSame([$waiting->id], $this->backlogIds());
+    }
+
+    public function test_a_legacy_aggregate_only_draft_with_no_backlog_still_attaches(): void
+    {
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
         $draft = $this->cadenceDraft();
         $draft->forceFill(['deferred_work_statement' => null])->save();
+        $this->assertSame([0.0, 0], [$draft->hoursStatement()?->deferredBacklogHours, $draft->hoursStatement()?->deferredBacklogEntries]);
+        $entry = $this->entry(60, '2026-04-02');
         $billing = app(DeferredBuyDownAction::class);
-        $request = DeferredBuyDownRequest::from(['hours' => 4]);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
         $preview = $billing->preview($this->workspace, $this->agreement, $request);
 
         $host = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $draft);
 
-        $statement = $host->hoursStatement();
-        $this->assertNotNull($statement);
-        $this->assertSame([2.0, 1], [$statement->deferredBacklogHours, $statement->deferredBacklogEntries]);
+        $this->assertSame([$entry->id], $host->lines()->where('type', 'deferred_buydown')->sole()
+            ->timeEntries()->pluck('client_time_entries.id')->all());
+        $this->assertSame([0.0, 0], [$host->hoursStatement()?->deferredBacklogHours, $host->hoursStatement()?->deferredBacklogEntries]);
         $this->assertNull($host->deferred_work_statement);
-        $this->assertSame(140000, $host->total_amount);
-        $this->assertSame([$waiting->id], $this->backlogIds());
+        $this->assertSame(110000, $host->total_amount);
+        $this->assertSame([], $this->backlogIds());
+    }
+
+    public function test_rest_and_mcp_refuse_a_legacy_backlog_attachment_with_the_same_code(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+        $this->ordinary(600, '2026-04-10');
+        $this->ordinary(600, '2026-05-10');
+        $this->entry(240, '2026-04-01');
+        $draft = $this->cadenceDraft();
+        $draft->forceFill(['deferred_work_statement' => null])->save();
+        $this->entry(60, '2026-04-02');
+        $this->actingAsMcp($this->owner, ['mcp:use', 'billing:read', 'billing:write']);
+        $base = '/api/v1/workspaces/'.$this->workspace->public_id.'/agreements/'.$this->agreement->public_id.'/deferred-backlog';
+        $preview = $this->getJson($base.'/preview?hours=1')->assertOk()->json('data');
+        $body = ['hours' => 1, 'expected_backlog_version' => $preview['backlog_version'], 'invoice_id' => $draft->public_id];
+
+        $this->postJson($base.'/invoices', $body, ['Idempotency-Key' => 'synthetic-legacy-attach-rest'])
+            ->assertStatus(422)
+            ->assertExactJson(['message' => DraftRegenerationRequired::MESSAGE, 'code' => DraftRegenerationRequired::CODE]);
+
+        $mcp = $this->callTool($this->initialize(), 'invoices.create_deferred_buydown', ['workspace_id' => $this->workspace->public_id,
+            'agreement_id' => $this->agreement->public_id, 'idempotency_key' => 'synthetic-legacy-attach-mcp', ...$body]);
+        $this->assertTrue($mcp['result']['isError'] ?? false, (string) json_encode($mcp));
+        $this->assertSame(DraftRegenerationRequired::MESSAGE.' (code: '.DraftRegenerationRequired::CODE.')', $mcp['result']['content'][0]['text'] ?? null);
+        $this->assertSame(0, $draft->lines()->where('type', 'deferred_buydown')->count());
+        $this->assertNull($draft->fresh()?->deferred_work_statement);
     }
 
     public function test_settling_work_after_the_hosts_period_leaves_its_statement_alone(): void

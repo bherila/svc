@@ -190,6 +190,17 @@ final class AgentInlineSchemas
                 'accepted_without_a_linked_agreement' => ['type' => 'integer', 'minimum' => 0],
                 'unlinked_agreements' => ['type' => 'integer', 'minimum' => 0],
             ],
+            'billing.audit_deferred_lineage_visibility' => [
+                'with_unverifiable_lineage' => ['type' => 'integer', 'minimum' => 0],
+                'hidden_from_project_scoped_members' => ['type' => 'integer', 'minimum' => 0],
+                'affected_project_scoped_memberships' => ['type' => 'integer', 'minimum' => 0],
+                'hidden_invoices' => ['type' => 'array', 'maxItems' => 100, 'items' => [
+                    'type' => 'object', 'additionalProperties' => false, 'required' => ['id', 'invoice_number'],
+                    'properties' => ['id' => ['type' => 'string', 'format' => 'uuid'], 'invoice_number' => ['type' => ['string', 'null']]],
+                ]],
+                'hidden_invoices_truncated' => ['type' => 'boolean'],
+                'remedy' => ['type' => 'string'],
+            ],
             default => throw new \LogicException("Unknown billing audit: {$audit}"),
         };
     }

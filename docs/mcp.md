@@ -368,8 +368,9 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing.audit_unplaceable_invoices`,
 `billing.audit_undated_collectible_invoices`, and
 `billing.audit_missing_billed_overage`,
-`billing.preflight_schedule_generation`, and
-`billing.audit_unlinked_proposal_agreements`. While Square is configured, managers also
+`billing.preflight_schedule_generation`,
+`billing.audit_unlinked_proposal_agreements`, and
+`billing.audit_deferred_lineage_visibility`. While Square is configured, managers also
 see the read-only `square.*` pass-through tools described under
 [Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
 `finance:read` also see `finance.invoice_payments.list`,
@@ -524,6 +525,7 @@ resolves authenticated context, validates its DTO, and maps the result.
 | `billing.audit_missing_billed_overage`            | `svc:billing:audit-missing-billed-overage`; `AgentBillingAuditReadService` over `MissingBilledOverageAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts only; no record identifiers or raw models                                                                                                                      | `mcp.read.billing.audit_missing_billed_overage`; aggregate/redaction and authorization tests                          |
 | `billing.preflight_schedule_generation`           | `svc:billing:preflight-schedule-generation`; `AgentBillingAuditReadService` over `ScheduleGenerationPreflight`            | `billing:read`; manager; the caller's workspace only                                | Counts per refusal reason and schedule defect, through the workspace's today, at most 60 periods per schedule and 5 calls per ten minutes; `complete` false when a backlog was not fully examined | `mcp.read.billing.preflight_schedule_generation`; parity and tenant-isolation tests                                   |
 | `billing.audit_unlinked_proposal_agreements`      | `svc:engagement:audit-unlinked-proposal-agreements`; `AgentBillingAuditReadService` over `UnlinkedProposalAgreementAuditor` | `billing:read`; manager; the caller's workspace only                              | Counts only; nothing is repaired or guessed                                                                                                                                     | `mcp.read.billing.audit_unlinked_proposal_agreements`; parity and tenant-isolation tests                              |
+| `billing.audit_deferred_lineage_visibility`       | `svc:billing:audit-deferred-lineage-visibility`; `AgentBillingAuditReadService` over `DeferredLineageVisibilityAuditor`     | `billing:read`; manager; the caller's workspace only                              | Counts, up to 100 affected invoice ids and numbers, and the supported fix; nothing about the deferred work, its projects or members; nothing is repaired                        | `mcp.read.billing.audit_deferred_lineage_visibility`; parity and tenant-isolation tests                               |
 | `revenue.summary`, `revenue.monthly`, `revenue.projection`, `revenue.clients` | Dashboard, client roster and client overview figures; `RevenueReadService` over `ProjectionInputsRepository`, `RevenueActualsRepository` and `AgreementLedgerRepository`, computed by `RecurringRevenueProjector` and `RevenueSummaries` | `revenue:read` (not implied by `finance:read`); manager; workspace-scoped reads, `client_id` resolved within the workspace | Aggregates and per-client figures in minor units; every response carries `assumptions`; no invoice or payment identifiers | `mcp.read.revenue`; REST/MCP/DTO parity, schema, isolation and scope tests (`RevenueRestTest`, `RevenueRepositoriesTest`) |
 | Duplicate-time diagnostics                        | No checked-in workflow/service establishes the grouping key                                                               | Deferred from read GA                                                               | Not implemented: a canonical application query, grouping contract, bounded DTO, and privacy review must exist before MCP can adapt it                                           | No flag or release cohort                                                                                             |
 | Session workspace selection                       | Existing clients select an authorized workspace on every scoped call                                                      | Accepted v1 compatibility contract                                                  | Credential/client sessions are bound; every selector is active-membership scoped and reauthorized per call. Session pinning requires a future versioned migration.              | Context, membership-removal, credential-binding, and multi-workspace compatibility tests                              |
@@ -780,6 +782,23 @@ the same client.
 `company_id`. It follows invoice visibility, defaults to 25 rows and caps pages
 at 100 using an opaque cursor. Portal readers see only payments on their visible
 issued, partially paid or paid invoices. Project-scoped portal users must be granted every project on an invoice; mixed-grant and unattributed invoices are withheld.
+
+**Invoice visibility for project-scoped portal users (#610).** `invoices.list`,
+`invoices.get`, `payments.list`, the portal invoice list and screen, the invoice PDF
+and automatic invoice email and payment-reminder recipients all apply one rule,
+`PortalInvoiceQuery`, in one bounded SQL query. A project-scoped portal user reads an
+invoice only when every project attributed to it is granted to them: the agreement's
+project, every line's project, and every project whose work the invoice's stored
+**Still deferred** snapshot lists. The snapshot's projects are frozen when it is
+captured (snapshot version 2, indexed in `client_invoice_deferred_projects`) and are
+never read from the live, editable time entries. A legacy (version 1) snapshot recorded
+no projects; while it lists any entry its lineage is unverifiable and counts as
+ungranted, so project-scoped users are refused that invoice whatever they are granted.
+A legacy snapshot that lists nothing hides nothing. Company-wide portal users and
+workspace managers keep access, and still see the legacy snapshot's section. A refused
+invoice answers exactly as one that does not exist (404, or the MCP not-found error),
+and disclosure stays indivisible: an invoice is never shown with items redacted.
+`billing.audit_deferred_lineage_visibility` lists the invoices this hides and the fix.
 The reference, the operator's private `notes` and the
 `external_finance_transaction_uuid` the payment was recorded against are returned
 to workspace owners/admins - who alone may write them - and are null for every
@@ -1521,6 +1540,7 @@ manager, and both `AGENT_API_WRITES_ENABLED` and
 | `billing.audit_missing_billed_overage` | `GET /billing-audits/missing-billed-overage` | `billing:read` |
 | `billing.preflight_schedule_generation` | `GET /billing-audits/schedule-generation-preflight` | `billing:read` |
 | `billing.audit_unlinked_proposal_agreements` | `GET /billing-audits/unlinked-proposal-agreements` | `billing:read` |
+| `billing.audit_deferred_lineage_visibility` | `GET /billing-audits/deferred-lineage-visibility` | `billing:read` |
 
 The aggregate audits answer 404 to a caller who does not manage the workspace,
 as for an unseen workspace, and the preflight answers 429 with `Retry-After`
@@ -1975,7 +1995,15 @@ keeps the settlement lines and their claim; voiding or discarding the host
 releases the work exactly as voiding a settlement draft does. An issued host
 cannot be reopened, and time it settles cannot be edited, deleted or unapproved
 (409) until the host is voided or discarded; other time on the host stays
-editable.
+editable. A legacy host whose stored hours statement reports a deferred backlog
+but carries no itemized deferred-work snapshot is refused with 422 and
+`{"message": "Regenerate this draft first; regeneration may change its charges.", "code": "draft_regeneration_required"}`;
+the MCP tool error carries the same sentence followed by
+`(code: draft_regeneration_required)` (#609). Regeneration may change the draft's
+charges, so it is never done implicitly: regenerate the draft, re-read its
+versions, preview again and retry. A legacy host with no backlog attaches as
+before. Any API refusal that carries a stable code reports it in the error body's
+optional `code` field.
 
 `agreements.create` and `agreements.update` also accept the boolean
 `show_deferred_backlog_to_client`, and agreement reads report it. It defaults to

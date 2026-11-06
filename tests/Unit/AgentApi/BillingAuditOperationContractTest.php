@@ -31,6 +31,7 @@ final class BillingAuditOperationContractTest extends TestCase
         'billing.audit_missing_billed_overage' => ['billing-audits.missing-billed-overage', '/workspaces/{workspace}/billing-audits/missing-billed-overage', 'missingBilledOverage', 'MissingBilledOverageAuditResponse'],
         'billing.preflight_schedule_generation' => ['billing-audits.schedule-generation-preflight', '/workspaces/{workspace}/billing-audits/schedule-generation-preflight', 'scheduleGenerationPreflight', 'ScheduleGenerationPreflightResponse'],
         'billing.audit_unlinked_proposal_agreements' => ['billing-audits.unlinked-proposal-agreements', '/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements', 'unlinkedProposalAgreements', 'UnlinkedProposalAgreementAuditResponse'],
+        'billing.audit_deferred_lineage_visibility' => ['billing-audits.deferred-lineage-visibility', '/workspaces/{workspace}/billing-audits/deferred-lineage-visibility', 'deferredLineageVisibility', 'DeferredLineageVisibilityAuditResponse'],
     ];
 
     public function test_each_audit_is_one_manager_only_rest_read_that_its_mcp_tool_reaches(): void

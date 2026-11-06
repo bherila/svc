@@ -188,6 +188,16 @@
             "mcp.switch:attachments.visibility.update"
         ]
     },
+    "billing.audit_deferred_lineage_visibility": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.audit_deferred_lineage_visibility",
+            "mcp.switch:billing.audit_deferred_lineage_visibility"
+        ]
+    },
     "billing.audit_missing_billed_overage": {
         "scopes": [
             "billing:read"
