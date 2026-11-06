@@ -202,6 +202,7 @@ try {
         SVC_LAYOUT_PROJECTS: projectsOnly ? '1' : '0',
         SVC_LAYOUT_WORKSPACES: workspacesOnly ? '1' : '0',
         SVC_LAYOUT_PAYMENTS: paymentsOnly ? '1' : '0',
+        SVC_LAYOUT_CREDENTIALS: credentialsOnly ? '1' : '0',
         SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
         SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
@@ -687,6 +688,47 @@ try {
             section.getByRole('button', { name: 'Create API token' }),
         ).toBeDisabled();
         await capture('credentials', 'real-index', width);
+
+        // The per-credential "Show all tools" switches, on seeded connections
+        // with unbroken names. One switch is changed and put back through the
+        // real endpoint, against this run's disposable database.
+        const settings = page.locator('[data-test="mcp-credential-settings"]');
+        await expect(
+            settings.getByRole('heading', { name: 'Your connections' }),
+        ).toBeVisible();
+        await expect(settings.getByRole('switch')).toHaveCount(4);
+        await settings.scrollIntoViewIfNeeded();
+        await capture('credentials', 'connections', width);
+
+        const short = settings.getByRole('switch', {
+            name: 'Show all tools for Short Synthetic App',
+        });
+        await expect(short).not.toBeChecked();
+
+        for (const checked of [true, false]) {
+            const [saved] = await Promise.all([
+                page.waitForResponse(
+                    (response) =>
+                        response.url().includes('/account/mcp-credentials/') &&
+                        response.request().method() === 'PUT',
+                ),
+                short.click(),
+            ]);
+
+            if (saved.status() !== 200) {
+                failures.push(
+                    `credentials/connections at ${width}px: the switch answered ${saved.status()}: ${(await saved.text()).slice(0, 200)}`,
+                );
+            }
+
+            if (checked) {
+                await expect(short).toBeChecked();
+            } else {
+                await expect(short).not.toBeChecked();
+            }
+        }
+
+        await assertNoOverflowRisks('credentials/connections', width);
 
         await section
             .getByRole('button', { name: 'Read-only' })
@@ -4018,7 +4060,7 @@ try {
                       : projectsOnly
                         ? 'Synthetic project settings with oversized descriptions, repository and member names at every required width; canonical API edit, membership grant and creation verified in the disposable database.'
                         : credentialsOnly
-                          ? 'MCP setup credential forms (#582): grouped scope pickers with presets and the Admin group, from the real index and from an oversized one with unbroken labels, ids, descriptions and saved credentials, at every required width. Nothing is submitted.'
+                          ? 'MCP setup credential forms (#582): grouped scope pickers with presets and the Admin group, from the real index and from an oversized one with unbroken labels, ids, descriptions and saved credentials, and the per-credential Show all tools switches on oversized connection names, at every required width. Only one Show all tools switch is changed and put back; nothing else is submitted.'
                           : workspacesOnly
                             ? 'Workspace selector and filled creation dialog at all required widths, with oversized fixture names; real session API creation and finished result navigation verified in the disposable database.'
                             : invoiceActionsOnly

@@ -33,6 +33,7 @@ use App\Services\Files\AttachmentStorageService;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
+use App\Services\Mcp\McpCredentialSettings;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\SharedProjects\SharedProjectParticipations;
 use App\Services\Square\Mirror\SquareMirrorRepository;
@@ -54,10 +55,13 @@ use App\Support\Payments\PaymentProcessor;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use App\Support\WorkspaceClock;
+use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Laravel\Passport\Passport;
 
 if (PHP_SAPI !== 'cli') {
     throw new RuntimeException('Browser fixtures can only be created from the CLI.');
@@ -749,6 +753,37 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
         'document_portal' => route('portal.invoice', [$company, $documentInvoice], absolute: false),
         'document_proforma' => route('clients.proforma', [$workspace, $company, $proformaAgreement], absolute: false),
     ];
+}
+
+// MCP credentials for the MCP setup page's "Show all tools" switches (--credentials):
+// three connected apps (one on) and an MCP token, each with a name that has no
+// break opportunity. Synthetic ids and reserved domains only.
+if (getenv('SVC_LAYOUT_CREDENTIALS') === '1') {
+    $makeClient = static function (string $name, bool $personal = false): string {
+        $id = (string) Str::uuid();
+        Passport::client()->forceFill([
+            'id' => $id, 'name' => $name, 'redirect_uris' => ['https://client.example.test/callback'],
+            'grant_types' => $personal ? ['personal_access'] : ['authorization_code', 'refresh_token'], 'revoked' => false,
+        ])->save();
+
+        return $id;
+    };
+    $makeToken = static function (string $client, string $name) use ($owner): string {
+        $token = Passport::token()->forceFill([
+            'id' => Str::random(80), 'user_id' => $owner->id, 'client_id' => $client, 'name' => $name,
+            'scopes' => ['mcp:use'], 'revoked' => false, 'expires_at' => now()->addYear(),
+            'resource_uri' => OAuthResourceIndicator::resource('mcp'),
+        ]);
+        $token->save();
+
+        return (string) $token->id;
+    };
+    $on = $makeClient(str_repeat('SyntheticConnectedAppNameWithoutBreaks', 4));
+    $makeToken($on, 'Synthetic grant');
+    $makeToken($makeClient('Short Synthetic App'), 'Synthetic grant');
+    $makeToken($makeClient(str_repeat('SyntheticConnectedAppNameWithoutBreaks', 4).'Second'), 'Synthetic grant');
+    $tokenId = $makeToken($makeClient('Synthetic personal client', personal: true), (string) config('bherila-auth.oauth_server.credentials.token_name_prefix').str_repeat('SyntheticMcpTokenNameWithoutBreaks', 4));
+    app(McpCredentialSettings::class)->setForConnection($owner->id, $on, true);
 }
 
 $paymentPages = [];

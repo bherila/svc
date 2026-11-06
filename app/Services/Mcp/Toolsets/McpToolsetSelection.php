@@ -43,6 +43,18 @@ final readonly class McpToolsetSelection
     }
 
     /**
+     * What a connection starts with, given everything it said when connecting:
+     * the full list when the header asks for it or the credential's own
+     * "Show all tools" setting is on. Either one turns it on; neither can turn
+     * it off, so the header still works with the setting off and the setting
+     * works with no header.
+     */
+    public static function forConnection(?string $connectHeader, bool $credentialShowsAllTools): self
+    {
+        return $credentialShowsAllTools ? self::everything() : self::fromConnectHeader($connectHeader);
+    }
+
+    /**
      * Read back what {@see self::toSession()} stored.
      *
      * A session with nothing stored was opened before progressive discovery

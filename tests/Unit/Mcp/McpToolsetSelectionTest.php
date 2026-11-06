@@ -122,4 +122,29 @@ final class McpToolsetSelectionTest extends TestCase
         $this->assertSame($everything, $everything->disable(['projects']));
         $this->assertTrue($everything->enable(['projects'])->all);
     }
+
+    /** @return iterable<string, array{?string, bool, bool}> header, credential setting, whether the full list is on */
+    public static function connections(): iterable
+    {
+        yield 'neither' => [null, false, false];
+        yield 'setting only' => [null, true, true];
+        yield 'header only' => ['all', false, true];
+        yield 'both' => ['all', true, true];
+        yield 'header with spaces and capitals' => ['  ALL ', false, true];
+        yield 'a header that does not opt in, setting off' => ['progressive', false, false];
+        yield 'a header that does not opt in cannot turn the setting off' => ['progressive', true, true];
+        yield 'an empty header, setting off' => ['', false, false];
+        yield 'an empty header cannot turn the setting off' => ['', true, true];
+        yield 'a near miss, setting off' => ['al', false, false];
+    }
+
+    #[DataProvider('connections')]
+    public function test_the_header_or_the_credential_setting_turns_the_full_list_on_and_neither_turns_it_off(?string $header, bool $setting, bool $everything): void
+    {
+        $selection = McpToolsetSelection::forConnection($header, $setting);
+
+        $this->assertSame($everything, $selection->all);
+        $this->assertSame([], $selection->enabled);
+        $this->assertSame($everything, $selection->includes('projects'));
+    }
 }

@@ -10,6 +10,7 @@ use App\Http\Controllers\ClientTaskOrganizationController;
 use App\Http\Controllers\ClientTaskPlanningController;
 use App\Http\Controllers\Finance\FinancePaymentLinkController;
 use App\Http\Controllers\HistoricalLibraryController;
+use App\Http\Controllers\McpCredentialSettingsController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
@@ -65,6 +66,16 @@ Route::middleware('auth')->group(function (): void {
     // path: it can only ever write the signed-in person's row.
     Route::patch('/account/preferences', [AccountPreferencesController::class, 'update'])
         ->name('account.preferences.update');
+
+    // The "Show all tools" setting of one of the signed-in person's own MCP
+    // credentials. The credential is looked up among that person's live
+    // credentials, so it can only ever write their own; it grants nothing.
+    Route::put('/account/mcp-credentials/connections/{client}', [McpCredentialSettingsController::class, 'connection'])
+        ->middleware('throttle:30,1')
+        ->name('mcp.credentials.connections.update');
+    Route::put('/account/mcp-credentials/tokens/{token}', [McpCredentialSettingsController::class, 'token'])
+        ->middleware('throttle:30,1')
+        ->name('mcp.credentials.tokens.update');
 
     // What the command palette asks as you type. Throttled rather than
     // debounced-and-trusted: the debounce lives in the browser and a browser
