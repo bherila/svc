@@ -525,6 +525,34 @@ compare the figures:
   allocation plan and capacity ledger), so the preview and the issued invoice
   can't disagree.
 
+## 11. MCP: progressive discovery
+
+Today `tools/list` returns every tool the principal is authorized for,
+filtered by scope, role and feature flag and paged at 100, and the server
+does not advertise list-change notifications. A fully scoped manager sees
+about 200 tools at once.
+
+Proposal:
+
+- **Core set at initialize**: `context.get`, `search`, `toolsets.list`,
+  `toolsets.enable`, plus the time-logging tools the `log-time-across-projects`
+  prompt needs.
+- **Toolsets** taken from `AgentOperationCatalog` scope groups: projects,
+  tasks, time, clients, proposals, billing, payments, expenses, finance,
+  square, and the new `revenue` (section 2 projections). `toolsets.list`
+  returns each toolset's name, description and tool count, counting only tools
+  the principal may call. `toolsets.enable` adds a toolset to the session
+  (sessions are already cached per credential) and sends
+  `notifications/tools/list_changed`, so the server now advertises
+  `tools.listChanged`.
+- **Enabling grants nothing**: it only reveals tools that scope-filtered
+  discovery already allows. Every call is still authorized again.
+- **Compatibility**: clients that don't handle `list_changed` can ask for
+  everything at connect time (`toolsets=all`, or a setting on the OAuth
+  client). Tool names, schemas and REST parity don't change.
+  `AgentMcpContractTest` gains a test that the core set plus every toolset
+  equals today's full list.
+
 ## Delivery slices (stacked commits, one PR)
 
 0. **Help scaffolding** (section 8): the `docs/help` loader, glossary,
@@ -547,6 +575,8 @@ compare the figures:
    and comments, local linked projects.
 10. **Reviewer grants and the cross-workspace approval queue** (7c, 7d).
 11. **Light workspace and approved timesheet** (7e).
+13. **MCP progressive discovery** (section 11), together with the revenue
+    tools from section 2.
 12. **Invoice document** (section 10): `InvoiceDocument` DTO and grouping, the
     golden tests against the current template, then the new PDF, operator page,
     portal page and proforma.
