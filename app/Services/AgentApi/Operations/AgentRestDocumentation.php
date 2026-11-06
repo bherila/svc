@@ -705,7 +705,7 @@ final class AgentRestDocumentation
             'clients.portal_access.update' => [
                 'method' => 'PATCH',
                 'scopes' => ['clients:write', 'clients:read'],
-                'description' => 'Change a portal contact to the whole client or selected projects. Requires its current expected_version, explicit confirmation and an idempotency key.',
+                'description' => 'Change a portal contact to the whole client or selected projects, and optionally set can_approve_time_and_expenses: true grants and false denies approval of the client\'s hours and expenses even for the billing contact, null returns to the default (the billing contact), and omitting it leaves the setting unchanged. Requires its current expected_version, explicit confirmation and an idempotency key.',
                 'parameters' => ['WorkspaceId', self::uuidPath('client'), self::uuidPath('user'), 'IdempotencyKey'],
                 'request' => 'clients_portal_access_updateRequest',
                 'response' => 'PortalContactResponse',

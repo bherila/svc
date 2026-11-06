@@ -655,6 +655,15 @@ Connect and no Square OAuth. Each workspace stores its own keys.
   workspace.
   - SVC validates the key with a read call, creates the workspace's webhook
     endpoint through the Stripe API, and stores its signing secret.
+  - A publishable key entered beside it is checked for mode (before any call
+    to Stripe) and then against the account: the restricted key creates a
+    SetupIntent (`usage=off_session`, no customer, no payment method), the
+    publishable key reads it back with its client secret, which works only
+    inside one account, and the restricted key cancels it in a `finally`. A
+    404 / `resource_missing` is a field error on `publishable_key`; a key
+    without SetupIntents Write, an unreachable Stripe or any unexpected
+    answer refuses the save, never accepts it silently. The restricted key
+    therefore needs SetupIntents: Write when a publishable key is entered.
   - Charges use the workspace's own key.
 - **Square:** an owner or admin enters an access token, location,
   environment and webhook signature key once per workspace.

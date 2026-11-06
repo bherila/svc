@@ -563,7 +563,7 @@ counts only.
 A workspace is the business that gets paid, so its payment credentials belong to
 it: not to the deployment and not to a client. Each workspace stores its own
 Stripe restricted key and its own Square access token, entered once by an owner
-or admin on `/workspaces/{workspace}/payments`. There is no Stripe Connect and
+or admin on `/workspaces/{workspace}/payments`. A Stripe publishable key entered with the restricted key is verified against its account on save (a short-lived SetupIntent made with the restricted key, read back with the publishable key and cancelled), so the restricted key needs SetupIntents: Write. There is no Stripe Connect and
 no OAuth; the `PaymentConnectionAdapter` interface is the seam a Connect or
 OAuth adapter would implement later, and nothing outside the adapters knows how a
 credential was obtained.
@@ -670,6 +670,10 @@ processor has an `environment` row, the environment credentials no longer serve
 confined to that workspace, until the operator re-points them. A follow-up removes
 the environment path. The command and its tests target local disposable databases
 only.
+
+The step-by-step procedure (prerequisites, preview, verification on the Payments page
+and with `svc:square:status`, and rollback) is in
+[`docs/runbooks/payment-connections-migration.md`](runbooks/payment-connections-migration.md).
 
 ## Acknowledge an allocation review
 

@@ -1367,8 +1367,8 @@ final class AgentOperationCatalog
             ),
             $this->tool(
                 'clients.portal_access.update',
-                'Change portal scope',
-                'Change a portal contact to the whole client or selected projects. Requires explicit confirmation and an idempotency key.',
+                'Change portal scope or approval',
+                'Change a portal contact to the whole client or selected projects, and optionally set whether they can approve the client\'s hours and expenses (true grants and false denies, even for the billing contact; null returns to the default, the billing contact; omit to leave it). Requires explicit confirmation and an idempotency key.',
                 [AgentMcpPortalAccessTools::class, 'update'],
                 Effect::Destructive,
                 true,

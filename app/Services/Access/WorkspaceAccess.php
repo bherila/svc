@@ -25,6 +25,7 @@ use App\Support\Access\StaffAuthority;
 use App\Support\Access\StaffRemoval;
 use App\Support\Access\StaffRole;
 use App\Support\AgentApi\ProjectRole;
+use App\Support\Approval\PortalApprovalChange;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Builder;
@@ -257,23 +258,34 @@ final class WorkspaceAccess
      * project limit; a `projects` scope replaces them with exactly the given
      * set.
      *
+     * With an approval change, the contact's grant to approve hours and
+     * expenses is set in the same locked write (`null` returns it to the
+     * default). Each part that changes is audited on its own, and a part that
+     * would change nothing writes and audits nothing.
+     *
      * @param  list<string>  $projectPublicIds
      */
-    public function changePortalScope(AccessMutationContext $context, ClientCompany $company, User $user, PortalAccessScope $scope, array $projectPublicIds = [], ?string $expectedVersion = null): ClientCompanyMembership
+    public function changePortalScope(AccessMutationContext $context, ClientCompany $company, User $user, PortalAccessScope $scope, array $projectPublicIds = [], ?string $expectedVersion = null, ?PortalApprovalChange $approval = null): ClientCompanyMembership
     {
-        return $this->portal($context, $company, $user, $projectPublicIds, function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user, $scope, $projectPublicIds, $expectedVersion): ClientCompanyMembership {
+        return $this->portal($context, $company, $user, $projectPublicIds, function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user, $scope, $projectPublicIds, $expectedVersion, $approval): ClientCompanyMembership {
             $membership = $this->lockedPortalMembership($workspace, $company, $user) ?? throw new AccessMutationRefused(AccessRefusal::NotPortalMember);
             $before = $this->lockedPortalState($workspace, $membership, $locked);
             $this->assertPortalVersion($membership, $before, $expectedVersion);
             $projects = $this->portalProjects($company, $scope, $projectPublicIds, $locked);
             $requested = new PortalAccessState($scope, array_values($projects->map(static fn (ClientProject $project): string => $project->public_id)->all()));
-            if ($before->toArray() === $requested->toArray()) {
-                return $membership;
+
+            if ($before->toArray() !== $requested->toArray()) {
+                $membership->forceFill(['access_scope' => $scope->value])->save();
+                $after = $this->replaceProjectLimits($workspace, $membership, $scope, $projects);
+                $this->audit->record($context, $workspace, AccessAuditAction::PortalScopeChanged, $user, $before->toArray(), $after->toArray(), $company->public_id);
             }
 
-            $membership->forceFill(['access_scope' => $scope->value])->save();
-            $after = $this->replaceProjectLimits($workspace, $membership, $scope, $projects);
-            $this->audit->record($context, $workspace, AccessAuditAction::PortalScopeChanged, $user, $before->toArray(), $after->toArray(), $company->public_id);
+            if ($approval instanceof PortalApprovalChange && $membership->can_approve_time_and_expenses !== $approval->grant) {
+                $was = $membership->can_approve_time_and_expenses;
+                $membership->forceFill(['can_approve_time_and_expenses' => $approval->grant])->save();
+                $this->audit->record($context, $workspace, AccessAuditAction::PortalApprovalChanged, $user,
+                    ['can_approve_time_and_expenses' => $was], ['can_approve_time_and_expenses' => $approval->grant], $company->public_id);
+            }
 
             return $membership;
         });

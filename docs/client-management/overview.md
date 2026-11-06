@@ -135,6 +135,14 @@ It is kept as a break-glass tool by owner decision (#460): the client's settings
 page is the everyday way to change a contact's scope, and the command is for when
 no workspace manager can reach that page.
 
+The same operation sets a contact's **Can approve time and expenses** grant
+(`can_approve_time_and_expenses`, stored on the portal membership). With no grant the
+client's billing contact may approve; a grant of `true` or `false` decides either way,
+even for the billing contact, and `null` returns to the default. The change is written
+under the same access lock as a scope change and audited as `portal.approval_changed`
+(a combined request audits the scope and the grant separately). The command does not
+set it; the settings page, REST and MCP do.
+
 **Changing access.** Staff memberships, staff project assignments and portal
 memberships are written only through `App\Services\Access\WorkspaceAccess`
 (one project's assignment also through

@@ -296,6 +296,58 @@ final class AgentPortalAccessTest extends TestCase
         $this->assertSame(2, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->whereNotNull('operation_id')->count());
     }
 
+    #[DataProvider('transports')]
+    public function test_the_approval_grant_is_set_denied_reset_and_left_alone_the_same_way_over_rest_and_mcp(string $transport): void
+    {
+        [$workspace, $owner, $company, $person] = $this->fixture();
+        $company->forceFill(['billing_email' => $person->email])->save();
+        $this->seedPortal($owner, $company, $person);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $contact = fn (): array => $this->success($this->portalOperation($transport, 'list', $workspace, $company), 'list')['data'][0];
+        $update = fn (array $extra, string $key): array => $this->success($this->portalOperation($transport, 'update', $workspace, $company,
+            ['scope' => 'company', 'confirm' => true, 'expected_version' => $contact()['version'], ...$extra], $person, $key), 'update')['data'];
+
+        $this->assertNull($contact()['can_approve_time_and_expenses']);
+        $this->assertSame(['allowed' => true, 'basis' => 'billing_contact', 'label' => 'Billing contact (default)', 'default_label' => 'Billing contact (default)'], $contact()['approval']);
+
+        $denied = $update(['can_approve_time_and_expenses' => false], 'deny');
+        $this->assertFalse($denied['can_approve_time_and_expenses']);
+        $this->assertSame(['allowed' => false, 'basis' => 'denied'], array_intersect_key($denied['approval'], ['allowed' => 1, 'basis' => 1]));
+        $this->assertFalse(ClientCompanyMembership::query()->where('user_id', $person->id)->sole()->can_approve_time_and_expenses);
+
+        // Left out, the grant stays.
+        $this->assertFalse($update([], 'omitted')['can_approve_time_and_expenses']);
+        $this->assertTrue($update(['can_approve_time_and_expenses' => true], 'grant')['can_approve_time_and_expenses']);
+
+        // An explicit null is a decision: back to the default.
+        $reset = $update(['can_approve_time_and_expenses' => null], 'reset');
+        $this->assertNull($reset['can_approve_time_and_expenses']);
+        $this->assertSame('billing_contact', $reset['approval']['basis']);
+        $this->assertNull(ClientCompanyMembership::query()->where('user_id', $person->id)->sole()->can_approve_time_and_expenses);
+
+        $events = AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'portal.approval_changed')->orderBy('id')->get();
+        $this->assertSame([[null, false], [false, true], [true, null]], $events->map(fn (AccessAuditEvent $event): array => [$event->before_state['can_approve_time_and_expenses'], $event->after_state['can_approve_time_and_expenses']])->all());
+        $this->assertSame(0, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'portal.scope_changed')->count());
+    }
+
+    #[DataProvider('transports')]
+    public function test_a_staff_member_cannot_set_the_approval_grant_and_a_foreign_workspace_cannot_see_the_contact(string $transport): void
+    {
+        [$workspace, $owner, $company, $person] = $this->fixture();
+        [$otherWorkspace, $otherOwner] = $this->fixture();
+        $this->seedPortal($owner, $company, $person);
+        $body = [...$this->body('update', $person, $company), 'scope' => 'company', 'can_approve_time_and_expenses' => true];
+
+        $this->actingAsMcp($this->staff($workspace, 'member'), self::SCOPES);
+        $this->refusal($this->portalOperation($transport, 'update', $workspace, $company, $body, $person), 403);
+        $this->actingAsMcp($otherOwner, self::SCOPES);
+        $this->refusal($this->portalOperation($transport, 'update', $workspace, $company, $body, $person, 'foreign'), 404);
+        $this->refusal($this->portalOperation($transport, 'update', $otherWorkspace, $company, $body, $person, 'foreign-client'), 404);
+
+        $this->assertNull(ClientCompanyMembership::query()->where('user_id', $person->id)->sole()->can_approve_time_and_expenses);
+        $this->assertSame(0, AccessAuditEvent::query()->where('action', 'portal.approval_changed')->count());
+    }
+
     private function fixture(): array
     {
         $workspace = Workspace::query()->create(['name' => 'Synthetic portal workspace', 'slug' => 'synthetic-portal-'.uniqid()]);

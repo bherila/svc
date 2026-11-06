@@ -13,12 +13,31 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiResult, ApiSchema } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 
 export type PortalScope = ApiSchema<'PortalContact'>['scope'];
+
+/**
+ * A contact's approval of hours and expenses: a manager's grant, a manager's
+ * refusal, or neither - the default, which is the client's billing contact.
+ */
+type ApprovalSetting = 'default' | 'allow' | 'deny';
+
+const approvalSettingOf = (grant: boolean | null): ApprovalSetting =>
+    grant === null ? 'default' : grant ? 'allow' : 'deny';
+
+const approvalGrantOf = (setting: ApprovalSetting): boolean | null =>
+    setting === 'default' ? null : setting === 'allow';
 
 /**
  * A portal contact as `/api/v1` presents it (#385), with same-origin
@@ -406,6 +425,13 @@ function MemberRow({
     const [chosen, setChosen] = useState<string[]>(
         member.projects.map((project) => project.id),
     );
+    const stored = approvalSettingOf(member.can_approve_time_and_expenses);
+    const [approval, setApproval] = useState<ApprovalSetting>(stored);
+    const approvalItems: { value: ApprovalSetting; label: string }[] = [
+        { value: 'default', label: member.approval.default_label },
+        { value: 'allow', label: 'Can approve' },
+        { value: 'deny', label: 'Cannot approve' },
+    ];
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [removing, setRemoving] = useState(false);
@@ -415,6 +441,11 @@ function MemberRow({
         const failure = await change('PATCH', member.update_href, {
             scope,
             projects: scope === 'projects' ? chosen : [],
+            // Only a setting this form changed: leaving it out leaves the
+            // grant as another manager may since have set it.
+            ...(approval === stored
+                ? {}
+                : { can_approve_time_and_expenses: approvalGrantOf(approval) }),
             expected_version: member.version,
             confirm: true,
         });
@@ -451,6 +482,38 @@ function MemberRow({
                 onScope={setScope}
                 onChosen={setChosen}
             />
+            <div className="grid grid-cols-1 gap-1 text-sm">
+                <Label htmlFor={`portal-${member.id}-approval`}>
+                    Can approve time and expenses
+                </Label>
+                <Select
+                    items={approvalItems}
+                    value={approval}
+                    onValueChange={(value) => {
+                        if (value !== null) {
+                            setApproval(value);
+                        }
+                    }}
+                >
+                    <SelectTrigger
+                        id={`portal-${member.id}-approval`}
+                        className="max-w-xs"
+                    >
+                        <SelectValue className="wrap-anywhere" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {approvalItems.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                                {item.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <p className="text-xs wrap-anywhere text-muted-foreground">
+                    Now: {member.approval.label}. Nobody approves their own
+                    work.
+                </p>
+            </div>
             {message !== null && (
                 <p
                     role="alert"
