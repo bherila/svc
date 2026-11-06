@@ -198,9 +198,41 @@ function OperationFiles({
     );
 }
 
+/**
+ * One project's time card: its name, the link that opens the time sheet on it,
+ * and its latest entries.
+ *
+ * The name and the link share a row that wraps. The name takes the room the
+ * link leaves and breaks anywhere, and the link never shrinks - a project name
+ * with no space in it used to run on underneath its own "Log time" button.
+ */
+export function ProjectTimeCard({ project }: { project: Project }) {
+    return (
+        <Card className="mt-3 ring-slate-200">
+            <CardContent>
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                    <h4 className="min-w-0 flex-1 basis-48 font-medium wrap-anywhere">
+                        {project.name}
+                    </h4>
+                    <TimeEntryForm project={project} />
+                </div>
+                <ul className="mt-3 space-y-1 text-sm wrap-anywhere text-slate-600">
+                    {project.time_entries.map((entry) => (
+                        <li key={entry.id}>
+                            {entry.worked_on} · {entry.minutes} min ·{' '}
+                            {entry.description}
+                            {entry.is_deferred ? ' · deferred' : ''}
+                        </li>
+                    ))}
+                </ul>
+            </CardContent>
+        </Card>
+    );
+}
+
 function TimeEntryForm({ project }: { project: Project }) {
     return (
-        <Link href={project.time_url} className={buttonClass}>
+        <Link href={project.time_url} className={cn(buttonClass, 'shrink-0')}>
             Log time
         </Link>
     );
@@ -637,39 +669,10 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                 <div>
                                     <h3 className="font-semibold">Time</h3>
                                     {client.projects.map((project) => (
-                                        <Card
+                                        <ProjectTimeCard
                                             key={project.id}
-                                            className="mt-3 ring-slate-200"
-                                        >
-                                            <CardContent>
-                                                <h4 className="font-medium">
-                                                    {project.name}
-                                                </h4>
-                                                <TimeEntryForm
-                                                    project={project}
-                                                />
-                                                <ul className="mt-3 space-y-1 text-sm text-slate-600">
-                                                    {project.time_entries.map(
-                                                        (entry) => (
-                                                            <li key={entry.id}>
-                                                                {
-                                                                    entry.worked_on
-                                                                }{' '}
-                                                                ·{' '}
-                                                                {entry.minutes}{' '}
-                                                                min ·{' '}
-                                                                {
-                                                                    entry.description
-                                                                }
-                                                                {entry.is_deferred
-                                                                    ? ' · deferred'
-                                                                    : ''}
-                                                            </li>
-                                                        ),
-                                                    )}
-                                                </ul>
-                                            </CardContent>
-                                        </Card>
+                                            project={project}
+                                        />
                                     ))}
                                 </div>
 

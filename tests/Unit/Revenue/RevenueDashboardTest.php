@@ -124,4 +124,45 @@ final class RevenueDashboardTest extends TestCase
         $this->assertSame('/c/c2/a/a2', $risk['agreements'][1]['href']);
         $this->assertSame(['agreements' => [], 'monthly_total' => 0], RevenueDashboard::atRisk([], fn (): string => '', fn (): string => ''));
     }
+
+    public function test_this_period_prints_hours_as_whole_minutes_and_keeps_withheld_hours_null(): void
+    {
+        $row = fn (string $id, ?float $used, ?float $included, string $status): array => [
+            'agreement_id' => $id, 'title' => "T{$id}", 'period_start' => '2026-11-01', 'period_end' => '2026-11-30', 'hours_used' => $used,
+            'hours_included' => $included, 'over_retainer' => $used === null ? null : false, 'ends_within_60_days' => true, 'ends_on' => '2026-12-15', 'ledger_status' => $status,
+        ];
+
+        $period = RevenueDashboard::thisPeriod([$row('a1', 2.5, 10.0, 'ok'), $row('a2', null, null, 'ledger_unreadable'), $row('a3', 0.0125, 1.0, 'ok')], fn (string $id): string => "/a/{$id}");
+
+        $this->assertSame(150, $period[0]['minutes_used']);
+        $this->assertSame(600, $period[0]['minutes_included']);
+        $this->assertSame('/a/a1', $period[0]['href']);
+        $this->assertNull($period[1]['minutes_used']);
+        $this->assertNull($period[1]['minutes_included']);
+        $this->assertSame('ledger_unreadable', $period[1]['ledger_status']);
+        $this->assertSame(1, $period[2]['minutes_used']);
+        $this->assertSame(0, RevenueDashboard::thisPeriod([$row('a4', 0.0, 4.0, 'ok')], fn (): string => '')[0]['minutes_used']);
+        $this->assertTrue($period[0]['ends_within_60_days']);
+    }
+
+    public function test_only_agreements_in_force_become_cards_without_their_schedules(): void
+    {
+        $agreement = fn (string $id, string $status): array => [
+            'agreement_id' => $id, 'title' => "T{$id}", 'status' => $status, 'billing_cadence' => 'monthly', 'starts_on' => '2026-01-01', 'ends_on' => null, 'signed' => true,
+            'retainer' => ['period_fee' => 100, 'monthly_equivalent' => 100, 'first_cycle_proration' => 'none'], 'monthly_recurring' => 130,
+            'recurring_items' => [['item_id' => 'i1', 'description' => 'Hosting', 'cadence' => 'quarterly', 'amount' => 90, 'monthly_equivalent' => 30, 'is_taxable' => true, 'is_active' => true, 'effective_on' => null, 'expires_on' => null, 'next_charge_on' => '2027-01-01']],
+            'overage' => ['method' => 'x'], 'months' => [['month' => '2026-12']], 'totals' => [],
+        ];
+
+        $cards = RevenueDashboard::agreementCards([$agreement('a1', 'active'), $agreement('a2', 'terminated'), $agreement('a3', 'expired'), $agreement('a4', 'paused')], fn (string $id): string => "/a/{$id}");
+
+        $this->assertSame(['a1'], array_column($cards, 'agreement_id'));
+        $this->assertSame('/a/a1', $cards[0]['href']);
+        $this->assertSame(130, $cards[0]['monthly_recurring']);
+        $this->assertSame('Hosting', $cards[0]['recurring_items'][0]['description']);
+        $this->assertSame('2027-01-01', $cards[0]['recurring_items'][0]['next_charge_on']);
+        $this->assertArrayNotHasKey('months', $cards[0]);
+        $this->assertArrayNotHasKey('overage', $cards[0]);
+        $this->assertArrayNotHasKey('is_taxable', $cards[0]['recurring_items'][0]);
+    }
 }

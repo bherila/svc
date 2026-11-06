@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Revenue;
 
+use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Revenue\RevenueDashboard;
@@ -50,6 +51,49 @@ final class RevenuePagePresenter
                 fn (string $clientId, string $agreementId): string => route('clients.agreement', [$workspace, $clientId, $agreementId], absolute: false),
             ),
         ];
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $input  the request's query string
+     * @return array<string, mixed>
+     */
+    public function overview(User $user, Workspace $workspace, ClientCompany $company, array $input): array
+    {
+        $query = RevenueQuery::fromInput($input, (string) $company->public_id);
+        $read = $this->revenue->clientOverview($user, $workspace, $query, withLedgers: false);
+        $summary = $read['summary'];
+        $agreementHref = fn (string $agreementId): string => route('clients.agreement', [$workspace, $company, $agreementId], absolute: false);
+        $kpis = RevenueDashboard::kpis($summary);
+
+        return [
+            'toggle_href' => route('clients.show', [$workspace, $company], absolute: false),
+            'filters' => $query->toggles(),
+            'assumptions' => $this->assumptions($summary),
+            'kpis' => ['mrr' => $read['client']['mrr'] ?? 0, ...$kpis],
+            'months' => RevenueDashboard::months(
+                $read['months'],
+                fn (string $month): string => route('clients.invoices', [$workspace, $company, 'month' => $month], absolute: false),
+                fn (string $clientId): string => route('clients.show', [$workspace, $clientId], absolute: false),
+            ),
+            'agreements' => RevenueDashboard::agreementCards($read['agreements'], $agreementHref),
+        ];
+    }
+
+    /**
+     * Retainer use this period, one row per agreement in force. It reads the
+     * capacity ledgers, which cost queries per agreement, so the page asks for
+     * it after its first paint.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function thisPeriod(User $user, Workspace $workspace, ClientCompany $company): array
+    {
+        $read = $this->revenue->clients($user, $workspace, new RevenueQuery(clientId: (string) $company->public_id));
+
+        return RevenueDashboard::thisPeriod(
+            $read['clients'][0]['agreements'] ?? [],
+            fn (string $agreementId): string => route('clients.agreement', [$workspace, $company, $agreementId], absolute: false),
+        );
     }
 
     /**

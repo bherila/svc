@@ -7,6 +7,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
+use App\Models\ClientProposal;
 use App\Models\User;
 use App\Services\Revenue\RevenueReadService;
 use App\Support\AgentApi\ProjectRole;
@@ -197,19 +198,6 @@ final class RevenuePagesTest extends TestCase
         $this->assertStringNotContainsString($theirs['october']->invoice_number, (string) json_encode($october));
     }
 
-    public function test_a_client_invoice_tab_filters_to_a_month(): void
-    {
-        $mine = $this->revenueWorkspace('mine');
-        $path = "/workspaces/{$mine['workspace']->public_id}/clients/{$mine['alpha']->public_id}/invoices";
-
-        $props = $this->actingAs($mine['owner'])->get($path.'?month=2026-10')->assertOk()->viewData('page')['props'];
-
-        $this->assertSame('2026-10', $props['month']);
-        $this->assertSame($path, $props['clear_month_href']);
-        $this->assertContains($mine['october']->public_id, array_column($props['invoices'], 'id'));
-        $this->assertLessThan(count($this->actingAs($mine['owner'])->get($path)->viewData('page')['props']['invoices']), count($props['invoices']));
-    }
-
     // ---- Client roster ----
 
     public function test_an_owner_gets_the_revenue_roster_with_the_server_filtered_totals(): void
@@ -304,5 +292,125 @@ final class RevenuePagesTest extends TestCase
                 }
             },
         );
+    }
+
+    // ---- Client overview ----
+
+    private function overviewPath(array $fixture, ?ClientCompany $company = null): string
+    {
+        return "/workspaces/{$fixture['workspace']->public_id}/clients/".($company ?? $fixture['alpha'])->public_id;
+    }
+
+    public function test_an_owner_gets_the_client_overview(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        ClientProposal::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'title' => 'Synthetic proposal', 'currency' => 'USD', 'status' => 'draft']);
+        ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => 'Synthetic Alpha project', 'status' => 'active']);
+        $path = $this->overviewPath($mine);
+
+        $this->actingAs($mine['owner'])->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('clients/home')
+            ->where('overview.toggle_href', $path)
+            ->where('overview.filters.basis', 'invoiced')
+            ->where('overview.kpis.mrr', 100000 + 10000)
+            ->has('overview.months', 25)
+            ->where('overview.agreements.0.title', 'Synthetic Alpha retainer')
+            ->where('overview.agreements.0.retainer.monthly_equivalent', 100000)
+            ->where('overview.agreements.0.recurring_items.0.description', 'Synthetic hosting')
+            ->where('overview.agreements.0.href', "{$path}/agreements/{$mine['agreement']->public_id}")
+            ->has('overview.recent_invoices', 5)
+            ->where('overview.projects.0.name', 'Synthetic Alpha project')
+            ->where('overview.projects.0.log_time_href', fn (string $href): bool => str_starts_with($href, "{$path}/time?log_project="))
+            ->where('overview.proposals.0.title', 'Synthetic proposal')
+            ->where('overview.months.12.href', "{$path}/invoices?month=2026-11")
+            ->missing('overview.this_period'));
+    }
+
+    public function test_the_overview_figures_are_this_clients_alone(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $read = app(RevenueReadService::class)->summary($mine['owner'], $mine['workspace'], new RevenueQuery(clientId: $mine['alpha']->public_id));
+        $gamma = $this->actingAs($mine['owner'])->get($this->overviewPath($mine, $mine['gamma']))->assertOk()->viewData('page')['props']['overview'];
+        $alpha = $this->actingAs($mine['owner'])->get($this->overviewPath($mine))->assertOk()->viewData('page')['props']['overview'];
+
+        $this->assertSame($read['ytd']['amount'], $alpha['kpis']['ytd']['amount']);
+        $this->assertSame(0, $gamma['kpis']['ytd']['amount']);
+        $this->assertSame(50000, $gamma['kpis']['mrr']);
+        $this->assertSame([], $gamma['recent_invoices']);
+        $this->assertSame('Synthetic Gamma retainer', $gamma['agreements'][0]['title']);
+        $this->assertStringNotContainsString('Alpha', (string) json_encode($gamma));
+    }
+
+    public function test_this_periods_retainer_use_follows_the_first_paint(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $path = $this->overviewPath($mine);
+
+        $page = $this->actingAs($mine['owner'])->get($path)->assertOk()->viewData('page');
+        $this->assertSame(['this_period'], $page['deferredProps']['default']);
+
+        $period = $this->actingAs($mine['owner'])->withHeaders($this->partial('clients/home', 'this_period'))->get($path)->assertOk()->json('props.this_period');
+        $this->assertCount(1, $period);
+        $this->assertSame('ok', $period[0]['ledger_status']);
+        $this->assertSame(600, $period[0]['minutes_included']);
+        $this->assertSame("{$path}/agreements/{$mine['agreement']->public_id}", $period[0]['href']);
+    }
+
+    public function test_a_member_gets_the_plain_client_home_and_no_revenue(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $member = $this->member($mine);
+        $project = ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => 'Synthetic Alpha project', 'status' => 'active']);
+        ClientProjectMembership::query()->create(['workspace_id' => $mine['workspace']->id, 'client_project_id' => $project->id, 'user_id' => $member->id, 'role' => ProjectRole::Contributor->value]);
+
+        $response = $this->actingAs($member)->get($this->overviewPath($mine))->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page->component('clients/home')->missing('overview')->missing('this_period'));
+        $this->assertArrayNotHasKey('deferredProps', $response->viewData('page'));
+        $this->assertStringNotContainsString('monthly_equivalent', (string) $response->getContent());
+    }
+
+    public function test_a_client_of_another_workspace_has_no_overview(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $theirs = $this->revenueWorkspace('theirs', 7);
+
+        $this->actingAs($mine['owner'])->get("/workspaces/{$mine['workspace']->public_id}/clients/{$theirs['alpha']->public_id}")->assertNotFound();
+        $this->actingAs($mine['owner'])->get("/workspaces/{$theirs['workspace']->public_id}/clients/{$theirs['alpha']->public_id}")->assertForbidden();
+    }
+
+    public function test_the_overview_does_not_query_once_per_row(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        // A client with no project skips the project reads altogether; start from one that has it.
+        ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => 'Synthetic first project', 'status' => 'active']);
+        $n = 0;
+
+        $this->assertQueryCountIndependentOfRows(
+            fn () => $this->actingAs($mine['owner'])->get($this->overviewPath($mine))->assertOk(),
+            function () use ($mine, &$n): void {
+                for ($i = 0; $i < 6; $i++) {
+                    $n++;
+                    ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => "Bulk project {$n}", 'status' => 'active']);
+                    ClientAgreement::query()->create([
+                        'workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'title' => "Bulk {$n}", 'status' => 'active', 'currency' => 'USD',
+                        'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'retainer_amount' => 10000, 'retainer_minutes' => 600,
+                    ]);
+                }
+            },
+        );
+    }
+
+    public function test_a_client_invoice_tab_filters_to_a_month(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $path = $this->overviewPath($mine).'/invoices';
+
+        $props = $this->actingAs($mine['owner'])->get($path.'?month=2026-10')->assertOk()->viewData('page')['props'];
+
+        $this->assertSame('2026-10', $props['month']);
+        $this->assertSame($path, $props['clear_month_href']);
+        $this->assertContains($mine['october']->public_id, array_column($props['invoices'], 'id'));
+        $this->assertLessThan(count($this->actingAs($mine['owner'])->get($path)->viewData('page')['props']['invoices']), count($props['invoices']));
     }
 }

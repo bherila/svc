@@ -107,6 +107,75 @@ final class RevenueDashboard
     }
 
     /**
+     * Retainer use this period, one row per agreement in force, with the
+     * hours as whole minutes so the browser prints them through the shared
+     * duration formatter. Hours the ledger withheld stay null.
+     *
+     * @param  list<array<string, mixed>>  $health  `AgreementHealth::toArray()` rows
+     * @param  Closure(string): string  $agreementHref
+     * @return list<array<string, mixed>>
+     */
+    public static function thisPeriod(array $health, Closure $agreementHref): array
+    {
+        $minutes = static fn (mixed $hours): ?int => is_float($hours) || is_int($hours) ? (int) round($hours * 60) : null;
+
+        return array_map(static fn (array $row): array => [
+            'agreement_id' => $row['agreement_id'],
+            'title' => $row['title'],
+            'period_start' => $row['period_start'],
+            'period_end' => $row['period_end'],
+            'minutes_used' => $minutes($row['hours_used']),
+            'minutes_included' => $minutes($row['hours_included']),
+            'over_retainer' => $row['over_retainer'],
+            'ends_within_60_days' => $row['ends_within_60_days'],
+            'ends_on' => $row['ends_on'],
+            'ledger_status' => $row['ledger_status'],
+            'href' => $agreementHref($row['agreement_id']),
+        ], $health);
+    }
+
+    /**
+     * The agreements to show as cards: those in force (status active), with
+     * their terms and recurring items and none of the 12-month schedule.
+     *
+     * @param  list<array<string, mixed>>  $agreements  `AgreementProjection::toArray()` rows
+     * @param  Closure(string): string  $agreementHref
+     * @return list<array<string, mixed>>
+     */
+    public static function agreementCards(array $agreements, Closure $agreementHref): array
+    {
+        $cards = [];
+        foreach ($agreements as $agreement) {
+            if ($agreement['status'] !== 'active') {
+                continue;
+            }
+            $cards[] = [
+                'agreement_id' => $agreement['agreement_id'],
+                'title' => $agreement['title'],
+                'status' => $agreement['status'],
+                'billing_cadence' => $agreement['billing_cadence'],
+                'starts_on' => $agreement['starts_on'],
+                'ends_on' => $agreement['ends_on'],
+                'signed' => $agreement['signed'],
+                'retainer' => $agreement['retainer'],
+                'monthly_recurring' => $agreement['monthly_recurring'],
+                'recurring_items' => array_map(static fn (array $item): array => [
+                    'item_id' => $item['item_id'],
+                    'description' => $item['description'],
+                    'cadence' => $item['cadence'],
+                    'amount' => $item['amount'],
+                    'is_active' => $item['is_active'],
+                    'expires_on' => $item['expires_on'],
+                    'next_charge_on' => $item['next_charge_on'],
+                ], $agreement['recurring_items']),
+                'href' => $agreementHref($agreement['agreement_id']),
+            ];
+        }
+
+        return $cards;
+    }
+
+    /**
      * Agreements ending inside the window, with the monthly amount that drops
      * off, soonest first (the model's order). No renewal is assumed.
      *

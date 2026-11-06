@@ -19,6 +19,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\ClientHome\ClientOverviewQuery;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Access\PortalInvitations;
 use App\Services\AgentApi\AgentClientContactReadService;
@@ -36,6 +37,7 @@ use App\Services\Files\AttachmentFilePage;
 use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Finance\FinanceReconciliationBadges;
+use App\Services\Revenue\RevenuePagePresenter;
 use App\Services\Revenue\RevenueReadService;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Tasks\Planning\TaskPlanningDetailsLoader;
@@ -200,6 +202,8 @@ class ClientDirectoryController extends Controller
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
         OperatorClientHomeQuery $home,
+        ClientOverviewQuery $overview,
+        RevenuePagePresenter $revenue,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -212,8 +216,20 @@ class ClientDirectoryController extends Controller
         $authorization->assertOwnedBy($workspace, $clientCompany);
         $this->assertReachable($clientCompany, $access->reachableCompanyIds($user, $workspace));
 
+        $manages = Gate::forUser($user)->allows('manage', $workspace);
+
         return Inertia::render('clients/home', $home->for($workspace, $clientCompany, $user)->toArray() + [
-            'files_href' => Gate::forUser($user)->allows('manage', $workspace) ? route('svc.files.parent.show', [$workspace, 'company', $clientCompany->public_id], absolute: false) : null,
+            'files_href' => $manages ? route('svc.files.parent.show', [$workspace, 'company', $clientCompany->public_id], absolute: false) : null,
+            // The overview's money (docs/ux-overhaul.md section 4) is for
+            // owners and admins. For anyone else the key is absent, and the
+            // page is the plain Client Home it always was. A closure, so a
+            // toggle's partial reload re-runs only this.
+            ...($manages ? [
+                'overview' => fn (): array => $revenue->overview($user, $workspace, $clientCompany, $request->query()) + $overview->for($workspace, $clientCompany),
+                // The retainer meters read the capacity ledgers, which cost
+                // queries per agreement: they follow the first paint.
+                'this_period' => Inertia::defer(fn (): array => $revenue->thisPeriod($user, $workspace, $clientCompany)),
+            ] : []),
         ]);
     }
 
