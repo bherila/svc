@@ -34,6 +34,7 @@ use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
 use App\Services\Payments\WorkspacePaymentConnections;
+use App\Services\Review\ReviewerGrants;
 use App\Services\SharedProjects\SharedProjectParticipations;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
@@ -51,6 +52,7 @@ use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
+use App\Support\Review\GranteeKind;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use App\Support\WorkspaceClock;
@@ -839,8 +841,94 @@ if (getenv('SVC_LAYOUT_SHARED_PROJECTS') === '1') {
     ];
 }
 
+// Reviewer grants (--reviewers): the reviewer reads one "To approve" holding a
+// provider they are the billing contact of and a provider that gave them review
+// access, with names that will not break, a priced and invoiced hour and a
+// receipt-bearing expense whose price, invoice number and note must never reach
+// the reviewer's page. The owner reads the grants page with a contact grant, a
+// workspace grant and a grant already taken back.
+$reviewerPages = [];
+if (getenv('SVC_LAYOUT_REVIEWERS') === '1') {
+    $reviewDay = app(WorkspaceClock::class)->today($workspace)->subMonthNoOverflow()->startOfMonth();
+    $reviewer = User::factory()->create(['name' => 'Reviewer '.str_repeat('Person', 10), 'email' => 'layout-reviewer@example.test']);
+    $project->forceFill(['is_visible_to_client' => true])->save();
+    $company->forceFill(['billing_email' => 'layout-reviewer@example.test'])->save();
+    ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $reviewer->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_COMPANY]);
+    foreach (range(0, 2) as $index) {
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $owner->id,
+            'worked_on' => $reviewDay->addDays($index * 6)->toDateString(), 'minutes' => 95 + $index, 'description' => 'SECRET-INTERNAL-NOTE',
+            'client_visible_description' => 'Portal provider work '.str_repeat('WithoutBreaks', 8).' '.$index,
+            'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 987654, 'currency' => 'USD',
+        ]);
+    }
+
+    $providerB = Workspace::query()->create(['name' => str_repeat('SyntheticOtherEngineeringProvider', 3), 'slug' => 'layout-provider-b', 'timezone' => 'America/Los_Angeles']);
+    $providerBOwner = User::factory()->create(['name' => 'Provider B owner', 'email' => 'layout-provider-b-owner@example.test']);
+    $providerBWorker = User::factory()->create(['name' => 'Provider B worker', 'email' => 'layout-provider-b-worker@example.test']);
+    $providerB->memberships()->create(['user_id' => $providerBOwner->id, 'role' => 'owner']);
+    $providerB->memberships()->create(['user_id' => $providerBWorker->id, 'role' => 'member']);
+    $companyB = ClientCompany::query()->create(['workspace_id' => $providerB->id, 'name' => str_repeat('SyntheticVeterinaryClientName', 4), 'slug' => 'layout-vet-b']);
+    $projectB = ClientProject::query()->create(['workspace_id' => $providerB->id, 'client_company_id' => $companyB->id, 'name' => str_repeat('SyntheticProviderProject', 5), 'is_visible_to_client' => true]);
+    $billedB = null;
+    foreach (range(0, 3) as $index) {
+        $entryB = ClientTimeEntry::query()->create([
+            'workspace_id' => $providerB->id, 'client_company_id' => $companyB->id, 'client_project_id' => $projectB->id, 'user_id' => $providerBWorker->id,
+            'worked_on' => $reviewDay->addDays($index * 5)->toDateString(), 'minutes' => 130 + $index, 'description' => 'SECRET-INTERNAL-NOTE',
+            'client_visible_description' => 'Granted provider work '.str_repeat('Unbroken', 12).' '.$index,
+            'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 987654, 'currency' => 'USD',
+        ]);
+        $billedB ??= $entryB;
+    }
+    ClientExpense::query()->create([
+        'workspace_id' => $providerB->id, 'client_company_id' => $companyB->id, 'client_project_id' => $projectB->id, 'created_by_user_id' => $providerBWorker->id,
+        'spent_on' => $reviewDay->addDays(3)->toDateString(), 'amount' => 123456789, 'currency' => 'USD', 'status' => 'approved',
+        'description' => 'Granted expense '.str_repeat('UnbrokenExpenseDescription', 5),
+    ]);
+    $secretInvoice = ClientInvoice::query()->create([
+        'workspace_id' => $providerB->id, 'client_company_id' => $companyB->id, 'invoice_number' => 'SECRET-INVOICE-NUMBER', 'status' => 'issued', 'currency' => 'USD',
+        'issue_date' => $reviewDay->toDateString(), 'due_date' => $reviewDay->addDays(30)->toDateString(), 'subtotal_amount' => 31415926, 'tax_amount' => 0,
+        'total_amount' => 31415926, 'paid_amount' => 0, 'balance_amount' => 31415926, 'is_visible_to_client' => true,
+    ]);
+    $secretLine = ClientInvoiceLine::query()->create(['workspace_id' => $providerB->id, 'client_invoice_id' => $secretInvoice->id, 'type' => 'service', 'description' => 'SECRET-LINE', 'quantity' => 1, 'unit_amount' => 31415926, 'tax_amount' => 0, 'total_amount' => 31415926, 'sort_order' => 0]);
+    $secretLine->timeEntries()->attach($billedB->id, ['workspace_id' => $providerB->id]);
+    $billedB->forceFill(['status' => 'invoiced'])->save();
+
+    $reviewerGrants = app(ReviewerGrants::class);
+    $contactB = ClientContact::query()->create(['workspace_id' => $providerB->id, 'client_company_id' => $companyB->id, 'first_name' => 'Reviewer', 'last_name' => 'Person', 'email' => 'layout-reviewer@example.test']);
+    $reviewerGrants->grant($providerBOwner, $providerB, $companyB->public_id, null, GranteeKind::Contact, $contactB->public_id);
+    // A provider with a grant and nothing waiting.
+    $providerC = Workspace::query()->create(['name' => 'Provider with nothing waiting', 'slug' => 'layout-provider-c', 'timezone' => 'America/Los_Angeles']);
+    $providerCOwner = User::factory()->create(['name' => 'Provider C owner', 'email' => 'layout-provider-c-owner@example.test']);
+    $providerC->memberships()->create(['user_id' => $providerCOwner->id, 'role' => 'owner']);
+    $companyC = ClientCompany::query()->create(['workspace_id' => $providerC->id, 'name' => 'Quiet client', 'slug' => 'layout-vet-c']);
+    $contactC = ClientContact::query()->create(['workspace_id' => $providerC->id, 'client_company_id' => $companyC->id, 'first_name' => 'Reviewer', 'last_name' => 'Person', 'email' => 'layout-reviewer@example.test']);
+    $reviewerGrants->grant($providerCOwner, $providerC, $companyC->public_id, null, GranteeKind::Contact, $contactC->public_id);
+
+    // The owner's own page: a contact grant, a workspace grant and one taken back.
+    $granteeContact = ClientContact::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'first_name' => str_repeat('Unbroken', 6), 'last_name' => str_repeat('Contact', 6), 'email' => 'layout-grantee.'.str_repeat('unbroken', 8).'@example.test']);
+    $reviewerGrants->grant($owner, $workspace, $company->public_id, null, GranteeKind::Contact, $granteeContact->public_id);
+    $oldContact = ClientContact::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'first_name' => 'Taken', 'last_name' => 'Back', 'email' => 'layout-taken-back@example.test']);
+    $oldGrant = $reviewerGrants->grant($owner, $workspace, $company->public_id, $project->public_id, GranteeKind::Contact, $oldContact->public_id);
+    $reviewerGrants->revoke($owner, $workspace, $oldGrant->public_id);
+    $reviewerParticipations = app(SharedProjectParticipations::class);
+    $partnerWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticSharingPartnerWorkspace', 3), 'slug' => 'layout-sharing-partner', 'timezone' => 'America/Los_Angeles']);
+    $partnerOwner = User::factory()->create(['name' => 'Sharing partner', 'email' => 'layout-sharing-partner@example.test']);
+    $partnerWorkspace->memberships()->create(['user_id' => $partnerOwner->id, 'role' => 'owner']);
+    $partnerInvitation = $reviewerParticipations->invite($owner, $workspace, $project->public_id, (string) $partnerOwner->email);
+    $reviewerParticipations->accept($partnerOwner, $partnerInvitation->public_id, $partnerWorkspace);
+    $reviewerGrants->grant($owner, $workspace, $company->public_id, $project->public_id, GranteeKind::Workspace, $partnerWorkspace->public_id);
+
+    $reviewerPages = [
+        'reviewer_queue' => route('approvals.index', absolute: false),
+        'reviewer_user_id' => $reviewer->id,
+        'reviewer_grants' => route('workspaces.reviewers', $workspace, absolute: false),
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
     ...$paymentPages,
+    ...$reviewerPages,
     ...$workPortal,
     ...$sharedPages,
     ...$documentPages,

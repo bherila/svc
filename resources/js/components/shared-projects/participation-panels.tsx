@@ -55,8 +55,10 @@ export function ConfirmedAction({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>{title}</AlertDialogTitle>
-                    <AlertDialogDescription>
+                    <AlertDialogTitle className="wrap-anywhere">
+                        {title}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="wrap-anywhere">
                         {description}
                     </AlertDialogDescription>
                 </AlertDialogHeader>
