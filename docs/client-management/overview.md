@@ -618,8 +618,12 @@ rule. Missing or cross-tenant parent chains are refused before bytes are served.
 
 Portal downloads require company membership, the parent's disclosure/lifecycle
 rules and its current project grants. Invoice files use `PortalInvoiceQuery`, so
-every attributed project (invoice lines and agreement) must be granted to a
-selected-project contact. Company-wide contacts keep company-level invoice access.
+every attributed project (agreement, invoice lines, and the frozen projects of the
+deferred work its stored snapshot lists) must be granted to a selected-project
+contact. A legacy deferred snapshot that lists work without recorded projects is
+unverifiable and refuses selected-project contacts (#610); see
+[deferred billing](deferred-billing.md#who-may-read-the-still-deferred-section).
+Company-wide contacts keep company-level invoice access.
 The generic agent file API remains workspace-manager-only for metadata, downloads
 and writes. Only available attachments can be downloaded.
 

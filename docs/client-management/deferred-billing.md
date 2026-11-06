@@ -232,11 +232,47 @@ with a 409 until its claim is released by void, discard or the host's reopen.
 Other time on the host stays editable. Attaching removes settled work from the
 stored summaries; when an itemized snapshot exists, only entries and minutes
 recorded there are deducted from the hours statement. Settling work approved after
-generation cannot erase a different entry's waiting hours. Legacy drafts without
-an itemized snapshot retain the existing work-date fallback: their aggregate
-statement does not identify historical entry membership. The website's **Bill
+generation cannot erase a different entry's waiting hours. A legacy draft whose
+stored hours statement reports a nonzero deferred backlog but which has no
+itemized snapshot cannot identify which entries that backlog counts, so attaching
+to it is refused (#609) with 422, code `draft_regeneration_required`, and the
+message "Regenerate this draft first; regeneration may change its charges." on
+REST, MCP and every caller of `DeferredBuyDownAction`. Nothing is reserved or
+rewritten. SVC never regenerates the draft silently and never invents historical
+membership: the caller regenerates it explicitly, which captures the snapshot,
+re-reads its versions, previews again and retries. A legacy draft with no backlog
+has nothing to misattribute and attaches as before. The website's **Bill
 deferred work** flow still creates its own settlement invoice; attaching is an
 agent-surface capability for now.
+
+## Who may read the Still deferred section
+
+A cadence invoice's stored deferred-work snapshot (#601) lists the waiting entries
+with their date, hours and client-visible description. Since version 2 it also
+freezes each entry's project when it is captured, at generation, regeneration and
+issue, and indexes those projects in `client_invoice_deferred_projects`, written
+together with the snapshot by `InvoiceDeferredWorkStatements`. A settlement
+attached to a draft removes its entries from both.
+
+The invoice's portal grant decision (`PortalInvoiceQuery`) includes that lineage
+(#610): a project-scoped portal user reads the invoice only when the agreement's
+project, every line's project and every snapshot project are granted to them. This
+one rule serves the portal list and screen, the PDF, REST and MCP reads and
+automatic recipients, and refuses with not-found. The live time entry is never
+consulted, so moving or editing a waiting entry after capture does not change who
+may read a document that already disclosed it. Disclosure stays indivisible: no
+item is redacted to make an invoice readable.
+
+Version 1 snapshots recorded no project. They still read, so their documents keep
+the section for company-wide readers, and a rewrite keeps them version 1 rather
+than inventing a project. While a legacy snapshot lists at least one entry its
+lineage is unverifiable and counts as ungranted for project-scoped users; one that
+lists nothing hides nothing. Company-wide portal users and workspace managers keep
+access. `svc:billing:audit-deferred-lineage-visibility` and
+`billing.audit_deferred_lineage_visibility` report the invoices this hides. The
+supported fix is to regenerate the draft, or reopen and reissue the issued invoice,
+so its snapshot captures lineage, then grant the projects it names; or to give the
+contact company-wide access. A paid invoice cannot be reopened.
 
 Void or draft discard releases the reservations back to the shelf. This differs
 from a void cadence period, whose period remains deliberately waived. An issued

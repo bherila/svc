@@ -28,6 +28,12 @@ final class AgentMcpApiFailure
             $messages[] = $validation;
         }
 
+        // A coded refusal's stable code, so an agent can branch on it.
+        $code = $body['code'] ?? null;
+        if ($messages !== [] && is_string($code) && preg_match('/^[a-z][a-z0-9_]{0,63}$/', $code) === 1) {
+            $messages[] = "(code: {$code})";
+        }
+
         return $messages === []
             ? 'The SVC API request could not be completed.'
             : implode(' ', $messages);

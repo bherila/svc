@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Billing\DeferredLineageVisibilityAuditor;
 use App\Services\Billing\MissingBilledOverageAuditor;
 use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Services\Billing\UndatedCollectibleInvoiceAuditor;
@@ -22,7 +23,10 @@ use Illuminate\Http\Exceptions\ThrottleRequestsException;
  * The underlying auditors are also used by the operator commands. This layer
  * deliberately returns their aggregate-only DTO arrays, never invoice rows or
  * identifiers, so an MCP caller cannot turn a diagnostic into an invoice
- * export.
+ * export. The one exception is the deferred-lineage audit (#610), whose fix is
+ * applied invoice by invoice: it names up to {@see LINEAGE_LIST_LIMIT} affected
+ * invoices by public id and number, to the workspace's own managers, and never
+ * anything about the work, projects or people behind them.
  */
 final class AgentBillingAuditReadService
 {
@@ -38,6 +42,9 @@ final class AgentBillingAuditReadService
 
     public const int PREFLIGHTS_PER_WINDOW = 5;
 
+    /** Affected invoices the deferred-lineage audit names; `hidden_invoices_truncated` says when there are more. */
+    public const int LINEAGE_LIST_LIMIT = 100;
+
     public function __construct(
         private readonly AgentAccess $access,
         private readonly UnplaceableInvoiceAuditor $unplaceable,
@@ -46,6 +53,7 @@ final class AgentBillingAuditReadService
         private readonly ScheduleGenerationPreflight $schedulePreflight,
         private readonly UnlinkedProposalAgreementAuditor $unlinkedProposalAgreements,
         private readonly RateLimiter $limiter,
+        private readonly DeferredLineageVisibilityAuditor $deferredLineage,
     ) {}
 
     /** @return array<string, float|int> */
@@ -109,6 +117,14 @@ final class AgentBillingAuditReadService
         $this->requireManager($user, $workspace);
 
         return $this->unlinkedProposalAgreements->count($workspace)->toArray();
+    }
+
+    /** @return array<string, mixed> */
+    public function deferredLineageVisibility(User|AgentPrincipal $user, Workspace $workspace): array
+    {
+        $this->requireManager($user, $workspace);
+
+        return $this->deferredLineage->count($workspace, self::LINEAGE_LIST_LIMIT)->toArray();
     }
 
     private function requireManager(User|AgentPrincipal $user, Workspace $workspace): void

@@ -147,6 +147,7 @@ final class ClientInvoicingService
         private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
         private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository,
         private readonly DeferredBacklogReader $deferredBacklogReader = new DeferredBacklogReader,
+        private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
@@ -1712,8 +1713,7 @@ final class ClientInvoicingService
             ->orderBy('id')
             ->get();
 
-        $snapshot = InvoiceDeferredWorkSnapshot::fromEntries($entries);
-        $invoice->forceFill(['deferred_work_statement' => $snapshot?->toArray()])->save();
+        $this->deferredWorkStatements->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries($entries));
     }
 
     /**

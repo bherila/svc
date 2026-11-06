@@ -196,6 +196,7 @@ final class AgentMcpContractTest extends TestCase
             'attachments.upload_url' => ['files:write'],
             'attachments.visibility.get' => ['files:read'],
             'attachments.visibility.update' => ['files:write', 'files:read'],
+            'billing.audit_deferred_lineage_visibility' => ['billing:read'],
             'billing.audit_missing_billed_overage' => ['billing:read'],
             'billing.audit_undated_collectible_invoices' => ['billing:read'],
             'billing.audit_unlinked_proposal_agreements' => ['billing:read'],
