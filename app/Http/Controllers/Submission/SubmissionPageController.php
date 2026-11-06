@@ -28,7 +28,8 @@ final class SubmissionPageController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        Gate::forUser($user)->authorize('view', $workspace);
+        // Not a member is not found, as everywhere in the workspace tier.
+        abort_unless(Gate::forUser($user)->allows('view', $workspace), 404);
 
         $period = ApprovalPeriod::fromKey((string) $request->query('period', ''))
             ?? ApprovalPeriod::containing($clock->today($workspace)->toDateString());

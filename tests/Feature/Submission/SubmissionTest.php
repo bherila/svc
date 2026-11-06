@@ -226,9 +226,9 @@ final class SubmissionTest extends TestCase
         // 2. The portal route, even for an author who is also the client's contact.
         $this->otherVet->forceFill(['billing_email' => $this->otherOwner->email])->save();
         ClientCompanyMembership::query()->create(['client_company_id' => $this->otherVet->id, 'user_id' => $this->otherOwner->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_COMPANY]);
-        $this->actingAs($this->otherOwner)->post('/portal/'.$this->otherVet->public_id.'/approvals/approve', ['time_ids' => [$entry->public_id]])->assertStatus(409);
-        $this->actingAs($this->otherOwner)->post('/portal/'.$this->otherVet->public_id.'/approvals/approve', ['period' => '2026-10'])->assertSessionHasNoErrors();
-        $this->actingAs($this->otherOwner)->post('/portal/'.$this->otherVet->public_id.'/approvals/dispute', ['kind' => 'time', 'id' => $entry->public_id])->assertStatus(409);
+        $this->actingAs($this->otherOwner)->post('/portal/'.$this->otherVet->public_id.'/approvals/approve', ['time_ids' => [$entry->public_id]])->assertSessionHasErrors('approval');
+        $this->actingAs($this->otherOwner)->post('/portal/'.$this->otherVet->public_id.'/approvals/approve', ['period' => '2026-10']);
+        $this->actingAs($this->otherOwner)->post('/portal/'.$this->otherVet->public_id.'/approvals/dispute', ['kind' => 'time', 'id' => $entry->public_id])->assertSessionHasErrors('approval');
 
         // 3. The operator route, REST: nobody approves their own time.
         $this->asSignedIn($this->otherOwner)->withHeader('Idempotency-Key', 'self-1')
@@ -250,7 +250,7 @@ final class SubmissionTest extends TestCase
         $this->otherVet->forceFill(['billing_email' => $this->otherWorker->email])->save();
         ClientCompanyMembership::query()->create(['client_company_id' => $this->otherVet->id, 'user_id' => $this->otherWorker->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_COMPANY]);
 
-        $this->actingAs($this->otherWorker)->post('/portal/'.$this->otherVet->public_id.'/approvals/approve', ['time_ids' => [$entry->public_id]])->assertStatus(409);
+        $this->actingAs($this->otherWorker)->post('/portal/'.$this->otherVet->public_id.'/approvals/approve', ['time_ids' => [$entry->public_id]])->assertSessionHasErrors('approval');
         $this->actingAs($this->otherWorker)->post('/portal/'.$this->otherVet->public_id.'/approvals/approve', ['period' => '2026-10']);
 
         $this->assertNull($entry->fresh()->client_approved_at);
@@ -376,6 +376,8 @@ final class SubmissionTest extends TestCase
 
         // The host (Herila) and a stranger: the partner's workspace is not found.
         foreach ([$this->herilaOwner, $this->herilaWorker, $this->ben] as $outsider) {
+            // A new request from a new person: the last one's resolved guards are forgotten.
+            $this->app['auth']->forgetGuards();
             $this->asSignedIn($outsider)->getJson("/api/v1/workspaces/{$this->otherEng->public_id}/submissions?period=2026-10")->assertNotFound();
             $this->asSignedIn($outsider)->getJson("/api/v1/workspaces/{$this->otherEng->public_id}/timesheets/approved?period=2026-10")->assertNotFound();
             $this->submit($outsider, ['time_entry_ids' => [$entry->public_id]])->assertNotFound();
@@ -392,14 +394,31 @@ final class SubmissionTest extends TestCase
         $mine = $this->draft($this->otherOwner);
         $theirs = $this->draft($this->otherWorker, '2026-10-15');
         $herilas = $this->hours($this->herilaProject, $this->herilaWorker, '2026-10-14', 60, ['status' => 'draft']);
-        $this->submit($this->otherOwner, ['time_entry_ids' => [$mine->public_id]])->assertOk();
+        $mine->forceFill(['submitted_at' => now(), 'submitted_by_user_id' => $this->otherOwner->id])->save();
 
         $this->submit($this->otherWorker, ['time_entry_ids' => [$mine->public_id]])->assertNotFound();
-        $this->withdraw($this->otherWorker, ['time_entry_ids' => [$mine->public_id]])->assertNotFound();
-        $this->submit($this->otherOwner, ['time_entry_ids' => [$theirs->public_id]])->assertNotFound();
-        $this->submit($this->otherOwner, ['time_entry_ids' => [$herilas->public_id]])->assertNotFound();
+        $this->assertNotNull($mine->fresh()->submitted_at);
+        $this->assertSame($this->otherOwner->id, $mine->fresh()->submitted_by_user_id);
         $this->assertNull($herilas->fresh()->submitted_at);
         $this->assertNull($theirs->fresh()->submitted_at);
+    }
+
+    public function test_a_foreign_or_colleagues_id_is_not_found_to_the_author(): void
+    {
+        $theirs = $this->draft($this->otherWorker, '2026-10-15');
+        $herilas = $this->hours($this->herilaProject, $this->herilaWorker, '2026-10-14', 60, ['status' => 'draft']);
+
+        $this->submit($this->otherOwner, ['time_entry_ids' => [$theirs->public_id, $herilas->public_id]])->assertNotFound();
+        $this->assertNull($herilas->fresh()->submitted_at);
+        $this->assertNull($theirs->fresh()->submitted_at);
+    }
+
+    public function test_a_colleague_cannot_withdraw_someone_elses_submission(): void
+    {
+        $mine = $this->draft($this->otherOwner);
+        $mine->forceFill(['submitted_at' => now(), 'submitted_by_user_id' => $this->otherOwner->id])->save();
+
+        $this->withdraw($this->otherWorker, ['time_entry_ids' => [$mine->public_id]])->assertNotFound();
         $this->assertNotNull($mine->fresh()->submitted_at);
     }
 
