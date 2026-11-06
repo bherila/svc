@@ -61,10 +61,12 @@ server advertises no list-change notifications.
    - Calling a tool that isn't in an enabled toolset returns the existing
      "not found / not available" error. Every call is authorized again, as
      today.
-5. **Compatibility.** A client that can't handle `list_changed` asks for
-   everything at connect time: an initialize option, or a setting on the
-   OAuth client record, whichever fits the existing patterns better. Document
-   which you chose. Tool names, schemas and REST parity don't change.
+5. **Default and compatibility (decided by the owner):** progressive
+   discovery is the default for EVERY client, existing ones included. A
+   client that can't handle `list_changed` opts into the full list at connect
+   time: an initialize option, or a setting on the OAuth client record,
+   whichever fits the existing patterns better. Document which you chose.
+   Tool names, schemas and REST parity don't change.
 6. **Prompts** stay conditional, as today. A prompt is advertised only when
    its tools are discoverable. Decide whether its required toolsets are
    enabled automatically when the prompt is fetched, and document the

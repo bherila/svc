@@ -766,6 +766,35 @@ three can't disagree.
 - **Identity**: one shared identity provider for every user, so the same person
   is the same `User` in every workspace and in the portal.
 
+## Decisions for unattended work (2026-11-06)
+
+Settled by the product owner before a period away:
+
+- **Merging.** Claude may merge its own PRs, and Codex's, only when every
+  hosted check is green on that exact head, the mutation results have been
+  inspected (no unexplained escaped mutants), and no review thread is open.
+  One at a time, in dependency order, watching the deploy that follows: a
+  merge to `main` deploys to production. Data-moving production commands (the
+  payment-credential migration, moving Direct time to a partner workspace)
+  are never run by Claude; their PRs say how to run them.
+- **`time_entries.log approve: true` on your own entry** is accepted and does
+  nothing. The response says so, and the docs mark it deprecated. Nothing
+  that uses it today breaks.
+- **Portal approvers.** Billing contacts get "Approve time and expenses" by
+  default; other contacts can be granted it one by one.
+- **Staff on the dashboard.** Members who are not owners or admins see only
+  their own "Needs you" queue: their time, tasks and reviews. Revenue figures
+  are for owners and admins only. The server enforces this.
+- **MCP default.** Every client gets the core set plus toolsets. A client
+  that can't handle `list_changed` opts into the full list.
+- **Pace.** At most two lanes at a time.
+- **Open questions** are decided conservatively (fail closed, smallest
+  change), noted in the PR, and listed below for review.
+
+### Decisions made while away
+
+(Appended as they happen: date, PR, question, decision, why.)
+
 ## Open questions
 
 None. Answered on 2026-11-06:
