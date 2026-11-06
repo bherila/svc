@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { RestCredentials } from '@/components/rest-credentials';
 import type { RestLinks } from '@/components/rest-credentials';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -32,26 +33,28 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
     }
 
     return (
-        <div className="min-w-0 rounded-lg border border-border bg-muted/30 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-medium">{label}</span>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copy}
-                    aria-label={`Copy ${label}`}
-                    data-test={`mcp-copy-${label.toLowerCase().replaceAll(' ', '-')}`}
-                >
-                    Copy
-                </Button>
-            </div>
-            <pre className="mt-3 text-sm wrap-anywhere whitespace-pre-wrap">
-                <code>{text}</code>
-            </pre>
-            <p role="status" className="mt-2 text-xs text-muted-foreground">
-                {message}
-            </p>
-        </div>
+        <Card className="min-w-0 bg-muted/30 ring-border">
+            <CardContent>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{label}</span>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={copy}
+                        aria-label={`Copy ${label}`}
+                        data-test={`mcp-copy-${label.toLowerCase().replaceAll(' ', '-')}`}
+                    >
+                        Copy
+                    </Button>
+                </div>
+                <pre className="mt-3 text-sm wrap-anywhere whitespace-pre-wrap">
+                    <code>{text}</code>
+                </pre>
+                <p role="status" className="mt-2 text-xs text-muted-foreground">
+                    {message}
+                </p>
+            </CardContent>
+        </Card>
     );
 }
 
@@ -77,14 +80,16 @@ export default function McpSetup({
                             language.
                         </p>
                         {!available && (
-                            <p
-                                role="alert"
-                                className="rounded-lg border border-border p-4"
-                            >
-                                MCP connections are currently unavailable on
-                                this installation. Ask your workspace
-                                administrator before continuing.
-                            </p>
+                            <Card className="ring-border">
+                                <CardContent>
+                                    <p role="alert">
+                                        MCP connections are currently
+                                        unavailable on this installation. Ask
+                                        your workspace administrator before
+                                        continuing.
+                                    </p>
+                                </CardContent>
+                            </Card>
                         )}
                         <CopyBlock label="Server URL" text={serverUrl} />
                         <p className="text-sm text-muted-foreground">
@@ -95,97 +100,119 @@ export default function McpSetup({
                         </p>
                     </section>
                     <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3">
-                        <section className="grid min-w-0 grid-cols-1 content-start gap-4 rounded-xl border border-border p-5">
-                            <h2 className="text-lg font-semibold">ChatGPT</h2>
-                            <ol className="list-decimal space-y-3 pl-5 text-sm">
-                                <li>
-                                    Open ChatGPT on the web. In Settings, open
-                                    Security and login and enable Developer mode
-                                    if your account permits it. Then open Apps.
-                                </li>
-                                <li>
-                                    Create a custom MCP app named SVC. Paste the
-                                    Server URL above and choose OAuth
-                                    authentication.
-                                </li>
-                                <li>
-                                    Connect, sign in and approve the permissions
-                                    you want to grant.
-                                </li>
-                                <li>
-                                    Select SVC from the apps/tools menu in a new
-                                    conversation and try the connection prompt
-                                    below.
-                                </li>
-                            </ol>
-                            <p className="text-sm text-muted-foreground">
-                                Custom apps depend on your plan and workspace
-                                settings. If these controls are missing, ask
-                                your ChatGPT administrator.
-                            </p>
-                            <a
-                                className="text-sm underline"
-                                href="https://developers.openai.com/api/docs/guides/developer-mode"
-                            >
-                                ChatGPT setup documentation
-                            </a>
-                        </section>
-                        <section className="grid min-w-0 grid-cols-1 content-start gap-4 rounded-xl border border-border p-5">
-                            <h2 className="text-lg font-semibold">Claude</h2>
-                            <ol className="list-decimal space-y-3 pl-5 text-sm">
-                                <li>
-                                    In Claude’s Settings, open Connectors and
-                                    add a custom connector named SVC.
-                                </li>
-                                <li>
-                                    Paste the Server URL, connect, then complete
-                                    sign-in and consent.
-                                </li>
-                                <li>
-                                    Enable SVC in your conversation and try the
-                                    connection prompt below.
-                                </li>
-                            </ol>
-                            <p className="text-sm text-muted-foreground">
-                                Connector availability depends on your plan and
-                                administrator. For Claude Code, run this
-                                command, then use /mcp to authenticate:
-                            </p>
-                            <CopyBlock
-                                label="Claude Code command"
-                                text={`claude mcp add --transport http svc ${serverUrl}`}
-                            />
-                            <a
-                                className="text-sm underline"
-                                href="https://code.claude.com/docs/en/mcp"
-                            >
-                                Claude Code setup documentation
-                            </a>
-                        </section>
-                        <section className="grid min-w-0 grid-cols-1 content-start gap-4 rounded-xl border border-border p-5">
-                            <h2 className="text-lg font-semibold">Codex</h2>
-                            <p className="text-sm">
-                                In the Codex CLI, add the server and sign in
-                                using the two commands below. Complete the
-                                browser consent flow, then start a new Codex
-                                session.
-                            </p>
-                            <CopyBlock
-                                label="Codex commands"
-                                text={`codex mcp add svc --url ${serverUrl}\ncodex mcp login svc`}
-                            />
-                            <p className="text-sm text-muted-foreground">
-                                If your Codex app offers MCP settings, add the
-                                same Server URL there and authenticate with
-                                OAuth.
-                            </p>
-                            <a
-                                className="text-sm underline"
-                                href="https://developers.openai.com/codex/mcp"
-                            >
-                                Codex setup documentation
-                            </a>
-                        </section>
+                        <Card className="min-w-0 ring-border">
+                            <CardContent>
+                                <section className="grid grid-cols-1 content-start gap-4">
+                                    <h2 className="text-lg font-semibold">
+                                        ChatGPT
+                                    </h2>
+                                    <ol className="list-decimal space-y-3 pl-5 text-sm">
+                                        <li>
+                                            Open ChatGPT on the web. In
+                                            Settings, open Security and login
+                                            and enable Developer mode if your
+                                            account permits it. Then open Apps.
+                                        </li>
+                                        <li>
+                                            Create a custom MCP app named SVC.
+                                            Paste the Server URL above and
+                                            choose OAuth authentication.
+                                        </li>
+                                        <li>
+                                            Connect, sign in and approve the
+                                            permissions you want to grant.
+                                        </li>
+                                        <li>
+                                            Select SVC from the apps/tools menu
+                                            in a new conversation and try the
+                                            connection prompt below.
+                                        </li>
+                                    </ol>
+                                    <p className="text-sm text-muted-foreground">
+                                        Custom apps depend on your plan and
+                                        workspace settings. If these controls
+                                        are missing, ask your ChatGPT
+                                        administrator.
+                                    </p>
+                                    <a
+                                        className="text-sm underline"
+                                        href="https://developers.openai.com/api/docs/guides/developer-mode"
+                                    >
+                                        ChatGPT setup documentation
+                                    </a>
+                                </section>
+                            </CardContent>
+                        </Card>
+                        <Card className="min-w-0 ring-border">
+                            <CardContent>
+                                <section className="grid grid-cols-1 content-start gap-4">
+                                    <h2 className="text-lg font-semibold">
+                                        Claude
+                                    </h2>
+                                    <ol className="list-decimal space-y-3 pl-5 text-sm">
+                                        <li>
+                                            In Claude’s Settings, open
+                                            Connectors and add a custom
+                                            connector named SVC.
+                                        </li>
+                                        <li>
+                                            Paste the Server URL, connect, then
+                                            complete sign-in and consent.
+                                        </li>
+                                        <li>
+                                            Enable SVC in your conversation and
+                                            try the connection prompt below.
+                                        </li>
+                                    </ol>
+                                    <p className="text-sm text-muted-foreground">
+                                        Connector availability depends on your
+                                        plan and administrator. For Claude Code,
+                                        run this command, then use /mcp to
+                                        authenticate:
+                                    </p>
+                                    <CopyBlock
+                                        label="Claude Code command"
+                                        text={`claude mcp add --transport http svc ${serverUrl}`}
+                                    />
+                                    <a
+                                        className="text-sm underline"
+                                        href="https://code.claude.com/docs/en/mcp"
+                                    >
+                                        Claude Code setup documentation
+                                    </a>
+                                </section>
+                            </CardContent>
+                        </Card>
+                        <Card className="min-w-0 ring-border">
+                            <CardContent>
+                                <section className="grid grid-cols-1 content-start gap-4">
+                                    <h2 className="text-lg font-semibold">
+                                        Codex
+                                    </h2>
+                                    <p className="text-sm">
+                                        In the Codex CLI, add the server and
+                                        sign in using the two commands below.
+                                        Complete the browser consent flow, then
+                                        start a new Codex session.
+                                    </p>
+                                    <CopyBlock
+                                        label="Codex commands"
+                                        text={`codex mcp add svc --url ${serverUrl}\ncodex mcp login svc`}
+                                    />
+                                    <p className="text-sm text-muted-foreground">
+                                        If your Codex app offers MCP settings,
+                                        add the same Server URL there and
+                                        authenticate with OAuth.
+                                    </p>
+                                    <a
+                                        className="text-sm underline"
+                                        href="https://developers.openai.com/codex/mcp"
+                                    >
+                                        Codex setup documentation
+                                    </a>
+                                </section>
+                            </CardContent>
+                        </Card>
                     </div>
                     <section className="grid grid-cols-1 gap-4">
                         <h2 className="text-lg font-semibold">

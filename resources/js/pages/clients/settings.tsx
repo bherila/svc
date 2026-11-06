@@ -409,91 +409,98 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
                 <Label htmlFor="company-active">Active client</Label>
             </div>
 
-            <div className="grid max-w-xl grid-cols-1 gap-3 rounded-lg border p-4">
-                <div className="flex items-center gap-3">
-                    <Switch
-                        disabled={change.locked}
-                        id="automatic-invoice-email"
-                        checked={form.data.automatic_invoice_email_enabled}
-                        onCheckedChange={(next) =>
-                            form.setData(
-                                'automatic_invoice_email_enabled',
-                                next === true,
-                            )
-                        }
-                    />
-                    <Label htmlFor="automatic-invoice-email">
-                        Automatically email issued invoices to clients
-                    </Label>
-                </div>
-
-                {form.data.automatic_invoice_email_enabled && (
-                    <div className="grid max-w-xs grid-cols-1 gap-2">
-                        <Label htmlFor="automatic-invoice-delay">
-                            Days after issue
-                        </Label>
-                        <Input
+            <Card className="max-w-xl">
+                <CardContent className="grid grid-cols-1 gap-3">
+                    <div className="flex items-center gap-3">
+                        <Switch
                             disabled={change.locked}
-                            id="automatic-invoice-delay"
-                            type="number"
-                            min={0}
-                            max={365}
-                            step={1}
-                            value={form.data.automatic_invoice_email_delay_days}
-                            onChange={(event) =>
+                            id="automatic-invoice-email"
+                            checked={form.data.automatic_invoice_email_enabled}
+                            onCheckedChange={(next) =>
                                 form.setData(
-                                    'automatic_invoice_email_delay_days',
-                                    Number.parseInt(
-                                        event.target.value || '0',
-                                        10,
-                                    ),
+                                    'automatic_invoice_email_enabled',
+                                    next === true,
                                 )
                             }
                         />
-                        <p className="text-xs wrap-anywhere text-muted-foreground">
-                            Zero makes a newly issued invoice eligible
-                            immediately. The maximum review window is 365
-                            calendar days in the workspace timezone.
-                        </p>
+                        <Label htmlFor="automatic-invoice-email">
+                            Automatically email issued invoices to clients
+                        </Label>
                     </div>
-                )}
 
-                <div className="text-sm">
-                    <p className="font-medium">Configured recipients</p>
-                    {(company.invoice_recipients ?? []).length === 0 ? (
-                        <p className="wrap-anywhere text-destructive">
-                            None. Add a billing email or a client portal user
-                            before enabling automatic delivery.
-                        </p>
-                    ) : (
-                        <ul className="grid grid-cols-1 gap-1 text-muted-foreground">
-                            {(company.invoice_recipients ?? []).map(
-                                (recipient) => (
-                                    <li
-                                        key={recipient.email}
-                                        className="wrap-anywhere"
-                                    >
-                                        {recipient.label}: {recipient.email}
-                                    </li>
-                                ),
-                            )}
-                        </ul>
+                    {form.data.automatic_invoice_email_enabled && (
+                        <div className="grid max-w-xs grid-cols-1 gap-2">
+                            <Label htmlFor="automatic-invoice-delay">
+                                Days after issue
+                            </Label>
+                            <Input
+                                disabled={change.locked}
+                                id="automatic-invoice-delay"
+                                type="number"
+                                min={0}
+                                max={365}
+                                step={1}
+                                value={
+                                    form.data.automatic_invoice_email_delay_days
+                                }
+                                onChange={(event) =>
+                                    form.setData(
+                                        'automatic_invoice_email_delay_days',
+                                        Number.parseInt(
+                                            event.target.value || '0',
+                                            10,
+                                        ),
+                                    )
+                                }
+                            />
+                            <p className="text-xs wrap-anywhere text-muted-foreground">
+                                Zero makes a newly issued invoice eligible
+                                immediately. The maximum review window is 365
+                                calendar days in the workspace timezone.
+                            </p>
+                        </div>
                     )}
-                </div>
 
-                {change.errors.automatic_invoice_email_enabled !==
-                    undefined && (
-                    <p className="text-sm wrap-anywhere text-destructive">
-                        {change.errors.automatic_invoice_email_enabled?.[0]}
-                    </p>
-                )}
-                {change.errors.automatic_invoice_email_delay_days !==
-                    undefined && (
-                    <p className="text-sm wrap-anywhere text-destructive">
-                        {change.errors.automatic_invoice_email_delay_days?.[0]}
-                    </p>
-                )}
-            </div>
+                    <div className="text-sm">
+                        <p className="font-medium">Configured recipients</p>
+                        {(company.invoice_recipients ?? []).length === 0 ? (
+                            <p className="wrap-anywhere text-destructive">
+                                None. Add a billing email or a client portal
+                                user before enabling automatic delivery.
+                            </p>
+                        ) : (
+                            <ul className="grid grid-cols-1 gap-1 text-muted-foreground">
+                                {(company.invoice_recipients ?? []).map(
+                                    (recipient) => (
+                                        <li
+                                            key={recipient.email}
+                                            className="wrap-anywhere"
+                                        >
+                                            {recipient.label}: {recipient.email}
+                                        </li>
+                                    ),
+                                )}
+                            </ul>
+                        )}
+                    </div>
+
+                    {change.errors.automatic_invoice_email_enabled !==
+                        undefined && (
+                        <p className="text-sm wrap-anywhere text-destructive">
+                            {change.errors.automatic_invoice_email_enabled?.[0]}
+                        </p>
+                    )}
+                    {change.errors.automatic_invoice_email_delay_days !==
+                        undefined && (
+                        <p className="text-sm wrap-anywhere text-destructive">
+                            {
+                                change.errors
+                                    .automatic_invoice_email_delay_days?.[0]
+                            }
+                        </p>
+                    )}
+                </CardContent>
+            </Card>
 
             <div>
                 {change.error && (
@@ -538,145 +545,164 @@ function ProjectForm({
     const mutation = useProjectWrite();
 
     return (
-        <form
-            className="grid grid-cols-1 gap-3 rounded-xl border p-4"
-            onSubmit={(event) => {
-                event.preventDefault();
-                void mutation
-                    .write('PATCH', project.update_url, {
-                        ...form.data,
-                        description: form.data.description || null,
-                        repository: form.data.repository || null,
-                        confirm: true,
-                    })
-                    .then((saved) => {
-                        if (saved) {
-                            form.setData({
-                                expected_version: saved.version,
-                                name: saved.name,
-                                description: saved.description ?? '',
-                                repository: saved.repository ?? '',
-                                status: saved.status,
-                                is_visible_to_client:
-                                    saved.is_visible_to_client,
+        <Card>
+            <CardContent>
+                <form
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        void mutation
+                            .write('PATCH', project.update_url, {
+                                ...form.data,
+                                description: form.data.description || null,
+                                repository: form.data.repository || null,
+                                confirm: true,
+                            })
+                            .then((saved) => {
+                                if (saved) {
+                                    form.setData({
+                                        expected_version: saved.version,
+                                        name: saved.name,
+                                        description: saved.description ?? '',
+                                        repository: saved.repository ?? '',
+                                        status: saved.status,
+                                        is_visible_to_client:
+                                            saved.is_visible_to_client,
+                                    });
+                                }
                             });
+                    }}
+                    className="grid grid-cols-1 gap-3"
+                >
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                            disabled={mutation.busy || mutation.unresolved}
+                            aria-label={`Name of ${project.name}`}
+                            value={form.data.name}
+                            onChange={(event) =>
+                                form.setData('name', event.target.value)
+                            }
+                            className="max-w-xs"
+                        />
+                        <Badge variant="outline">
+                            {statusLabel(project.status)}
+                        </Badge>
+                    </div>
+
+                    <Textarea
+                        disabled={mutation.busy || mutation.unresolved}
+                        aria-label={`Description of ${project.name}`}
+                        value={form.data.description}
+                        onChange={(event) =>
+                            form.setData('description', event.target.value)
                         }
-                    });
-            }}
-        >
-            <div className="flex flex-wrap items-center gap-2">
-                <Input
-                    disabled={mutation.busy || mutation.unresolved}
-                    aria-label={`Name of ${project.name}`}
-                    value={form.data.name}
-                    onChange={(event) =>
-                        form.setData('name', event.target.value)
-                    }
-                    className="max-w-xs"
-                />
-                <Badge variant="outline">{statusLabel(project.status)}</Badge>
-            </div>
+                        placeholder="No description"
+                        rows={2}
+                    />
 
-            <Textarea
-                disabled={mutation.busy || mutation.unresolved}
-                aria-label={`Description of ${project.name}`}
-                value={form.data.description}
-                onChange={(event) =>
-                    form.setData('description', event.target.value)
-                }
-                placeholder="No description"
-                rows={2}
-            />
-
-            {/*
+                    {/*
                 The repository this project's work happens in. Typed once here
                 so an agent in that checkout can resolve it without asking, and
                 stored canonically - paste whatever `git remote get-url origin`
                 printed and the server reduces it to one spelling.
             */}
-            <div className="grid grid-cols-1 gap-1">
-                <Label htmlFor={`repository-${project.id}`}>Repository</Label>
-                <Input
-                    disabled={mutation.busy || mutation.unresolved}
-                    id={`repository-${project.id}`}
-                    value={form.data.repository}
-                    onChange={(event) =>
-                        form.setData('repository', event.target.value)
-                    }
-                    placeholder="github.com/owner/name"
-                />
-                {form.errors.repository ? (
-                    <p role="alert" className="text-sm text-destructive">
-                        {form.errors.repository}
-                    </p>
-                ) : null}
-            </div>
+                    <div className="grid grid-cols-1 gap-1">
+                        <Label htmlFor={`repository-${project.id}`}>
+                            Repository
+                        </Label>
+                        <Input
+                            disabled={mutation.busy || mutation.unresolved}
+                            id={`repository-${project.id}`}
+                            value={form.data.repository}
+                            onChange={(event) =>
+                                form.setData('repository', event.target.value)
+                            }
+                            placeholder="github.com/owner/name"
+                        />
+                        {form.errors.repository ? (
+                            <p
+                                role="alert"
+                                className="text-sm text-destructive"
+                            >
+                                {form.errors.repository}
+                            </p>
+                        ) : null}
+                    </div>
 
-            {mutation.failure && (
-                <p
-                    role="alert"
-                    className="text-sm wrap-anywhere text-destructive"
-                >
-                    {mutation.failure}
-                </p>
-            )}
+                    {mutation.failure && (
+                        <p
+                            role="alert"
+                            className="text-sm wrap-anywhere text-destructive"
+                        >
+                            {mutation.failure}
+                        </p>
+                    )}
 
-            <div className="flex flex-wrap items-center gap-6">
-                <div className="flex items-center gap-3">
-                    <Switch
-                        disabled={mutation.busy || mutation.unresolved}
-                        id={`visible-${project.id}`}
-                        checked={form.data.is_visible_to_client}
-                        onCheckedChange={(next) =>
-                            form.setData('is_visible_to_client', next === true)
-                        }
-                    />
-                    <Label htmlFor={`visible-${project.id}`}>
-                        Client can see this project
-                    </Label>
-                </div>
-                <div className="flex items-center gap-3">
-                    <Switch
-                        disabled={mutation.busy || mutation.unresolved}
-                        id={`archived-${project.id}`}
-                        checked={form.data.status === 'archived'}
-                        onCheckedChange={(next) =>
-                            form.setData(
-                                'status',
-                                next === true ? 'archived' : 'active',
-                            )
-                        }
-                    />
-                    <Label htmlFor={`archived-${project.id}`}>Archived</Label>
-                </div>
-                <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={mutation.busy}
-                >
-                    {mutation.confirmed
-                        ? 'Refresh saved project'
-                        : mutation.unresolved
-                          ? 'Check project save'
-                          : 'Save project'}
-                </Button>
-            </div>
+                    <div className="flex flex-wrap items-center gap-6">
+                        <div className="flex items-center gap-3">
+                            <Switch
+                                disabled={mutation.busy || mutation.unresolved}
+                                id={`visible-${project.id}`}
+                                checked={form.data.is_visible_to_client}
+                                onCheckedChange={(next) =>
+                                    form.setData(
+                                        'is_visible_to_client',
+                                        next === true,
+                                    )
+                                }
+                            />
+                            <Label htmlFor={`visible-${project.id}`}>
+                                Client can see this project
+                            </Label>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Switch
+                                disabled={mutation.busy || mutation.unresolved}
+                                id={`archived-${project.id}`}
+                                checked={form.data.status === 'archived'}
+                                onCheckedChange={(next) =>
+                                    form.setData(
+                                        'status',
+                                        next === true ? 'archived' : 'active',
+                                    )
+                                }
+                            />
+                            <Label htmlFor={`archived-${project.id}`}>
+                                Archived
+                            </Label>
+                        </div>
+                        <Button
+                            type="submit"
+                            variant="outline"
+                            disabled={mutation.busy}
+                        >
+                            {mutation.confirmed
+                                ? 'Refresh saved project'
+                                : mutation.unresolved
+                                  ? 'Check project save'
+                                  : 'Save project'}
+                        </Button>
+                    </div>
 
-            {mutation.unresolved && (
-                <p
-                    role="status"
-                    className="text-sm wrap-anywhere text-muted-foreground"
-                >
-                    {mutation.confirmed
-                        ? 'The change is saved. Refresh its result before editing again.'
-                        : 'The result is unknown. Check the original save before editing again.'}
-                </p>
-            )}
-            <div className="grid grid-cols-1 gap-2 border-t pt-3">
-                <Label>Who can reach this project</Label>
-                <ProjectAccess project={project} assignable={assignable} />
-            </div>
-        </form>
+                    {mutation.unresolved && (
+                        <p
+                            role="status"
+                            className="text-sm wrap-anywhere text-muted-foreground"
+                        >
+                            {mutation.confirmed
+                                ? 'The change is saved. Refresh its result before editing again.'
+                                : 'The result is unknown. Check the original save before editing again.'}
+                        </p>
+                    )}
+                    <div className="grid grid-cols-1 gap-2 border-t pt-3">
+                        <Label>Who can reach this project</Label>
+                        <ProjectAccess
+                            project={project}
+                            assignable={assignable}
+                        />
+                    </div>
+                </form>
+            </CardContent>
+        </Card>
     );
 }
 

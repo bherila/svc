@@ -17,7 +17,9 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import AxeBuilder from '@axe-core/playwright';
 import { chromium, expect } from '@playwright/test';
+import { uiConsistencyRisks } from '../resources/js/test/ui-consistency.ts';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -640,6 +642,22 @@ try {
             metrics.navbarHeight === 48 &&
             centers.length > 0 &&
             Math.max(...centers) - Math.min(...centers) <= 1;
+        // Radius, padding and font size come from the cascade, so they are
+        // checked here and not in jsdom: cards against the spec tokens, one
+        // filled button per page, no bordered link in a card, every action
+        // button named. Advisory risks (a text button without an icon) are
+        // reported and do not fail. Then axe: serious or critical fails.
+        const uiRisks = await uiConsistencyRisks(page);
+        const uiErrors = uiRisks.filter((risk) => risk.severity === 'error');
+        const axe = await new AxeBuilder({ page }).analyze();
+        const axeSerious = axe.violations
+            .filter((violation) =>
+                ['serious', 'critical'].includes(violation.impact ?? ''),
+            )
+            .map(
+                (violation) =>
+                    `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes)`,
+            );
         const screenshot = `${screen}-${state}-${width}.png`;
         await page.screenshot({
             path: path.join(artifacts, screenshot),
@@ -653,12 +671,29 @@ try {
             measuredOnly,
             passes,
             ...metrics,
+            ui: uiRisks,
+            axe: axeSerious,
             screenshot,
         });
 
         if (!passes && !measuredOnly) {
             failures.push(
                 `${screen}/${state} at ${width}px: overflow or navbar no longer one row.`,
+            );
+        }
+
+        if (!measuredOnly && uiErrors.length > 0) {
+            failures.push(
+                `${screen}/${state} at ${width}px: UI consistency: ${uiErrors
+                    .slice(0, 5)
+                    .map((risk) => `${risk.rule} ${risk.detail}`)
+                    .join('; ')}`,
+            );
+        }
+
+        if (!measuredOnly && axeSerious.length > 0) {
+            failures.push(
+                `${screen}/${state} at ${width}px: axe: ${axeSerious.join('; ')}`,
             );
         }
     }
@@ -3294,7 +3329,7 @@ try {
     );
     const rows = results.map(
         (row) =>
-            `| ${row.screen}/${row.state} | ${row.width} | ${row.documentWidth} | ${row.navbarHeight} | ${row.measuredOnly ? 'measurement only' : row.passes ? 'pass' : 'FAIL'} | [image](${row.screenshot}) |`,
+            `| ${row.screen}/${row.state} | ${row.width} | ${row.documentWidth} | ${row.navbarHeight} | ${row.measuredOnly ? 'measurement only' : row.passes ? 'pass' : 'FAIL'} | ${row.ui.filter((risk) => risk.severity === 'error').length} errors, ${row.ui.filter((risk) => risk.severity === 'advisory').length} advisory / ${row.axe.length} axe | [image](${row.screenshot}) |`,
     );
     writeFileSync(
         path.join(artifacts, 'report.md'),
@@ -3334,8 +3369,8 @@ try {
                                             : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
 
             '',
-            '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
-            '| --- | --- | --- | --- | --- | --- |',
+            '| Page/state | Viewport | Document width | Navbar height | Gate | UI consistency / axe | Screenshot |',
+            '| --- | --- | --- | --- | --- | --- | --- |',
             ...rows,
             '',
             '## Manual screenshot review',

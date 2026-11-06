@@ -212,7 +212,7 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
         await userEvent.click(
             screen.getByRole('link', { name: 'Bb Synthetic Client' }),
@@ -256,7 +256,7 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
         await userEvent.click(
             screen.getByRole('link', { name: 'Bb Synthetic Client' }),
@@ -275,7 +275,7 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
         await userEvent.type(
             screen.getByRole('textbox', { name: 'Filter clients' }),
@@ -310,7 +310,7 @@ describe('workspace shell', () => {
             screen.getByRole('link', { name: 'Leave this workspace' }),
         ).toBeInTheDocument();
         expect(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         ).toHaveTextContent('Select a client');
         expect(
             screen.queryByRole('link', { name: 'Invoices' }),
@@ -504,7 +504,7 @@ describe('workspace shell', () => {
         );
 
         await userEvent.click(
-            screen.getByRole('button', { name: 'Current client' }),
+            screen.getByRole('button', { name: /^Current client/ }),
         );
 
         expect(

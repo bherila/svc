@@ -1,4 +1,7 @@
 import { Head, usePage } from '@inertiajs/react';
+import { buttonVariants } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 export default function Welcome() {
     const { auth } = usePage().props;
@@ -38,7 +41,13 @@ export default function Welcome() {
                         </span>
                         <a
                             href={auth.user ? '/app' : '/oauth/redirect'}
-                            className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium hover:bg-white/10"
+                            className={cn(
+                                buttonVariants({
+                                    variant: 'outline',
+                                    size: 'lg',
+                                }),
+                                'border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white',
+                            )}
                         >
                             {auth.user ? 'Open workspace' : 'Sign in'}
                         </a>
@@ -68,29 +77,31 @@ export default function Welcome() {
                             </a>
                         </div>
 
-                        <div className="rounded-3xl border border-white/10 bg-white/5 p-7 shadow-2xl shadow-cyan-950/30 backdrop-blur">
-                            <p className="text-sm text-slate-400">
-                                Foundation roadmap
-                            </p>
-                            <ol className="mt-5 space-y-4">
-                                {[
-                                    ['01', 'Workspaces and client access'],
-                                    ['02', 'Projects, tasks, and time'],
-                                    ['03', 'Agreements and billing'],
-                                    ['04', 'Files and integrations'],
-                                ].map(([number, label]) => (
-                                    <li
-                                        key={number}
-                                        className="flex items-center gap-4 rounded-2xl bg-slate-900/70 p-4"
-                                    >
-                                        <span className="font-mono text-sm text-cyan-300">
-                                            {number}
-                                        </span>
-                                        <span>{label}</span>
-                                    </li>
-                                ))}
-                            </ol>
-                        </div>
+                        <Card className="bg-white/5 text-white shadow-2xl shadow-cyan-950/30 ring-white/10 backdrop-blur">
+                            <CardContent>
+                                <p className="text-sm text-slate-400">
+                                    Foundation roadmap
+                                </p>
+                                <ol className="mt-5 space-y-4">
+                                    {[
+                                        ['01', 'Workspaces and client access'],
+                                        ['02', 'Projects, tasks, and time'],
+                                        ['03', 'Agreements and billing'],
+                                        ['04', 'Files and integrations'],
+                                    ].map(([number, label]) => (
+                                        <li
+                                            key={number}
+                                            className="flex items-center gap-4 rounded-2xl bg-slate-900/70 p-4"
+                                        >
+                                            <span className="font-mono text-sm text-cyan-300">
+                                                {number}
+                                            </span>
+                                            <span>{label}</span>
+                                        </li>
+                                    ))}
+                                </ol>
+                            </CardContent>
+                        </Card>
                     </section>
                 </div>
             </main>
