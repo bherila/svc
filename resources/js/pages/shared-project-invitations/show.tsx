@@ -115,8 +115,8 @@ export default function SharedProjectInvitation({
                                         You have no workspace of your own yet,
                                         so joining sets one up for you: a light
                                         workspace to log time, submit it for
-                                        review and keep your approved
-                                        timesheet. It starts empty. Nothing of{' '}
+                                        review and keep your approved timesheet.
+                                        It starts empty. Nothing of{' '}
                                         {invitation.host_workspace_name}’s is
                                         copied into it.
                                     </p>
@@ -129,7 +129,9 @@ export default function SharedProjectInvitation({
                                             value={clientName}
                                             maxLength={120}
                                             onChange={(event) =>
-                                                setClientName(event.target.value)
+                                                setClientName(
+                                                    event.target.value,
+                                                )
                                             }
                                         />
                                     </div>

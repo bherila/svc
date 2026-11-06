@@ -30,7 +30,11 @@ import type { TimesheetProps } from '@/types/submission';
  * (docs/ux-overhaul.md section 7e). It is what a provider invoices from or
  * sends, so it prints no rate and nothing that was not approved.
  */
-export default function Timesheet({ workspace, timesheet, links }: TimesheetProps) {
+export default function Timesheet({
+    workspace,
+    timesheet,
+    links,
+}: TimesheetProps) {
     const style = useDurationStyle();
 
     return (
@@ -200,7 +204,8 @@ export default function Timesheet({ workspace, timesheet, links }: TimesheetProp
                                                 </span>
                                                 <span className="block text-xs text-muted-foreground">
                                                     {entry.approved_via}
-                                                    {entry.approved_at !== null &&
+                                                    {entry.approved_at !==
+                                                        null &&
                                                         `, ${formatTimestampDate(entry.approved_at)}`}
                                                 </span>
                                             </TableCell>
@@ -228,8 +233,8 @@ export default function Timesheet({ workspace, timesheet, links }: TimesheetProp
                         )}
                         {timesheet.truncated && (
                             <p className="mt-3 text-xs text-muted-foreground">
-                                This month has more approved rows than fit.
-                                The first 1000 are shown.
+                                This month has more approved rows than fit. The
+                                first 1000 are shown.
                             </p>
                         )}
                     </CardContent>

@@ -305,4 +305,64 @@ describe('My work', () => {
 
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
+
+    it('shows a light workspace its month, setup and the way to turn billing on', () => {
+        render(
+            <MyWork
+                {...props({
+                    light: {
+                        client: 'Synthetic Client',
+                        shared_project: {
+                            name: LONG,
+                            host_workspace_name: 'Host Studio',
+                        },
+                        month: {
+                            period: '2026-11',
+                            label: 'November 2026',
+                            draft: 60,
+                            submitted: 30,
+                            approved: 90,
+                            disputed: 0,
+                        },
+                        submissions_href: '/workspaces/workspace-1/submissions',
+                        timesheet_href: '/workspaces/workspace-1/timesheet',
+                        full_workspace_url:
+                            '/workspaces/workspace-1/edition/full',
+                    },
+                })}
+            />,
+        );
+
+        const card = document.querySelector<HTMLElement>(
+            '[data-test=light-workspace]',
+        )!;
+        expect(within(card).getByText(/1 h to submit/)).toBeInTheDocument();
+        expect(
+            within(card).getByRole('link', { name: /Submit for review/ }),
+        ).toHaveAttribute('href', '/workspaces/workspace-1/submissions');
+        expect(
+            within(card).getByRole('button', {
+                name: /Turn on agreements and invoicing/,
+            }),
+        ).toBeInTheDocument();
+    });
+
+    it('sends what the client reads so the hours can be submitted', async () => {
+        const user = userEvent.setup();
+        api.apiRequest.mockResolvedValue({ ok: true, status: 201, data: {} });
+        render(<MyWork {...props()} />);
+
+        await user.type(screen.getByLabelText('What did you do?'), 'Internal');
+        await user.type(
+            screen.getByLabelText(/What the client reads/),
+            'Fixed the synthetic thing',
+        );
+        await user.click(screen.getByRole('button', { name: /Save hours/ }));
+
+        await waitFor(() => expect(api.apiRequest).toHaveBeenCalledTimes(1));
+        expect(api.apiRequest.mock.calls[0][2].entries[0]).toMatchObject({
+            is_visible_to_client: true,
+            client_visible_description: 'Fixed the synthetic thing',
+        });
+    });
 });

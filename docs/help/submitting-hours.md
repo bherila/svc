@@ -2,7 +2,7 @@
 title: Submitting hours and expenses for review
 audience: [operator, partner]
 routes: [workspaces.submissions]
-terms: [Submitted]
+terms: []
 ---
 **Submitting** tells whoever pays for your work, or vouches for it, that this month's hours and expenses are ready for them to look at. It is how a one-person business gets its time in front of a client or a reviewer without approving its own hours: you submit, someone else approves.
 

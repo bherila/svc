@@ -353,8 +353,8 @@ function QuickLog({
                                 }
                             />
                             <p className="text-xs text-muted-foreground">
-                                Hours need this before they can be submitted
-                                for review.
+                                Hours need this before they can be submitted for
+                                review.
                             </p>
                         </div>
                         {error !== null && (
@@ -559,7 +559,9 @@ export default function MyWork({
                     </p>
                 )}
 
-                {light !== null && <LightWorkspace light={light} style={style} />}
+                {light !== null && (
+                    <LightWorkspace light={light} style={style} />
+                )}
 
                 <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                     <ThisWeek groups={tasks} onChanged={setTaskError} />

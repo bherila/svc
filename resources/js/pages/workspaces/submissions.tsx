@@ -36,7 +36,11 @@ import type {
     SubmissionsProps,
 } from '@/types/submission';
 
-type Body = { time_entry_ids?: string[]; expense_ids?: string[]; period?: string };
+type Body = {
+    time_entry_ids?: string[];
+    expense_ids?: string[];
+    period?: string;
+};
 
 const STATE_ICON = {
     draft: PencilLineIcon,
@@ -139,7 +143,8 @@ export default function Submissions({
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState<string | null>(null);
 
-    const waiting = submissions.time.filter((row) => row.can_submit).length +
+    const waiting =
+        submissions.time.filter((row) => row.can_submit).length +
         submissions.expenses.filter((row) => row.can_submit).length;
     const withdrawable =
         submissions.time.filter((row) => row.can_withdraw).length +
@@ -298,8 +303,8 @@ export default function Submissions({
                     <CardContent>
                         {submissions.time.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
-                                You logged no hours in {submissions.period_label}
-                                .{' '}
+                                You logged no hours in{' '}
+                                {submissions.period_label}.{' '}
                                 <Link
                                     href={links.my_work_href}
                                     className="underline underline-offset-4"
@@ -495,8 +500,8 @@ export default function Submissions({
 
                 {submissions.truncated && (
                     <p className="text-xs text-muted-foreground">
-                        This month has more rows than fit on one page. The
-                        first 500 of each kind are shown.
+                        This month has more rows than fit on one page. The first
+                        500 of each kind are shown.
                     </p>
                 )}
             </main>

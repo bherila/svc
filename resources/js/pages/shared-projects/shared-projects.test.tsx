@@ -643,6 +643,39 @@ describe('Invitation', () => {
         );
     });
 
+    it('asks for the client and makes a light workspace for a person with none', async () => {
+        const user = userEvent.setup();
+        api.apiRequest.mockResolvedValue({
+            ok: true,
+            status: 200,
+            data: { redirect_url: '/workspaces/new/my-work' },
+        });
+        render(
+            <SharedProjectInvitation
+                {...invitation}
+                workspaces={[]}
+                creates_light_workspace
+            />,
+        );
+
+        const join = screen.getByRole('button', { name: 'Join' });
+        expect(join).toBeDisabled();
+        await user.type(
+            screen.getByLabelText('The client you bill for this work'),
+            'Synthetic Client',
+        );
+        await user.click(join);
+
+        await waitFor(() =>
+            expect(api.apiRequest).toHaveBeenCalledWith(
+                'POST',
+                '/shared-project-invitations/invitation-1/accept',
+                { client_name: 'Synthetic Client' },
+            ),
+        );
+        expect(inertia.visit).toHaveBeenCalledWith('/workspaces/new/my-work');
+    });
+
     it('declines without choosing a workspace', async () => {
         const user = userEvent.setup();
         api.apiRequest.mockResolvedValue({
