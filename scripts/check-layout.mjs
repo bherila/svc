@@ -58,6 +58,10 @@ const uiGated = new Set([
     'shared_invitation',
     'reviewer_queue',
     'reviewer_grants',
+    'light_my_work',
+    'light_submissions',
+    'light_timesheet',
+    'light_invitation',
 ]);
 const clientsOnly = process.argv.includes('--clients');
 const resourceChromeOnly = process.argv.includes('--resource-chrome');
@@ -89,6 +93,7 @@ const workPortalOnly = process.argv.includes('--work-portal');
 const invoiceDocumentOnly = process.argv.includes('--invoice-document');
 const sharedProjectsOnly = process.argv.includes('--shared-projects');
 const reviewersOnly = process.argv.includes('--reviewers');
+const lightOnly = process.argv.includes('--light-workspace');
 const revenueScreens = new Set([
     'dashboard',
     'workspace_clients',
@@ -213,6 +218,7 @@ try {
         SVC_LAYOUT_WORK_PORTAL: workPortalOnly ? '1' : '0',
         SVC_LAYOUT_SHARED_PROJECTS: sharedProjectsOnly ? '1' : '0',
         SVC_LAYOUT_REVIEWERS: reviewersOnly ? '1' : '0',
+        SVC_LAYOUT_LIGHT: lightOnly ? '1' : '0',
         SVC_LAYOUT_INVOICE_DOCUMENT: invoiceDocumentOnly ? '1' : '0',
         // The portal offers card payment only where the deployment can confirm one.
         STRIPE_PUBLISHABLE_KEY: invoiceDocumentOnly
@@ -1141,6 +1147,67 @@ try {
         }
     }
 
+    // The partner's light workspace (--light-workspace): My work with its light card,
+    // the month to submit, the approved timesheet and the invitation that makes the
+    // workspace. Oversized names throughout. No private note may appear, the
+    // navigation offers no billing, and the timesheet holds only the two approved rows.
+    async function checkLight(screen, width) {
+        await page.waitForLoadState('networkidle');
+        const body = await page.locator('body').innerText();
+
+        for (const forbidden of [
+            'Private note',
+            'billing_rate',
+            'approval_source',
+        ]) {
+            if (body.includes(forbidden)) {
+                failures.push(`${screen} at ${width}px prints "${forbidden}".`);
+            }
+        }
+
+        if (screen === 'light_my_work') {
+            await expect(
+                page.getByRole('heading', { name: 'My work', level: 1 }),
+            ).toBeVisible();
+            await expect(
+                page.locator('[data-test="light-workspace"]'),
+            ).toBeVisible();
+        }
+
+        if (screen === 'light_submissions') {
+            await expect(
+                page.getByRole('heading', {
+                    name: 'Submit for review',
+                    level: 1,
+                }),
+            ).toBeVisible();
+            await expect(page.getByText('Disputed').first()).toBeVisible();
+        }
+
+        if (screen === 'light_timesheet') {
+            await expect(
+                page.getByRole('heading', {
+                    name: 'Approved timesheet',
+                    level: 1,
+                }),
+            ).toBeVisible();
+            await expect(page.locator('tbody tr')).toHaveCount(2);
+            await expect(
+                page.getByRole('link', { name: /Download CSV/ }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('link', { name: /Download PDF/ }),
+            ).toBeVisible();
+        }
+
+        if (screen === 'light_invitation') {
+            await page
+                .getByLabel('The client you bill for this work')
+                .fill('SyntheticClientName'.repeat(6));
+            await capture(screen, 'filled', width, false);
+        }
+    }
+
     // "My work" and the portal home (--work-portal). Both are read as the
     // people they are for: a member who is not an owner or admin, and a client
     // contact. The member's page must carry no price however it is read; the
@@ -1446,124 +1513,133 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of reviewersOnly
-            ? ['reviewer_queue', 'reviewer_grants']
-            : sharedProjectsOnly
-              ? [
-                    'shared_index',
-                    'shared_host',
-                    'shared_participant',
-                    'shared_invitation',
-                ]
-              : invoiceDocumentOnly
-                ? ['document_invoice', 'document_portal', 'document_proforma']
-                : paymentsOnly
-                  ? ['payments']
-                  : workPortalOnly
-                    ? ['my_work', 'portal_home']
-                    : invoiceSendOnly
-                      ? ['invoice']
-                      : invoiceHistoryOnly
-                        ? ['draft_time']
-                        : invoiceRecoveryOnly
-                          ? [
-                                'invoice',
-                                'operations',
-                                'client_invoices',
-                                'draft_time',
-                                'time',
-                                'draft_invoice',
-                                'invoice_review',
-                            ]
-                          : receiptsOnly
-                            ? ['receipts']
-                            : projectsOnly
-                              ? ['settings']
-                              : schedulesOnly
-                                ? ['expense_schedules']
-                                : expensesOnly
-                                  ? ['expenses']
-                                  : workspacesOnly
-                                    ? ['selector']
-                                    : credentialsOnly
-                                      ? ['mcp_setup']
-                                      : invoiceActionsOnly
-                                        ? [
-                                              'invoice',
-                                              'invoice_review',
-                                              'draft_invoice',
-                                              'draft_time',
-                                          ]
-                                        : engagementOnly
-                                          ? ['client_agreements', 'agreement']
-                                          : disputesOnly
-                                            ? ['invoice', 'square_portal']
-                                            : taskLookupsOnly
-                                              ? ['task_editor']
-                                              : tasksOnly
-                                                ? [
-                                                      'task_list',
-                                                      'task_project',
-                                                      'task_editor',
-                                                      'task_portal',
-                                                  ]
-                                                : historyOnly
+        for (const screen of lightOnly
+            ? [
+                  'light_my_work',
+                  'light_submissions',
+                  'light_timesheet',
+                  'light_invitation',
+              ]
+            : reviewersOnly
+              ? ['reviewer_queue', 'reviewer_grants']
+              : sharedProjectsOnly
+                ? [
+                      'shared_index',
+                      'shared_host',
+                      'shared_participant',
+                      'shared_invitation',
+                  ]
+                : invoiceDocumentOnly
+                  ? ['document_invoice', 'document_portal', 'document_proforma']
+                  : paymentsOnly
+                    ? ['payments']
+                    : workPortalOnly
+                      ? ['my_work', 'portal_home']
+                      : invoiceSendOnly
+                        ? ['invoice']
+                        : invoiceHistoryOnly
+                          ? ['draft_time']
+                          : invoiceRecoveryOnly
+                            ? [
+                                  'invoice',
+                                  'operations',
+                                  'client_invoices',
+                                  'draft_time',
+                                  'time',
+                                  'draft_invoice',
+                                  'invoice_review',
+                              ]
+                            : receiptsOnly
+                              ? ['receipts']
+                              : projectsOnly
+                                ? ['settings']
+                                : schedulesOnly
+                                  ? ['expense_schedules']
+                                  : expensesOnly
+                                    ? ['expenses']
+                                    : workspacesOnly
+                                      ? ['selector']
+                                      : credentialsOnly
+                                        ? ['mcp_setup']
+                                        : invoiceActionsOnly
+                                          ? [
+                                                'invoice',
+                                                'invoice_review',
+                                                'draft_invoice',
+                                                'draft_time',
+                                            ]
+                                          : engagementOnly
+                                            ? ['client_agreements', 'agreement']
+                                            : disputesOnly
+                                              ? ['invoice', 'square_portal']
+                                              : taskLookupsOnly
+                                                ? ['task_editor']
+                                                : tasksOnly
                                                   ? [
-                                                        'history_index',
-                                                        'history_discussion',
-                                                        'history_invoice',
+                                                        'task_list',
+                                                        'task_project',
+                                                        'task_editor',
+                                                        'task_portal',
                                                     ]
-                                                  : portalOnly
-                                                    ? ['settings']
-                                                    : correctionOnly
-                                                      ? ['invoice_review']
-                                                      : squareOnly
-                                                        ? [
-                                                              'square_explore',
-                                                              'square_invoice',
-                                                              'square_portal',
-                                                          ]
-                                                        : remindersOnly
+                                                  : historyOnly
+                                                    ? [
+                                                          'history_index',
+                                                          'history_discussion',
+                                                          'history_invoice',
+                                                      ]
+                                                    : portalOnly
+                                                      ? ['settings']
+                                                      : correctionOnly
+                                                        ? ['invoice_review']
+                                                        : squareOnly
                                                           ? [
-                                                                'reminder_invoice',
-                                                                'settings',
+                                                                'square_explore',
+                                                                'square_invoice',
+                                                                'square_portal',
                                                             ]
-                                                          : revenueOnly
+                                                          : remindersOnly
                                                             ? [
-                                                                  'dashboard',
-                                                                  'workspace_clients',
-                                                                  'client_overview',
+                                                                  'reminder_invoice',
+                                                                  'settings',
                                                               ]
-                                                            : timeOnly
+                                                            : revenueOnly
                                                               ? [
-                                                                    'time',
-                                                                    'draft_time',
+                                                                    'dashboard',
+                                                                    'workspace_clients',
+                                                                    'client_overview',
                                                                 ]
-                                                              : backlogOnly
-                                                                ? ['agreement']
-                                                                : [
-                                                                      'mcp_setup',
-                                                                      'invoice',
-                                                                      'invoice_review',
-                                                                      'reminder_invoice',
-                                                                      'settings',
-                                                                      'draft_invoice',
-                                                                      'draft_time',
-                                                                      'proposal',
-                                                                      'proposal_acceptance',
-                                                                      'operations',
-                                                                      'client_agreements',
-                                                                      'client_invoices',
-                                                                      'dashboard',
-                                                                      'workspace_clients',
-                                                                      'workspace_invoices',
-                                                                      'workspace_time',
-                                                                      'workspace_finance',
+                                                              : timeOnly
+                                                                ? [
                                                                       'time',
-                                                                      'expenses',
-                                                                      'receipts',
-                                                                      'expense_schedules',
-                                                                  ]) {
+                                                                      'draft_time',
+                                                                  ]
+                                                                : backlogOnly
+                                                                  ? [
+                                                                        'agreement',
+                                                                    ]
+                                                                  : [
+                                                                        'mcp_setup',
+                                                                        'invoice',
+                                                                        'invoice_review',
+                                                                        'reminder_invoice',
+                                                                        'settings',
+                                                                        'draft_invoice',
+                                                                        'draft_time',
+                                                                        'proposal',
+                                                                        'proposal_acceptance',
+                                                                        'operations',
+                                                                        'client_agreements',
+                                                                        'client_invoices',
+                                                                        'dashboard',
+                                                                        'workspace_clients',
+                                                                        'workspace_invoices',
+                                                                        'workspace_time',
+                                                                        'workspace_finance',
+                                                                        'time',
+                                                                        'expenses',
+                                                                        'receipts',
+                                                                        'expense_schedules',
+                                                                    ]) {
             if (
                 resourceChromeOnly &&
                 !['invoice', 'proposal', 'proposal_acceptance'].includes(screen)
@@ -2529,6 +2605,10 @@ try {
 
             if (reviewersOnly) {
                 await checkReviewers(screen, width);
+            }
+
+            if (lightOnly) {
+                await checkLight(screen, width);
             }
 
             if (screen !== 'task_editor') {
