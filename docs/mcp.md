@@ -385,6 +385,28 @@ The core set is always a subset of what the credential may call. A credential
 that cannot log time, for example, has no `projects.list` or `time_entries.log`
 in it.
 
+The three `toolsets.*` tools are the exception to scope gating: they require
+only `mcp:use`, which every MCP connection holds, and no resource scope. They
+are how a connection reaches everything else, so gating them on another scope
+would strand a credential without it. A token holding `mcp:use` and
+`finance:read`, say, always lists them and reaches `finance` through
+`toolsets.enable`, without the `X-SVC-Toolsets: all` opt-out. They grant
+nothing: `toolsets.list` and `toolsets.enable` expose only toolsets holding at
+least one tool the credential may already call, and a name outside those is
+"Unknown toolset" as before.
+
+`context.get` and `search` are different and stay gated by `identity:read`,
+deliberately. They are the MCP faces of the REST `context` and `search`
+operations, whose documented scope is `identity:read` (REST parity), and they
+return the person's identity and workspaces, which that scope exists to
+withhold; the rule that the core set is a subset of what the credential may call
+means they are simply absent from a token without it. A credential that holds
+`mcp:use` and `finance:read` but not `identity:read` therefore starts with the
+three `toolsets.*` tools alone. Widening those two tools' scope would change the
+REST contract and what a narrowly scoped token can learn, so that is a separate
+decision; grant `identity:read` to a connection that needs to discover
+workspace ids through `context.get`.
+
 ### Toolsets
 
 A toolset is a group of the scopes the operation catalog already declares, so
@@ -2207,3 +2229,16 @@ recording. To record the selected safe payment, supply `--apply --confirm`,
 `--payment`, `--expected-version`, `--reviewed-version` and `--idempotency-key`
 from that review. The same canonical operation owns validation, provider dedup,
 receipts and audit for CLI, REST, MCP and the signed-in website.
+
+## Accounting tools for bookkeeping
+
+Workspace managers holding `finance:read` can call `finance.invoice_lines.list`,
+`finance.cash_income.list`, and `finance.income.yearly`. They use the same REST
+operations and closed schemas. The lists accept at most 100 rows and opaque
+`updated_since`/pagination cursors. Invoice accounting is append-only: corrections,
+voids and reopens appear as new reversing entries rather than edits to issued
+facts. Cash reads combine existing finance payments, manual refund history and
+processor movements without counting payouts as income. The yearly tool takes
+`year` and returns JSON; its REST counterpart also streams CSV. See
+[accounting reads](finance-api.md#accounting-reads) for date bases, tax and fee
+semantics, missing historical refund evidence, and the incremental-sync protocol.

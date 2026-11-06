@@ -69,6 +69,7 @@ final class AgentOperationCatalog
      * @var array<string, array{0: string, 1: string, 2: list<int>}>
      */
     private const array ROUTES = [
+        ...AccountingOperations::ROUTES,
         ...TaskOrganizationOperations::ROUTES,
         ...TaskPlanningOperations::ROUTES,
         ...AttachmentSharingOperations::ROUTES,
@@ -1755,6 +1756,9 @@ final class AgentOperationCatalog
     {
         $operations = [];
         foreach ([
+            'finance.invoice_lines.list' => ['Read issued invoice line accounting', 'invoiceLines', Effect::Read, 'mcp.read'],
+            'finance.cash_income.list' => ['Read cash income by effective date', 'cashIncome', Effect::Read, 'mcp.read'],
+            'finance.income.yearly' => ['Export calendar-year income', 'yearlyIncome', Effect::Read, 'mcp.read'],
             'finance.invoice_payments.list' => ['List payments for finance reconciliation', 'list', Effect::Read, 'mcp.read'],
             'finance.payouts.list' => ['List processor payouts for finance reconciliation', 'payouts', Effect::Read, 'mcp.read'],
             'finance.processor_movements.list' => ['Read signed processor movements', 'movements', Effect::Read, 'mcp.read'],
@@ -1777,7 +1781,7 @@ final class AgentOperationCatalog
                 rest: $this->rest($id),
                 mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
                 input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
-                output: SchemaRef::responseOf($id),
+                output: isset(AccountingOperations::ROUTES[$id]) ? SchemaRef::openApi(AccountingOperations::COMPONENTS[$id]) : SchemaRef::responseOf($id),
                 extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
             );
         }
@@ -1805,8 +1809,10 @@ final class AgentOperationCatalog
     /**
      * The core tools that list, enable and disable toolsets (progressive
      * discovery, docs/mcp.md). They exist only on MCP, change nothing but
-     * which tools one session lists, and need no scope beyond the identity
-     * read every connection that can list a tool already holds.
+     * which tools one session lists, and need no scope beyond `mcp:use`, which
+     * every MCP connection holds. They must not require `identity:read` or any
+     * other resource scope: a token with only `mcp:use` and `finance:read`
+     * could then never enable the toolset it was issued for.
      *
      * @return list<Operation>
      */
@@ -1825,7 +1831,7 @@ final class AgentOperationCatalog
                 'mcp.read.toolsets',
                 input: AgentInlineSchemas::toolsetsListInput(),
                 output: AgentInlineSchemas::toolsetsOutput(),
-                scopes: ['identity:read'],
+                scopes: ['mcp:use'],
             ),
             $this->tool(
                 'toolsets.enable',
@@ -1837,7 +1843,7 @@ final class AgentOperationCatalog
                 'mcp.read.toolsets',
                 input: AgentInlineSchemas::toolsetsChangeInput(),
                 output: AgentInlineSchemas::toolsetsOutput(),
-                scopes: ['identity:read'],
+                scopes: ['mcp:use'],
             ),
             $this->tool(
                 'toolsets.disable',
@@ -1849,7 +1855,7 @@ final class AgentOperationCatalog
                 'mcp.read.toolsets',
                 input: AgentInlineSchemas::toolsetsChangeInput(),
                 output: AgentInlineSchemas::toolsetsOutput(),
-                scopes: ['identity:read'],
+                scopes: ['mcp:use'],
             ),
         ];
     }
@@ -2071,7 +2077,7 @@ final class AgentOperationCatalog
             responseSchema: isset($documented['response']) ? SchemaRef::openApi($documented['response']) : null,
             responseDescriptions: isset($documented['response_description']) ? [$status => $documented['response_description']] : [],
             // A download answers with the file itself.
-            responses: (isset($documented['binary']) ? [$status => [
+            responses: ($id === 'finance.income.yearly' ? [200 => ['description' => 'Calendar-year income in JSON or streamed CSV.', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/'.AccountingOperations::COMPONENTS[$id]]], 'text/csv' => ['schema' => ['type' => 'string', 'format' => 'binary']]]]] : []) + (isset($documented['binary']) ? [$status => [
                 'description' => $documented['binary'][1],
                 'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
             ]] : []) + array_map(

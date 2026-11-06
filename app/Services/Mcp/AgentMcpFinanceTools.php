@@ -22,6 +22,32 @@ final class AgentMcpFinanceTools
     public function __construct(private readonly AgentMcpRestCall $rest) {}
 
     /** @return array<string, mixed> */
+    public function invoiceLines(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(minimum: 1, maximum: 100)] int $limit = 50,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
+        #[Schema(maxLength: 2048)] ?string $updated_since = null,
+        #[Schema(format: 'date')] ?string $from = null, #[Schema(format: 'date')] ?string $to = null): array
+    {
+        return $this->rest->call('finance.invoice_lines.list', ['workspace' => $workspace_id], query: array_map(strval(...), array_filter(compact('limit', 'cursor', 'updated_since', 'from', 'to'), static fn (mixed $value): bool => $value !== null)));
+    }
+
+    /** @return array<string, mixed> */
+    public function cashIncome(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(minimum: 1, maximum: 100)] int $limit = 50,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
+        #[Schema(maxLength: 2048)] ?string $updated_since = null,
+        #[Schema(format: 'date')] ?string $from = null, #[Schema(format: 'date')] ?string $to = null): array
+    {
+        return $this->rest->call('finance.cash_income.list', ['workspace' => $workspace_id], query: array_map(strval(...), array_filter(compact('limit', 'cursor', 'updated_since', 'from', 'to'), static fn (mixed $value): bool => $value !== null)));
+    }
+
+    /** @return array<string, mixed> */
+    public function yearlyIncome(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minimum: 1900, maximum: 9999)] int $year): array
+    {
+        return $this->rest->call('finance.income.yearly', ['workspace' => $workspace_id], query: ['year' => (string) $year]);
+    }
+
+    /** @return array<string, mixed> */
     public function list(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(enum: ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled', FinancePaymentQuery::ANY_STATUS])] ?string $status = null,

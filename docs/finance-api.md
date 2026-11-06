@@ -716,3 +716,82 @@ php artisan svc:finance:acknowledge-reconciliation PAYMENT_UUID synthetic-ledger
 
 The console previews by default and rolls back the acknowledgement and its audit.
 Add `--apply` to persist it; stale proof is refused in either mode.
+
+## Accounting reads
+
+Three manager-only operations use the existing `finance:read` scope through the
+agent REST API and MCP. They do not use the older Sanctum member-read exception.
+
+| Operation | REST path after `/api/v1/workspaces/{workspace}` |
+| --- | --- |
+| `finance.invoice_lines.list` | `/accounting/invoice-lines` |
+| `finance.cash_income.list` | `/accounting/cash-income` |
+| `finance.income.yearly` | `/accounting/income?year=2026` |
+
+Invoice lines carry signed integer `net_amount`, `tax_amount` and `total_amount`,
+`tax_rate` as an effective percentage (tax/net, six decimal places; null when
+net is zero), and `taxable` indicating that tax was charged. The source stores
+amounts, not a tax-policy classification: a zero-tax line does not establish a
+jurisdiction's exemption or zero-rating. `line_type` is for machine comparisons;
+print `line_type_label`. Client, project, invoice and line identifiers are public
+UUIDs. Project is null for a line without a surviving, tenant-consistent project.
+Service periods and undated legacy issue dates can be null.
+
+The invoice accounting journal is append-only. Issue snapshots every line;
+a correction appends a `correction_reversal` referencing the prior accounting
+record and a `correction` replacement. Credits retain their signed amounts.
+Void and reopen append reversing records, and reissue snapshots the regenerated
+lines under new IDs. Due-date-only corrections have no accounting effect. These
+writes happen within the existing invoice transaction, with no queue or external
+call. Accounting records retain their original issue date: corrections and voids
+restate the issue period rather than counting in the month they were entered.
+Existing documents are imported synchronously under their invoice locks when
+first read, using retained correction evidence to reconstruct original values.
+This one-time projection is workspace-scoped and chunked; yearly reads import
+only invoices dated in the requested year. A historical reissue from before this
+journal retains only the line facts still available for its latest issue.
+
+Cash income reuses the finance payment query, immutable manual refund history,
+and signed processor movements. Payment dates are `received_on`; manual refunds
+and refund reversals have no stored effective date, so use their UTC recording
+date. Processor movements use their stored `occurred_on`. `fee_amount` is a
+positive cost, negative on a fee reversal, and `net_amount = amount - fee_amount`.
+Payouts are transfers and are not counted again as income. Pending, failed and
+canceled payments remain in synchronization with zero principal, so a payment
+that stops contributing is not lost from the feed. Payment and processor rows
+carry an opaque `version`; invoice and manual refund records are immutable.
+
+Payment rows expose the source payment's cumulative `refunded_amount` as well as
+separate dated refund/reversal records. Do not subtract the cumulative value a
+second time. A synchronizer can reconcile that balance against its complete
+refund ledger; refund rows arriving later do not rewrite the payment snapshot.
+The yearly export's `unattributed_refunds` is the cumulative balance less the net
+refunds supported by dated manual or processor records. A nonzero value flags
+incomplete or inconsistent historical evidence. Such money is not assigned an
+invented refund date. The export reports the gap separately in the original
+payment month; resolve it before treating monthly cash totals as complete. Missing processor fees are reported as zero recorded fees, never an
+estimate. Processor dispute movements are separately itemized in the export.
+
+Both lists take `limit` (1–100, default 50), `cursor`, and an **opaque**
+`updated_since` token. Unlike the older finance endpoints' timestamp parameter,
+use the returned `meta.updated_since` unchanged. It carries a timestamp and stable
+ID tiebreaker and is encrypted and bound to the workspace and operation. Pages
+use the existing `(updated_at desc, id desc)` change order and 120-second snapshot
+lag. Follow `meta.next_cursor` with the same query to finish a pass, then start
+another with `updated_since=meta.updated_since`. Deduplicate by ID and, for
+mutable cash rows, version. Full reads may filter effective dates with `from`
+and `to`; incremental passes refuse date filters because payment dates can be
+corrected. Sync unfiltered and apply date filters to the local copy.
+
+The accounting response components are code-owned in `AccountingOperations`.
+After changing their schemas, run `php scripts/generate-accounting-contract.php`
+and `pnpm run api:types`; the generation test pins them to the published document.
+
+The calendar-year export returns twelve month rows in JSON. REST `format=csv`
+streams exactly the same columns and figures; MCP always returns JSON. It is
+computed in the request in chunks of 100, without a queued export. Invoiced tax
+is separate from net. Cash received includes the original payment's gross amount,
+including any tax; no tax apportionment is inferred from a partial payment.
+Pass-through expense lines are included in invoiced net and also shown in
+`expenses_passed_through` so a consumer can exclude them. All amounts are minor
+units in the workspace's single currency.

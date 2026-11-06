@@ -36,6 +36,8 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
 
     private User $owner;
 
+    private Workspace $workspace;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -49,7 +51,7 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
         }
         config($configuration);
         $this->owner = User::factory()->create();
-        $workspace = Workspace::query()->create(['name' => 'Synthetic Progressive Workspace', 'slug' => 'synthetic-progressive']);
+        $workspace = $this->workspace = Workspace::query()->create(['name' => 'Synthetic Progressive Workspace', 'slug' => 'synthetic-progressive']);
         $workspace->memberships()->create(['user_id' => $this->owner->id, 'role' => 'owner']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic Progressive Client', 'slug' => 'synthetic-progressive-client']);
         ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic Progressive Project']);
@@ -74,8 +76,8 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
 
         $session = $this->initializeProgressive();
         $core = $this->toolNames($session);
-        // A connection holding no operation scope lists nothing and has nothing to enable.
-        $toolsets = $core === [] ? [] : $this->toolsets($session);
+        // A connection holding no operation scope has nothing to enable: its core set is the toolset tools alone.
+        $toolsets = $this->toolsets($session);
 
         // Nothing but the core set is listed until something is enabled, and
         // the core set is only ever a subset of what the connection may call.
@@ -221,6 +223,88 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
         $this->messages($this->callToolRaw($session, 'toolsets.enable', ['toolsets' => ['projects', 'tasks']]));
         $this->assertNotContains('projects.create', $this->toolNames($session));
         $this->assertNotContains('tasks.create', $this->toolNames($session));
+    }
+
+    /** @return iterable<string, array{string, string, string, array<string, mixed>}> */
+    public static function resourceScopedConnections(): iterable
+    {
+        yield 'finance:read' => [AgentApiScopes::FINANCE_READ, 'finance', 'finance.payouts.list', []];
+        yield 'time:read' => [AgentApiScopes::TIME_READ, 'time', 'time_entries.list', []];
+    }
+
+    /**
+     * A connection holding `mcp:use` and one resource scope, and not
+     * `identity:read`, must still reach the tools that scope allows. The
+     * toolset tools are the only way to, so they may not require anything
+     * beyond the connection scope.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    #[DataProvider('resourceScopedConnections')]
+    public function test_a_connection_with_one_resource_scope_reaches_its_toolset(string $scope, string $toolset, string $tool, array $arguments): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, $scope]);
+        $session = $this->initializeProgressive();
+
+        // The core set is the toolset tools alone: context.get and search
+        // require identity:read, the time-logging tools more scopes still.
+        $core = $this->toolNames($session);
+        sort($core);
+        $this->assertSame(self::TOOLSET_TOOLS, $core);
+
+        // Exactly the authorized toolset is listed, and nothing is enabled.
+        $this->assertSame([$toolset], array_column($this->toolsets($session), 'name'));
+        $this->assertSame([false], array_column($this->toolsets($session), 'enabled'));
+        $this->assertNotContains($tool, $core);
+
+        $enable = $this->messages($this->callToolRaw($session, 'toolsets.enable', ['toolsets' => [$toolset]]));
+        $this->assertCount(2, $enable);
+        $this->assertSame('notifications/tools/list_changed', $enable[0]['method']);
+        $this->assertTrue($enable[1]['result']['structuredContent']['data']['changed']);
+        $this->assertContains($tool, $this->toolNames($session));
+
+        $call = $this->callToolRaw($session, $tool, ['workspace_id' => $this->workspace->public_id, ...$arguments])->assertOk();
+        $this->assertNull($call->json('error'), (string) $call->getContent());
+        $this->assertNotTrue($call->json('result.isError'), (string) $call->getContent());
+
+        // A toolset of a scope the connection lacks is refused as unknown.
+        $other = $toolset === 'finance' ? 'time' : 'finance';
+        $refused = $this->messages($this->callToolRaw($session, 'toolsets.enable', ['toolsets' => [$other]]));
+        $this->assertCount(1, $refused);
+        $this->assertTrue($refused[0]['result']['isError']);
+        $this->assertStringContainsString('Unknown toolset: '.$other, $refused[0]['result']['content'][0]['text']);
+    }
+
+    public function test_a_connection_with_two_unrelated_resource_scopes_sees_exactly_those_toolsets(): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::FINANCE_READ, AgentApiScopes::TIME_READ]);
+        $session = $this->initializeProgressive();
+
+        $this->assertSame(['finance', 'time'], array_column($this->toolsets($session), 'name'));
+        $this->enable($session, ['finance', 'time']);
+        $listed = $this->toolNames($session);
+        $this->assertContains('finance.payouts.list', $listed);
+        $this->assertContains('time_entries.list', $listed);
+        $this->assertNotContains('invoices.list', $listed);
+    }
+
+    public function test_the_toolset_tools_are_the_only_core_tools_every_connection_has(): void
+    {
+        // `mcp:use` alone: nothing else to enable, but the tools answer.
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE]);
+        $session = $this->initializeProgressive();
+
+        $listed = $this->toolNames($session);
+        sort($listed);
+        $this->assertSame(self::TOOLSET_TOOLS, $listed);
+        $this->assertSame([], $this->toolsets($session));
+        $result = $this->messages($this->callToolRaw($session, 'toolsets.enable', ['toolsets' => ['finance']]));
+        $this->assertTrue($result[0]['result']['isError']);
+        $this->assertStringContainsString('Unknown toolset: finance', $result[0]['result']['content'][0]['text']);
+
+        // Without `mcp:use` there is no connection at all.
+        $this->actingAsMcp($this->owner, [AgentApiScopes::FINANCE_READ]);
+        $this->mcp($this->initializeMessage(), headers: [McpToolsetSelection::CONNECT_HEADER => 'progressive'])->assertForbidden();
     }
 
     public function test_sessions_of_two_credentials_are_isolated(): void
