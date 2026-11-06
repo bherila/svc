@@ -940,6 +940,24 @@ Settled by the product owner before a period away:
   - **Open tasks** are ordered as before; the schema has no "waiting on the
     client" flag. "To approve" is not drawn (slice 8).
 
+#### Owner decisions, 2026-11-06 evening
+
+Answers the owner gave in an interview on 2026-11-06.
+
+- **#615** was closed as superseded by #622 and #626.
+- **Receipts ready to bill:** owners and admins may still mark their own
+  expense receipts ready to bill. Self-approval is forbidden only on the client
+  side.
+- **"Can approve time and expenses"**, the per-contact toggle, shipped in #633.
+- **Slice 11** (the light partner workspace) is built after slice 10.
+- **MCP fallback:** a per-credential "Show all tools" setting, for connectors
+  that can neither set a header nor handle `list_changed` (this PR; #624 item 1).
+- **The #618 migration** has a runbook (#633). The owner runs it.
+- **The Stripe publishable key** is checked live against the restricted key's
+  account on save (#633).
+- **Agreements page:** members see a client's Agreements page only for clients
+  they have a project with (#630). Owners and admins see all.
+
 ## Open questions
 
 None. Answered on 2026-11-06:
