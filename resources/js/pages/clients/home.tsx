@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { EyeIcon } from 'lucide-react';
 import { ClientOverviewSections } from '@/components/revenue/client-overview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -95,6 +96,11 @@ export type ClientHomeProps = {
     overview?: ClientOverview;
     /** This period's retainer use; a deferred prop, undefined until it arrives. */
     this_period?: ThisPeriodRow[];
+    /**
+     * "View proforma invoice": one finished URL per agreement that bills on a
+     * recurring cadence. Owners and admins only; absent for anyone else.
+     */
+    proformas?: { id: string; title: string; href: string }[];
 };
 
 /**
@@ -155,6 +161,7 @@ export default function ClientHome({
     settings_href: settingsHref,
     overview,
     this_period: thisPeriod,
+    proformas = [],
 }: ClientHomeProps) {
     return (
         <WorkspaceShell activeModule="home">
@@ -212,6 +219,27 @@ export default function ClientHome({
                         thisPeriod={thisPeriod}
                         invoicesHref={links.invoices}
                     />
+                )}
+                {overview !== undefined && proformas.length > 0 && (
+                    <p className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                        {proformas.map((proforma) => (
+                            <Link
+                                key={proforma.id}
+                                href={proforma.href}
+                                className="inline-flex min-w-0 items-center gap-1.5 underline underline-offset-4"
+                            >
+                                <EyeIcon
+                                    aria-hidden="true"
+                                    className="size-4 shrink-0"
+                                />
+                                <span className="wrap-anywhere">
+                                    View proforma invoice
+                                    {proformas.length > 1 &&
+                                        ` · ${proforma.title}`}
+                                </span>
+                            </Link>
+                        ))}
+                    </p>
                 )}
 
                 {/* The overview's invoice table replaces the single latest invoice. */}

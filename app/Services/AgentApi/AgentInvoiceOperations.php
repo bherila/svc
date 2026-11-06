@@ -3,6 +3,7 @@
 namespace App\Services\AgentApi;
 
 use App\Models\AgentPrincipal;
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -12,6 +13,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\CadencePeriodGuard;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceCorrectionService;
+use App\Services\Billing\InvoiceDocumentBuilder;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Support\AgentApi\AgentApiVersion;
@@ -19,7 +21,10 @@ use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\AgentApi\InvoiceSendResult;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\Billing\Document\DocumentMode;
+use App\Support\Billing\Document\InvoiceDocument;
 use App\Support\Billing\InvoiceEmailDraft;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Concurrency\Locks;
 use Closure;
@@ -43,6 +48,7 @@ final class AgentInvoiceOperations
         private readonly AgentInvoicePresenter $presenter,
         private readonly CadencePreviewInvoiceChanges $previewChanges,
         private readonly InvoiceEmailService $email,
+        private readonly InvoiceDocumentBuilder $documents,
     ) {}
 
     /**
@@ -213,10 +219,41 @@ final class AgentInvoiceOperations
         abort_unless($this->access->isWorkspaceManager($actor, $workspace), 404);
         $data = $this->validate($query, ['period_start' => ['required', 'date_format:Y-m-d']]);
 
+        return $this->previewing($workspace, $agreement, $data['period_start'], fn (ClientCompany $company, ClientAgreement $record, string $version, ClientInvoice $draft, array $others): array => $this->presenter->periodPreview($workspace, $company, $record, $version, $draft, $others));
+    }
+
+    /**
+     * The proforma: the same period preview, drawn as the invoice document.
+     *
+     * Built inside the preview's transaction, before it is rolled back, so the
+     * document is the generator's own draft - lines, hours statement and
+     * still-deferred snapshot - and a proforma and the invoice later issued from
+     * it cannot disagree. Stamped as a proforma and never stored.
+     *
+     * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
+     */
+    public function previewDocument(User|AgentPrincipal $actor, Workspace $workspace, string $agreement, string $periodStart, string $audience): InvoiceDocument
+    {
+        abort_unless($this->access->isWorkspaceManager($actor, $workspace), 404);
+
+        return $this->previewing($workspace, $agreement, $periodStart, fn (ClientCompany $company, ClientAgreement $record, string $version, ClientInvoice $draft, array $others): InvoiceDocument => $this->documents->build($draft, $audience, DocumentMode::Proforma));
+    }
+
+    /**
+     * Generate the period's draft in a transaction that is always rolled back,
+     * and hand it to `$read` while it still exists.
+     *
+     * @template T
+     *
+     * @param  Closure(ClientCompany, ClientAgreement, string, ClientInvoice, list<array{change: 'created'|'deleted'|'updated', invoice: ClientInvoice}>): T  $read
+     * @return T
+     */
+    private function previewing(Workspace $workspace, string $agreement, string $periodStart, Closure $read): mixed
+    {
         DB::beginTransaction();
         try {
-            return $this->refusalsAsValidation(function () use ($workspace, $agreement, $data): array {
-                [$company, $record, $start] = $this->periods->lock($workspace, $agreement, $data['period_start'], null);
+            return $this->refusalsAsValidation(function () use ($workspace, $agreement, $periodStart, $read): mixed {
+                [$company, $record, $start] = $this->periods->lock($workspace, $agreement, $periodStart, null);
                 // Read before generation, which is what a generate call
                 // following this preview must present as expected_version.
                 $version = AgentApiVersion::for($record);
@@ -227,7 +264,7 @@ final class AgentInvoiceOperations
                 // Reloaded through the workspace, never by bare primary key.
                 $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($draft->id)->firstOrFail();
 
-                return $this->presenter->periodPreview($workspace, $company, $record, $version, $draft, $others);
+                return $read($company, $record, $version, $draft, $others);
             });
         } finally {
             // Unconditional, exactly as in the rehearsal: a preview that

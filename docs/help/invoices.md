@@ -1,7 +1,7 @@
 ---
 title: Invoices
 audience: [operator]
-routes: [workspaces.invoices, workspaces.finance, clients.invoices, clients.invoice, svc.billing.invoices.index, svc.billing.invoices.show, svc.billing.schedules.show]
+routes: [workspaces.invoices, workspaces.finance, clients.invoices, clients.invoice, clients.proforma, svc.billing.invoices.index, svc.billing.invoices.show, svc.billing.schedules.show]
 terms: []
 ---
 An invoice bills approved work for one period.
@@ -11,6 +11,16 @@ An invoice bills approved work for one period.
 1. A draft is built from approved time, recurring services and expenses.
 2. Issuing it numbers it and makes it payable.
 3. Payments reduce the balance until it is paid.
+
+## The invoice document
+
+The invoice page, its PDF and the client's copy are one document: lines grouped under Time, Recurring services, Expenses, Deferred work and Adjustments and credits, then the totals, the hours statement, what is still deferred and Appendix A, the time entries behind each line. The hours statement is frozen when the invoice is issued, so it never changes afterwards. In dark mode, Show as printed switches the page to the white paper the PDF is always drawn on.
+
+The administrator copy includes your internal descriptions. The client copy never does, and shows the still-deferred list only where the agreement allows it.
+
+## View proforma invoice
+
+On a client's overview, View proforma invoice shows the next invoice for an agreement as the client would receive it, stamped as not an invoice. It is built from the work logged so far, is never stored, and changes as work is logged and approved.
 
 ## Recording a payment
 
