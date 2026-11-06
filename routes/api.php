@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AccountingReadController;
 use App\Http\Controllers\Api\V1\AgentAttachmentSharingController;
 use App\Http\Controllers\Api\V1\AgentBillingAuditController;
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
@@ -89,6 +90,9 @@ Route::prefix('v1')
     ->name('agent-api.v1.')
     ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation, $workspaceOperation): void {
+        $workspaceOperation('finance.invoice_lines.list', [AccountingReadController::class, 'lines']);
+        $workspaceOperation('finance.cash_income.list', [AccountingReadController::class, 'income']);
+        $workspaceOperation('finance.income.yearly', [AccountingReadController::class, 'yearly']);
         $workspaceOperation('collaboration.topics.list', [AgentCollaborationController::class, 'topicsList'])->whereUuid('client');
         $workspaceOperation('collaboration.topics.get', [AgentCollaborationController::class, 'topicsGet'])->whereUuid('client')->whereUuid('topic');
         $workspaceOperation('collaboration.topics.create', [AgentCollaborationController::class, 'topicsCreate'])->whereUuid('client');

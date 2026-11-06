@@ -353,3 +353,8 @@ dependency, the errno 1830 SET NULL bar, the 64-character identifier limit that
 forced explicit names on every key here, and the errno 1052 ambiguity above. The
 MariaDB job is the one that has to be true. See
 [schema-drift.md](schema-drift.md).
+
+The append-only `accounting_invoice_entries.client_invoice_id` uses
+`accounting_invoice_ws_invoice_fk` on `(workspace_id, client_invoice_id)` to
+reference `client_invoices(workspace_id, id)` with delete restricted. Its document
+snapshot cannot be moved to another tenant or orphaned by deleting the invoice.

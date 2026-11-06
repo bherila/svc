@@ -2207,3 +2207,16 @@ recording. To record the selected safe payment, supply `--apply --confirm`,
 `--payment`, `--expected-version`, `--reviewed-version` and `--idempotency-key`
 from that review. The same canonical operation owns validation, provider dedup,
 receipts and audit for CLI, REST, MCP and the signed-in website.
+
+## Accounting tools for bookkeeping
+
+Workspace managers holding `finance:read` can call `finance.invoice_lines.list`,
+`finance.cash_income.list`, and `finance.income.yearly`. They use the same REST
+operations and closed schemas. The lists accept at most 100 rows and opaque
+`updated_since`/pagination cursors. Invoice accounting is append-only: corrections,
+voids and reopens appear as new reversing entries rather than edits to issued
+facts. Cash reads combine existing finance payments, manual refund history and
+processor movements without counting payouts as income. The yearly tool takes
+`year` and returns JSON; its REST counterpart also streams CSV. See
+[accounting reads](finance-api.md#accounting-reads) for date bases, tax and fee
+semantics, missing historical refund evidence, and the incremental-sync protocol.
