@@ -75,7 +75,7 @@ final class AgentApiScopePresentationTest extends TestCase
             ['time', 'Time', false, [S::TIME_READ, S::TIME_WRITE]],
             ['clients', 'Clients & proposals', false, [S::CLIENTS_READ, S::PROPOSALS_READ]],
             ['billing', 'Billing & payments', false, [S::BILLING_READ, S::BILLING_WRITE, S::PAYMENTS_READ]],
-            ['expenses', 'Expenses & finance', false, [S::EXPENSES_READ, S::EXPENSES_WRITE, S::FINANCE_READ]],
+            ['expenses', 'Expenses & finance', false, [S::EXPENSES_READ, S::EXPENSES_WRITE, S::FINANCE_READ, S::REVENUE_READ]],
             ['admin', 'Admin', true, [
                 S::BILLING_DELIVER, S::PAYMENTS_RECORD, S::FINANCE_RECONCILE, S::PROPOSALS_WRITE, S::PROPOSALS_ACCEPT,
                 S::TIME_APPROVE, S::CLIENTS_WRITE, S::FILES_WRITE, S::WORKSPACES_CREATE,
@@ -97,9 +97,9 @@ final class AgentApiScopePresentationTest extends TestCase
         );
 
         $this->assertSame([
-            ['read_only', 'Read-only', 'Read your projects, tasks, notes and discussions, files, time, clients, proposals, invoices, payments, expenses and finance. Changes nothing.', [
+            ['read_only', 'Read-only', 'Read your projects, tasks, notes and discussions, files, time, clients, proposals, invoices, payments, expenses, finance and revenue. Changes nothing.', [
                 S::IDENTITY_READ, S::PROJECTS_READ, S::TASKS_READ, S::COLLABORATION_READ, S::FILES_READ, S::TIME_READ,
-                S::CLIENTS_READ, S::PROPOSALS_READ, S::BILLING_READ, S::PAYMENTS_READ, S::EXPENSES_READ, S::FINANCE_READ,
+                S::CLIENTS_READ, S::PROPOSALS_READ, S::BILLING_READ, S::PAYMENTS_READ, S::EXPENSES_READ, S::FINANCE_READ, S::REVENUE_READ,
             ]],
             ['time_logging', 'Time logging', 'Read your projects and tasks, and log and manage your draft time against them.', [
                 S::IDENTITY_READ, S::PROJECTS_READ, S::TASKS_READ, S::TIME_READ, S::TIME_WRITE,

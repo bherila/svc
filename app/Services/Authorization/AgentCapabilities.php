@@ -20,7 +20,7 @@ final class AgentCapabilities
     private const array ORDER = [
         'projects:read', 'projects:write', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
         'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write', 'payments:read', 'payments:record',
-        'finance:read', 'finance:processor_movements:read', 'finance:reconcile', 'clients:read', 'clients:write', 'proposals:read', 'proposals:write', 'proposals:accept', 'files:read', 'files:write',
+        'finance:read', 'finance:processor_movements:read', 'finance:reconcile', 'revenue:read', 'clients:read', 'clients:write', 'proposals:read', 'proposals:write', 'proposals:accept', 'files:read', 'files:write',
     ];
 
     public function __construct(
@@ -173,6 +173,8 @@ final class AgentCapabilities
             // Finance reconciliation (#457) sits behind no write cutover.
             AgentApiScopes::FINANCE_READ => 'finance:read',
             AgentApiScopes::FINANCE_RECONCILE => 'finance:reconcile',
+            // The revenue planning reads, for managers only, behind no cutover.
+            AgentApiScopes::REVENUE_READ => 'revenue:read',
         ];
         if (AgentWriteCutover::projects()
             && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROJECTS_READ))) {

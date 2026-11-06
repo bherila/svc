@@ -20,6 +20,7 @@ use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
+use App\Services\Mcp\AgentMcpRevenueTools;
 use App\Services\Mcp\AgentMcpSquareCoveredPaymentTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
@@ -71,6 +72,7 @@ final class AgentOperationCatalog
         ...TaskPlanningOperations::ROUTES,
         ...AttachmentSharingOperations::ROUTES,
         ...SquareCoveredPaymentOperations::ROUTES,
+        ...RevenueOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -269,7 +271,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1777,6 +1779,23 @@ final class AgentOperationCatalog
                 output: SchemaRef::responseOf($id),
                 extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
             );
+        }
+
+        return $operations;
+    }
+
+    /**
+     * The revenue planning reads (docs/ux-overhaul.md section 13), for
+     * workspace managers under `revenue:read`. Reads only, behind no write
+     * cutover; the MCP switches can still withhold the tools.
+     *
+     * @return list<Operation>
+     */
+    private function revenueTools(): array
+    {
+        $operations = [];
+        foreach (RevenueOperations::DEFINITIONS as $id => [$handler, $title]) {
+            $operations[] = $this->tool($id, $title, self::documented($id), [AgentMcpRevenueTools::class, $handler], Effect::Read, true, 'mcp.read.revenue', manager: true);
         }
 
         return $operations;

@@ -28894,6 +28894,1451 @@
                     }
                 },
                 {
+                    "name": "revenue.clients",
+                    "title": "Read the client revenue roster",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "basis": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "enum": [
+                                    "invoiced",
+                                    "collected"
+                                ]
+                            },
+                            "include_expenses": {
+                                "type": [
+                                    "null",
+                                    "boolean"
+                                ],
+                                "default": null
+                            },
+                            "client_id": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "The client roster: per client its MRR (recurring revenue normalised to a month: quarterly \u00f7 3, semi-annual \u00f7 6, annual \u00f7 12, one-time excluded), year to date, trailing twelve months with a twelve-point series of the full months, open and overdue amounts, and the health of each agreement in force: retainer hours used against included this billing period from the capacity ledger, whether it closes over its retainer, and whether it ends within 60 days. Totals for the roster are included. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/RevenueClients"
+                            }
+                        },
+                        "$defs": {
+                            "RevenueAgreementHealth": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "agreement_id",
+                                    "title",
+                                    "starts_on",
+                                    "ends_on",
+                                    "period_start",
+                                    "period_end",
+                                    "hours_used",
+                                    "hours_included",
+                                    "over_retainer",
+                                    "ends_within_60_days",
+                                    "ledger_status"
+                                ],
+                                "properties": {
+                                    "agreement_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "starts_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "ends_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "period_start": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "period_end": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "hours_used": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    },
+                                    "hours_included": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    },
+                                    "over_retainer": {
+                                        "type": [
+                                            "boolean",
+                                            "null"
+                                        ]
+                                    },
+                                    "ends_within_60_days": {
+                                        "type": "boolean"
+                                    },
+                                    "ledger_status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "ok",
+                                            "no_retainer",
+                                            "ledger_unreadable"
+                                        ]
+                                    }
+                                }
+                            },
+                            "RevenueAssumptions": {
+                                "description": "What a revenue figure was computed under, so a stored figure can be explained later.",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "as_of",
+                                    "basis",
+                                    "projection_basis",
+                                    "currency",
+                                    "tax",
+                                    "fiscal_year_start",
+                                    "include_expenses",
+                                    "include_projected_overage",
+                                    "overage_window_months",
+                                    "minimum_history_months",
+                                    "projection_months",
+                                    "renewals_assumed",
+                                    "method_version"
+                                ],
+                                "properties": {
+                                    "as_of": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced",
+                                            "collected"
+                                        ]
+                                    },
+                                    "projection_basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced"
+                                        ]
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "tax": {
+                                        "type": "string",
+                                        "enum": [
+                                            "excluded"
+                                        ]
+                                    },
+                                    "fiscal_year_start": {
+                                        "type": "string"
+                                    },
+                                    "include_expenses": {
+                                        "type": "boolean"
+                                    },
+                                    "include_projected_overage": {
+                                        "type": "boolean"
+                                    },
+                                    "overage_window_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "minimum_history_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "projection_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "renewals_assumed": {
+                                        "type": "boolean"
+                                    },
+                                    "method_version": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "RevenueClientRow": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "client_id",
+                                    "name",
+                                    "is_active",
+                                    "mrr",
+                                    "ytd",
+                                    "ttm",
+                                    "open_amount",
+                                    "overdue_amount",
+                                    "overdue_count",
+                                    "ending_soon",
+                                    "over_retainer",
+                                    "agreements"
+                                ],
+                                "properties": {
+                                    "client_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean"
+                                    },
+                                    "mrr": {
+                                        "type": "integer"
+                                    },
+                                    "ytd": {
+                                        "type": "integer"
+                                    },
+                                    "ttm": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "amount",
+                                            "month_to_date",
+                                            "series"
+                                        ],
+                                        "properties": {
+                                            "amount": {
+                                                "type": "integer"
+                                            },
+                                            "month_to_date": {
+                                                "type": "integer"
+                                            },
+                                            "series": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "month",
+                                                        "amount"
+                                                    ],
+                                                    "properties": {
+                                                        "month": {
+                                                            "type": "string",
+                                                            "pattern": "^[0-9]{4}-[0-9]{2}$"
+                                                        },
+                                                        "amount": {
+                                                            "type": "integer"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "open_amount": {
+                                        "type": "integer"
+                                    },
+                                    "overdue_amount": {
+                                        "type": "integer"
+                                    },
+                                    "overdue_count": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "ending_soon": {
+                                        "type": "boolean"
+                                    },
+                                    "over_retainer": {
+                                        "type": "boolean"
+                                    },
+                                    "agreements": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/RevenueAgreementHealth"
+                                        }
+                                    }
+                                }
+                            },
+                            "RevenueClients": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "assumptions",
+                                    "clients",
+                                    "totals"
+                                ],
+                                "properties": {
+                                    "assumptions": {
+                                        "$ref": "#/$defs/RevenueAssumptions"
+                                    },
+                                    "clients": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/RevenueClientRow"
+                                        }
+                                    },
+                                    "totals": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "mrr",
+                                            "ytd",
+                                            "ttm",
+                                            "open_amount",
+                                            "overdue_amount",
+                                            "overdue_count"
+                                        ],
+                                        "properties": {
+                                            "mrr": {
+                                                "type": "integer"
+                                            },
+                                            "ytd": {
+                                                "type": "integer"
+                                            },
+                                            "ttm": {
+                                                "type": "integer"
+                                            },
+                                            "open_amount": {
+                                                "type": "integer"
+                                            },
+                                            "overdue_amount": {
+                                                "type": "integer"
+                                            },
+                                            "overdue_count": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "revenue.monthly",
+                    "title": "Read monthly revenue by client",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "basis": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "enum": [
+                                    "invoiced",
+                                    "collected"
+                                ]
+                            },
+                            "include_expenses": {
+                                "type": [
+                                    "null",
+                                    "boolean"
+                                ],
+                                "default": null
+                            },
+                            "include_projected_overage": {
+                                "type": [
+                                    "null",
+                                    "boolean"
+                                ],
+                                "default": null
+                            },
+                            "band": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "enum": [
+                                    "all",
+                                    "recurring",
+                                    "overage_and_other",
+                                    "expenses"
+                                ]
+                            },
+                            "client_id": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Per month and per client, from twelve months back to twelve months ahead: kind is actual, current or projected. Actual bands (recurring, overage_and_other, expenses) come from the basis; contracted and projected_overage come from the projection, so the current month shows actuals so far plus what remains contracted. band narrows each row to one band (recurring with contracted, overage_and_other with projected overage, or expenses); a figure outside the band, or switched off by include_expenses or include_projected_overage, is null. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/RevenueMonthly"
+                            }
+                        },
+                        "$defs": {
+                            "RevenueAssumptions": {
+                                "description": "What a revenue figure was computed under, so a stored figure can be explained later.",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "as_of",
+                                    "basis",
+                                    "projection_basis",
+                                    "currency",
+                                    "tax",
+                                    "fiscal_year_start",
+                                    "include_expenses",
+                                    "include_projected_overage",
+                                    "overage_window_months",
+                                    "minimum_history_months",
+                                    "projection_months",
+                                    "renewals_assumed",
+                                    "method_version"
+                                ],
+                                "properties": {
+                                    "as_of": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced",
+                                            "collected"
+                                        ]
+                                    },
+                                    "projection_basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced"
+                                        ]
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "tax": {
+                                        "type": "string",
+                                        "enum": [
+                                            "excluded"
+                                        ]
+                                    },
+                                    "fiscal_year_start": {
+                                        "type": "string"
+                                    },
+                                    "include_expenses": {
+                                        "type": "boolean"
+                                    },
+                                    "include_projected_overage": {
+                                        "type": "boolean"
+                                    },
+                                    "overage_window_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "minimum_history_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "projection_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "renewals_assumed": {
+                                        "type": "boolean"
+                                    },
+                                    "method_version": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "RevenueMonth": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "month",
+                                    "kind",
+                                    "recurring",
+                                    "overage_and_other",
+                                    "expenses",
+                                    "contracted",
+                                    "projected_overage",
+                                    "total",
+                                    "clients"
+                                ],
+                                "properties": {
+                                    "month": {
+                                        "type": "string",
+                                        "pattern": "^[0-9]{4}-[0-9]{2}$"
+                                    },
+                                    "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                            "actual",
+                                            "current",
+                                            "projected"
+                                        ]
+                                    },
+                                    "recurring": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "overage_and_other": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "expenses": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "contracted": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "projected_overage": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "total": {
+                                        "type": "integer"
+                                    },
+                                    "clients": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/RevenueMonthClient"
+                                        }
+                                    }
+                                }
+                            },
+                            "RevenueMonthClient": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "client_id",
+                                    "client_name",
+                                    "recurring",
+                                    "overage_and_other",
+                                    "expenses",
+                                    "contracted",
+                                    "projected_overage",
+                                    "total"
+                                ],
+                                "properties": {
+                                    "client_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "client_name": {
+                                        "type": "string"
+                                    },
+                                    "recurring": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "overage_and_other": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "expenses": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "contracted": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "projected_overage": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "total": {
+                                        "type": "integer"
+                                    }
+                                }
+                            },
+                            "RevenueMonthly": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "assumptions",
+                                    "band",
+                                    "months"
+                                ],
+                                "properties": {
+                                    "assumptions": {
+                                        "$ref": "#/$defs/RevenueAssumptions"
+                                    },
+                                    "band": {
+                                        "type": "string",
+                                        "enum": [
+                                            "all",
+                                            "recurring",
+                                            "overage_and_other",
+                                            "expenses"
+                                        ]
+                                    },
+                                    "months": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/RevenueMonth"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "revenue.projection",
+                    "title": "Read the per-agreement revenue projection",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "include_projected_overage": {
+                                "type": [
+                                    "null",
+                                    "boolean"
+                                ],
+                                "default": null
+                            },
+                            "client_id": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Per-agreement rows for the current month and the twelve full months after it: terms, retainer, each recurring item with its next charge date, the overage method and history, and each month's contracted retainer, recurring items and projected overage. A charge already on a charged invoice is actual and left out. client_id narrows to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/RevenueProjection"
+                            }
+                        },
+                        "$defs": {
+                            "RevenueAgreementProjection": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "agreement_id",
+                                    "client_id",
+                                    "client_name",
+                                    "title",
+                                    "status",
+                                    "billing_cadence",
+                                    "starts_on",
+                                    "ends_on",
+                                    "signed",
+                                    "retainer",
+                                    "monthly_recurring",
+                                    "recurring_items",
+                                    "overage",
+                                    "months",
+                                    "totals"
+                                ],
+                                "properties": {
+                                    "agreement_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "client_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "client_name": {
+                                        "type": "string"
+                                    },
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "status": {
+                                        "type": "string"
+                                    },
+                                    "billing_cadence": {
+                                        "type": "string",
+                                        "enum": [
+                                            "monthly",
+                                            "quarterly",
+                                            "semi_annual",
+                                            "annual"
+                                        ]
+                                    },
+                                    "starts_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "ends_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "signed": {
+                                        "type": "boolean"
+                                    },
+                                    "retainer": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "period_fee",
+                                            "monthly_equivalent",
+                                            "first_cycle_proration"
+                                        ],
+                                        "properties": {
+                                            "period_fee": {
+                                                "type": "integer"
+                                            },
+                                            "monthly_equivalent": {
+                                                "type": "integer"
+                                            },
+                                            "first_cycle_proration": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "prorate_hours",
+                                                    "full_period",
+                                                    "align_next_cycle"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "monthly_recurring": {
+                                        "type": "integer"
+                                    },
+                                    "recurring_items": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/RevenueProjectedItem"
+                                        }
+                                    },
+                                    "overage": {
+                                        "$ref": "#/$defs/RevenueOverageMethod"
+                                    },
+                                    "months": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/RevenueProjectionMonth"
+                                        }
+                                    },
+                                    "totals": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "contracted",
+                                            "projected_overage"
+                                        ],
+                                        "properties": {
+                                            "contracted": {
+                                                "type": "integer"
+                                            },
+                                            "projected_overage": {
+                                                "type": [
+                                                    "integer",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "RevenueAssumptions": {
+                                "description": "What a revenue figure was computed under, so a stored figure can be explained later.",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "as_of",
+                                    "basis",
+                                    "projection_basis",
+                                    "currency",
+                                    "tax",
+                                    "fiscal_year_start",
+                                    "include_expenses",
+                                    "include_projected_overage",
+                                    "overage_window_months",
+                                    "minimum_history_months",
+                                    "projection_months",
+                                    "renewals_assumed",
+                                    "method_version"
+                                ],
+                                "properties": {
+                                    "as_of": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced",
+                                            "collected"
+                                        ]
+                                    },
+                                    "projection_basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced"
+                                        ]
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "tax": {
+                                        "type": "string",
+                                        "enum": [
+                                            "excluded"
+                                        ]
+                                    },
+                                    "fiscal_year_start": {
+                                        "type": "string"
+                                    },
+                                    "include_expenses": {
+                                        "type": "boolean"
+                                    },
+                                    "include_projected_overage": {
+                                        "type": "boolean"
+                                    },
+                                    "overage_window_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "minimum_history_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "projection_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "renewals_assumed": {
+                                        "type": "boolean"
+                                    },
+                                    "method_version": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "RevenueOverageMethod": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "method",
+                                    "window_months",
+                                    "minimum_history_months",
+                                    "history_months",
+                                    "billed_in_window",
+                                    "monthly_average",
+                                    "status"
+                                ],
+                                "properties": {
+                                    "method": {
+                                        "type": "string",
+                                        "enum": [
+                                            "trailing_average"
+                                        ]
+                                    },
+                                    "window_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "minimum_history_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "history_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "billed_in_window": {
+                                        "type": "integer"
+                                    },
+                                    "monthly_average": {
+                                        "type": "integer"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "projected",
+                                            "insufficient_history"
+                                        ]
+                                    }
+                                }
+                            },
+                            "RevenueProjectedItem": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "item_id",
+                                    "description",
+                                    "cadence",
+                                    "amount",
+                                    "monthly_equivalent",
+                                    "is_taxable",
+                                    "is_active",
+                                    "effective_on",
+                                    "expires_on",
+                                    "next_charge_on"
+                                ],
+                                "properties": {
+                                    "item_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    },
+                                    "cadence": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "amount": {
+                                        "type": "integer"
+                                    },
+                                    "monthly_equivalent": {
+                                        "type": "integer"
+                                    },
+                                    "is_taxable": {
+                                        "type": "boolean"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean"
+                                    },
+                                    "effective_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "expires_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "next_charge_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    }
+                                }
+                            },
+                            "RevenueProjection": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "assumptions",
+                                    "agreements"
+                                ],
+                                "properties": {
+                                    "assumptions": {
+                                        "$ref": "#/$defs/RevenueAssumptions"
+                                    },
+                                    "agreements": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/RevenueAgreementProjection"
+                                        }
+                                    }
+                                }
+                            },
+                            "RevenueProjectionMonth": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "month",
+                                    "contracted",
+                                    "contracted_retainer",
+                                    "contracted_recurring_items",
+                                    "projected_overage"
+                                ],
+                                "properties": {
+                                    "month": {
+                                        "type": "string",
+                                        "pattern": "^[0-9]{4}-[0-9]{2}$"
+                                    },
+                                    "contracted": {
+                                        "type": "integer"
+                                    },
+                                    "contracted_retainer": {
+                                        "type": "integer"
+                                    },
+                                    "contracted_recurring_items": {
+                                        "type": "integer"
+                                    },
+                                    "projected_overage": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "revenue.summary",
+                    "title": "Read revenue key figures",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "basis": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "enum": [
+                                    "invoiced",
+                                    "collected"
+                                ]
+                            },
+                            "include_expenses": {
+                                "type": [
+                                    "null",
+                                    "boolean"
+                                ],
+                                "default": null
+                            },
+                            "include_projected_overage": {
+                                "type": [
+                                    "null",
+                                    "boolean"
+                                ],
+                                "default": null
+                            },
+                            "client_id": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Key figures: year to date (January 1 to today) and trailing twelve months (twelve full months plus the month to date), each against the same span a year earlier; the next twelve full months contracted, with projected overage when include_projected_overage is true; the current month's actual so far and what remains contracted; open receivables with the overdue amount and count; and the agreements ending (with the monthly amount that drops) and starting in the next twelve months. client_id narrows every figure to one client. Workspace owners/admins only; anyone else is told the workspace is not found. Amounts are integer minor units of the workspace currency. Revenue excludes tax; receivables are balances owed, tax included. The invoiced basis counts issued, partially paid, paid and disputed invoices (never draft or void), placed by service month (service_period_end, else the issue date); a retainer or recurring-item line, sold in advance, is placed on its own date. Corrections and credits net in the month of the invoice they apply to. The collected basis counts payments net of refunds by received date, spread over the paid invoice's bands before tax. Bands: recurring (retainer and recurring items), overage_and_other (additional hours, milestones, subcontractor, adjustments, credits and the rest), expenses. The projection is always invoiced-basis: signed agreements count only from their start date, stop at their end or termination with no renewal assumed, place recurring items at their own cadence, and never project expenses. Projected overage is each agreement's trailing 6-month average of billed overage amount, zero below 3 months of history. Every response carries an assumptions block (as_of, basis, overage window, minimum history, method_version). Computed in the request; nothing is stored.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/RevenueSummary"
+                            }
+                        },
+                        "$defs": {
+                            "RevenueAgreementChange": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "agreement_id",
+                                    "client_id",
+                                    "client_name",
+                                    "title",
+                                    "date",
+                                    "monthly_amount"
+                                ],
+                                "properties": {
+                                    "agreement_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "client_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "client_name": {
+                                        "type": "string"
+                                    },
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "date": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "monthly_amount": {
+                                        "type": "integer"
+                                    }
+                                }
+                            },
+                            "RevenueAssumptions": {
+                                "description": "What a revenue figure was computed under, so a stored figure can be explained later.",
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "as_of",
+                                    "basis",
+                                    "projection_basis",
+                                    "currency",
+                                    "tax",
+                                    "fiscal_year_start",
+                                    "include_expenses",
+                                    "include_projected_overage",
+                                    "overage_window_months",
+                                    "minimum_history_months",
+                                    "projection_months",
+                                    "renewals_assumed",
+                                    "method_version"
+                                ],
+                                "properties": {
+                                    "as_of": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced",
+                                            "collected"
+                                        ]
+                                    },
+                                    "projection_basis": {
+                                        "type": "string",
+                                        "enum": [
+                                            "invoiced"
+                                        ]
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "tax": {
+                                        "type": "string",
+                                        "enum": [
+                                            "excluded"
+                                        ]
+                                    },
+                                    "fiscal_year_start": {
+                                        "type": "string"
+                                    },
+                                    "include_expenses": {
+                                        "type": "boolean"
+                                    },
+                                    "include_projected_overage": {
+                                        "type": "boolean"
+                                    },
+                                    "overage_window_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "minimum_history_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "projection_months": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "renewals_assumed": {
+                                        "type": "boolean"
+                                    },
+                                    "method_version": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "RevenueSummary": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "assumptions",
+                                    "ytd",
+                                    "ttm",
+                                    "next_12_months",
+                                    "current_month",
+                                    "open_receivables",
+                                    "changes"
+                                ],
+                                "properties": {
+                                    "assumptions": {
+                                        "$ref": "#/$defs/RevenueAssumptions"
+                                    },
+                                    "ytd": {
+                                        "$ref": "#/$defs/RevenueWindowFigure"
+                                    },
+                                    "ttm": {
+                                        "$ref": "#/$defs/RevenueWindowFigure"
+                                    },
+                                    "next_12_months": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "from",
+                                            "to",
+                                            "contracted",
+                                            "projected_overage"
+                                        ],
+                                        "properties": {
+                                            "from": {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            "to": {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            "contracted": {
+                                                "type": "integer"
+                                            },
+                                            "projected_overage": {
+                                                "type": [
+                                                    "integer",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "current_month": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "month",
+                                            "actual",
+                                            "remaining_contracted",
+                                            "projected_overage"
+                                        ],
+                                        "properties": {
+                                            "month": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]{4}-[0-9]{2}$"
+                                            },
+                                            "actual": {
+                                                "type": "integer"
+                                            },
+                                            "remaining_contracted": {
+                                                "type": "integer"
+                                            },
+                                            "projected_overage": {
+                                                "type": [
+                                                    "integer",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "open_receivables": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "outstanding",
+                                            "invoice_count",
+                                            "overdue_amount",
+                                            "overdue_count"
+                                        ],
+                                        "properties": {
+                                            "outstanding": {
+                                                "type": "integer"
+                                            },
+                                            "invoice_count": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "overdue_amount": {
+                                                "type": "integer"
+                                            },
+                                            "overdue_count": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            }
+                                        }
+                                    },
+                                    "changes": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "ending",
+                                            "starting"
+                                        ],
+                                        "properties": {
+                                            "ending": {
+                                                "type": "array",
+                                                "items": {
+                                                    "$ref": "#/$defs/RevenueAgreementChange"
+                                                }
+                                            },
+                                            "starting": {
+                                                "type": "array",
+                                                "items": {
+                                                    "$ref": "#/$defs/RevenueAgreementChange"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "RevenueWindowFigure": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "amount",
+                                    "from",
+                                    "to",
+                                    "prior_amount",
+                                    "prior_from",
+                                    "prior_to"
+                                ],
+                                "properties": {
+                                    "amount": {
+                                        "type": "integer"
+                                    },
+                                    "from": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "to": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "prior_amount": {
+                                        "type": "integer"
+                                    },
+                                    "prior_from": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "prior_to": {
+                                        "type": "string",
+                                        "format": "date"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "search",
                     "title": "Search workspace",
                     "inputSchema": {
@@ -39542,6 +40987,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -39711,6 +41160,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -39929,6 +41382,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -40147,6 +41604,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -40365,6 +41826,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -40659,6 +42124,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -40926,6 +42395,10 @@
                     "proposals.accept scope_not_granted proposals:accept",
                     "proposals.create scope_not_granted proposals:write",
                     "proposals.send scope_not_granted proposals:write",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -41194,6 +42667,10 @@
                     "proposals.accept scope_not_granted proposals:accept",
                     "proposals.create scope_not_granted proposals:write",
                     "proposals.send scope_not_granted proposals:write",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -41511,6 +42988,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -41731,6 +43212,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -41885,6 +43370,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -42103,6 +43592,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -42321,6 +43814,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -42539,6 +44036,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -42810,6 +44311,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -43030,6 +44535,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -43202,6 +44711,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -43420,6 +44933,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -43638,6 +45155,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -43856,6 +45377,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -44169,6 +45694,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
@@ -44388,6 +45917,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
@@ -44530,6 +46063,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -44747,6 +46284,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -44964,6 +46505,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -45181,6 +46726,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
                     "square.customers.search deployment_disabled",
@@ -45457,6 +47006,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -45674,6 +47227,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -45834,6 +47391,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -46049,6 +47610,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -46264,6 +47829,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -46479,6 +48048,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -46750,6 +48323,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -46969,6 +48546,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -47134,6 +48715,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -47351,6 +48936,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -47568,6 +49157,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -47785,6 +49378,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -48036,6 +49633,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -48255,6 +49856,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -48432,6 +50037,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -48649,6 +50258,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -48866,6 +50479,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -49083,6 +50700,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -49369,6 +50990,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -49586,6 +51211,10 @@
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -49746,6 +51375,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -49961,6 +51594,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -50176,6 +51813,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -50391,6 +52032,10 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -50640,6 +52285,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -50858,6 +52507,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -51025,6 +52678,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -51243,6 +52900,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -51461,6 +53122,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -51679,6 +53344,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -51951,6 +53620,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -52168,6 +53841,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -52335,6 +54012,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -52550,6 +54231,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -52765,6 +54450,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -52980,6 +54669,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -53230,6 +54923,10 @@
                     "proposals.get deployment_disabled",
                     "proposals.list deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients deployment_disabled",
+                    "revenue.monthly deployment_disabled",
+                    "revenue.projection deployment_disabled",
+                    "revenue.summary deployment_disabled",
                     "search deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
@@ -53426,6 +55123,10 @@
                     "proposals.get deployment_disabled",
                     "proposals.list deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients deployment_disabled",
+                    "revenue.monthly deployment_disabled",
+                    "revenue.projection deployment_disabled",
+                    "revenue.summary deployment_disabled",
                     "search deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
@@ -53622,6 +55323,10 @@
                     "proposals.get deployment_disabled",
                     "proposals.list deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients deployment_disabled",
+                    "revenue.monthly deployment_disabled",
+                    "revenue.projection deployment_disabled",
+                    "revenue.summary deployment_disabled",
                     "search deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
@@ -53818,6 +55523,10 @@
                     "proposals.get deployment_disabled",
                     "proposals.list deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients deployment_disabled",
+                    "revenue.monthly deployment_disabled",
+                    "revenue.projection deployment_disabled",
+                    "revenue.summary deployment_disabled",
                     "search deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
@@ -54014,6 +55723,10 @@
                     "proposals.get deployment_disabled",
                     "proposals.list deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients deployment_disabled",
+                    "revenue.monthly deployment_disabled",
+                    "revenue.projection deployment_disabled",
+                    "revenue.summary deployment_disabled",
                     "search deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
@@ -54210,6 +55923,10 @@
                     "proposals.get deployment_disabled",
                     "proposals.list deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "revenue.clients deployment_disabled",
+                    "revenue.monthly deployment_disabled",
+                    "revenue.projection deployment_disabled",
+                    "revenue.summary deployment_disabled",
                     "search deployment_disabled",
                     "square.customers.get deployment_disabled",
                     "square.customers.list deployment_disabled",
@@ -54424,6 +56141,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -54644,6 +56365,10 @@
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "proposals.send": "ef4eaeda1e2f9b38",
+                "revenue.clients": "250c53c49eadd19d",
+                "revenue.monthly": "733588010555d347",
+                "revenue.projection": "980f6f2414dc2ae2",
+                "revenue.summary": "168d02386493da2a",
                 "search": "227c3212336753dc",
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
@@ -54813,6 +56538,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -55031,6 +56760,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -55249,6 +56982,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
@@ -55467,6 +57204,10 @@
                     "projects.update role",
                     "proposals.create role",
                     "proposals.send role",
+                    "revenue.clients role",
+                    "revenue.monthly role",
+                    "revenue.projection role",
+                    "revenue.summary role",
                     "square.customers.get role",
                     "square.customers.list role",
                     "square.customers.search role",
