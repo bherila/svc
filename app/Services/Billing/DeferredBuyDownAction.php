@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Exceptions\DraftRegenerationRequired;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -31,6 +32,7 @@ final class DeferredBuyDownAction
         private readonly InvoiceNumberAllocator $numbers,
         private readonly WorkspaceClock $clock,
         private readonly ClientActivityRecorder $activities,
+        private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
     ) {}
 
     public function preview(Workspace $workspace, ClientAgreement $agreement, DeferredBuyDownRequest $request, ?string $expectedVersion = null): DeferredBuyDownSnapshot
@@ -90,6 +92,9 @@ final class DeferredBuyDownAction
             // A target invoice ranks between the agreement and the time it will
             // claim, so it is locked here, ahead of both.
             $invoice = $target === null ? null : $this->lockTarget($workspace, $company, $locked, $target);
+            if ($invoice !== null) {
+                $this->assertStatementMembershipKnown($invoice);
+            }
             $number = $invoice === null ? $this->numbers->next($workspace) : null;
             $ids = array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $selection->entries);
             $current = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)
@@ -194,6 +199,30 @@ final class DeferredBuyDownAction
     }
 
     /**
+     * Refuse a legacy draft whose stored backlog cannot be itemized (#609).
+     *
+     * Attaching removes settled work from the host's stored hours statement.
+     * A draft generated before the itemized deferred-work snapshot existed has
+     * only the statement's aggregate backlog, which cannot say whether the
+     * entries being settled were among the hours it counts: work approved
+     * after generation may be selected, and deducting it would erase a
+     * different entry's waiting hours. With no backlog there is nothing to
+     * misattribute, so that draft attaches as before. Otherwise the caller must
+     * regenerate explicitly - regeneration rebuilds the charges, so it is never
+     * done silently here - which captures the snapshot, then preview again.
+     */
+    private function assertStatementMembershipKnown(ClientInvoice $invoice): void
+    {
+        $statement = $invoice->hoursStatement();
+        if ($statement === null || $invoice->deferred_work_statement !== null) {
+            return;
+        }
+        if ($statement->deferredBacklogHours > 0 || $statement->deferredBacklogEntries > 0) {
+            throw new DraftRegenerationRequired;
+        }
+    }
+
+    /**
      * The day an attached settlement's lines are dated.
      *
      * A settlement line is work describing, so a regeneration widens the
@@ -234,8 +263,9 @@ final class DeferredBuyDownAction
         if ($statement !== null) {
             // A later approval was never part of this stored total. Use the
             // recorded membership and minutes where available, so settling it
-            // cannot subtract another entry's waiting hours. Legacy drafts
-            // without an itemized snapshot retain the work-date fallback.
+            // cannot subtract another entry's waiting hours. A legacy draft
+            // without an itemized snapshot reaches here only with no backlog
+            // to subtract from (#609), where the work-date fallback is inert.
             $recorded = $deferred->entries ?? array_map(static fn (ClientTimeEntry $entry): array => [
                 'id' => $entry->id, 'workedOn' => $entry->worked_on->toDateString(), 'minutes' => (int) $entry->minutes,
             ], $selection->entries);
@@ -245,7 +275,7 @@ final class DeferredBuyDownAction
         }
 
         if ($deferred !== null) {
-            $invoice->forceFill(['deferred_work_statement' => $deferred->withoutSettledEntries($ids)?->toArray()]);
+            $this->deferredWorkStatements->write($invoice, $deferred->withoutSettledEntries($ids));
         }
     }
 

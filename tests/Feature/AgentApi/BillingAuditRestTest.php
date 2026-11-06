@@ -9,6 +9,7 @@ use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentBillingAuditReadService;
+use App\Services\Billing\DeferredLineageVisibilityAuditor;
 use App\Services\Billing\MissingBilledOverageAuditor;
 use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Services\Billing\UndatedCollectibleInvoiceAuditor;
@@ -47,6 +48,7 @@ final class BillingAuditRestTest extends TestCase
         yield 'undated collectible invoices' => ['billing.audit_undated_collectible_invoices', 'undated-collectible-invoices', static fn (Workspace $workspace): array => app(UndatedCollectibleInvoiceAuditor::class)->count($workspace)->toArray()];
         yield 'missing billed overage' => ['billing.audit_missing_billed_overage', 'missing-billed-overage', static fn (Workspace $workspace): array => app(MissingBilledOverageAuditor::class)->count($workspace)->toArray()];
         yield 'schedule generation preflight' => ['billing.preflight_schedule_generation', 'schedule-generation-preflight', static fn (Workspace $workspace): array => app(ScheduleGenerationPreflight::class)->run($workspace, periodCap: AgentBillingAuditReadService::PREFLIGHT_PERIOD_CAP)->toArray()];
+        yield 'deferred lineage visibility' => ['billing.audit_deferred_lineage_visibility', 'deferred-lineage-visibility', static fn (Workspace $workspace): array => app(DeferredLineageVisibilityAuditor::class)->count($workspace, AgentBillingAuditReadService::LINEAGE_LIST_LIMIT)->toArray()];
         yield 'unlinked proposal agreements' => ['billing.audit_unlinked_proposal_agreements', 'unlinked-proposal-agreements', static fn (Workspace $workspace): array => app(UnlinkedProposalAgreementAuditor::class)->count($workspace)->toArray()];
     }
 

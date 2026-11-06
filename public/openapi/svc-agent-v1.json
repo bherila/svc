@@ -1342,6 +1342,87 @@
                 "x-mcp-tool": "attachments.visibility.update"
             }
         },
+        "/workspaces/{workspace}/billing-audits/deferred-lineage-visibility": {
+            "get": {
+                "operationId": "billing.audit_deferred_lineage_visibility",
+                "description": "Workspace managers only. Counts the workspace's client-visible charged invoices whose stored deferred-work snapshot predates project lineage and still lists work, and those a project-scoped portal member is now refused (not found) although every other project on the invoice is granted to them, as svc:billing:audit-deferred-lineage-visibility reports for every workspace. Names up to 100 of those invoices by id and number, with hidden_invoices_truncated when there are more, and states the supported fix: regenerate or reopen and reissue the invoice to capture lineage, then grant the projects it names, or give the member company-wide access. Read-only; nothing about the deferred work, its projects or the members is returned.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Counts and the affected invoices for the workspace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeferredLineageVisibilityAuditResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks billing:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "billing.audit_deferred_lineage_visibility",
+                "x-svc-flags": [],
+                "x-mcp-tool": "billing.audit_deferred_lineage_visibility"
+            }
+        },
         "/workspaces/{workspace}/billing-audits/missing-billed-overage": {
             "get": {
                 "operationId": "billing.audit_missing_billed_overage",
@@ -9175,7 +9256,7 @@
         "/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices": {
             "post": {
                 "operationId": "invoices.create_deferred_buydown",
-                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
+                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. The optional invoice_id attaches the settlement to that existing cadence draft (a reopened invoice being reissued) instead of creating a settlement invoice; any other target is refused. A legacy draft whose stored hours statement reports a deferred backlog but has no itemized deferred-work snapshot is refused with 422 and code draft_regeneration_required: regenerate the draft explicitly (regeneration may change its charges), re-read its versions and preview again. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
                 "security": [
                     {
                         "oauth2": [
@@ -20575,6 +20656,74 @@
                     }
                 }
             },
+            "DeferredLineageVisibilityAudit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "with_unverifiable_lineage",
+                    "hidden_from_project_scoped_members",
+                    "affected_project_scoped_memberships",
+                    "hidden_invoices",
+                    "hidden_invoices_truncated",
+                    "remedy"
+                ],
+                "properties": {
+                    "with_unverifiable_lineage": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "hidden_from_project_scoped_members": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "affected_project_scoped_memberships": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "hidden_invoices": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "invoice_number"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "invoice_number": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "hidden_invoices_truncated": {
+                        "type": "boolean"
+                    },
+                    "remedy": {
+                        "type": "string"
+                    }
+                }
+            },
+            "DeferredLineageVisibilityAuditResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/DeferredLineageVisibilityAudit"
+                    }
+                }
+            },
             "DeletionReceipt": {
                 "type": "object",
                 "additionalProperties": false,
@@ -20619,6 +20768,11 @@
                                         "type": "string"
                                     }
                                 }
+                            },
+                            "code": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                                "description": "A stable, machine-readable refusal code, present on coded refusals such as draft_regeneration_required."
                             }
                         }
                     },

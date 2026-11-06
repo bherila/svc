@@ -327,6 +327,28 @@ Balances are reported per currency, never summed across them. It reports counts
 and balances only, so it is safe to run against real billing data and to paste
 into an issue. It always exits zero.
 
+## Audit Deferred Lineage Visibility
+
+Read-only. Counts client-visible charged invoices whose stored deferred-work
+snapshot predates project lineage (version 1) and still lists work, and those that
+the portal grant rule now hides from a project-scoped portal member who is
+otherwise granted every project on the invoice (#610).
+
+```bash
+php artisan svc:billing:audit-deferred-lineage-visibility                 # counts
+php artisan svc:billing:audit-deferred-lineage-visibility --format=json   # machine-readable
+```
+
+The project of a legacy entry cannot be recovered: reading today's time entry would
+rewrite history when an entry is edited and cannot reach a deleted one. The supported
+fix is to regenerate the draft, or reopen and reissue the issued invoice, so its
+snapshot captures lineage, then grant the projects it names; or to give the member
+company-wide portal access. The command spans every workspace and reports counts
+only. A workspace manager lists the affected invoices (up to 100, by id and number)
+with `billing.audit_deferred_lineage_visibility` or
+`GET /api/v1/workspaces/{workspace}/billing-audits/deferred-lineage-visibility`. It
+always exits zero.
+
 ## Backfill Invoice Due Dates — retired
 
 `svc:billing:backfill-invoice-due-dates` and `UndatedCollectibleInvoiceRepairer`

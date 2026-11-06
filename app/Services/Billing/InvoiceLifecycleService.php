@@ -60,6 +60,7 @@ final class InvoiceLifecycleService
         private readonly ?InvoiceAdministratorNotificationService $administratorNotifications = null,
         private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
         private readonly PaymentRefundLedger $refunds = new PaymentRefundLedger,
+        private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
     ) {}
 
     /**
@@ -162,7 +163,8 @@ final class InvoiceLifecycleService
                 // exist. The agent door reaches here only for an ad-hoc draft
                 // (#349); a generated one is regenerated, not edited.
                 'hours_statement' => null,
-                'deferred_work_statement' => null,
+                // The deferred snapshot goes with it, through its one writer
+                // so its project index is withdrawn too (#610).
             ];
             foreach (['due_date', 'scheduled_issue_date', 'notes'] as $attribute) {
                 if (array_key_exists($attribute, $attributes)) {
@@ -175,6 +177,7 @@ final class InvoiceLifecycleService
             // `setKeysForSaveQuery()`, so the workspace has to be said here.
             $locked->lines()->where('workspace_id', $workspace->id)->delete();
             $locked->forceFill($updates)->save();
+            $this->deferredWorkStatements->write($locked, null);
             $this->createLines($locked, $workspace, $lines, $subtotalOverrides);
             $this->activities->record(
                 $workspace,
