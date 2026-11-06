@@ -36,6 +36,8 @@ final class WebApiParityTest extends TestCase
         'svc.billing.stripe.workspace-webhook' => 'web-only:inbound webhook',
         'svc.billing.square.webhook' => 'web-only:inbound webhook',
         'svc.billing.square.workspace-webhook' => 'web-only:inbound webhook',
+        'portal.approvals.approve' => 'deliberate:a client contact approving the hours and expenses they pay for is an interactive decision by the payer in the portal, which holds no agent credential',
+        'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
         'svc.engagement.agreements.sign' => 'deliberate:a signature is an interactive act by the signer',
         'svc.engagement.proposals.accept' => 'deliberate:portal acceptance is an interactive signature by the recipient; REST/MCP separately support confirmed offline acceptance',
     ];
