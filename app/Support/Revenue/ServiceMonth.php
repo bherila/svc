@@ -48,10 +48,12 @@ final class ServiceMonth
             return $query;
         }
 
-        return $query->where(function (Builder $inMonth) use ($bounds): void {
-            $inMonth->whereBetween('service_period_end', $bounds)
-                ->orWhere(function (Builder $undated) use ($bounds): void {
-                    $undated->whereNull('service_period_end')->whereBetween('issue_date', $bounds);
+        [$first, $last] = $bounds;
+
+        return $query->where(function (Builder $inMonth) use ($first, $last): void {
+            $inMonth->whereBetween('service_period_end', [$first, $last])
+                ->orWhere(function (Builder $undated) use ($first, $last): void {
+                    $undated->whereNull('service_period_end')->whereBetween('issue_date', [$first, $last]);
                 });
         });
     }

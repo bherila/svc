@@ -122,7 +122,7 @@ function Section({
     return (
         <section className="border-t border-border pt-6">
             <div className="flex items-baseline justify-between gap-4">
-                <h2 className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+                <h2 className="text-[17px] font-semibold tracking-tight md:text-lg">
                     {title}
                 </h2>
                 {href !== null && (
@@ -361,7 +361,7 @@ export default function ClientHome({
                             id="agreements"
                             className="scroll-mt-20 border-t border-border pt-6"
                         >
-                            <h2 className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+                            <h2 className="text-[17px] font-semibold tracking-tight md:text-lg">
                                 Engagement
                             </h2>
                             <p className="mt-3 flex flex-wrap items-center gap-2 text-sm">
