@@ -77,6 +77,8 @@ final class DeferredSnapshotLineageVisibilityTest extends TestCase
             'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
             'title' => 'Synthetic lineage retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-04-01',
             'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+            // Opted in, so these visibility tests see the list wherever lineage allows it.
+            'show_deferred_backlog_to_client' => true,
         ]);
         $this->entry($this->projectA, '2026-05-10', 600, deferred: false);
 

@@ -62,7 +62,9 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->project = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Synthetic project']);
         $this->agreement = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
             'title' => 'Synthetic retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-04-01',
-            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000]);
+            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+            // Opted in, so the client copies these tests render list the backlog.
+            'show_deferred_backlog_to_client' => true]);
     }
 
     public function test_cadence_document_lists_the_remaining_deferred_entries_oldest_first(): void
