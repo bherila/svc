@@ -324,7 +324,7 @@ Clients approve **expenses as well as hours** (decided 2026-11-06).
 - **Proforma.** An expense not yet ready to bill is listed on the proforma but
   left out of its total.
 
-### 7c. Vetvet's "Hours to approve"
+### 7c. Vetvet's "To approve" (hours and expenses)
 
 One queue in the portal for each client contact. It is built from **that
 user's** portal memberships across every workspace, so it covers both Herila's
