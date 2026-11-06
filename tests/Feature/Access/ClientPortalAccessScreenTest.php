@@ -83,6 +83,8 @@ final class ClientPortalAccessScreenTest extends TestCase
                     'email' => 'contact@client.example.test',
                     'scope' => 'projects',
                     'version' => $this->version($this->contact),
+                    'can_approve_time_and_expenses' => null,
+                    'approval' => ['allowed' => false, 'basis' => 'not_billing_contact', 'label' => 'Not the billing contact (default)', 'default_label' => 'Not the billing contact (default)'],
                     'projects' => collect([$this->alpha, $this->beta])->sortBy('id')->map(fn (ClientProject $project): array => [
                         'id' => $project->public_id, 'name' => $project->name,
                         'href' => "/api/v1/workspaces/{$this->workspace->public_id}/projects/{$project->public_id}",

@@ -847,7 +847,13 @@ routes are GET/POST `/clients/{client}/portal-access` and PATCH/DELETE
 `/clients/{client}/portal-access/{user}` under the workspace API prefix. Owners
 and admins may use them; every write checks that authority under the access lock.
 Listing requires `clients:read`, granting requires `clients:write`, and changing
-scope or revoking requires both scopes. Writes use the client-management cutover
+scope, setting the approval grant or revoking requires both scopes. `update` also takes
+an optional `can_approve_time_and_expenses`: `true` lets the contact approve the client's
+hours and expenses, `false` stops them even when they are the billing contact, `null`
+returns them to the default (the billing contact), and leaving it out changes nothing.
+Contacts present the stored grant and an `approval` object with the effective state.
+Changing the grant is audited as `portal.approval_changed`; nobody approves their own
+work whatever the grant. Writes use the client-management cutover
 flags and the MCP `mcp.write.clients` switch.
 
 The listing returns each contact's scope, selected projects, version and finished

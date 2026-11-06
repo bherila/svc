@@ -265,9 +265,11 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                     Optional. Clients are offered card payment
                                     only when this is set. It must be in the
                                     same mode (live or test) as the restricted
-                                    key. SVC cannot tell which account a
-                                    publishable key belongs to, so copy both
-                                    keys from the same Stripe account.
+                                    key. When you save, SVC verifies it against
+                                    the restricted key&apos;s account with a
+                                    short-lived SetupIntent that is cancelled
+                                    straight away, so the restricted key needs
+                                    the SetupIntents: Write permission.
                                 </p>
                                 {errors.publishable_key !== undefined && (
                                     <p

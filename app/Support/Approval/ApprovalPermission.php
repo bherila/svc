@@ -19,6 +19,20 @@ final class ApprovalPermission
     }
 
     /**
+     * Why this contact may or may not approve: the explanation
+     * {@see allows()} reached its answer by, for the settings page and API to
+     * present. It never decides anything itself.
+     */
+    public static function basis(?bool $granted, bool $isBillingContact): ApprovalBasis
+    {
+        return match ($granted) {
+            true => ApprovalBasis::Granted,
+            false => ApprovalBasis::Denied,
+            null => $isBillingContact ? ApprovalBasis::BillingContact : ApprovalBasis::NotBillingContact,
+        };
+    }
+
+    /**
      * Is this address one of the client's billing addresses?
      *
      * The billing field may hold several, separated by commas, semicolons or

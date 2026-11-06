@@ -474,6 +474,13 @@ describe('client screens under data that does not fit', () => {
                                     href: '/api/v1/workspaces/workspace-1/projects/project-1',
                                 },
                             ],
+                            can_approve_time_and_expenses: true,
+                            approval: {
+                                allowed: true,
+                                basis: 'granted',
+                                label: `Can approve ${LONG_NAME}`,
+                                default_label: `Billing contact ${LONG_NAME}`,
+                            },
                             version: 'a'.repeat(64),
                             update_href:
                                 '/api/v1/workspaces/workspace-1/clients/company-1/portal-access/contact-1',

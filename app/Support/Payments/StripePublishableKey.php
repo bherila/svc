@@ -10,10 +10,9 @@ namespace App\Support\Payments;
  *
  * Mode is the only fact a publishable key carries: it is `pk_live_` or
  * `pk_test_` followed by an opaque string. The account it belongs to cannot be
- * resolved from the key alone, and the restricted key cannot read it back, so
- * a key from another account in the same mode is accepted here. The
- * connection form says so; the owner who pastes both keys is the check on
- * which account they came from.
+ * resolved from the key alone, so that is checked against Stripe itself when
+ * the key is saved ({@see StripeAccountCheck}); this class is the part that
+ * needs no call, and it runs first.
  */
 final class StripePublishableKey
 {

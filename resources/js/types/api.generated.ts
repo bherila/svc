@@ -568,7 +568,7 @@ export interface paths {
         delete: operations['clients.portal_access.revoke'];
         options?: never;
         head?: never;
-        /** @description Change a portal contact to the whole client or selected projects. Requires its current expected_version, explicit confirmation and an idempotency key. */
+        /** @description Change a portal contact to the whole client or selected projects, and optionally set can_approve_time_and_expenses: true grants and false denies approval of the client's hours and expenses even for the billing contact, null returns to the default (the billing contact), and omitting it leaves the setting unchanged. Requires its current expected_version, explicit confirmation and an idempotency key. */
         patch: operations['clients.portal_access.update'];
         trace?: never;
     };
@@ -4780,6 +4780,20 @@ export interface components {
                 /** Format: uri */
                 href: string;
             }[];
+            /** @description The stored grant: true, false, or null for the default (the client's billing contact). */
+            can_approve_time_and_expenses: boolean | null;
+            approval: {
+                allowed: boolean;
+                /** @enum {string} */
+                basis:
+                    | 'granted'
+                    | 'denied'
+                    | 'billing_contact'
+                    | 'not_billing_contact';
+                label: string;
+                /** @description What the default would mean for this contact. */
+                default_label: string;
+            };
             /** Format: uri */
             update_href: string;
             /** Format: uri */
@@ -7041,6 +7055,8 @@ export interface components {
             scope: 'company' | 'projects';
             projects?: string[];
             expected_version: string;
+            /** @description Whether this contact may approve the client's hours and expenses. true grants and false denies, even for the billing contact; null returns to the default (the client's billing contact). Omit to leave the setting unchanged. */
+            can_approve_time_and_expenses?: boolean | null;
         } & (unknown & unknown);
         clients_portal_invitations_createRequest: {
             /** @constant */

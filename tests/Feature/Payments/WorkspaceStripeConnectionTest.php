@@ -24,6 +24,8 @@ use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Monolog\Handler\TestHandler;
+use Monolog\Level;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\FakesStripeKeys;
 use Tests\TestCase;
 
@@ -421,6 +423,94 @@ final class WorkspaceStripeConnectionTest extends TestCase
         $this->assertSame($reads, count($this->callsTo('get', '/v1/account')));
         $this->assertSame(self::KEY_A, $this->activeFor($workspace)?->secret());
         $this->assertSame('pk_live_syntheticpublishable0001', $this->activeFor($workspace)?->publishable_key);
+    }
+
+    // ---- publishable key, checked against the account ----
+
+    public function test_a_publishable_key_is_read_back_through_a_setup_intent_the_restricted_key_made_and_cancels(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-live-check');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => 'pk_live_syntheticpublishable0001'])->assertNoContent();
+
+        $calls = array_values(array_filter($this->keyedStripeCalls, static fn (array $call): bool => str_starts_with($call['path'], '/v1/setup_intents')));
+        $this->assertSame(
+            [['post', '/v1/setup_intents', self::KEY_A], ['get', '/v1/setup_intents/seti_'.$this->suffix(self::KEY_A).'_1', 'pk_live_syntheticpublishable0001'], ['post', '/v1/setup_intents/seti_'.$this->suffix(self::KEY_A).'_1/cancel', self::KEY_A]],
+            array_map(static fn (array $call): array => [$call['method'], $call['path'], $call['key']], $calls),
+        );
+        // No customer, no payment method; the client secret is what proves the account.
+        $this->assertSame(['usage' => 'off_session'], $calls[0]['params']);
+        $this->assertSame(['client_secret' => 'seti_'.$this->suffix(self::KEY_A).'_1_secret_synthetic'], $calls[1]['params']);
+        $this->assertSame('pk_live_syntheticpublishable0001', $this->activeFor($workspace)?->publishable_key);
+    }
+
+    public function test_a_publishable_key_of_another_account_is_a_field_error_and_stores_and_registers_nothing(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-other-account');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => 'pk_live_syntheticpublishable0001'])->assertNoContent();
+        $endpoints = count($this->callsTo('post', '/v1/webhook_endpoints'));
+
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_B, 'publishable_key' => 'pk_live_otheraccount0000002'])
+            ->assertSessionHasErrors(['publishable_key' => 'This publishable key belongs to a different Stripe account than the restricted key.'])
+            ->assertSessionDoesntHaveErrors('secret');
+
+        $this->assertSame(self::KEY_A, $this->activeFor($workspace)?->secret());
+        $this->assertSame('pk_live_syntheticpublishable0001', $this->activeFor($workspace)?->publishable_key);
+        $this->assertSame($endpoints, count($this->callsTo('post', '/v1/webhook_endpoints')));
+        $this->assertSame(2, count($this->callsTo('post', '/v1/setup_intents')));
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string, 3: string, 4: int}> */
+    public static function checksThatCannotReachAnAnswer(): array
+    {
+        return [
+            'the restricted key may not create SetupIntents' => ['rk_live_synthetic_no_setup_perm_a1', 'pk_live_syntheticpublishable0001', 'secret', 'set SetupIntents to Write', 0],
+            'Stripe cannot be reached' => ['rk_live_synthetic_workspace_a_a1b2', 'pk_live_unreachable00000001', 'publishable_key', 'could not reach Stripe', 1],
+            'Stripe answers with an error' => ['rk_live_synthetic_workspace_a_a1b2', 'pk_live_server5xx000000001', 'publishable_key', 'no usable answer', 1],
+            'Stripe does not accept the publishable key' => ['rk_live_synthetic_workspace_a_a1b2', 'pk_live_rolledkey00000001', 'publishable_key', 'did not accept this publishable key', 1],
+        ];
+    }
+
+    #[DataProvider('checksThatCannotReachAnAnswer')]
+    public function test_a_check_that_cannot_reach_an_answer_refuses_the_save_and_never_accepts_silently(string $secret, string $publishable, string $field, string $says, int $created): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-unverifiable');
+
+        $response = $this->actingAs($owner)->post($this->url($workspace), ['secret' => $secret, 'publishable_key' => $publishable]);
+
+        $response->assertSessionHasErrors($field);
+        $this->assertStringContainsString($says, (string) session('errors')->first($field));
+        $this->assertNull($this->activeFor($workspace));
+        $this->assertSame([], $this->callsTo('post', '/v1/webhook_endpoints'));
+        // Whatever was created is cancelled, so a refused check leaves nothing open.
+        $this->assertSame($created, count(array_filter($this->keyedStripeCalls, static fn (array $call): bool => str_ends_with($call['path'], '/cancel'))));
+    }
+
+    public function test_the_mode_check_runs_first_and_no_check_is_made_without_a_publishable_key(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-order');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A, 'publishable_key' => 'pk_test_syntheticpublishable0002'])
+            ->assertSessionHasErrors('publishable_key');
+        $this->assertSame([], $this->keyedStripeCalls);
+
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A])->assertNoContent();
+        $this->assertSame([], $this->callsTo('post', '/v1/setup_intents'));
+    }
+
+    public function test_a_check_that_cannot_cancel_still_reports_what_it_found_and_never_fails_a_good_save(): void
+    {
+        [$owner, $workspace] = $this->tenant('pk-cancel');
+        $key = 'rk_live_synthetic_cancel_fails_e5';
+        config(['logging.default' => 'capture', 'logging.channels.capture' => ['driver' => 'monolog', 'handler' => TestHandler::class, 'level' => 'debug']]);
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => $key, 'publishable_key' => 'pk_live_otheraccount0000003'])
+            ->assertSessionHasErrors(['publishable_key' => 'This publishable key belongs to a different Stripe account than the restricted key.']);
+        $this->assertNull($this->activeFor($workspace));
+
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => $key, 'publishable_key' => 'pk_live_syntheticpublishable0001'])->assertNoContent();
+        $this->assertSame('pk_live_syntheticpublishable0001', $this->activeFor($workspace)?->publishable_key);
+        /** @var TestHandler $handler */
+        $handler = Log::channel('capture')->getLogger()->getHandlers()[0];
+        $this->assertTrue($handler->hasWarningThatContains('could not be cancelled'));
+        $this->assertFalse($handler->hasRecordThatContains('cancel_fails', Level::Debug));
     }
 
     public function test_replacing_the_key_without_a_publishable_key_drops_the_old_one(): void
