@@ -985,6 +985,44 @@ Answers the owner gave in an interview on 2026-11-06.
 - **Agreements page:** members see a client's Agreements page only for clients
   they have a project with (#630). Owners and admins see all.
 
+- **2026-11-08, slice 11: the light partner workspace and the approved timesheet.**
+  - **Submission:** an author's own draft hours and expenses get `submitted_at`
+    and `submitted_by_user_id`. It approves nothing and moves no status. A draft
+    is on a reviewer's or a portal contact's queue only while submitted; rows the
+    provider marked ready to bill are on it as before. Withdraw clears the stamps
+    and is refused once anyone has approved the row, or once it is marked ready to
+    bill (that is a manager's to return to draft).
+  - **Frozen while submitted:** a submitted time entry or expense cannot be edited
+    or deleted; withdraw, change, submit again.
+  - **Disputes:** a disputed row is withdrawn, fixed and submitted again; submitting
+    again clears the dispute, as the author's answer to it.
+  - **Who may decide a submission:** never its author, and never the provider's own
+    staff when the row is on the queue only because it was submitted. A grant never
+    reaches the provider's staff; the portal path now refuses them too (409).
+  - **No locks:** submit and withdraw are conditional updates, so nothing is added to
+    the billing lock order.
+  - **Approved timesheet:** hours with a person's approval in force (a reviewer's, or
+    the client's contact's in the portal) for a calendar month, never one implied by
+    payment, pending, disputed or draft. Hours only; expenses are not on it. It
+    prints the client-facing line, never a rate or an internal note. An owner or admin
+    reads the workspace's, a member their own. CSV (formula-safe) and PDF.
+  - **Light workspace:** `workspaces.edition` is `full` or `light`. A light workspace
+    hides Dashboard, Invoices, Time, Finance and a client's Agreements and Invoices
+    from navigation and opens on My work. That is navigation, not an authorization
+    boundary: the endpoints behind them authorize as before. An owner or admin turns
+    the full workspace on, one way, in the browser.
+  - **Created on acceptance, only when the person manages no other workspace:** the
+    invitee names the client they bill (the invitation never tells them the host's
+    client) and, optionally, the workspace. It gets that client, a project named like
+    the shared one and linked to it, and nothing of the host's. Nobody becomes a
+    member of the host's workspace. No agreement is created: its rate is theirs to
+    set once they turn agreements on.
+  - **Agent surface:** `submissions.list`, `submissions.submit`, `submissions.withdraw`
+    and `timesheets.approved`, REST and MCP. Expenses ride along only for a token with
+    the expense scope and the expense cutover. The edition switch is browser-only.
+  - **No data command:** nothing needs moving, so none was written. The one-off move of
+    Direct time (Migration, above) stays a separate, explicit, per-participant command.
+
 ## Open questions
 
 None. Answered on 2026-11-06:

@@ -736,6 +736,7 @@ resolves authenticated context, validates its DTO, and maps the result.
 | `billing.audit_unlinked_proposal_agreements`      | `svc:engagement:audit-unlinked-proposal-agreements`; `AgentBillingAuditReadService` over `UnlinkedProposalAgreementAuditor` | `billing:read`; manager; the caller's workspace only                              | Counts only; nothing is repaired or guessed                                                                                                                                     | `mcp.read.billing.audit_unlinked_proposal_agreements`; parity and tenant-isolation tests                              |
 | `billing.audit_deferred_lineage_visibility`       | `svc:billing:audit-deferred-lineage-visibility`; `AgentBillingAuditReadService` over `DeferredLineageVisibilityAuditor`     | `billing:read`; manager; the caller's workspace only                              | Counts, up to 100 affected invoice ids and numbers, and the supported fix; nothing about the deferred work, its projects or members; nothing is repaired                        | `mcp.read.billing.audit_deferred_lineage_visibility`; parity and tenant-isolation tests                               |
 | `shared_projects.list`, `shared_projects.get`, `shared_projects.tasks.list`, `shared_projects.tasks.assign`, `shared_projects.comments.list`, `shared_projects.comments.create` | Shared projects (UX overhaul slice 9); `SharedProjectReadService` and `SharedProjectCollaboration` behind `SharedProjectAccess`, the one host-or-active-participation rule | `projects:read` (list, get), `tasks:read` (tasks), `tasks:write` (assign), `collaboration:read`/`collaboration:write` with `tasks:read` (comments); the caller's own workspace in the path, the project found only as host or active participant | Task title, description, status, dates, assignees with their workspace names, and shared comments; never a rate, time entry, invoice, payment, agreement, file or internal note | `mcp.read`, `mcp.write`; writes behind the collaboration cutover; `SharedProjectIsolationTest`, `SharedProjectCollaborationTest` |
+| `submissions.list`, `submissions.submit`, `submissions.withdraw`, `timesheets.approved` | Submission and the approved timesheet (UX overhaul slice 11); `SubmissionService`, `SubmissionsOverview` and `ApprovedTimesheet` over the pure `SubmissionRules` | `time:read` (list, timesheet), `time:write` (submit, withdraw); `expenses:read`/`expenses:write` add expenses; the caller's own rows in their own workspace | The caller's own hours (date, minutes, their words, state) and expenses; the timesheet adds who worked and who approved; never a rate, invoice, agreement or internal note to a reviewer | `mcp.read`, `mcp.write`; writes behind the time-entry cutover; `SubmissionTest`, `ApprovedTimesheetTest`, `SubmissionMcpTest` |
 | `revenue.summary`, `revenue.monthly`, `revenue.projection`, `revenue.clients` | Dashboard, client roster and client overview figures; `RevenueReadService` over `ProjectionInputsRepository`, `RevenueActualsRepository` and `AgreementLedgerRepository`, computed by `RecurringRevenueProjector` and `RevenueSummaries` | `revenue:read` (not implied by `finance:read`); manager; workspace-scoped reads, `client_id` resolved within the workspace | Aggregates and per-client figures in minor units; every response carries `assumptions`; no invoice or payment identifiers | `mcp.read.revenue`; REST/MCP/DTO parity, schema, isolation and scope tests (`RevenueRestTest`, `RevenueRepositoriesTest`) |
 | Duplicate-time diagnostics                        | No checked-in workflow/service establishes the grouping key                                                               | Deferred from read GA                                                               | Not implemented: a canonical application query, grouping contract, bounded DTO, and privacy review must exist before MCP can adapt it                                           | No flag or release cohort                                                                                             |
 | Session workspace selection                       | Existing clients select an authorized workspace on every scoped call                                                      | Accepted v1 compatibility contract                                                  | Credential/client sessions are bound; every selector is active-membership scoped and reauthorized per call. Session pinning requires a future versioned migration.              | Context, membership-removal, credential-binding, and multi-workspace compatibility tests                              |
@@ -1232,6 +1233,33 @@ commands call the same operation.
 - The tool arguments are the REST ones, with the path parameters named
   `payment_id`, `external_system` and `transaction_id`, and the list's invoice
   filter `invoice_id`.
+
+### Submission and the approved timesheet
+
+`submissions.*` and `timesheets.approved` are the REST operations and MCP tools
+for handing your own hours and expenses to a reviewer and reading what was
+approved ([the UX overhaul](ux-overhaul.md), sections 7b and 7e). They are
+`SubmissionOperations` in the catalog and `AgentMcpSubmissionTools` over REST.
+Submitting is not approving: it stamps `submitted_at` on the caller's own draft
+rows, which is the one fact that puts a draft on a reviewer's queue, and no
+operation here approves, disputes or changes a status. Nobody approves their
+own rows, on this surface or any other.
+
+All paths start with `/api/v1/workspaces/{workspace}`:
+
+| Tool | REST path | Scope | Notes |
+| --- | --- | --- | --- |
+| `submissions.list` | `GET /submissions?period=YYYY-MM` | `time:read` | The caller's own hours (and expenses with `expenses:read`) with a state each: draft, submitted, approved or disputed |
+| `submissions.submit` | `POST /submissions` | `time:write` | Name a `period`, or `time_entry_ids` / `expense_ids` that must each be eligible; `AGENT_API_TIME_ENTRY_WRITES_ENABLED`; expenses also need `expenses:write` and `AGENT_API_EXPENSE_WRITES_ENABLED` |
+| `submissions.withdraw` | `POST /submissions/withdraw` | `time:write` | Only unapproved rows; takes the row off the reviewer's list |
+| `timesheets.approved` | `GET /timesheets/approved?period=YYYY-MM` | `time:read` | Rows a person (reviewer or the client's contact) approved; an owner or admin reads the workspace's, a member their own |
+
+- **Not found.** A workspace the caller is not a member of, another person's
+  row and another workspace's row are the same 404.
+- **No locks.** Each write is one conditional `UPDATE` repeating the rule's
+  facts in its `WHERE`; a row that changed meanwhile makes the call a 409.
+- **Frozen while submitted.** A submitted time entry or expense cannot be
+  edited or deleted until it is withdrawn.
 
 ### Shared projects
 

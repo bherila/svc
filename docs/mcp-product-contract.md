@@ -92,6 +92,8 @@ The resource families have these responsibilities:
 
 **`shared_projects`:** A host workspace's project that other workspaces take part in: the projects a workspace hosts or joins, a project's tasks, task comments and cross-workspace assignment, and nothing of anyone's money. The host-or-active-participation rule and the participant's task visibility are described in [Shared projects](mcp.md#shared-projects); inviting, accepting, removing, leaving and linking a local project are browser-only. See the [inventory](mcp.md#public-capability-inventory).
 
+**`submissions` and `timesheets`:** Submitting one's own draft hours and expenses for review (not approving them), taking a submission back, and the approved timesheet for a calendar month, with who worked and who approved each row and nothing priced. See [Submission and the approved timesheet](mcp.md#submission-and-the-approved-timesheet). The reviewer's decision, the light partner workspace and turning on the full workspace are browser-only.
+
 **`revenue`:** Manager planning reads under `revenue:read`, which `finance:read` does not imply: key figures, monthly actuals by client and band, the per-agreement projection and the client roster with agreement health, each with its assumptions. See [Revenue planning reads](mcp.md#revenue-planning-reads).
 
 **`expenses`:** Authorized expense recording, approval, withdrawal, draft deletion and dedicated receipt access. See the [inventory](mcp.md#public-capability-inventory).
