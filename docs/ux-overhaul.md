@@ -648,41 +648,34 @@ Proposal:
 ## 12. Payment connections per workspace
 
 A workspace is the business that gets paid, so payment settings belong to it,
-not to the deployment and not to each client.
+not to the deployment and not to each client. Decided 2026-11-06: no Stripe
+Connect and no Square OAuth. Each workspace stores its own keys.
 
-- **Deployment level** (environment file, entered once): one Stripe Connect
-  platform (client ID, platform secret, Connect webhook secret) and one Square
-  application (application ID and secret, webhook signature key).
-- **Workspace level**: `workspace_payment_connections`, one active row per
-  processor:
-  - processor: an enum, `stripe` or `square`;
-  - the external account ID (`acct_…` or the Square merchant ID);
-  - encrypted OAuth tokens and expiry where needed;
-  - who connected it and when, and when it was revoked.
-
-  Owners and admins connect through the processor's OAuth flow ("Connect
-  Stripe" or "Connect Square"), with a `state` value bound to the workspace
-  and user. Nobody pastes keys.
-- **Reuse**: a workspace whose owner has another workspace already connected
-  can use that connection without a second OAuth flow.
-- **Charging**: Stripe uses direct charges on the connected account; Square
-  uses the connection's token. The connection is resolved from the invoice's
-  workspace, never from config.
-- **Webhooks**: routed by connected account ID and confirmed against the
-  workspace recorded in the payment metadata. An event that matches no
-  active connection is logged and ignored.
-- **Migration**: an explicit, manual command turns today's environment
-  credentials (`STRIPE_*`, `SQUARE_*`, `SQUARE_WORKSPACE`) into the configured
-  workspace's first connection. The environment path keeps working until
-  that command has run, then a follow-up removes it.
-- **Isolation tests**: no workspace can charge into, read, or receive
-  webhooks for another's connection. Revoking a connection stops charges at
+- **Stripe:** an owner or admin pastes a restricted secret key once per
+  workspace.
+  - SVC validates the key with a read call, creates the workspace's webhook
+    endpoint through the Stripe API, and stores its signing secret.
+  - Charges use the workspace's own key.
+- **Square:** an owner or admin enters an access token, location,
+  environment and webhook signature key once per workspace.
+- **Secrets** are encrypted at rest, never logged, never sent to the browser
+  or API, and shown only as a masked suffix. Replacing or removing a key
+  replaces or removes the webhook endpoint, deferred to after commit.
+- **Webhooks** arrive at a per-workspace URL carrying an opaque connection
+  identifier. They are verified with that workspace's secret. An unknown
+  identifier or a bad signature is refused and nothing is applied.
+- **Reuse:** a workspace whose owner already connected another workspace can
+  reuse that connection without re-entering the key. Same owner only.
+- **Adapter:** behind a `PaymentConnection` adapter, so Stripe Connect or
+  Square OAuth could be added later as other implementations. Not built now.
+- **Migration:** an explicit, dry-run-by-default command copies today's
+  environment keys into the configured workspace's connection. The
+  environment path keeps working until it has run.
+- **Isolation tests:** no workspace can charge into, read, or receive
+  webhooks for another's connection. Removing a connection stops charges at
   once.
-- **No queue worker runs in production**: token exchange and refresh happen
-  in the request, and irrevocable external calls are deferred to commit
-  explicitly.
-- **Other businesses**: a partner workspace (section 7e) connects its own
-  account, or none.
+- **Other businesses:** a partner workspace (section 7e) enters its own keys,
+  or none.
 
 ## 13. Revenue and accounting data over REST and MCP
 
@@ -785,6 +778,8 @@ Settled by the product owner before a period away:
 - **Staff on the dashboard.** Members who are not owners or admins see only
   their own "Needs you" queue: their time, tasks and reviews. Revenue figures
   are for owners and admins only. The server enforces this.
+- **Payments:** per-workspace Stripe and Square keys. No Stripe Connect and
+  no Square OAuth (section 12).
 - **MCP default.** Every client gets the core set plus toolsets. A client
   that can't handle `list_changed` opts into the full list.
 - **Pace.** At most two lanes at a time.
