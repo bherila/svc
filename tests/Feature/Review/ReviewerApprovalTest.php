@@ -384,6 +384,17 @@ final class ReviewerApprovalTest extends TestCase
         $this->assertNull($entry->fresh()->client_approved_at);
     }
 
+    public function test_a_billing_contact_whose_grant_is_explicitly_false_is_not_an_approver_here(): void
+    {
+        $entry = $this->hours($this->otherProject, $this->otherWorker, '2026-10-15', 30);
+        $this->otherVet->forceFill(['billing_email' => $this->ben->email])->save();
+        ClientCompanyMembership::query()->create(['client_company_id' => $this->otherVet->id, 'user_id' => $this->ben->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_COMPANY, 'can_approve_time_and_expenses' => false]);
+
+        $this->page($this->ben)->assertInertia(fn (Assert $page) => $page->where('blocks', []));
+        $this->approve($this->ben, 'company', $this->otherVet->public_id, ['period' => '2026-10'])->assertForbidden();
+        $this->assertNull($entry->fresh()->client_approved_at);
+    }
+
     // --- paying still approves, as slice 8 does ------------------------
 
     public function test_a_paid_invoice_still_approves_and_leaves_a_reviewers_decision_alone(): void
