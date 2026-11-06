@@ -69,6 +69,9 @@ final class SharedProjectStatesTest extends TestCase
         $this->assertFalse(InviteeAddress::matches('ana@example.test', null));
         $this->assertFalse(InviteeAddress::matches('ana@example.test', '   '));
         $this->assertFalse(InviteeAddress::matches('', ''));
+        $this->assertFalse(InviteeAddress::matches('   ', '   '), 'A blank address matches nothing, not even another blank.');
+        $this->assertSame('äna@example.test', InviteeAddress::normalize('ÄNA@Example.test'));
+        $this->assertTrue(InviteeAddress::matches('ÄNA@example.test', 'äna@EXAMPLE.test'));
     }
 
     public function test_a_participant_workspace_offers_its_managers_and_the_members_it_put_on_the_share(): void

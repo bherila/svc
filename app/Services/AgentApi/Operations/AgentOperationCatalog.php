@@ -2182,6 +2182,9 @@ final class AgentOperationCatalog
 
     private function takesConfirmation(string $id): bool
     {
+        // @infection-ignore-all The guard only matters while the checked document does not yet hold
+        // the shared project requests (scripts/generate-shared-project-contract.php builds it); afterwards the
+        // lookup it skips answers the same, because neither request has a version or a confirmation.
         if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id])) {
             return false;
         }
@@ -2192,6 +2195,9 @@ final class AgentOperationCatalog
 
     private function takesVersion(string $id): bool
     {
+        // @infection-ignore-all The guard only matters while the checked document does not yet hold
+        // the shared project requests (scripts/generate-shared-project-contract.php builds it); afterwards the
+        // lookup it skips answers the same, because neither request has a version or a confirmation.
         if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id])) {
             return false;
         }

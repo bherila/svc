@@ -97,7 +97,7 @@ final readonly class SharedViewer
             return false;
         }
 
-        return ! $this->isHost() || $this->manages() || $this->projectRole?->canLogTime() === true;
+        return ! $this->isHost() || $this->manages() || ($this->projectRole !== null && $this->projectRole->canLogTime());
     }
 
     /** Only the host assigns, and only someone who may already manage its tasks. */
