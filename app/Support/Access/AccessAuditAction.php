@@ -14,6 +14,8 @@ enum AccessAuditAction: string
     case ProjectAssignmentChanged = 'project.assignment_changed';
     case PortalGranted = 'portal.granted';
     case PortalScopeChanged = 'portal.scope_changed';
+    /** A contact's grant to approve hours and expenses was set, denied or returned to the default. */
+    case PortalApprovalChanged = 'portal.approval_changed';
     case PortalRevoked = 'portal.revoked';
     /** An invitation for an address with no account here; `subject_user_id` is null. */
     case PortalInvited = 'portal.invited';

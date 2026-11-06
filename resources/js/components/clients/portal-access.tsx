@@ -21,6 +21,18 @@ import { refreshPageProps } from '@/lib/refresh-page-props';
 export type PortalScope = ApiSchema<'PortalContact'>['scope'];
 
 /**
+ * A contact's approval of hours and expenses: a manager's grant, a manager's
+ * refusal, or neither - the default, which is the client's billing contact.
+ */
+type ApprovalSetting = 'default' | 'allow' | 'deny';
+
+const approvalSettingOf = (grant: boolean | null): ApprovalSetting =>
+    grant === null ? 'default' : grant ? 'allow' : 'deny';
+
+const approvalGrantOf = (setting: ApprovalSetting): boolean | null =>
+    setting === 'default' ? null : setting === 'allow';
+
+/**
  * A portal contact as `/api/v1` presents it (#385), with same-origin
  * `update_href` (PATCH) and `revoke_href` (DELETE), and the `version` either
  * must name.
@@ -406,6 +418,8 @@ function MemberRow({
     const [chosen, setChosen] = useState<string[]>(
         member.projects.map((project) => project.id),
     );
+    const stored = approvalSettingOf(member.can_approve_time_and_expenses);
+    const [approval, setApproval] = useState<ApprovalSetting>(stored);
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [removing, setRemoving] = useState(false);
@@ -415,6 +429,11 @@ function MemberRow({
         const failure = await change('PATCH', member.update_href, {
             scope,
             projects: scope === 'projects' ? chosen : [],
+            // Only a setting this form changed: leaving it out leaves the
+            // grant as another manager may since have set it.
+            ...(approval === stored
+                ? {}
+                : { can_approve_time_and_expenses: approvalGrantOf(approval) }),
             expected_version: member.version,
             confirm: true,
         });
@@ -451,6 +470,29 @@ function MemberRow({
                 onScope={setScope}
                 onChosen={setChosen}
             />
+            <div className="grid grid-cols-1 gap-1 text-sm">
+                <Label htmlFor={`portal-${member.id}-approval`}>
+                    Can approve time and expenses
+                </Label>
+                <select
+                    id={`portal-${member.id}-approval`}
+                    className="h-9 max-w-xs rounded-md border bg-transparent px-2"
+                    value={approval}
+                    onChange={(event) =>
+                        setApproval(event.target.value as ApprovalSetting)
+                    }
+                >
+                    <option value="default">
+                        {member.approval.default_label}
+                    </option>
+                    <option value="allow">Can approve</option>
+                    <option value="deny">Cannot approve</option>
+                </select>
+                <p className="text-xs wrap-anywhere text-muted-foreground">
+                    Now: {member.approval.label}. Nobody approves their own
+                    work.
+                </p>
+            </div>
             {message !== null && (
                 <p
                     role="alert"

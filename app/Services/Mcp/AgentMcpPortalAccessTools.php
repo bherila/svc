@@ -36,9 +36,12 @@ final class AgentMcpPortalAccessTools
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema] bool $confirm, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         RequestContext $request,
-        #[Schema(maxItems: 500, items: ['type' => 'string', 'format' => 'uuid'])] array $projects = []): array
+        #[Schema(maxItems: 500, items: ['type' => 'string', 'format' => 'uuid'])] array $projects = [],
+        ?bool $can_approve_time_and_expenses = null): array
     {
-        return $this->rest->call('clients.portal_access.update', ['workspace' => $workspace_id, 'client' => $client_id, 'user' => $user_id], compact('scope', 'confirm', 'expected_version') + ($this->arguments->has($request, 'projects') ? ['projects' => $projects] : []), $idempotency_key);
+        return $this->rest->call('clients.portal_access.update', ['workspace' => $workspace_id, 'client' => $client_id, 'user' => $user_id], compact('scope', 'confirm', 'expected_version')
+            + ($this->arguments->has($request, 'projects') ? ['projects' => $projects] : [])
+            + ($this->arguments->has($request, 'can_approve_time_and_expenses') ? ['can_approve_time_and_expenses' => $can_approve_time_and_expenses] : []), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

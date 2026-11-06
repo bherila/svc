@@ -84,6 +84,13 @@ const props = (
                         href: '/api/v1/workspaces/workspace-1/projects/project-beta',
                     },
                 ],
+                can_approve_time_and_expenses: null,
+                approval: {
+                    allowed: false,
+                    basis: 'not_billing_contact',
+                    label: 'Not the billing contact (default)',
+                    default_label: 'Not the billing contact (default)',
+                },
                 version,
                 update_href: `${api}/portal-access/contact-1`,
                 revoke_href: `${api}/portal-access/contact-1`,
@@ -190,6 +197,92 @@ describe('portal access', () => {
         expect(request().body).toMatchObject({
             scope: 'company',
             projects: [],
+        });
+    });
+
+    it('shows the effective approval state and offers the default by name', () => {
+        render(<PortalAccess {...props()} />);
+
+        const select = screen.getByRole('combobox', {
+            name: 'Can approve time and expenses',
+        });
+        expect(select).toHaveValue('default');
+        expect(
+            within(select).getByRole('option', {
+                name: 'Not the billing contact (default)',
+            }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(/Now: Not the billing contact \(default\)/),
+        ).toBeInTheDocument();
+    });
+
+    it('sends the approval grant only when it was changed', async () => {
+        respond([200, { data: {} }], [200, { data: {} }], [200, { data: {} }]);
+        const user = userEvent.setup();
+        render(<PortalAccess {...props()} />);
+        const approval = screen.getByRole('combobox', {
+            name: 'Can approve time and expenses',
+        });
+
+        await user.selectOptions(approval, 'allow');
+        await user.click(screen.getByRole('button', { name: 'Save access' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(request(0).body).toMatchObject({
+            can_approve_time_and_expenses: true,
+        });
+
+        await user.selectOptions(approval, 'deny');
+        await user.click(screen.getByRole('button', { name: 'Save access' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(request(1).body).toMatchObject({
+            can_approve_time_and_expenses: false,
+        });
+
+        // Back to what the page was rendered with: nothing to send.
+        await user.selectOptions(approval, 'default');
+        await user.click(screen.getByRole('button', { name: 'Save access' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+        expect(request(2).body).not.toHaveProperty(
+            'can_approve_time_and_expenses',
+        );
+    });
+
+    it('returns an explicit grant to the default with null', async () => {
+        respond([200, { data: {} }]);
+        const user = userEvent.setup();
+        const [member] = props().portal.members;
+        render(
+            <PortalAccess
+                {...props({
+                    portal: {
+                        ...props().portal,
+                        members: [
+                            {
+                                ...member,
+                                can_approve_time_and_expenses: false,
+                                approval: {
+                                    ...member.approval,
+                                    basis: 'denied',
+                                    label: 'Cannot approve (set by a manager)',
+                                },
+                            },
+                        ],
+                    },
+                })}
+            />,
+        );
+        const approval = screen.getByRole('combobox', {
+            name: 'Can approve time and expenses',
+        });
+        expect(approval).toHaveValue('deny');
+
+        await user.selectOptions(approval, 'default');
+        await user.click(screen.getByRole('button', { name: 'Save access' }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+        expect(request().body).toMatchObject({
+            can_approve_time_and_expenses: null,
         });
     });
 

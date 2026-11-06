@@ -7446,6 +7446,44 @@
                                             ]
                                         }
                                     },
+                                    "can_approve_time_and_expenses": {
+                                        "type": [
+                                            "boolean",
+                                            "null"
+                                        ],
+                                        "description": "The stored grant: true, false, or null for the default (the client's billing contact)."
+                                    },
+                                    "approval": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "properties": {
+                                            "allowed": {
+                                                "type": "boolean"
+                                            },
+                                            "basis": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "granted",
+                                                    "denied",
+                                                    "billing_contact",
+                                                    "not_billing_contact"
+                                                ]
+                                            },
+                                            "label": {
+                                                "type": "string"
+                                            },
+                                            "default_label": {
+                                                "type": "string",
+                                                "description": "What the default would mean for this contact."
+                                            }
+                                        },
+                                        "required": [
+                                            "allowed",
+                                            "basis",
+                                            "label",
+                                            "default_label"
+                                        ]
+                                    },
                                     "update_href": {
                                         "type": "string",
                                         "format": "uri"
@@ -7466,6 +7504,8 @@
                                     "email",
                                     "scope",
                                     "projects",
+                                    "can_approve_time_and_expenses",
+                                    "approval",
                                     "update_href",
                                     "revoke_href",
                                     "version"
@@ -7593,6 +7633,44 @@
                                             ]
                                         }
                                     },
+                                    "can_approve_time_and_expenses": {
+                                        "type": [
+                                            "boolean",
+                                            "null"
+                                        ],
+                                        "description": "The stored grant: true, false, or null for the default (the client's billing contact)."
+                                    },
+                                    "approval": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "properties": {
+                                            "allowed": {
+                                                "type": "boolean"
+                                            },
+                                            "basis": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "granted",
+                                                    "denied",
+                                                    "billing_contact",
+                                                    "not_billing_contact"
+                                                ]
+                                            },
+                                            "label": {
+                                                "type": "string"
+                                            },
+                                            "default_label": {
+                                                "type": "string",
+                                                "description": "What the default would mean for this contact."
+                                            }
+                                        },
+                                        "required": [
+                                            "allowed",
+                                            "basis",
+                                            "label",
+                                            "default_label"
+                                        ]
+                                    },
                                     "update_href": {
                                         "type": "string",
                                         "format": "uri"
@@ -7613,6 +7691,8 @@
                                     "email",
                                     "scope",
                                     "projects",
+                                    "can_approve_time_and_expenses",
+                                    "approval",
                                     "update_href",
                                     "revoke_href",
                                     "version"
@@ -7706,7 +7786,7 @@
                 },
                 {
                     "name": "clients.portal_access.update",
-                    "title": "Change portal scope",
+                    "title": "Change portal scope or approval",
                     "inputSchema": {
                         "allOf": [
                             {
@@ -7798,10 +7878,17 @@
                                 "type": "string",
                                 "minLength": 64,
                                 "maxLength": 64
+                            },
+                            "can_approve_time_and_expenses": {
+                                "type": [
+                                    "boolean",
+                                    "null"
+                                ],
+                                "description": "Whether this contact may approve the client's hours and expenses. true grants and false denies, even for the billing contact; null returns to the default (the client's billing contact). Omit to leave the setting unchanged."
                             }
                         }
                     },
-                    "description": "Change a portal contact to the whole client or selected projects. Requires explicit confirmation and an idempotency key.",
+                    "description": "Change a portal contact to the whole client or selected projects, and optionally set whether they can approve the client's hours and expenses (true grants and false denies, even for the billing contact; null returns to the default, the billing contact; omit to leave it). Requires explicit confirmation and an idempotency key.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": true,
@@ -7867,6 +7954,44 @@
                                             ]
                                         }
                                     },
+                                    "can_approve_time_and_expenses": {
+                                        "type": [
+                                            "boolean",
+                                            "null"
+                                        ],
+                                        "description": "The stored grant: true, false, or null for the default (the client's billing contact)."
+                                    },
+                                    "approval": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "properties": {
+                                            "allowed": {
+                                                "type": "boolean"
+                                            },
+                                            "basis": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "granted",
+                                                    "denied",
+                                                    "billing_contact",
+                                                    "not_billing_contact"
+                                                ]
+                                            },
+                                            "label": {
+                                                "type": "string"
+                                            },
+                                            "default_label": {
+                                                "type": "string",
+                                                "description": "What the default would mean for this contact."
+                                            }
+                                        },
+                                        "required": [
+                                            "allowed",
+                                            "basis",
+                                            "label",
+                                            "default_label"
+                                        ]
+                                    },
                                     "update_href": {
                                         "type": "string",
                                         "format": "uri"
@@ -7887,6 +8012,8 @@
                                     "email",
                                     "scope",
                                     "projects",
+                                    "can_approve_time_and_expenses",
+                                    "approval",
                                     "update_href",
                                     "revoke_href",
                                     "version"
@@ -42528,10 +42655,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -43922,7 +44049,7 @@
                 "clients.contacts.list": "ae54b436bbe52c90",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
                 "collaboration.attachments.list": "a421b17549170fff",
@@ -44906,10 +45033,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -45171,10 +45298,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -46462,10 +46589,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -46727,10 +46854,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -48140,7 +48267,7 @@
                 "clients.contacts.list": "ae54b436bbe52c90",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
                 "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -48403,7 +48530,7 @@
                 "clients.contacts.list": "ae54b436bbe52c90",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
                 "collaboration.attachments.list": "a421b17549170fff",
                 "collaboration.comments.list": "d3625bb6b888b2f9",
@@ -49673,7 +49800,7 @@
                 "clients.contacts.list": "ae54b436bbe52c90",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
                 "collaboration.attachments.list": "a421b17549170fff",
@@ -49932,7 +50059,7 @@
                 "clients.contacts.list": "ae54b436bbe52c90",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
                 "collaboration.attachments.list": "a421b17549170fff",
@@ -51202,7 +51329,7 @@
                 "clients.contacts.list": "ae54b436bbe52c90",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
                 "collaboration.attachments.list": "a421b17549170fff",
@@ -51465,7 +51592,7 @@
                 "clients.contacts.list": "ae54b436bbe52c90",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
                 "collaboration.attachments.list": "a421b17549170fff",
@@ -52690,10 +52817,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -52954,10 +53081,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -54315,10 +54442,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -54574,10 +54701,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -55765,10 +55892,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -56028,10 +56155,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -57332,10 +57459,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -57591,10 +57718,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.portal_invitations.create": "79c5a74a95a5c067",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
@@ -60139,10 +60266,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.restore": "de0ca9638b40973b",
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",
@@ -60404,10 +60531,10 @@
                 "clients.create": "2a3ca7ec089be248",
                 "clients.get": "3b676337de0f1a4c",
                 "clients.list": "05f22c139792a020",
-                "clients.portal_access.grant": "6e26256a12459fa4",
-                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.grant": "c7800c1c149f4a63",
+                "clients.portal_access.list": "e5115630b2fe7159",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
-                "clients.portal_access.update": "7c94d6dd53da658d",
+                "clients.portal_access.update": "75edcc96d2458991",
                 "clients.restore": "de0ca9638b40973b",
                 "clients.update": "6c48bf0c756ad921",
                 "collaboration.attachments.delete": "dff58314a09211ca",

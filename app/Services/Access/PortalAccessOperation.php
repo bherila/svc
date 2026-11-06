@@ -7,6 +7,7 @@ use App\Models\ClientCompanyMembership;
 use App\Models\User;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
+use App\Support\Approval\PortalApprovalChange;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,9 @@ final class PortalAccessOperation
     public const string UPDATE = 'clients.portal_access.update';
 
     public const string REVOKE = 'clients.portal_access.revoke';
+
+    /** The grant to approve hours and expenses; present on a change to set it, `null` meaning the default. */
+    public const string APPROVAL_FIELD = 'can_approve_time_and_expenses';
 
     public const string NOBODY_SIGNS_IN = 'Nobody signs in with that address yet. Ask them to sign in once, then add them.';
 
@@ -79,6 +83,9 @@ final class PortalAccessOperation
         if ($operation !== self::REVOKE) {
             $rules += self::scopeRules($payload);
         }
+        if ($operation === self::UPDATE) {
+            $rules[self::APPROVAL_FIELD] = ['sometimes', 'nullable', 'boolean'];
+        }
         if ($operation === self::GRANT) {
             $rules['email'] = ['required', 'string', 'email', 'max:255'];
         }
@@ -116,7 +123,8 @@ final class PortalAccessOperation
 
         match ($operation) {
             self::GRANT => $this->access->grantPortal($context, $company, $person, $scope, $projects),
-            self::UPDATE => $this->access->changePortalScope($context, $company, $person, $scope, $projects, (string) $data['expected_version']),
+            self::UPDATE => $this->access->changePortalScope($context, $company, $person, $scope, $projects, (string) $data['expected_version'],
+                array_key_exists(self::APPROVAL_FIELD, $data) ? new PortalApprovalChange($data[self::APPROVAL_FIELD] === null ? null : (bool) $data[self::APPROVAL_FIELD]) : null),
             self::REVOKE => $this->access->revokePortal($context, $company, $person, (string) $data['expected_version']),
             default => throw new \InvalidArgumentException('Unsupported portal access mutation.'),
         };

@@ -13,6 +13,7 @@ use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalAccessState;
 use App\Support\Access\PortalAccessVersion;
 use App\Support\AgentApi\CursorPage;
+use App\Support\Approval\ApprovalPermission;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -89,6 +90,8 @@ final class AgentPortalContactReadService
         abort_unless($user instanceof User, 404);
         $scope = $member->access_scope === PortalAccessScope::Projects->value ? PortalAccessScope::Projects : PortalAccessScope::Company;
         $parameters = ['workspace' => $workspace->public_id, 'client' => $company->public_id, 'user' => $user->public_id];
+        $isBillingContact = ApprovalPermission::isBillingContact((string) $user->email, $company->billing_email);
+        $basis = ApprovalPermission::basis($member->can_approve_time_and_expenses, $isBillingContact);
         $origin = $absolute ? rtrim((string) config('app.url'), '/') : '';
 
         return [
@@ -99,6 +102,13 @@ final class AgentPortalContactReadService
                 'id' => $project->public_id, 'name' => $project->name,
                 'href' => $origin.route('agent-api.v1.projects.show', ['workspace' => $workspace->public_id, 'project' => $project->public_id], false),
             ])->values()->all(),
+            'can_approve_time_and_expenses' => $member->can_approve_time_and_expenses,
+            'approval' => [
+                'allowed' => $basis->allows(),
+                'basis' => $basis->value,
+                'label' => $basis->label(),
+                'default_label' => ApprovalPermission::basis(null, $isBillingContact)->label(),
+            ],
             'update_href' => $origin.route('agent-api.v1.clients.portal-access.update', $parameters, false),
             'revoke_href' => $origin.route('agent-api.v1.clients.portal-access.destroy', $parameters, false),
         ];
