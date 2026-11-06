@@ -39,6 +39,9 @@ final class AgentMcpApiFailureTest extends TestCase
         yield 'coded refusal' => [422, ['message' => 'Regenerate this draft first; regeneration may change its charges.', 'code' => 'draft_regeneration_required'],
             'Regenerate this draft first; regeneration may change its charges. (code: draft_regeneration_required)'];
         yield 'malformed code' => [422, ['message' => 'Refused.', 'code' => 'Not A Code <b>'], 'Refused.'];
+        // Anchored at both ends: a valid-looking code inside a longer string is not a code.
+        yield 'code with a leading capital' => [422, ['message' => 'Refused.', 'code' => 'Draft_regeneration_required'], 'Refused.'];
+        yield 'code with a trailing symbol' => [422, ['message' => 'Refused.', 'code' => 'draft_regeneration_required!'], 'Refused.'];
         yield 'non-string code' => [422, ['message' => 'Refused.', 'code' => ['nested']], 'Refused.'];
         yield 'code without a message' => [422, ['code' => 'draft_regeneration_required'], $generic];
         yield 'concealed coded refusal' => [500, ['message' => 'Internal synthetic detail.', 'code' => 'draft_regeneration_required'], $generic];

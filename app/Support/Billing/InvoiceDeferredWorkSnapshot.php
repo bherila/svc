@@ -140,13 +140,15 @@ final readonly class InvoiceDeferredWorkSnapshot
      */
     public function projectIds(): array
     {
-        $projects = [];
+        // Only legacy entries lack a project (their lineage is unknown), and
+        // those are reported by hasUnverifiableLineage(), not counted here.
+        $ids = [];
         foreach ($this->entries as $entry) {
-            if ($entry['lineageKnown'] && $entry['projectId'] !== null) {
-                $projects[$entry['projectId']] = true;
+            if ($entry['projectId'] !== null) {
+                $ids[] = $entry['projectId'];
             }
         }
-        $ids = array_keys($projects);
+        $ids = array_unique($ids);
         sort($ids);
 
         return $ids;

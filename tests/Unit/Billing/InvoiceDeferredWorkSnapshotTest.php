@@ -104,6 +104,18 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         ]]));
     }
 
+    public function test_project_ids_are_distinct_and_ascending(): void
+    {
+        $snapshot = InvoiceDeferredWorkSnapshot::fromArray(['version' => 2, 'entries' => [
+            ['id' => 1, 'workedOn' => '2026-05-01', 'minutes' => 60, 'description' => null, 'projectId' => 9],
+            ['id' => 2, 'workedOn' => '2026-05-02', 'minutes' => 30, 'description' => null, 'projectId' => 3],
+            ['id' => 3, 'workedOn' => '2026-05-03', 'minutes' => 15, 'description' => null, 'projectId' => 9],
+        ]]);
+
+        self::assertNotNull($snapshot);
+        self::assertSame([3, 9], $snapshot->projectIds());
+    }
+
     public function test_missing_optional_description_reads_as_null_without_a_warning(): void
     {
         $snapshot = InvoiceDeferredWorkSnapshot::fromArray(['version' => 1, 'entries' => [
