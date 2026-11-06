@@ -1809,8 +1809,10 @@ final class AgentOperationCatalog
     /**
      * The core tools that list, enable and disable toolsets (progressive
      * discovery, docs/mcp.md). They exist only on MCP, change nothing but
-     * which tools one session lists, and need no scope beyond the identity
-     * read every connection that can list a tool already holds.
+     * which tools one session lists, and need no scope beyond `mcp:use`, which
+     * every MCP connection holds. They must not require `identity:read` or any
+     * other resource scope: a token with only `mcp:use` and `finance:read`
+     * could then never enable the toolset it was issued for.
      *
      * @return list<Operation>
      */
@@ -1829,7 +1831,7 @@ final class AgentOperationCatalog
                 'mcp.read.toolsets',
                 input: AgentInlineSchemas::toolsetsListInput(),
                 output: AgentInlineSchemas::toolsetsOutput(),
-                scopes: ['identity:read'],
+                scopes: ['mcp:use'],
             ),
             $this->tool(
                 'toolsets.enable',
@@ -1841,7 +1843,7 @@ final class AgentOperationCatalog
                 'mcp.read.toolsets',
                 input: AgentInlineSchemas::toolsetsChangeInput(),
                 output: AgentInlineSchemas::toolsetsOutput(),
-                scopes: ['identity:read'],
+                scopes: ['mcp:use'],
             ),
             $this->tool(
                 'toolsets.disable',
@@ -1853,7 +1855,7 @@ final class AgentOperationCatalog
                 'mcp.read.toolsets',
                 input: AgentInlineSchemas::toolsetsChangeInput(),
                 output: AgentInlineSchemas::toolsetsOutput(),
-                scopes: ['identity:read'],
+                scopes: ['mcp:use'],
             ),
         ];
     }
