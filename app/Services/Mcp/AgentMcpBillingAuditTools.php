@@ -41,4 +41,10 @@ final class AgentMcpBillingAuditTools
     {
         return $this->rest->call('billing.audit_unlinked_proposal_agreements', ['workspace' => $workspace_id]);
     }
+
+    /** @return array<string, mixed> */
+    public function deferredLineageVisibility(#[Schema(format: 'uuid')] string $workspace_id): array
+    {
+        return $this->rest->call('billing.audit_deferred_lineage_visibility', ['workspace' => $workspace_id]);
+    }
 }

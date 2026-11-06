@@ -127,6 +127,14 @@ a database exception.
 Production rollout remains per-client opt-in. This feature does not enroll a
 client, migrate historical invoices into the schedule, or change agent access.
 
+Automatic client delivery and payment reminders address portal users only when
+the strict portal invoice grant admits them, through the same `PortalInvoiceQuery`
+the portal, PDF, REST and MCP reads use. A project-scoped portal user is not a
+recipient of an invoice whose agreement, lines or stored deferred snapshot names a
+project they are not granted, or whose legacy deferred snapshot lists work without
+recorded projects (#610). Explicit operator-selected addresses and the company's
+billing address keep their established semantics.
+
 ## Payment reminders
 
 A payment reminder (#438) is a separate email about an open invoice: issued or

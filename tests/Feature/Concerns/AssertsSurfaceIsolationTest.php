@@ -72,4 +72,50 @@ final class AssertsSurfaceIsolationTest extends TestCase
             Schema::dropIfExists('identifier_guard_source');
         }
     }
+
+    /**
+     * A JSON path compiles to a single-quoted literal such as `'$."version"'`.
+     * The quotes inside it name a key in a document, not a column, so the
+     * guard must not read them as identifier quoting.
+     */
+    public function test_identifier_guard_ignores_quotes_inside_string_literals(): void
+    {
+        Schema::create('identifier_guard_literal', function (Blueprint $table): void {
+            $table->id();
+        });
+
+        try {
+            $this->assertQueriesNameOnlyRealIdentifiers(
+                static function (): void {
+                    DB::select('select `id` from `identifier_guard_literal` where \'$."version"\' <> \'it\'\'s "quoted"\'');
+                },
+            );
+        } finally {
+            Schema::dropIfExists('identifier_guard_literal');
+        }
+    }
+
+    public function test_identifier_guard_still_reads_identifiers_after_a_literal(): void
+    {
+        if (DB::connection()->getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('MariaDB rejects the unknown identifier before the harness needs to.');
+        }
+
+        Schema::create('identifier_guard_after_literal', function (Blueprint $table): void {
+            $table->id();
+        });
+
+        try {
+            $this->expectException(AssertionFailedError::class);
+            $this->expectExceptionMessage('`not_a_column` is not a column, table or alias');
+
+            $this->assertQueriesNameOnlyRealIdentifiers(
+                static function (): void {
+                    DB::select('select "id" from "identifier_guard_after_literal" where \'it\'\'s\' <> "not_a_column"');
+                },
+            );
+        } finally {
+            Schema::dropIfExists('identifier_guard_after_literal');
+        }
+    }
 }

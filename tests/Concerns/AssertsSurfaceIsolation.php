@@ -194,12 +194,18 @@ trait AssertsSurfaceIsolation
         $checked = 0;
 
         foreach ($statements as $statement) {
+            // A single-quoted literal is data, never an identifier: a JSON
+            // path such as `'$."version"'` names a key inside a document, and
+            // reading its double quotes as identifier quoting would demand a
+            // column that was never meant. Strip literals (with SQL's doubled
+            // and backslash-escaped quotes) before scanning what is left.
+            $scanned = (string) preg_replace("/'(?:[^'\\\\]|\\\\.|'')*'/s", "''", $statement);
             $allowed = [];
             // Either grammar's quoting — reading only SQLite's would make this
             // assert nothing on the engine that catches the bug outright — and
             // aliases declared bare (`... AS row_rank`), which the grammar
             // leaves unquoted inside raw window expressions.
-            preg_match_all('/\bas\s+(?:[`"]([^`"]+)[`"]|([a-z_][a-z0-9_]*))/i', $statement, $aliases);
+            preg_match_all('/\bas\s+(?:[`"]([^`"]+)[`"]|([a-z_][a-z0-9_]*))/i', $scanned, $aliases);
 
             foreach ([...$aliases[1], ...$aliases[2]] as $alias) {
                 if ($alias !== '') {
@@ -207,7 +213,7 @@ trait AssertsSurfaceIsolation
                 }
             }
 
-            preg_match_all('/[`"]([^`"]+)[`"]/', $statement, $identifiers);
+            preg_match_all('/[`"]([^`"]+)[`"]/', $scanned, $identifiers);
 
             foreach ($identifiers[1] as $identifier) {
                 $normalized = strtolower($identifier);

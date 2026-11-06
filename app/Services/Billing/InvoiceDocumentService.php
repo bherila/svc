@@ -3,6 +3,7 @@
 namespace App\Services\Billing;
 
 use App\Models\ClientInvoice;
+use App\Support\Billing\InvoiceDeferredWorkDisclosure;
 use App\Support\Billing\InvoiceHoursStatementRows;
 use App\Support\Billing\InvoiceLineDetail;
 use Dompdf\Dompdf;
@@ -84,7 +85,8 @@ final class InvoiceDocumentService
             'statementIntro' => $statement?->isCorrection() === true
                 ? 'For the work this correction reconciles and the pool it draws on. All figures are hours.'
                 : 'For the work this invoice reconciles and the retainer period that follows it. All figures are hours.',
-            'deferredWork' => ($deferred = $invoice->deferredWorkSnapshot())?->documentData(),
+            // Clients see the itemised list only where the agreement opts in.
+            'deferredWork' => InvoiceDeferredWorkDisclosure::documentData($invoice, $audience),
         ]);
     }
 

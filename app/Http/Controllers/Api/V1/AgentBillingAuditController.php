@@ -54,6 +54,11 @@ final class AgentBillingAuditController extends Controller
         return $this->data($this->audits->unlinkedProposalAgreements($this->principal($request), $workspace));
     }
 
+    public function deferredLineageVisibility(Request $request, Workspace $workspace): JsonResponse
+    {
+        return $this->data($this->audits->deferredLineageVisibility($this->principal($request), $workspace));
+    }
+
     /** @param array<string, mixed> $data */
     private function data(array $data): JsonResponse
     {
