@@ -2,6 +2,7 @@ import process from 'node:process';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 
 /**
  * Authenticated MCP smoke, shared by the pre-merge lane and the post-deploy one.
@@ -28,10 +29,12 @@ if (!endpoint || !token) {
     throw new Error('MCP smoke endpoint and credential are required.');
 }
 
-const connect = async (bearer, options = {}) => {
+const connect = async (bearer, options = {}, headers = {}) => {
     const client = new Client({ name: 'svc-mcp-smoke', version: '1.0.0' });
     const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
-        requestInit: { headers: { Authorization: `Bearer ${bearer}` } },
+        requestInit: {
+            headers: { Authorization: `Bearer ${bearer}`, ...headers },
+        },
         ...options,
     });
     await client.connect(transport);
@@ -185,6 +188,130 @@ try {
     }
 
     record('tools/list with an advertised output schema');
+
+    // 1b. Progressive discovery is the default: the list is the core set until
+    //     a toolset is enabled, the server advertises list_changed, enabling
+    //     sends it, and the core set plus every toolset is exactly what a
+    //     connection that asked for the full list at connect time is given.
+    const names = (list) => list.tools.map((tool) => tool.name).sort();
+    const coreNames = names(tools);
+
+    for (const required of [
+        'toolsets.list',
+        'toolsets.enable',
+        'toolsets.disable',
+    ]) {
+        if (!coreNames.includes(required)) {
+            throw new Error(`The core tool set did not include ${required}.`);
+        }
+    }
+
+    if (client.getServerCapabilities()?.tools?.listChanged !== true) {
+        throw new Error(
+            'The server did not advertise tools.listChanged for progressive discovery.',
+        );
+    }
+
+    let listChanges = 0;
+
+    client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+        listChanges += 1;
+    });
+
+    const awaitListChanges = async (expected) => {
+        for (let attempt = 0; attempt < 40 && listChanges < expected; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        if (listChanges < expected) {
+            throw new Error(
+                'The server did not send notifications/tools/list_changed.',
+            );
+        }
+    };
+
+    const toolsets = async () => {
+        const result = await client.callTool({
+            name: 'toolsets.list',
+            arguments: {},
+        });
+
+        if (result.isError || !result.structuredContent) {
+            throw new Error('toolsets.list did not return structured content.');
+        }
+
+        return result.structuredContent.data.toolsets;
+    };
+
+    const available = await toolsets();
+    const target = available.find(
+        (toolset) => toolset.tool_count > 0 && !toolset.enabled,
+    );
+
+    if (target) {
+        const enabled = await client.callTool({
+            name: 'toolsets.enable',
+            arguments: { toolsets: [target.name] },
+        });
+
+        if (enabled.isError || !enabled.structuredContent.data.changed) {
+            throw new Error(`toolsets.enable did not enable ${target.name}.`);
+        }
+
+        await awaitListChanges(1);
+
+        const widened = names(await client.listTools());
+
+        if (!coreNames.every((name) => widened.includes(name))) {
+            throw new Error('Enabling a toolset removed a core tool.');
+        }
+
+        const disabled = await client.callTool({
+            name: 'toolsets.disable',
+            arguments: { toolsets: [target.name] },
+        });
+
+        if (disabled.isError || !disabled.structuredContent.data.changed) {
+            throw new Error(`toolsets.disable did not disable ${target.name}.`);
+        }
+
+        await awaitListChanges(2);
+
+        if (names(await client.listTools()).join() !== coreNames.join()) {
+            throw new Error('Disabling the toolset did not restore the core set.');
+        }
+
+        record('toolset enable and disable send list_changed');
+    }
+
+    const everything = await connect(token, {}, { 'X-SVC-Toolsets': 'all' });
+
+    try {
+        if (everything.client.getServerCapabilities()?.tools?.listChanged) {
+            throw new Error(
+                'A connection that asked for the full list was told to expect list_changed.',
+            );
+        }
+
+        const fullNames = names(await everything.client.listTools());
+
+        for (const toolset of available) {
+            await client.callTool({
+                name: 'toolsets.enable',
+                arguments: { toolsets: [toolset.name] },
+            });
+        }
+
+        if (names(await client.listTools()).join() !== fullNames.join()) {
+            throw new Error(
+                'The core set plus every toolset differs from the full list.',
+            );
+        }
+
+        record('core set plus every toolset equals the full list');
+    } finally {
+        await everything.transport.close().catch(() => {});
+    }
 
     const context = await client.callTool({
         name: 'context.get',

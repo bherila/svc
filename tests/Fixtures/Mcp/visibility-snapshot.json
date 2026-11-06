@@ -40733,6 +40733,257 @@
                     }
                 },
                 {
+                    "name": "toolsets.disable",
+                    "title": "Disable toolsets",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "toolsets"
+                        ],
+                        "properties": {
+                            "toolsets": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 32,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                },
+                                "description": "Toolset names from toolsets.list."
+                            }
+                        }
+                    },
+                    "description": "Disable toolsets enabled earlier on this connection to shorten tools/list again. The core tools stay listed. The server sends notifications/tools/list_changed.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "mode",
+                                    "changed",
+                                    "toolsets"
+                                ],
+                                "properties": {
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "progressive",
+                                            "all"
+                                        ]
+                                    },
+                                    "changed": {
+                                        "type": "boolean"
+                                    },
+                                    "toolsets": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "name",
+                                                "description",
+                                                "tool_count",
+                                                "enabled"
+                                            ],
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "description": {
+                                                    "type": "string"
+                                                },
+                                                "tool_count": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "toolsets.enable",
+                    "title": "Enable toolsets",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "toolsets"
+                        ],
+                        "properties": {
+                            "toolsets": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 32,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                },
+                                "description": "Toolset names from toolsets.list."
+                            }
+                        }
+                    },
+                    "description": "Enable one or more toolsets from toolsets.list for this connection. The server then sends notifications/tools/list_changed and tools/list includes their tools. Enabling a toolset only lists tools the connection could already call; every call is authorized again.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "mode",
+                                    "changed",
+                                    "toolsets"
+                                ],
+                                "properties": {
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "progressive",
+                                            "all"
+                                        ]
+                                    },
+                                    "changed": {
+                                        "type": "boolean"
+                                    },
+                                    "toolsets": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "name",
+                                                "description",
+                                                "tool_count",
+                                                "enabled"
+                                            ],
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "description": {
+                                                    "type": "string"
+                                                },
+                                                "tool_count": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "toolsets.list",
+                    "title": "List toolsets",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false
+                    },
+                    "description": "List the toolsets this connection may use, each with a description, the number of tools it holds and whether it is enabled. Only a core set of tools is listed until a toolset is enabled with toolsets.enable. Enabling a toolset only lists tools the connection could already call; every call is authorized again.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "mode",
+                                    "changed",
+                                    "toolsets"
+                                ],
+                                "properties": {
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "progressive",
+                                            "all"
+                                        ]
+                                    },
+                                    "changed": {
+                                        "type": "boolean"
+                                    },
+                                    "toolsets": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "name",
+                                                "description",
+                                                "tool_count",
+                                                "enabled"
+                                            ],
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "description": {
+                                                    "type": "string"
+                                                },
+                                                "tool_count": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "workspaces.create",
                     "title": "Create workspace",
                     "inputSchema": {
@@ -40800,6 +41051,35 @@
                     }
                 }
             ],
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
+            },
             "resources": [
                 {
                     "uri": "svc://context",
@@ -41043,7 +41323,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -41267,7 +41579,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -41489,7 +41829,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -41711,7 +42079,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -41933,7 +42329,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -42155,7 +42579,36 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 20,
+                    "clients": 6,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 3,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 17,
+                    "tasks": 12,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -42183,6 +42636,11 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": [],
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [],
+                "toolsets": []
+            },
             "resources": [],
             "resourceTemplates": [],
             "prompts": []
@@ -42265,6 +42723,11 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [],
+                "toolsets": []
             },
             "resources": [],
             "resourceTemplates": {
@@ -42483,7 +42946,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -42509,6 +42997,11 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": [],
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [],
+                "toolsets": []
+            },
             "resources": [],
             "resourceTemplates": [],
             "prompts": []
@@ -42539,6 +43032,11 @@
                 "invoices.reopen": "aaeecbf61addb4c2",
                 "invoices.update_details": "110f5516fa0858ce",
                 "invoices.update_draft": "86b5037fc0f233e7"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [],
+                "toolsets": []
             },
             "resources": [],
             "resourceTemplates": [],
@@ -42755,7 +43253,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -42781,6 +43304,11 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": [],
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [],
+                "toolsets": []
+            },
             "resources": [],
             "resourceTemplates": [],
             "prompts": []
@@ -42811,6 +43339,11 @@
                 "invoices.reopen": "aaeecbf61addb4c2",
                 "invoices.update_details": "110f5516fa0858ce",
                 "invoices.update_draft": "86b5037fc0f233e7"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [],
+                "toolsets": []
             },
             "resources": [],
             "resourceTemplates": [],
@@ -43029,7 +43562,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 14,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -43253,7 +43818,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 14,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -43477,7 +44074,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 14,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -43699,7 +44324,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 14,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -43921,7 +44574,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 14,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -44143,7 +44824,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 14,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -44367,7 +45076,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 8,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -44591,7 +45332,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 8,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -44815,7 +45588,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -45037,7 +45838,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -45259,7 +46088,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -45481,7 +46338,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -45705,7 +46590,38 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 20,
+                    "clients": 5,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 1,
+                    "tasks": 3,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -45928,7 +46844,38 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 20,
+                    "clients": 5,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 1,
+                    "tasks": 3,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -46151,7 +47098,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 3,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -46372,7 +47346,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 3,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -46593,7 +47594,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 3,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -46814,7 +47842,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 3,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -47037,7 +48092,36 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 20,
+                    "clients": 6,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 17,
+                    "tasks": 12,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -47258,7 +48342,36 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 20,
+                    "clients": 6,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 17,
+                    "tasks": 12,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -47479,7 +48592,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -47698,7 +48836,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -47917,7 +49080,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -48136,7 +49324,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -48357,7 +49570,38 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 20,
+                    "clients": 6,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 17,
+                    "tasks": 12,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -48580,7 +49824,38 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 20,
+                    "clients": 6,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 17,
+                    "tasks": 12,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -48803,7 +50078,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -49024,7 +50326,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -49245,7 +50574,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -49466,7 +50822,34 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
-                "time_entries.update": "f668296662cfad04"
+                "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 4
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -49689,7 +51072,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 21,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 25,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -49912,7 +51327,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 21,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 25,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -50135,7 +51582,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -50356,7 +51831,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -50577,7 +52080,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -50798,7 +52329,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -51021,7 +52580,36 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 21,
+                    "clients": 24,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 3,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 21,
+                    "tasks": 12,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -51242,7 +52830,36 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 21,
+                    "clients": 24,
+                    "collaboration": 3,
+                    "expenses": 4,
+                    "files": 6,
+                    "finance": 3,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 3,
+                    "proposals": 2,
+                    "revenue": 4,
+                    "square": 21,
+                    "tasks": 12,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -51463,7 +53080,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -51682,7 +53324,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -51901,7 +53568,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -52120,7 +53812,32 @@
                 "tasks.assignees.list": "0b46f66c80a6b9cb",
                 "tasks.get": "29e50591d6a710fe",
                 "tasks.list": "1733a67d221aaaa7",
-                "time_entries.list": "f02e3c1ff727c1fd"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 3,
+                    "collaboration": 3,
+                    "expenses": 1,
+                    "files": 2,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 2,
+                    "tasks": 8,
+                    "time": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -52341,7 +54058,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 36,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -52563,7 +54312,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 36,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -52785,7 +54566,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -53007,7 +54816,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -53229,7 +55066,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -53451,7 +55316,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -53675,7 +55568,36 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 37,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 2,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -53896,7 +55818,36 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 37,
+                    "clients": 24,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 2,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -54117,7 +56068,32 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 11,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 2,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 4,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -54336,7 +56312,32 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 11,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 2,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 4,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -54555,7 +56556,32 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 11,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 2,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 4,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -54774,7 +56800,32 @@
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "search",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 11,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 2,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 4,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -54979,6 +57030,9 @@
                     "time_entries.log deployment_disabled",
                     "time_entries.unapprove deployment_disabled",
                     "time_entries.update deployment_disabled",
+                    "toolsets.disable deployment_disabled",
+                    "toolsets.enable deployment_disabled",
+                    "toolsets.list deployment_disabled",
                     "workspaces.create deployment_disabled"
                 ]
             },
@@ -55179,6 +57233,9 @@
                     "time_entries.log deployment_disabled",
                     "time_entries.unapprove deployment_disabled",
                     "time_entries.update deployment_disabled",
+                    "toolsets.disable deployment_disabled",
+                    "toolsets.enable deployment_disabled",
+                    "toolsets.list deployment_disabled",
                     "workspaces.create deployment_disabled"
                 ]
             },
@@ -55379,6 +57436,9 @@
                     "time_entries.log deployment_disabled",
                     "time_entries.unapprove deployment_disabled",
                     "time_entries.update deployment_disabled",
+                    "toolsets.disable deployment_disabled",
+                    "toolsets.enable deployment_disabled",
+                    "toolsets.list deployment_disabled",
                     "workspaces.create deployment_disabled"
                 ]
             },
@@ -55579,6 +57639,9 @@
                     "time_entries.log deployment_disabled",
                     "time_entries.unapprove deployment_disabled",
                     "time_entries.update deployment_disabled",
+                    "toolsets.disable deployment_disabled",
+                    "toolsets.enable deployment_disabled",
+                    "toolsets.list deployment_disabled",
                     "workspaces.create deployment_disabled"
                 ]
             },
@@ -55779,6 +57842,9 @@
                     "time_entries.log deployment_disabled",
                     "time_entries.unapprove deployment_disabled",
                     "time_entries.update deployment_disabled",
+                    "toolsets.disable deployment_disabled",
+                    "toolsets.enable deployment_disabled",
+                    "toolsets.list deployment_disabled",
                     "workspaces.create deployment_disabled"
                 ]
             },
@@ -55979,6 +58045,9 @@
                     "time_entries.log deployment_disabled",
                     "time_entries.unapprove deployment_disabled",
                     "time_entries.update deployment_disabled",
+                    "toolsets.disable deployment_disabled",
+                    "toolsets.enable deployment_disabled",
+                    "toolsets.list deployment_disabled",
                     "workspaces.create deployment_disabled"
                 ]
             },
@@ -56197,7 +58266,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 20,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -56421,7 +58522,39 @@
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 38,
+                    "clients": 20,
+                    "collaboration": 9,
+                    "expenses": 14,
+                    "files": 12,
+                    "finance": 6,
+                    "identity": 3,
+                    "payments": 6,
+                    "projects": 7,
+                    "proposals": 5,
+                    "revenue": 4,
+                    "square": 29,
+                    "tasks": 29,
+                    "time": 6,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -56645,7 +58778,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -56867,7 +59028,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -57089,7 +59278,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -57311,7 +59528,35 @@
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
                 "time_entries.update": "f668296662cfad04",
+                "toolsets.disable": "7300eb1f102f5bab",
+                "toolsets.enable": "ff875ddf71f11d4f",
+                "toolsets.list": "e4dbfcd41caf4b47",
                 "workspaces.create": "3a4435044291b1a4"
+            },
+            "progressive": {
+                "list_changed": true,
+                "core_tools": [
+                    "context.get",
+                    "projects.list",
+                    "search",
+                    "time_entries.log",
+                    "toolsets.disable",
+                    "toolsets.enable",
+                    "toolsets.list"
+                ],
+                "toolsets": {
+                    "billing": 12,
+                    "collaboration": 9,
+                    "expenses": 1,
+                    "files": 5,
+                    "identity": 3,
+                    "payments": 1,
+                    "projects": 2,
+                    "proposals": 3,
+                    "tasks": 20,
+                    "time": 5,
+                    "workspaces": 1
+                }
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
