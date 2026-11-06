@@ -32,7 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $lock_version
  */
 #[Fillable(['workspace_id', 'client_company_id', 'name', 'description', 'repository', 'status', 'is_visible_to_client'])]
-#[Hidden(['id', 'workspace_id', 'client_company_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'shared_participation_id'])]
 class ClientProject extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;

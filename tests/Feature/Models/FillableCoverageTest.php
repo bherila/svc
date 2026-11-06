@@ -10,7 +10,9 @@ use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
+use App\Models\ClientProject;
 use App\Models\ClientTask;
+use App\Models\ClientTaskAssignment;
 use App\Models\ClientTaskList;
 use App\Models\PaymentReconciliation;
 use App\Models\User;
@@ -67,6 +69,14 @@ final class FillableCoverageTest extends TestCase
         ],
         ClientComment::class => [
             'edited_at' => 'Set only by CollaborationAction through the scoped repository after an authorized text edit, using the workspace clock; callers cannot supply an edit timestamp.',
+            'shared_with_participants' => 'Whether the comment is part of a shared project\'s conversation. Written only by SharedProjectCollaboration, which decides it from the viewer\'s standing; a caller who could assign it could publish an internal note to another workspace.',
+            'author_workspace_id' => 'The participant workspace that wrote the comment. Written only by SharedProjectCollaboration from the viewer\'s resolved standing, never from input.',
+        ],
+        ClientProject::class => [
+            'shared_participation_id' => 'Links a participant\'s own project to the participation it works against. Written only by SharedProjectParticipation, after the participant owner or admin and an active participation are checked under the lock; a value assignable through a project update would let any caller point a project at another workspace\'s share.',
+        ],
+        ClientTaskAssignment::class => [
+            'assignee_workspace_id' => 'The participant workspace of an assignee who is not a member of the host. Written only by SharedProjectCollaboration after the assignee\'s membership and an active participation are checked under the lock.',
         ],
         ClientTaskList::class => [
             'organization_position' => 'Complete sibling order is validated under the project graph lock; never caller mass assignment.',

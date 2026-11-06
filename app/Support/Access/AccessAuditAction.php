@@ -21,4 +21,16 @@ enum AccessAuditAction: string
     case PortalInvitationRevoked = 'portal.invitation_revoked';
     /** An invitation met at sign-in whose access could no longer be given. */
     case PortalInvitationNotApplied = 'portal.invitation_not_applied';
+
+    /** A host invited an address to take part in one of its projects; `subject_user_id` is null. */
+    case SharedProjectInvited = 'shared_project.invited';
+    case SharedProjectInvitationRevoked = 'shared_project.invitation_revoked';
+    case SharedProjectInvitationDeclined = 'shared_project.invitation_declined';
+    /** A workspace accepted an invitation and now takes part. Recorded in the host and in the participant. */
+    case SharedProjectJoined = 'shared_project.joined';
+    case SharedProjectParticipantRevoked = 'shared_project.participant_revoked';
+    case SharedProjectLeft = 'shared_project.left';
+    /** A participant pointed (or stopped pointing) one of its own projects at the share. */
+    case SharedProjectLinked = 'shared_project.linked';
+    case SharedProjectUnlinked = 'shared_project.unlinked';
 }

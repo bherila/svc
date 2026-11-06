@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** Assignment records responsibility, independently of all access grants. */
 #[Fillable(['workspace_id', 'client_task_id', 'user_id'])]
-#[Hidden(['id', 'workspace_id', 'client_task_id', 'user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_task_id', 'user_id', 'assignee_workspace_id'])]
 class ClientTaskAssignment extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace;

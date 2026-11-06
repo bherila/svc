@@ -29,7 +29,7 @@ use LogicException;
  * @property CarbonImmutable|null $deleted_at
  */
 #[Fillable(['workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'client_collaboration_topic_id', 'body', 'author_user_id', 'author_name', 'is_visible_to_client'])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'client_collaboration_topic_id', 'author_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'client_collaboration_topic_id', 'author_user_id', 'author_workspace_id'])]
 class ClientComment extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
