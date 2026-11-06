@@ -22,4 +22,4 @@ Each active agreement is a card with its cadence, retainer, recurring services a
 
 The five most recent invoices, with a link to all of them. Each project has a **Log time** link that opens the time sheet on that project. Recent proposals link to their pages.
 
-Drafting and sending proposals, activating agreements and billing schedules are still in [Operations (classic tools)](help:workspace-tools#operations-classic-tools) until they are moved.
+Drafting and sending proposals, activating agreements, and billing schedules are on the client's [Agreements](help:agreements) tab. Drafting an invoice is on its Invoices tab.

@@ -1,5 +1,7 @@
 import { Head } from '@inertiajs/react';
+import { InvoiceForm } from '@/components/billing/invoice-draft-form';
 import { InvoiceTable } from '@/components/clients/invoice-table';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -21,11 +23,17 @@ import type { CompanyInvoice } from '@/types/clients';
 export default function ClientInvoices({
     company,
     invoice_base_href: invoiceBaseHref,
+    invoice_create_href: invoiceCreateHref = null,
     invoices,
 }: {
     company: { id: string; name: string };
     /** Where a row links; the two audiences use different route families. */
     invoice_base_href: string;
+    /**
+     * Where a draft is posted; null for a viewer who may not draft (and for
+     * the client's own copy of this page), and then the form is not drawn.
+     */
+    invoice_create_href?: string | null;
     invoices: CompanyInvoice[];
 }) {
     return (
@@ -37,6 +45,19 @@ export default function ClientInvoices({
                 <h1 className="text-2xl font-semibold tracking-tight">
                     Invoices
                 </h1>
+                {invoiceCreateHref !== null && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Draft an invoice</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <InvoiceForm
+                                href={invoiceCreateHref}
+                                clientId={company.id}
+                            />
+                        </CardContent>
+                    </Card>
+                )}
                 <InvoiceTable
                     invoices={invoices}
                     empty="No invoices yet."

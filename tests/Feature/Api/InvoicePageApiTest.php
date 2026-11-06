@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -27,7 +28,7 @@ final class InvoicePageApiTest extends TestCase
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic draft project', 'slug' => 'synthetic-draft-project']);
         $this->signedIn($owner);
         $create = route('agent-api.v1.invoices.store', $workspace, absolute: false);
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view->where('workspace.clients.0.invoice_create_href', $create));
+        $this->get(route('clients.invoices', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $view) => $view->where('invoice_create_href', $create));
         $this->get(route('clients.time', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $view) => $view->where('invoice_draft.url', $create)->where('invoice_draft.company_id', $company->public_id));
         $body = ['company_id' => $company->public_id, 'invoice_number' => 'INV-SYNTHETIC-API-CREATE', 'currency' => 'USD', 'is_visible_to_client' => false, 'manual_lines' => [['type' => 'service', 'description' => 'Synthetic draft service', 'quantity' => '1', 'unit_amount' => 12345, 'tax_amount' => 0]]];
         $created = $this->postJson($create, $body, ['Idempotency-Key' => 'synthetic-create-manual'])->assertCreated()->json('data.id');
@@ -45,8 +46,9 @@ final class InvoicePageApiTest extends TestCase
         $this->assertSame(12000, ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $timeDraft)->sole()->total_amount);
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $member->id, 'role' => 'contributor']);
         $this->signedIn($member);
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view->where('workspace.clients.0.invoice_create_href', null));
+        $this->get(route('clients.invoices', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $view) => $view->where('invoice_create_href', null));
         $this->postJson($create, $body, ['Idempotency-Key' => 'synthetic-create-member'])->assertForbidden();
         $this->assertSame(3, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
     }

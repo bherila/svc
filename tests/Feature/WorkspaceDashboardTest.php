@@ -313,12 +313,15 @@ class WorkspaceDashboardTest extends TestCase
         $tabs = fn (User $user) => $this->actingAs($user)->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}")->assertOk()->viewData('page')['props']['workspaceNavigation']['clients'][0]['destinations'];
 
         $owner = $tabs($this->owner);
-        $this->assertStringEndsWith('#agreements', $owner['agreements']);
+        $this->assertSame("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/agreements", $owner['agreements']);
+        $this->actingAs($this->owner)->get($owner['agreements'])->assertOk();
         $this->assertNotNull($owner['files']);
         $this->assertNotNull($owner['settings']);
 
         $member = $tabs($this->member);
         $this->assertNotNull($member['agreements']);
+        // A link the member is offered must open for them.
+        $this->actingAs($this->member)->get($member['agreements'])->assertOk();
         $this->assertNull($member['files']);
         $this->assertNull($member['settings']);
     }

@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountPreferencesController;
 use App\Http\Controllers\Billing\InvoiceProformaController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
+use App\Http\Controllers\Clients\ClientAgreementsController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\ClientTaskOrganizationController;
 use App\Http\Controllers\ClientTaskPlanningController;
@@ -113,10 +114,10 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/workspaces/{workspace}/finance', WorkspaceFinanceController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.finance');
-    // Operations, kept exactly as it was: until the client overview and invoice
-    // lanes re-home each of its tools (draft proposals, proposal send, agreement
-    // activation, billing schedules, the per-project time form, per-client file
-    // panels) it is the only UI for them. Reached from the settings menu as
+    // Operations: what remains of the classic tools (the per-project time form
+    // and per-client file panels) until they are re-homed; proposals,
+    // agreements, schedules and drafting an invoice now live on the client's
+    // Agreements and Invoices tabs. Reached from the settings menu as
     // "Operations (classic tools)"; no tab is lit.
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
@@ -134,6 +135,8 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
             ->name('clients.show');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements', ClientAgreementsController::class)
+            ->name('clients.agreements');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/invoices', [ClientDirectoryController::class, 'invoices'])
             ->name('clients.invoices');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/tasks', [ClientDirectoryController::class, 'tasks'])

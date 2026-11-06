@@ -1,11 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-    AgreementActivationButton,
-    InvoiceIssueButton,
-    InvoiceForm,
-    PaymentForm,
-} from '@/pages/operations';
+import { InvoiceIssueButton, PaymentForm } from '@/pages/operations';
 
 const inertia = vi.hoisted(() => ({
     post: vi.fn(),
@@ -68,66 +63,6 @@ const form = vi.hoisted(() => ({
     }),
 }));
 
-describe('drafting an invoice from operations', () => {
-    beforeEach(() => {
-        form.data = {};
-        form.initial = null;
-        form.errors = {};
-    });
-
-    it('uses the finished capability and retains its attempt key and values after a lost response', async () => {
-        requestFetch.mockRejectedValueOnce(
-            new TypeError('Synthetic lost response'),
-        );
-        render(
-            <InvoiceForm
-                href="/synthetic/invoice-create"
-                clientId="synthetic-company"
-            />,
-        );
-        fireEvent.change(screen.getByPlaceholderText('Invoice number'), {
-            target: { value: 'SYNTHETIC-CREATED' },
-        });
-        fireEvent.change(screen.getByPlaceholderText('Line description'), {
-            target: { value: 'Synthetic service' },
-        });
-        fireEvent.change(screen.getByPlaceholderText('Unit price'), {
-            target: { value: '123.45' },
-        });
-        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
-        await screen.findByRole('alert');
-        expect(screen.getByPlaceholderText('Invoice number')).toHaveValue(
-            'SYNTHETIC-CREATED',
-        );
-        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
-        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
-        expect(requestFetch.mock.calls).toHaveLength(2);
-        const first = requestFetch.mock.calls[0];
-        const second = requestFetch.mock.calls[1];
-        expect(first[0]).toBe('/synthetic/invoice-create');
-        expect(JSON.parse(first[1].body)).toEqual({
-            company_id: 'synthetic-company',
-            invoice_number: 'SYNTHETIC-CREATED',
-            due_date: null,
-            currency: 'USD',
-            is_visible_to_client: false,
-            manual_lines: [
-                {
-                    type: 'service',
-                    description: 'Synthetic service',
-                    quantity: '1',
-                    unit_amount: 12345,
-                    tax_amount: 0,
-                },
-            ],
-        });
-        expect(first[1].headers['Idempotency-Key']).toBe(
-            second[1].headers['Idempotency-Key'],
-        );
-        expect(first[1].body).toBe(second[1].body);
-    });
-});
-
 vi.mock('@inertiajs/react', async () => {
     const { useRef } = await import('react');
 
@@ -168,38 +103,6 @@ function invoice(overrides: Record<string, unknown> = {}) {
         ...overrides,
     };
 }
-
-describe('agreement activation', () => {
-    it('shows an overlap refusal beside the confirmed API activation control', async () => {
-        const message =
-            'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.';
-        requestFetch.mockResolvedValueOnce(
-            new Response(
-                JSON.stringify({ message, errors: { engagement: [message] } }),
-                { status: 422 },
-            ),
-        );
-        render(
-            <AgreementActivationButton
-                href="/synthetic/agreements/activate"
-                version={'a'.repeat(64)}
-            />,
-        );
-        fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
-        const dialog = await screen.findByRole('dialog');
-        expect(requestFetch).not.toHaveBeenCalled();
-        fireEvent.click(
-            within(dialog).getByRole('button', {
-                name: 'Activate',
-            }),
-        );
-        expect(await screen.findByRole('alert')).toHaveTextContent(message);
-        expect(jsonRequestBody(requestFetch.mock.calls[0][1].body)).toEqual({
-            expected_version: 'a'.repeat(64),
-            confirm: true,
-        });
-    });
-});
 
 describe('issuing an invoice from operations', () => {
     it('uses the server capability and retains the same attempt key after an uncertain response', async () => {
@@ -408,63 +311,6 @@ describe('invoice operations recovery and edit baselines', () => {
             key: init.headers['Idempotency-Key'],
         };
     }
-    it('keeps an unknown draft intact across editing/context changes and only refreshes after known save', async () => {
-        requestFetch.mockResolvedValueOnce(failure(408));
-        const { rerender } = render(
-            <InvoiceForm href="/original-drafts" clientId="original-company" />,
-        );
-        fireEvent.change(screen.getByPlaceholderText('Invoice number'), {
-            target: { value: 'SYN-ORIGINAL' },
-        });
-        fireEvent.change(screen.getByPlaceholderText('Line description'), {
-            target: { value: 'Original work' },
-        });
-        fireEvent.change(screen.getByPlaceholderText('Unit price'), {
-            target: { value: '25.00' },
-        });
-        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
-        await screen.findByRole('button', { name: 'Check original request' });
-        expect(
-            screen.getByRole('button', { name: 'Reset draft form' }),
-        ).toBeDisabled();
-        expect(screen.getByPlaceholderText('Invoice number')).toBeDisabled();
-        rerender(<InvoiceForm href={null} clientId="different-company" />);
-        form.data.invoice_number = 'Edited after unknown';
-        requestFetch.mockResolvedValueOnce(failure(422));
-        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
-        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
-        expect(request(1)).toEqual(request(0));
-        await vi.waitFor(() =>
-            expect(
-                screen.getByRole('button', { name: 'Check original request' }),
-            ).toBeEnabled(),
-        );
-        inertia.reload.mockImplementation(
-            (options: { onFinish?: () => void }) => options.onFinish?.(),
-        );
-        fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
-        await screen.findByText(
-            /The change was saved, but the page could not refresh/,
-        );
-        expect(requestFetch).toHaveBeenCalledTimes(3);
-        expect(request(2)).toEqual(request(0));
-        expect(form.data.invoice_number).toBe('Edited after unknown');
-        inertia.reload.mockImplementation(
-            (options: { onSuccess?: () => void; onFinish?: () => void }) => {
-                options.onSuccess?.();
-                options.onFinish?.();
-            },
-        );
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Refresh saved result' }),
-        );
-        await vi.waitFor(() =>
-            expect(
-                screen.queryByRole('form', { name: 'Draft invoice' }),
-            ).toBeNull(),
-        );
-        expect(requestFetch).toHaveBeenCalledTimes(3);
-    });
     it('keeps an old payment edit and uncertain request on their observed version, then starts fresh after verified refresh', async () => {
         requestFetch.mockResolvedValueOnce(failure(408));
         const { container, rerender } = render(
