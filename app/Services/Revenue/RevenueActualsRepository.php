@@ -79,7 +79,7 @@ final class RevenueActualsRepository
             .'ELSE '.ProjectionInputsRepository::SERVICE_DATE.' END';
 
         $lines = $this->chargedLines($workspaceId)
-            ->selectRaw('client_invoices.client_company_id as client_id, client_invoice_lines.type as line_type, '.$placement.' as placed_on, client_invoice_lines.total_amount - client_invoice_lines.tax_amount as amount', $ownDate);
+            ->selectRaw('client_invoices.client_company_id as client_id, client_invoice_lines.type as line_type, '.$placement.' as placed_on, '.ProjectionInputsRepository::PRE_TAX_AMOUNT.' as amount', $ownDate);
 
         $rows = DB::query()
             ->fromSub($lines, 'placed')
@@ -156,7 +156,7 @@ final class RevenueActualsRepository
         $rows = $this->chargedLines($workspaceId)
             ->whereIn('client_invoices.id', $invoiceIds)
             ->groupBy('client_invoice_lines.client_invoice_id', 'client_invoice_lines.type')
-            ->selectRaw('client_invoice_lines.client_invoice_id as invoice_id, client_invoice_lines.type as line_type, SUM(client_invoice_lines.total_amount) as gross, SUM(client_invoice_lines.total_amount - client_invoice_lines.tax_amount) as net')
+            ->selectRaw('client_invoice_lines.client_invoice_id as invoice_id, client_invoice_lines.type as line_type, SUM(client_invoice_lines.total_amount) as gross, SUM('.ProjectionInputsRepository::PRE_TAX_AMOUNT.') as net')
             ->get();
         foreach ($rows as $row) {
             $invoiceId = (int) $row->invoice_id;

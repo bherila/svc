@@ -51,6 +51,20 @@ final class ProjectionInputsRepositoryTest extends TestCase
 
     }
 
+    /** A correction that nets an agreement's billed overage negative in a month is read signed. */
+    public function test_a_negative_overage_month_is_read_through_the_sql_path(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $this->revenueInvoice($mine['workspace'], $mine['alpha'], $mine['agreement'], 'issued', CarbonImmutable::parse('2026-06-01'), [
+            ['retainer', 100000, 0, '2026-04-01', null],
+            ['additional_hours', -30000, 0, '2026-06-30', null],
+        ], '2026-07-01');
+
+        $inputs = app(ProjectionInputsRepository::class)->load($mine['workspace'], CarbonImmutable::parse(self::AS_OF));
+
+        $this->assertSame(-30000, $inputs->overageHistory[$inputs->agreements[0]->id]['2026-06']);
+    }
+
     public function test_the_number_of_queries_does_not_grow_with_the_invoices_read(): void
     {
         $small = $this->revenueWorkspace('small');

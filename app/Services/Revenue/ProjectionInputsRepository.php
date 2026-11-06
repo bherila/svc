@@ -48,6 +48,16 @@ final class ProjectionInputsRepository
     /** The service month of an invoice: its period's end, or the day it was issued when it has none. */
     public const string SERVICE_DATE = 'COALESCE(client_invoices.service_period_end, client_invoices.issue_date)';
 
+    /**
+     * A line's money before tax: its total, which includes its own tax
+     * (`ClientInvoice::totalsFromLines()`), less that tax. Both sides are cast
+     * to signed: `tax_amount` is unsigned, and MariaDB evaluates a difference
+     * with an unsigned operand as unsigned, refusing the negative result a
+     * credit or negative adjustment line produces (and it may evaluate it for
+     * rows a later filter discards). SQLite accepts the same cast.
+     */
+    public const string PRE_TAX_AMOUNT = 'CAST(client_invoice_lines.total_amount AS SIGNED) - CAST(client_invoice_lines.tax_amount AS SIGNED)';
+
     public function load(Workspace $workspace, CarbonImmutable $asOf): ProjectionInputs
     {
         $shell = new ProjectionInputs($asOf->startOfDay(), []);
@@ -109,7 +119,7 @@ final class ProjectionInputsRepository
             ->whereRaw(self::SERVICE_DATE.' <= ?', [$to])
             ->groupBy('client_invoices.client_agreement_id')
             ->groupByRaw($month)
-            ->selectRaw('client_invoices.client_agreement_id as agreement_id, '.$month.' as service_month, SUM(client_invoice_lines.total_amount - client_invoice_lines.tax_amount) as amount')
+            ->selectRaw('client_invoices.client_agreement_id as agreement_id, '.$month.' as service_month, SUM('.self::PRE_TAX_AMOUNT.') as amount')
             ->get();
 
         $history = [];

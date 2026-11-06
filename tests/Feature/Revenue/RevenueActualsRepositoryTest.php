@@ -63,6 +63,31 @@ final class RevenueActualsRepositoryTest extends TestCase
         $this->assertSame([169000, '2026-11-01'], [$actuals->openInvoices[0]->balance, $actuals->openInvoices[0]->dueDate?->toDateString()]);
     }
 
+    /**
+     * A credit or adjustment can net a month negative. The line total is
+     * signed and the tax unsigned, so the pre-tax difference must be computed
+     * signed: MariaDB refuses a negative unsigned difference outright.
+     */
+    public function test_a_month_netting_negative_is_read_through_the_sql_path(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        // April's work is a refund-like adjustment; the invoice stays positive through the May retainer it sells.
+        $april = $this->revenueInvoice($mine['workspace'], $mine['alpha'], $mine['agreement'], 'paid', CarbonImmutable::parse('2026-04-01'), [
+            ['retainer', 100000, 0, '2026-05-01', null],
+            ['adjustment', -7000, 0, '2026-04-20', null],
+            ['credit', -1500, 0, null, null],
+        ], '2026-05-01');
+        $this->revenuePayment($mine['workspace'], $april, '2026-05-03', 91500, 0);
+
+        $actuals = app(RevenueActualsRepository::class)->load($mine['workspace'], CarbonImmutable::parse(self::AS_OF));
+
+        $invoiced = RevenueActuals::monthly($actuals->invoiced)[$mine['alpha']->id];
+        $this->assertSame([0, -8500, 0], $this->bands($invoiced['2026-04']));
+        $this->assertSame([100000, 0, 0], $this->bands($invoiced['2026-05']));
+        // The payment is spread over the invoice's bands, the negative one included.
+        $this->assertSame([100000, -8500, 0], $this->bands(RevenueActuals::monthly($actuals->collected)[$mine['alpha']->id]['2026-05']));
+    }
+
     public function test_the_number_of_queries_does_not_grow_with_the_invoices_read(): void
     {
         $small = $this->revenueWorkspace('small');
