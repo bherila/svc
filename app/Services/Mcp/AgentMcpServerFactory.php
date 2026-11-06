@@ -14,7 +14,11 @@ use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpAuthorizer;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Services\Mcp\Toolsets\McpToolsets;
+use App\Services\Mcp\Toolsets\McpToolsetSelection;
+use App\Services\Mcp\Toolsets\McpToolVisibility;
 use App\Services\Square\SquareReadService;
+use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\ProviderIdentityWrites;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\McpKind;
@@ -37,6 +41,7 @@ use Mcp\Capability\Discovery\SchemaValidator;
 use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Capability\Registry\ResourceTemplateReference;
+use Mcp\Schema\Implementation;
 use Mcp\Schema\JsonRpc\Request as JsonRpcRequest;
 use Mcp\Schema\Request\GetPromptRequest;
 use Mcp\Schema\Request\ReadResourceRequest;
@@ -44,8 +49,10 @@ use Mcp\Schema\ResourceTemplate;
 use Mcp\Schema\ServerCapabilities;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
+use Mcp\Server\Configuration;
 use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\GetPromptHandler;
+use Mcp\Server\Handler\Request\InitializeHandler;
 use Mcp\Server\Handler\Request\ReadResourceHandler;
 use Mcp\Server\Session\Psr16SessionStore;
 use Psr\Log\LoggerInterface;
@@ -184,29 +191,70 @@ final class AgentMcpServerFactory
         foreach ($exposedTools as $operation) {
             $schemaIds[(string) $operation->mcpName()] = (string) $operation->mcpName();
         }
+        // Progressive discovery (docs/mcp.md): every connection starts with the
+        // core tools and enables toolsets as it needs them, unless it asked for
+        // the full list when it connected. Both are views of the same
+        // authorized tools; neither grants anything.
+        $initialSelection = McpToolsetSelection::fromConnectHeader($request->header(McpToolsetSelection::CONNECT_HEADER));
+        $scopesByTool = [];
+        foreach ($exposedTools as $operation) {
+            $name = (string) $operation->mcpName();
+            if (! in_array($name, McpToolVisibility::TOOLSET_TOOLS, true)) {
+                $scopesByTool[$name] = $operation->requirement->scopes;
+            }
+        }
+        $toolsets = McpToolsets::derive($scopesByTool, AgentApiScopes::descriptions());
+        $requiresByPrompt = [];
+        $toolsByPrompt = [];
+        foreach ($availableOperations as $operation) {
+            if (self::kind($operation) === McpKind::Prompt) {
+                $requiresByPrompt[(string) $operation->mcpName()] = $operation->requiresOperations;
+                $toolsByPrompt[(string) $operation->mcpName()] = array_values(array_filter(
+                    $operation->requiresOperations,
+                    static fn (string $tool): bool => isset($exposedToolNames[$tool]),
+                ));
+            }
+        }
+        $visibility = new McpToolVisibility($toolsets, McpToolVisibility::core($requiresByPrompt[McpToolVisibility::TIME_LOGGING_PROMPT] ?? []));
+        $instances[AgentMcpToolsetTools::class] = new AgentMcpToolsetTools($toolsets);
+        $serverInfo = new Implementation(
+            'SVC Agent API',
+            'v1',
+            $hasWriteTools
+                ? 'Read authorized SVC data and safely use the write operations authorized for this connection.'
+                : 'Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.',
+            null,
+            url('/'),
+        );
+        $instructions = $this->instructions($exposedToolNames, $hasWriteTools, ! $initialSelection->all);
+        $capabilities = new ServerCapabilities(
+            tools: $implementsTools,
+            toolsListChanged: $implementsTools && ! $initialSelection->all,
+            resources: $implementsResources,
+            resourcesSubscribe: false,
+            resourcesListChanged: false,
+            prompts: $implementsPrompts,
+            promptsListChanged: false,
+            logging: false,
+            completions: false,
+        );
+        $pageSize = 100;
         $builder = Server::builder()
             ->setServerInfo(
-                name: 'SVC Agent API',
-                version: 'v1',
-                description: $hasWriteTools
-                    ? 'Read authorized SVC data and safely use the write operations authorized for this connection.'
-                    : 'Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.',
-                websiteUrl: url('/'),
+                name: $serverInfo->name,
+                version: $serverInfo->version,
+                description: $serverInfo->description,
+                websiteUrl: $serverInfo->websiteUrl,
             )
-            ->setInstructions($this->instructions($exposedToolNames, $hasWriteTools));
+            ->setInstructions($instructions);
 
-        $builder->setPaginationLimit(100)
-            ->setCapabilities(new ServerCapabilities(
-                tools: $implementsTools,
-                toolsListChanged: false,
-                resources: $implementsResources,
-                resourcesSubscribe: false,
-                resourcesListChanged: false,
-                prompts: $implementsPrompts,
-                promptsListChanged: false,
-                logging: false,
-                completions: false,
+        $builder->setPaginationLimit($pageSize)
+            ->setCapabilities($capabilities)
+            ->addRequestHandler(new McpToolsetInitializeHandler(
+                new InitializeHandler(new Configuration($serverInfo, $capabilities, $pageSize, $instructions)),
+                $initialSelection,
             ))
+            ->addRequestHandler(new McpToolsetListToolsHandler($registry, $visibility, $pageSize))
             ->setSession(new Psr16SessionStore($this->cache, CredentialSessionNamespace::prefix($request, 'svc_mcp_'), (int) config('agent_api.mcp_session_ttl_seconds')))
             // The SDK debug logger may contain tool arguments/results, so never enable it for agent traffic.
             ->setLogger($logger)
@@ -214,13 +262,16 @@ final class AgentMcpServerFactory
             ->setRegistry($registry)
             ->setReferenceHandler(new ReferenceHandler(app()))
             ->addRequestHandler(new McpRateLimitedCallToolHandler(
-                new ValidatedCallToolHandler(
-                    new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new OriginalShapeSchemaValidator($logger, $this->requestArguments)),
-                    $registry,
-                    new SchemaValidator($logger),
-                    $schemaIds,
-                    $driftLogger,
-                    'The SVC API returned a response that failed its output contract.',
+                new McpToolsetCallGateHandler(
+                    new ValidatedCallToolHandler(
+                        new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new OriginalShapeSchemaValidator($logger, $this->requestArguments)),
+                        $registry,
+                        new SchemaValidator($logger),
+                        $schemaIds,
+                        $driftLogger,
+                        'The SVC API returned a response that failed its output contract.',
+                    ),
+                    $visibility,
                 ),
                 new McpCapabilityRateLimiter(app(RateLimiter::class)),
                 $resultLimiter,
@@ -251,21 +302,25 @@ final class AgentMcpServerFactory
                     return $this->resourceCapabilityKey($operations, $request->uri);
                 },
             ))
-            ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
-                new GetPromptHandler($registry, new ReferenceHandler(app()), $logger),
-                new McpCapabilityRateLimiter(app(RateLimiter::class)),
-                $resultLimiter,
-                $concurrencyLimiter,
-                $capabilityAuditor,
-                $context,
-                $this->capabilityMetadata($operations, McpKind::Prompt),
-                function (JsonRpcRequest $request) use ($operations): string {
-                    if (! $request instanceof GetPromptRequest) {
-                        throw new LogicException('MCP prompt audit handler received an invalid request.');
-                    }
+            ->addRequestHandler(new McpToolsetPromptHandler(
+                new McpAuditedCapabilityRequestHandler(
+                    new GetPromptHandler($registry, new ReferenceHandler(app()), $logger),
+                    new McpCapabilityRateLimiter(app(RateLimiter::class)),
+                    $resultLimiter,
+                    $concurrencyLimiter,
+                    $capabilityAuditor,
+                    $context,
+                    $this->capabilityMetadata($operations, McpKind::Prompt),
+                    function (JsonRpcRequest $request) use ($operations): string {
+                        if (! $request instanceof GetPromptRequest) {
+                            throw new LogicException('MCP prompt audit handler received an invalid request.');
+                        }
 
-                    return $this->promptCapabilityKey($operations, $request->name);
-                },
+                        return $this->promptCapabilityKey($operations, $request->name);
+                    },
+                ),
+                $visibility,
+                $toolsByPrompt,
             ))
             ->setLazyLoading(false);
 
@@ -426,7 +481,7 @@ final class AgentMcpServerFactory
     }
 
     /** @param array<string, true> $available */
-    private function instructions(array $available, bool $hasWriteTools): string
+    private function instructions(array $available, bool $hasWriteTools, bool $progressive): string
     {
         if ($this->hasTools($available, ['context.get', 'projects.list', 'time_entries.log'])) {
             $base = 'First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version.';
@@ -482,6 +537,10 @@ final class AgentMcpServerFactory
             ? 'Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.'
             : 'Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.';
 
-        return $base.' '.$mode.' Authenticate using OAuth Authorization Code with S256 PKCE. '.$payments.$prompts;
+        $discovery = $progressive && isset($available['toolsets.list'])
+            ? ' tools/list shows only a core set of tools until you enable more: call toolsets.list to see the toolsets you may use and toolsets.enable to list the tools of one (the server then sends notifications/tools/list_changed). Enabling a toolset grants no access.'
+            : '';
+
+        return $base.' '.$mode.' Authenticate using OAuth Authorization Code with S256 PKCE. '.$payments.$prompts.$discovery;
     }
 }

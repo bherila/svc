@@ -102,6 +102,8 @@ The resource families have these responsibilities:
 
 **`square`:** Configured bounded provider reads and mirror/bootstrap operations; SVC remains the billing system of record and does not initiate provider payments. See the [inventory](mcp.md#public-capability-inventory).
 
+**`toolsets`:** MCP-only core tools that list, enable and disable toolsets for the current connection (progressive discovery). They change which authorized tools `tools/list` shows, nothing else: enabling a toolset grants no access and every call is authorized again. See [Progressive tool discovery](mcp.md#progressive-tool-discovery).
+
 **`oauth`:** REST-only revocation of the calling OAuth token family. See the [inventory](mcp.md#public-capability-inventory).
 
 **`connections`:** REST-only revocation of the caller’s connection or application credentials. See the [inventory](mcp.md#public-capability-inventory).

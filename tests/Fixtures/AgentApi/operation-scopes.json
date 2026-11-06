@@ -2333,6 +2333,36 @@
             "mcp.switch:time_entries.update"
         ]
     },
+    "toolsets.disable": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.toolsets",
+            "mcp.switch:toolsets.disable"
+        ]
+    },
+    "toolsets.enable": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.toolsets",
+            "mcp.switch:toolsets.enable"
+        ]
+    },
+    "toolsets.list": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.toolsets",
+            "mcp.switch:toolsets.list"
+        ]
+    },
     "workspaces.create": {
         "scopes": [
             "workspaces:create"

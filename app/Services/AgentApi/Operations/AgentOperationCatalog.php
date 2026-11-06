@@ -27,6 +27,7 @@ use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
 use App\Services\Mcp\AgentMcpTaskOrganizationTools;
 use App\Services\Mcp\AgentMcpTaskPlanningTools;
+use App\Services\Mcp\AgentMcpToolsetTools;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -271,7 +272,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools(), ...$this->toolsetTools());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1799,6 +1800,58 @@ final class AgentOperationCatalog
         }
 
         return $operations;
+    }
+
+    /**
+     * The core tools that list, enable and disable toolsets (progressive
+     * discovery, docs/mcp.md). They exist only on MCP, change nothing but
+     * which tools one session lists, and need no scope beyond the identity
+     * read every connection that can list a tool already holds.
+     *
+     * @return list<Operation>
+     */
+    private function toolsetTools(): array
+    {
+        $note = ' Enabling a toolset only lists tools the connection could already call; every call is authorized again.';
+
+        return [
+            $this->tool(
+                'toolsets.list',
+                'List toolsets',
+                'List the toolsets this connection may use, each with a description, the number of tools it holds and whether it is enabled. Only a core set of tools is listed until a toolset is enabled with toolsets.enable.'.$note,
+                [AgentMcpToolsetTools::class, 'list'],
+                Effect::Read,
+                true,
+                'mcp.read.toolsets',
+                input: AgentInlineSchemas::toolsetsListInput(),
+                output: AgentInlineSchemas::toolsetsOutput(),
+                scopes: ['identity:read'],
+            ),
+            $this->tool(
+                'toolsets.enable',
+                'Enable toolsets',
+                'Enable one or more toolsets from toolsets.list for this connection. The server then sends notifications/tools/list_changed and tools/list includes their tools.'.$note,
+                [AgentMcpToolsetTools::class, 'enable'],
+                Effect::Read,
+                true,
+                'mcp.read.toolsets',
+                input: AgentInlineSchemas::toolsetsChangeInput(),
+                output: AgentInlineSchemas::toolsetsOutput(),
+                scopes: ['identity:read'],
+            ),
+            $this->tool(
+                'toolsets.disable',
+                'Disable toolsets',
+                'Disable toolsets enabled earlier on this connection to shorten tools/list again. The core tools stay listed. The server sends notifications/tools/list_changed.',
+                [AgentMcpToolsetTools::class, 'disable'],
+                Effect::Read,
+                true,
+                'mcp.read.toolsets',
+                input: AgentInlineSchemas::toolsetsChangeInput(),
+                output: AgentInlineSchemas::toolsetsOutput(),
+                scopes: ['identity:read'],
+            ),
+        ];
     }
 
     private static function documented(string $id): string

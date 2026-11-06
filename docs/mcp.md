@@ -70,10 +70,13 @@ least one of `due_date` or `lines` must be supplied.
 
 The initialize response advertises the protocol groups implemented and enabled
 by the server. Discovery within those groups is filtered for the authenticated
-principal, and every invocation is authorized again. SVC does not
-advertise list-change notifications, resource subscriptions, server logging,
-completions, sampling, roots, or elicitation; direct resource subscription
-and other unsupported optional-feature requests are rejected as unsupported.
+principal, and every invocation is authorized again. SVC advertises
+`tools.listChanged` for progressive tool discovery (see
+[Progressive tool discovery](#progressive-tool-discovery)), and does not
+advertise resource or prompt list-change notifications, resource subscriptions,
+server logging, completions, sampling, roots, or elicitation; direct resource
+subscription and other unsupported optional-feature requests are rejected as
+unsupported.
 
 Production deploys the same routes from `main` to web1. The deployment keeps
 OAuth signing keys server-side in `storage/app/private/oauth`; it does not
@@ -356,9 +359,140 @@ refuses client-credentials issuance, so all supported credentials act for a
 person. The operation is explicitly REST-only: credential disposal is a
 connecting client's lifecycle responsibility, not an MCP agent tool.
 
+## Progressive tool discovery
+
+A fully scoped workspace manager is authorized for about 200 tools, which is
+more than most models use well in one context. So `tools/list` starts with a
+small **core set** and the connection reveals more by enabling **toolsets**.
+This is the default for every client. It changes what `tools/list` shows and
+nothing else: tool names, input and output schemas and REST parity are
+unchanged, and **enabling a toolset grants nothing**. A toolset holds only
+tools the credential's scopes, the person's role and the deployment switches
+already allow, and every call is authorized again exactly as before.
+
+### The core set
+
+Listed from `initialize` on, for a credential that may call them:
+
+- `context.get` and `search`;
+- `toolsets.list`, `toolsets.enable` and `toolsets.disable`;
+- the tools the `log-time-across-projects` prompt needs (`context.get`,
+  `projects.list` and `time_entries.log`), so time can be logged without
+  enabling anything. They are read from the prompt's declaration, not listed
+  again here.
+
+The core set is always a subset of what the credential may call. A credential
+that cannot log time, for example, has no `projects.list` or `time_entries.log`
+in it.
+
+### Toolsets
+
+A toolset is a group of the scopes the operation catalog already declares, so
+the catalog stays the one source of truth and a new scope group becomes a
+toolset with no other change. A tool belongs to the group of its *defining*
+scope: the first scope it requires that is not a plain `:read`, or its first
+scope when every scope is a read. A task write that also reads clients is
+therefore in `tasks`, not `clients`. The groups today are `billing`,
+`clients`, `collaboration`, `expenses`, `files`, `finance`, `identity`,
+`payments`, `projects`, `proposals`, `revenue`, `tasks`, `time` and
+`workspaces`, each named for its scope prefix, plus `square`.
+
+- `square` is the one exception: Square operations (any name segment `square`
+  or `square_*`) share the `billing` scopes but are gated by the Square
+  deployment switch, so they form their own toolset.
+- A group whose scopes the credential lacks, whose tools are all withheld by
+  role or deployment switch, or that does not exist is **absent**, not
+  empty. `toolsets.enable` refuses an absent name with "Unknown toolset" -
+  the same answer for a toolset that does not exist and one the credential may
+  not use - and changes nothing, even when other names in the request are valid.
+- By derivation, the agreement reads (`agreements.list`, `agreements.get`) are
+  in `billing`, and the agreement writes (under `clients:write`) are in
+  `clients`. Tools that are also in the core set (for example `projects.list`)
+  stay listed when their toolset is disabled.
+
+`toolsets.list` takes no arguments and returns, for each toolset the
+credential may use, its `name`, `description`, `tool_count` and whether it is
+`enabled` on this connection, and the connection's `mode` (`progressive` or
+`all`). The count is of the tools that `tools/list` would show for that
+credential with the toolset enabled, including any already in the core set.
+
+`toolsets.enable` and `toolsets.disable` take `toolsets`, a list of names
+(case-insensitive), and return the same shape plus `changed`. When the enabled
+set actually changed, the server sends `notifications/tools/list_changed`
+before the result, so the call is answered as an event stream; a call that
+changes nothing (enabling an enabled toolset, disabling one that is not
+enabled) sends no notification and is answered as plain JSON. A toolset that
+was enabled can be disabled even if the credential has since lost access to it.
+
+### Sessions
+
+The enabled set is state of one MCP session, which is cached per credential
+(see [Pinned implementation and transport](#pinned-implementation-and-transport)),
+so it is isolated between credentials, including two credentials of the same
+person. It lasts as long as the session, and a new session starts again from
+the core set. A tool that is authorized but not listed answers a call exactly
+as a tool that does not exist ("Tool not found"), whether or not it is
+registered.
+
+A session opened before progressive discovery shipped has nothing stored and
+keeps listing every tool until it expires; it never loses tools mid-session
+without a notification.
+
+### Opting out: `X-SVC-Toolsets: all`
+
+A client that cannot handle `notifications/tools/list_changed` asks for the full
+list **when it connects** by sending the header `X-SVC-Toolsets: all` on its
+`initialize` request (HTTP-based clients send the headers they are configured
+with on every request, so configuring it is enough). The connection then lists
+every authorized tool from the start, as before, `initialize` does not advertise
+`tools.listChanged`, the instructions do not mention toolsets, and
+`toolsets.list`, `toolsets.enable` and `toolsets.disable` are still listed, with
+`mode: "all"` and nothing to change. Only the exact value `all` (any letter
+case, surrounding spaces ignored) opts out; anything else keeps the default. The
+choice is stored in the session at `initialize`; a header on a later request
+changes nothing.
+
+A header was chosen over a query parameter on the endpoint URL because the URL is
+also the OAuth resource identifier: the authorization server rejects a resource
+with a query string, so `/api/v1/mcp?toolsets=all` would fail for exactly the
+clients that follow the resource-indicator rules. It was chosen over a setting on
+the OAuth client record because clients register themselves, so there is no
+record an operator could set before the first connection, and the record lives in
+the shared authentication package.
+
+### Prompts
+
+`prompts/list` is unchanged by toolsets: a prompt is advertised only when its
+tools are discoverable, as before, and the choice of toolsets does not narrow
+it. **Fetching a prompt (`prompts/get`) enables the toolsets of the tools it
+needs**, and sends `notifications/tools/list_changed` if that enabled anything,
+because the prompt walks the model through those tools and a workflow the person
+picked must not stop at a tool that is not listed. Only tools the credential may
+already call are involved, only toolsets not already shown are enabled, nothing
+is granted, and an unknown or unavailable prompt enables nothing. Fetching
+`prepare-invoice-safely` therefore enables `billing`, `projects` and `time`;
+fetching `log-time-across-projects` enables nothing, since its tools are core.
+
+### Tests
+
+`AgentMcpProgressiveDiscoveryTest` pins, for every scope preset: the core set
+plus every toolset equals the full list the opt-out connection gets (same
+definitions, same order) and the toolset counts add up to it; enabling and
+disabling round-trip and send `list_changed`; an unauthorized toolset cannot be
+enabled; two credentials' sessions are isolated; and prompts enable what they
+need. The toolset derivation, selection, visibility and paging are
+database-free classes with unit tests. `scripts/mcp-smoke.mjs` runs the same
+round trip through the official MCP SDK client over Streamable HTTP.
+
+Every other MCP test connects with the opt-out header (`TestCase::setUp`), so it
+keeps asserting what the authorized surface contains.
+
 ## Public capability inventory
 
-With all read scopes, discovery exposes these read-only tools, in this order:
+With all read scopes, a connection that asked for the full list exposes these
+read-only tools, in this order (the default connection starts with the
+[core set](#the-core-set) and enables [toolsets](#toolsets) for the rest), and
+the three `toolsets.*` core tools after them:
 
 `context.get`, `operations.summary`, `projects.list`, `projects.get`,
 `tasks.list`, `tasks.get`, `time_entries.list`, `expenses.list`, `invoices.list`, and
@@ -504,7 +638,7 @@ only and do not bypass tool authorization.
 
 Cursor pagination is available on project, task, time-entry, and invoice
 lists, with a maximum page size of 100. The server's discovery pagination
-limit is also 100. Current schemas and output field allowlists are in
+limit is also 100, applied to the tools the session currently lists. Current schemas and output field allowlists are in
 `public/openapi/svc-agent-v1.json` and are protected by
 `AgentMcpContractTest`.
 

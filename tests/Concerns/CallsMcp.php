@@ -2,6 +2,7 @@
 
 namespace Tests\Concerns;
 
+use App\Services\Mcp\Toolsets\McpToolsetSelection;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -23,16 +24,57 @@ trait CallsMcp
         return ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'SVC test', 'version' => '1']]];
     }
 
-    /** @param array<string, mixed> $message
-     * @return TestResponse<Response> */
-    protected function mcp(array $message, ?string $session = null): TestResponse
+    /**
+     * Connect the way a client that takes the default does: progressive
+     * discovery, the core tools first. Every test connects as a client that
+     * opts into the full list unless it says otherwise (see TestCase::setUp).
+     */
+    protected function initializeProgressive(): string
     {
-        $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
+        $response = $this->mcp($this->initializeMessage(), headers: [McpToolsetSelection::CONNECT_HEADER => 'progressive'])->assertOk();
+        $session = $response->headers->get('Mcp-Session-Id');
+        $this->assertIsString($session);
+
+        return $session;
+    }
+
+    /**
+     * @param  array<string, mixed>  $message
+     * @param  array<string, string>  $headers
+     * @return TestResponse<Response>
+     */
+    protected function mcp(array $message, ?string $session = null, array $headers = []): TestResponse
+    {
+        $headers += ['Mcp-Protocol-Version' => '2025-06-18'];
         if ($session !== null) {
             $headers['Mcp-Session-Id'] = $session;
         }
 
         return $this->postJson('/api/v1/mcp', $message, $headers);
+    }
+
+    /**
+     * Every JSON-RPC message a response carried, in order. A call that sends a
+     * notification is answered as an event stream (notification first, then the
+     * result); any other call is plain JSON.
+     *
+     * @param  TestResponse<Response>  $response
+     * @return list<array<string, mixed>>
+     */
+    protected function messages(TestResponse $response): array
+    {
+        $response->assertOk();
+        if (! str_starts_with((string) $response->headers->get('Content-Type'), 'text/event-stream')) {
+            return [(array) $response->json()];
+        }
+        $messages = [];
+        foreach (preg_split('/\R/', $response->streamedContent()) ?: [] as $line) {
+            if (str_starts_with($line, 'data:')) {
+                $messages[] = (array) json_decode(trim(substr($line, 5)), true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
+
+        return $messages;
     }
 
     /**

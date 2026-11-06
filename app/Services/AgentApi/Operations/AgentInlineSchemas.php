@@ -117,6 +117,72 @@ final class AgentInlineSchemas
     }
 
     /** @return array<string, mixed> */
+    public static function toolsetsListInput(): array
+    {
+        return ['type' => 'object', 'additionalProperties' => false];
+    }
+
+    /** @return array<string, mixed> */
+    public static function toolsetsChangeInput(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => ['toolsets'],
+            'properties' => [
+                'toolsets' => [
+                    'type' => 'array',
+                    'minItems' => 1,
+                    'maxItems' => 32,
+                    'items' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 64],
+                    'description' => 'Toolset names from toolsets.list.',
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * What the toolset tools report: the connection's mode and each toolset
+     * the caller may use, counted over tools the caller is already
+     * authorized for.
+     *
+     * @return array<string, mixed>
+     */
+    public static function toolsetsOutput(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => ['data'],
+            'properties' => [
+                'data' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'required' => ['mode', 'changed', 'toolsets'],
+                    'properties' => [
+                        'mode' => ['type' => 'string', 'enum' => ['progressive', 'all']],
+                        'changed' => ['type' => 'boolean'],
+                        'toolsets' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'additionalProperties' => false,
+                                'required' => ['name', 'description', 'tool_count', 'enabled'],
+                                'properties' => [
+                                    'name' => ['type' => 'string'],
+                                    'description' => ['type' => 'string'],
+                                    'tool_count' => ['type' => 'integer', 'minimum' => 0],
+                                    'enabled' => ['type' => 'boolean'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /** @return array<string, mixed> */
     public static function billingAuditInput(): array
     {
         return [
