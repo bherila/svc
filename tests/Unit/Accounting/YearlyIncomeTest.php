@@ -43,4 +43,22 @@ final class YearlyIncomeTest extends TestCase
             'refunds' => 200, 'refund_reversals' => 100, 'fees' => 38, 'expenses_passed_through' => 0,
             'dispute_movements' => -20, 'net_cash' => 942, 'unattributed_refunds' => 12], $months[2]);
     }
+
+    public function test_undated_and_out_of_year_rows_do_not_stop_later_rows_and_receipts_accumulate(): void
+    {
+        $line = ['effective_on' => '2026-01-05', 'net_amount' => 100, 'tax_amount' => 10, 'line_type' => 'expense'];
+        $cash = ['effective_on' => '2026-01-08', 'kind' => 'payment', 'amount' => 100, 'fee_amount' => 1, 'unattributed_refund_amount' => 5];
+        $result = YearlyIncome::calculate(2026, [[...$line, 'effective_on' => '2025-12-31'], $line,
+            [...$line, 'effective_on' => null], [...$line, 'line_type' => 'adjustment', 'net_amount' => 200, 'tax_amount' => 20],
+            [...$line, 'net_amount' => -20, 'tax_amount' => -2]], [
+                [...$cash, 'effective_on' => '2027-01-01'], $cash, [...$cash, 'effective_on' => null],
+                [...$cash, 'amount' => 50, 'fee_amount' => 2, 'unattributed_refund_amount' => 3],
+                [...$cash, 'kind' => 'refund', 'amount' => -20, 'fee_amount' => 0],
+                [...$cash, 'kind' => 'refund_reversal', 'amount' => 10, 'fee_amount' => 0],
+                [...$cash, 'kind' => 'refund_reversal', 'amount' => 5, 'fee_amount' => 0],
+            ])->months[0];
+        $this->assertSame(['month' => '2026-01', 'invoiced_net' => 280, 'invoiced_tax' => 28, 'cash_received' => 150,
+            'refunds' => 20, 'refund_reversals' => 15, 'fees' => 3, 'expenses_passed_through' => 80,
+            'dispute_movements' => 0, 'net_cash' => 142, 'unattributed_refunds' => 8], $result);
+    }
 }

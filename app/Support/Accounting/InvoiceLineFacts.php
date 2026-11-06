@@ -12,9 +12,9 @@ final readonly class InvoiceLineFacts
     {
         return new self([...$this->data,
             'kind' => $kind, 'reverses_id' => $entryId,
-            'net_amount' => -(int) $this->data['net_amount'],
-            'tax_amount' => -(int) $this->data['tax_amount'],
-            'total_amount' => -(int) $this->data['total_amount'],
+            'net_amount' => -MinorUnits::from($this->data['net_amount']),
+            'tax_amount' => -MinorUnits::from($this->data['tax_amount']),
+            'total_amount' => -MinorUnits::from($this->data['total_amount']),
         ]);
     }
 }

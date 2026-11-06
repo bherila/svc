@@ -27,7 +27,7 @@ final class AccountingOperations
         $operations = [];
         foreach ([
             'finance.invoice_lines.list' => 'Issued invoice line accounting, with signed net, tax, effective tax rate, taxable flag, readable line type, service period and client/project public IDs. Original records never change. Corrections append a reversal naming the previous record and a replacement; voids and reopens append reversals. Historical invoices are projected synchronously from correction evidence. The effective date remains the original issue date, so a correction restates its issue period.',
-            'finance.cash_income.list' => 'Cash income by payment received date, manual refund/reversal UTC recording date, and processor movement effective date. Reuses the existing finance payment query and signed processor movements; payouts transfer already received money and are not income. Known fees are separate; no fees or missing historical refund dates are invented. Payment rows expose unattributed_refund_amount for cumulative refunds without dated ledger evidence. Manager only.',
+            'finance.cash_income.list' => 'Cash income by payment received date, manual refund/reversal UTC recording date, and processor movement effective date. Reuses the existing finance payment query and signed processor movements; payouts transfer already received money and are not income. Known fees are separate; no fees or missing historical refund dates are invented. Payment rows expose their cumulative refunded_amount; dated refund and reversal records remain separate, so consumers can reconcile their synchronized ledger. The yearly export identifies refunds without dated evidence. Manager only.',
             'finance.income.yearly' => 'Calendar-year income summary: twelve monthly rows of invoiced net and tax, cash received, refunds and reversals, known fees, dispute movements and expenses passed through. Corrections restate the original issue period. Synchronously computed in bounded chunks, no job or external processor call. JSON by default; REST format=csv streams the same rows. MCP returns JSON. All amounts are integer minor units in the workspace currency.',
         ] as $id => $description) {
             $entry = $common;
@@ -38,9 +38,11 @@ final class AccountingOperations
                 $entry['parameters'][] = self::parameter('format', ['type' => 'string', 'enum' => ['json', 'csv'], 'default' => 'json']);
             } else {
                 $entry['description'] .= ' At most 100 records, ordered by change timestamp then stable ID; follow meta.next_cursor. For the next pass send the opaque meta.updated_since as updated_since. It carries a timestamp and ID tiebreaker and is bound to this workspace and operation. Watermarks lag by 120 seconds, as existing finance feeds do. from/to filter effective dates on full reads; sync without date filters, then filter locally.';
-                $entry['parameters'] = [...$entry['parameters'], self::parameter('limit', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 50]),
-                    self::parameter('cursor', ['type' => 'string', 'maxLength' => 2048]), self::parameter('updated_since', ['type' => 'string', 'maxLength' => 2048]),
-                    self::parameter('from', ['type' => 'string', 'format' => 'date']), self::parameter('to', ['type' => 'string', 'format' => 'date'])];
+                $entry['parameters'][] = self::parameter('limit', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 50]);
+                $entry['parameters'][] = self::parameter('cursor', ['type' => 'string', 'maxLength' => 2048]);
+                $entry['parameters'][] = self::parameter('updated_since', ['type' => 'string', 'maxLength' => 2048]);
+                $entry['parameters'][] = self::parameter('from', ['type' => 'string', 'format' => 'date']);
+                $entry['parameters'][] = self::parameter('to', ['type' => 'string', 'format' => 'date']);
             }
             $operations[$id] = $entry;
         }
@@ -99,7 +101,7 @@ final class AccountingOperations
             'kind' => ['type' => 'string'], 'payment_id' => ['type' => 'string', 'format' => 'uuid'],
             'reverses_id' => ['type' => ['string', 'null'], 'format' => 'uuid'],
             'currency' => ['type' => 'string'], 'effective_on' => ['type' => ['string', 'null'], 'format' => 'date']];
-        foreach (['amount', 'fee_amount', 'net_amount', 'unattributed_refund_amount'] as $name) {
+        foreach (['amount', 'fee_amount', 'net_amount', 'refunded_amount'] as $name) {
             $fields[$name] = ['type' => 'integer'];
         }
 

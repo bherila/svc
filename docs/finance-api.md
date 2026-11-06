@@ -648,12 +648,15 @@ canceled payments remain in synchronization with zero principal, so a payment
 that stops contributing is not lost from the feed. Payment and processor rows
 carry an opaque `version`; invoice and manual refund records are immutable.
 
-A payment's `unattributed_refund_amount` is its cumulative refunded amount less
-the net refunds supported by dated manual or processor records. A nonzero value
-flags incomplete or inconsistent historical evidence. Such money is not assigned
-an invented refund date. The yearly export reports it separately in the original
-payment month; consumers must resolve it before treating monthly cash totals as
-complete. Missing processor fees are reported as zero recorded fees, never an
+Payment rows expose the source payment's cumulative `refunded_amount` as well as
+separate dated refund/reversal records. Do not subtract the cumulative value a
+second time. A synchronizer can reconcile that balance against its complete
+refund ledger; refund rows arriving later do not rewrite the payment snapshot.
+The yearly export's `unattributed_refunds` is the cumulative balance less the net
+refunds supported by dated manual or processor records. A nonzero value flags
+incomplete or inconsistent historical evidence. Such money is not assigned an
+invented refund date. The export reports the gap separately in the original
+payment month; resolve it before treating monthly cash totals as complete. Missing processor fees are reported as zero recorded fees, never an
 estimate. Processor dispute movements are separately itemized in the export.
 
 Both lists take `limit` (1–100, default 50), `cursor`, and an **opaque**

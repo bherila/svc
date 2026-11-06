@@ -94,7 +94,7 @@ final class AccountingReadsTest extends TestCase
         $this->assertSame(9850, array_sum(array_column($rows, 'net_amount')));
         $existing = $this->getJson('/api/v1/workspaces/'.$this->workspace->public_id.'/invoice-payments?status=any')->assertOk()->json('data.0');
         $this->assertSame($existing['net_amount'] - $existing['provider_fee_amount'], array_sum(array_column($rows, 'net_amount')));
-        $this->assertSame(0, array_sum(array_column($rows, 'unattributed_refund_amount')));
+        $this->assertSame(1000, array_sum(array_column($rows, 'refunded_amount')));
         $json = $this->getJson($this->url('income').'?year=2026')->assertOk()->json();
         $months = $json['data']['months'];
         $this->assertCount(12, $months);
@@ -138,7 +138,7 @@ final class AccountingReadsTest extends TestCase
         $result = $this->getJson($this->url('cash-income'))->assertOk()->json();
         $this->assertCount(4, $result['data']);
         $this->assertSame(10190, array_sum(array_column($result['data'], 'net_amount')));
-        $this->assertSame(0, array_sum(array_column($result['data'], 'unattributed_refund_amount')));
+        $this->assertSame(700, array_sum(array_column($result['data'], 'refunded_amount')));
         $existing = $this->getJson('/api/v1/workspaces/'.$this->workspace->public_id.'/processor-movements')->assertOk()->json('data.0');
         $cashMovement = collect($result['data'])->firstWhere('source_id', $movement->public_id);
         $this->assertSame($existing['principal_minor'], $cashMovement['amount']);

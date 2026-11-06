@@ -1136,7 +1136,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Cash income by payment received date, manual refund/reversal UTC recording date, and processor movement effective date. Reuses the existing finance payment query and signed processor movements; payouts transfer already received money and are not income. Known fees are separate; no fees or missing historical refund dates are invented. Payment rows expose unattributed_refund_amount for cumulative refunds without dated ledger evidence. Manager only. At most 100 records, ordered by change timestamp then stable ID; follow meta.next_cursor. For the next pass send the opaque meta.updated_since as updated_since. It carries a timestamp and ID tiebreaker and is bound to this workspace and operation. Watermarks lag by 120 seconds, as existing finance feeds do. from/to filter effective dates on full reads; sync without date filters, then filter locally. */
+        /** @description Cash income by payment received date, manual refund/reversal UTC recording date, and processor movement effective date. Reuses the existing finance payment query and signed processor movements; payouts transfer already received money and are not income. Known fees are separate; no fees or missing historical refund dates are invented. Payment rows expose their cumulative refunded_amount; dated refund and reversal records remain separate, so consumers can reconcile their synchronized ledger. The yearly export identifies refunds without dated evidence. Manager only. At most 100 records, ordered by change timestamp then stable ID; follow meta.next_cursor. For the next pass send the opaque meta.updated_since as updated_since. It carries a timestamp and ID tiebreaker and is bound to this workspace and operation. Watermarks lag by 120 seconds, as existing finance feeds do. from/to filter effective dates on full reads; sync without date filters, then filter locally. */
         get: operations['finance.cash_income.list'];
         put?: never;
         post?: never;
@@ -2713,7 +2713,7 @@ export interface components {
                 amount: number;
                 fee_amount: number;
                 net_amount: number;
-                unattributed_refund_amount: number;
+                refunded_amount: number;
                 /** Format: date-time */
                 updated_at: string | null;
             }[];

@@ -21,25 +21,27 @@ final readonly class YearlyIncome
                 'dispute_movements' => 0, 'net_cash' => 0, 'unattributed_refunds' => 0];
         }
         foreach ($lines as $line) {
-            $month = substr((string) $line['effective_on'], 0, 7);
+            $date = $line['effective_on'];
+            $month = is_string($date) ? substr($date, 0, 7) : '';
             if (! isset($months[$month])) {
                 continue;
             }
-            $months[$month]['invoiced_net'] += (int) $line['net_amount'];
-            $months[$month]['invoiced_tax'] += (int) $line['tax_amount'];
+            $months[$month]['invoiced_net'] += MinorUnits::from($line['net_amount']);
+            $months[$month]['invoiced_tax'] += MinorUnits::from($line['tax_amount']);
             if ($line['line_type'] === 'expense') {
-                $months[$month]['expenses_passed_through'] += (int) $line['net_amount'];
+                $months[$month]['expenses_passed_through'] += MinorUnits::from($line['net_amount']);
             }
         }
         foreach ($cash as $row) {
-            $month = substr((string) $row['effective_on'], 0, 7);
+            $date = $row['effective_on'];
+            $month = is_string($date) ? substr($date, 0, 7) : '';
             if (! isset($months[$month])) {
                 continue;
             }
-            $amount = (int) $row['amount'];
+            $amount = MinorUnits::from($row['amount']);
             if ($row['kind'] === 'payment') {
                 $months[$month]['cash_received'] += $amount;
-                $months[$month]['unattributed_refunds'] += (int) $row['unattributed_refund_amount'];
+                $months[$month]['unattributed_refunds'] += MinorUnits::from($row['unattributed_refund_amount']);
             } elseif ($row['kind'] === 'refund') {
                 $months[$month]['refunds'] -= $amount;
             } elseif ($row['kind'] === 'refund_reversal') {
@@ -47,8 +49,8 @@ final readonly class YearlyIncome
             } elseif (in_array($row['kind'], ['dispute_debit', 'dispute_credit'], true)) {
                 $months[$month]['dispute_movements'] += $amount;
             }
-            $months[$month]['fees'] += (int) $row['fee_amount'];
-            $months[$month]['net_cash'] += $amount - (int) $row['fee_amount'];
+            $months[$month]['fees'] += MinorUnits::from($row['fee_amount']);
+            $months[$month]['net_cash'] += $amount - MinorUnits::from($row['fee_amount']);
         }
 
         return new self($year, array_values($months));
