@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Portal at phone width</title>
+<title>Client portal on a phone</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -11,16 +11,123 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 <style>
 :root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
 body{margin:0;background:#0b1120}
+a{color:#93c5fd}
+button{font-family:inherit}
 </style>
 </helmet>
-<div style="width: 390px; box-sizing: border-box; background: #0b1120; overflow: hidden">
-  <dc-import name="Portal" hint-size="390px,2000px"></dc-import>
+<div style="width: 390px; box-sizing: border-box; font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+  <header style="height: 56px; box-sizing: border-box; padding: 0 8px 0 16px; display: flex; align-items: center; gap: 4px; background: #111827; border-bottom: 1px solid #1f2937">
+    <div style="flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Acme Veterinary</span></div>
+    <button type="button" aria-haspopup="menu" style="flex: none; display: inline-flex; align-items: center; gap: 4px; height: 40px; padding: 0 10px; border: 1px solid #1f2937; border-radius: 8px; background: #0b1120; color: #e5e7eb; font-size: 14px; font-weight: 500">Overview<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="m6 9 6 6 6-6"></path></svg></button>
+    <button type="button" aria-label="Search" style="width: 40px; height: 40px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: #e5e7eb; border-radius: 8px; padding: 0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
+    <span aria-label="Account" role="img" style="flex: none; width: 32px; height: 32px; margin-left: 4px; border-radius: 16px; background: #0f766e; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600">DO</span>
+  </header>
+
+  <main style="padding: 16px 16px 32px; display: flex; flex-direction: column; gap: 16px">
+    <h1 style="margin: 0; font-size: 22px; font-weight: 600">Hi Dana</h1>
+
+    <section aria-label="Balance" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+      <div style="font-size: 13px; color: #9ca3af">You owe Herila Consulting</div>
+      <div style="font-size: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">$9,200.00</div>
+      <div style="font-size: 14px; color: #cbd5e1">Invoice #1041 · due Nov 15</div>
+      <a href="#" style="margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border-radius: 10px; background: #e5e7eb; color: #111827; font-size: 16px; font-weight: 600; text-decoration: none"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><rect width="20" height="14" x="2" y="5" rx="2"></rect><path d="M2 10h20"></path></svg>Pay $9,200.00</a>
+      <a href="#" style="display: flex; align-items: center; justify-content: center; min-height: 44px; font-size: 14px">View invoice</a>
+    </section>
+
+    <section aria-label="This month" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><h2 style="margin: 0; font-size: 15px; font-weight: 600">November retainer</h2><span style="font-size: 14px; font-variant-numeric: tabular-nums"><strong>31.5</strong> of 46.0 h</span></div>
+      <div role="img" aria-label="31.5 of 46 hours used" style="height: 10px; border-radius: 5px; background: #1f2937; overflow: hidden"><div style="width: 68%; height: 100%; background: #3b82f6"></div></div>
+      <div style="font-size: 13px; color: #9ca3af">6.0 h rolled over · expire Nov 30</div>
+      <div style="border-top: 1px solid #1a2332; margin-top: 4px; padding-top: 10px; display: flex; justify-content: space-between; font-size: 14px"><span>Next invoice · Dec 1</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">≈ $8,301</span></div>
+    </section>
+
+    <section aria-label="To approve" style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <h2 style="margin: 0; font-size: 17px; font-weight: 600">To approve · October</h2>
+        <button type="button" aria-label="How approving works" title="Approve a month when it looks right. Dispute any entry or expense with a note. Paying an invoice approves anything on it you haven’t disputed." style="width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: #9ca3af; padding: 0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg></button>
+      </div>
+      <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+        <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; overflow: hidden">
+          <div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: baseline"><span style="font-size: 16px; font-weight: 600">{{g.vendor}}</span><span style="{{g.badgeStyle}}">{{g.badge}}</span></div>
+            <div style="font-size: 14px; color: #cbd5e1">{{g.summary}}</div>
+            <div style="font-size: 13px; color: #9ca3af">{{g.context}}</div>
+          </div>
+          <button type="button" onClick="{{g.toggle}}" aria-expanded="{{g.open}}" style="width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border: 0; border-top: 1px solid #1a2332; background: transparent; color: #e5e7eb; font-size: 14px; cursor: pointer"><span>{{g.toggleLabel}}</span><span style="{{g.chevStyle}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="m6 9 6 6 6-6"></path></svg></span></button>
+          <sc-if value="{{g.open}}" hint-placeholder-val="{{false}}">
+            <ul style="list-style: none; margin: 0; padding: 0 16px">
+              <sc-for list="{{g.rows}}" as="r" hint-placeholder-count="4">
+                <li style="border-top: 1px solid #1a2332; padding: 10px 0; display: flex; flex-direction: column; gap: 4px">
+                  <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: #9ca3af"><span>{{r.date}} · {{r.state}}</span><span style="color: #e5e7eb; font-weight: 600; font-variant-numeric: tabular-nums">{{r.amount}}</span></div>
+                  <div style="display: flex; align-items: flex-start; gap: 12px">
+                    <div style="flex: 1; min-width: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere">{{r.desc}}</div>
+                    <button type="button" onClick="{{r.dispute}}" style="flex: none; min-height: 32px; margin-top: -4px; padding: 0 10px; border: 1px solid #374151; border-radius: 8px; background: transparent; color: #e5e7eb; font-size: 13px; cursor: pointer">{{r.disputeLabel}}</button>
+                  </div>
+                  <sc-if value="{{r.disputed}}" hint-placeholder-val="{{false}}"><div style="font-size: 13px; color: #fdba74">Your note: “This was Rivera’s call, not ours.”</div></sc-if>
+                </li>
+              </sc-for>
+            </ul>
+          </sc-if>
+          <div style="padding: 12px 16px 16px; border-top: 1px solid #1a2332">
+            <button type="button" onClick="{{g.approve}}" style="{{g.approveStyle}}">{{g.approveLabel}}</button>
+          </div>
+        </div>
+      </sc-for>
+    </section>
+
+    <section aria-label="Waiting on you" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 14px 16px 2px">
+      <h2 style="margin: 0 0 4px; font-size: 15px; font-weight: 600">Waiting on you</h2>
+      <ul style="list-style: none; margin: 0; padding: 0">
+        <li style="border-top: 1px solid #1a2332"><a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px 0; color: #e5e7eb; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg><span style="flex: 1; min-width: 0"><span style="display: block; font-size: 15px">Confirm clinic list</span><span style="display: block; font-size: 13px; color: #9ca3af">Luis Rivera · due Nov 12</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="m9 18 6-6-6-6"></path></svg></a></li>
+        <li style="border-top: 1px solid #1a2332"><a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px 0; color: #e5e7eb; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg><span style="flex: 1; min-width: 0"><span style="display: block; font-size: 15px">Choose a lab-results vendor</span><span style="display: block; font-size: 13px; color: #9ca3af">Ben Herila · due Nov 20</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="m9 18 6-6-6-6"></path></svg></a></li>
+      </ul>
+    </section>
+  </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2000}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1600}}'>
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  constructor(p) { super(p); this.state = { open: { h: true }, approved: {}, disputed: { h2: true } }; }
+  renderVals() {
+    const st = this.state;
+    const src = [
+      { id: 'h', vendor: 'Herila Consulting', summary: '41.5 h · 2 expenses ($736.69)', context: 'Invoice #1041 · 12.0 h already approved', rows: [
+        ['Oct 3', 'Billing API architecture review', '3.0 h', 'Approved'],
+        ['Oct 10', 'Clinic onboarding: data model and migration plan', '6.5 h', ''],
+        ['Oct 14', 'Vendor call', '1.5 h', ''],
+        ['Oct 31', 'Expense · Staging database · receipt', '$412.00', ''],
+        ['Oct 31', 'Expense · Lab-results API usage · receipt', '$324.69', '']
+      ] },
+      { id: 'r', vendor: 'Rivera Engineering', summary: '22.0 h', context: 'Reviewed by Ben Herila · Nov 6', rows: [
+        ['Oct 2', 'Paired on the invoice webhook retry design', '2.5 h', ''],
+        ['Oct 6', 'Idempotent webhook handler and tests', '4.0 h', ''],
+        ['Oct 9', 'Clinic import migration script; staging dry run', '3.5 h', '']
+      ] }
+    ];
+    const groups = src.map((g) => {
+      const open = !!st.open[g.id]; const ok = !!st.approved[g.id];
+      const rows = g.rows.map((r, i) => {
+        const key = g.id + i; const d = !!st.disputed[key];
+        return { date: r[0], desc: r[1], amount: r[2], disputed: d,
+          state: d ? 'Disputed' : (r[3] || (ok ? 'Approved' : 'To approve')),
+          disputeLabel: d ? 'Withdraw' : 'Dispute',
+          dispute: () => { const n = Object.assign({}, st.disputed); n[key] = !d; this.setState({ disputed: n }); } };
+      });
+      const nd = rows.filter((r) => r.disputed).length;
+      return { vendor: g.vendor, summary: g.summary, context: g.context, rows, open,
+        toggleLabel: open ? 'Hide entries' : 'Show ' + rows.length + ' entries',
+        chevStyle: 'display:inline-flex;transform:rotate(' + (open ? '180' : '0') + 'deg);',
+        badge: ok ? 'Approved' : (nd ? nd + ' disputed' : 'To approve'),
+        badgeStyle: 'font-size:12px;font-weight:600;white-space:nowrap;color:' + (ok ? '#86efac' : nd ? '#fdba74' : '#93c5fd') + ';',
+        approveLabel: ok ? 'Approved · undo' : (nd ? 'Approve the rest' : 'Approve October'),
+        approveStyle: 'width:100%;min-height:48px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;' + (ok ? 'border:1px solid #374151;background:transparent;color:#9ca3af;' : 'border:1.5px solid #93c5fd;background:transparent;color:#e5e7eb;'),
+        toggle: () => { const n = Object.assign({}, st.open); n[g.id] = !open; this.setState({ open: n }); },
+        approve: () => { const n = Object.assign({}, st.approved); n[g.id] = !ok; this.setState({ approved: n }); } };
+    });
+    return { groups };
+  }
 }
 </script>
 </body>

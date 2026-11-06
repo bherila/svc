@@ -21,7 +21,7 @@ canvas.
 | `Proforma.dc.html` | Proforma (next-invoice) preview |
 | `InvoiceAdmin.dc.html` | Operator invoice page; embeds `InvoicePdf.dc.html` |
 | `InvoicePdf.dc.html` | Invoice PDF, page 1 |
-| `PhoneDashboard.dc.html`, `PhonePortal.dc.html` | The dashboard and portal at 390 px (they embed the real screens) |
+| `PhoneDashboard.dc.html`, `PhonePortal.dc.html` | The dashboard and portal designed for a 390 px phone |
 
 These files are reference material for building the screens. They are not
 code to ship.

@@ -468,8 +468,14 @@ Decided on the design canvas (2026-11-06):
   - **Wide tables** scroll inside their own box on phones. The Clients table
     becomes cards below `md`.
   - **Flow steps** wrap.
+  - **Phone layout patterns:** the tab strip becomes a section menu
+    ("Dashboard ▾"); key figures go 2×2; the chart shows six months back and
+    five ahead, with the per-client breakdown one tap away; list rows are
+    whole-row links with a chevron (44 px or taller); a page's primary action
+    is full width, 48 px tall. The phone boards on the canvas show the
+    dashboard and the portal.
   - **Checks:** every slice is checked in a browser at 390, 820, 1440 and
-    1920 px. The canvas has phone boards that embed the real screens.
+    1920 px.
 - **Proforma invoice.** "View proforma invoice" on the client overview, and
   "Next invoice · estimate" in the portal, both render the next cadence
   invoice from the agreement and the time logged so far. They are built on
