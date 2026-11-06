@@ -363,8 +363,45 @@ invoicing in SVC are off until they turn them on. They see "My work" (section
   one-off, reviewed move takes those hours into Other Eng's new workspace. It
   is run per participant, by explicit command, never automatically.
 
+## 8. In-app help
+
+Help is written once, in the repository, and appears where the question comes
+up. Mockups: the "In-app help patterns" board on the design canvas.
+
+1. **Term tips.** A `?` next to any word a new user may not know. It opens on
+   click or focus, so it works on touch and with a keyboard, never only on
+   hover. The text comes from one glossary.
+2. **Status with its next step.** `statusLabel` returns a label and a next-step
+   line ("Reviewed: waiting on Acme to approve"). A badge is never shown
+   without one.
+3. **Consequence before action.** Before anything that can't be undone, a
+   dialog lists what will happen, sent by the server with the action's URL,
+   and the button names the action.
+4. **Empty states that teach**: what would appear here, why it would, and the
+   one step that makes it happen.
+5. **Help panel** (`?` or ⌘/) beside the page, showing that page's questions
+   first, with search across everything. The same articles also make up a
+   full guide at `/help`.
+6. **First-run checklist** for each role: operator, client contact and partner.
+   A step is checked off because the thing it asks for actually exists.
+
+Articles live in `docs/help/*.md`. Front matter names the audience
+(operator, client, partner), the routes the article belongs to, and the
+glossary terms it defines. Articles are built into the frontend, so help
+changes in the same commit as the feature it explains. Tests fail when:
+
+- a route has no article;
+- a status has no next-step line;
+- a glossary term is defined twice;
+- an article links to a heading that doesn't exist.
+
+The glossary is also the vocabulary for emails, PDFs and MCP descriptions.
+
 ## Delivery slices (stacked commits, one PR)
 
+0. **Help scaffolding** (section 8): the `docs/help` loader, glossary,
+   `statusLabel` next-step lines, the help panel, and the coverage tests. Each
+   later slice adds its own articles.
 1. **Navigation tiers.** Workspace and client tiers, role-specific tab sets,
    the breadcrumb switcher, and Operations removed with its pieces moved.
    Browser check at 390, 820, 1440 and 1920.
