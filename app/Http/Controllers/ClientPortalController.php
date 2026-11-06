@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
-use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\ClientProposalItem;
@@ -17,11 +16,12 @@ use App\Queries\Portal\PortalOverviewQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\DeferredBacklogReadService;
+use App\Services\Billing\InvoiceDocumentService;
+use App\Services\Billing\InvoicePaymentOptionsReader;
 use App\Services\Collaboration\CollaborationAccess;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentSharingNativeView;
-use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Tasks\TaskVisibility;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
@@ -32,7 +32,6 @@ use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\Billing\InvoiceLineDetail;
-use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\AgreementTermsPayload;
 use App\Support\Files\AttachmentListing;
 use Illuminate\Database\Eloquent\Builder;
@@ -100,7 +99,7 @@ class ClientPortalController extends Controller
      * internal agreement and recurring-item keys the model already hides are
      * not reintroduced here by a hand-built array.
      */
-    public function invoice(Request $request, ClientCompany $clientCompany, ClientInvoice $clientInvoice): Response
+    public function invoice(Request $request, ClientCompany $clientCompany, ClientInvoice $clientInvoice, InvoiceDocumentService $documents, InvoicePaymentOptionsReader $payments): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
@@ -110,33 +109,25 @@ class ClientPortalController extends Controller
 
         abort_if($invoice === null, 404);
 
-        $lines = ClientInvoiceLine::query()
-            ->where('workspace_id', $clientCompany->workspace_id)
-            ->where('client_invoice_id', $invoice->id)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get();
+        $workspace = $clientCompany->workspace;
 
         return Inertia::render('portal/invoice', [
             'attachment_panel' => app(AttachmentSharingNativeView::class)->portalLegacyIfReadable($this->fileViewer($request), $clientCompany, 'invoice', $invoice->public_id),
             'company' => AgentClientPresenter::identity($clientCompany),
             'home_href' => route('portal.show', $clientCompany, absolute: false),
-            'invoice' => AgentInvoicePresenter::portalDetails($invoice) + [
-                'pdf_url' => "/workspaces/{$clientCompany->workspace->public_id}/invoices/{$invoice->public_id}/pdf",
-            ],
-            // A linked invoice is collected in Square (#438): the client views
-            // or pays it on Square's own page, whose address comes only from
-            // Square's data. The invoice was already narrowed to this
-            // client's company and to what the client may see.
-            'square_page_url' => in_array($invoice->status, [InvoiceStatus::Void->value, InvoiceStatus::Disputed->value], true) ? null
-                : app(SquareInvoicePage::class)->forInvoice($clientCompany->workspace, $invoice)['url'] ?? null,
-            // The same itemisation the operator sees, narrowed to what the
-            // client may read: only entries carrying a client-safe description,
-            // and that text rather than the internal note. Withheld rather than
-            // blanked, so there is no row announcing work the client is not
-            // being told about.
-            'line_detail' => InvoiceLineDetail::forInvoice($invoice, InvoiceLineDetail::CLIENT),
-            'lines' => $lines->map(fn (ClientInvoiceLine $line): array => AgentInvoicePresenter::portalLine($line))->values()->all(),
+            'pdf_url' => "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/pdf",
+            // The same document the operator and the PDF show, for the client's
+            // audience: only entries carrying a client-safe description, and
+            // that text rather than the internal note, the still-deferred list
+            // only where the agreement allows it. Withheld rather than blanked,
+            // so there is no row announcing work the client is not being told
+            // about.
+            'document' => $documents->document($invoice, InvoiceLineDetail::CLIENT)->toArray(),
+            // What this workspace's connections can take payment with, as
+            // finished values or null (Stripe's intent route, Square's hosted
+            // page). A linked invoice is collected in Square (#438): its page
+            // address comes only from Square's data.
+            'payment' => $payments->for($workspace, $invoice),
         ]);
     }
 

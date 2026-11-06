@@ -9,10 +9,13 @@ use App\Models\SquareInvoiceSnapshot;
 use App\Models\SquareSyncRun;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Payments\ConnectionOrigin;
+use App\Support\Payments\PaymentProcessor;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,15 +43,29 @@ final class SquareHostedInvoicePageTest extends TestCase
         $client = $this->client($company);
         $portalUrl = route('portal.invoice', [$company, $invoice]);
         $this->actingAs($client)->get($portalUrl)->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('square_page_url', $url)
+            ->where('payment.square.href', $url)
             ->missing('square'));
         Http::assertNotSent(static fn ($request): bool => $request->method() !== 'GET');
 
         $snapshot = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv:0-fixture1')->firstOrFail();
         $snapshot->forceFill(['public_url' => 'https://untrusted.example.test/inv_fixture_1'])->save();
-        $this->actingAs($client)->get($portalUrl)->assertOk()->assertInertia(fn (Assert $page) => $page->where('square_page_url', null));
+        $this->actingAs($client)->get($portalUrl)->assertOk()->assertInertia(fn (Assert $page) => $page->where('payment.square', null));
         $snapshot->forceFill(['public_url' => null])->save();
         $this->assertNull(app(SquareInvoicePage::class)->forInvoice($workspace, $invoice), 'Never build a pay URL from a Square identifier.');
+    }
+
+    public function test_a_workspace_with_its_own_stripe_key_still_gets_squares_page_but_no_card_option(): void
+    {
+        [$workspace, , $company, $invoice] = $this->fixture();
+        config(['services.stripe.publishable_key' => 'pk_test_synthetic']);
+        app(WorkspacePaymentConnections::class)->connect($workspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, null, [
+            'external_account_id' => 'acct_synthetic', 'display_name' => 'Synthetic', 'environment' => 'test', 'secret' => 'sk_test_synthetic_key_0001',
+        ]);
+
+        $this->actingAs($this->client($company))->get(route('portal.invoice', [$company, $invoice]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('payment.stripe', null)
+                ->where('payment.square.href', 'https://squareupsandbox.com/pay-invoice/inv:0-fixture1'));
     }
 
     public function test_hosted_status_freshness_reports_the_latest_unchanged_observation(): void
@@ -93,7 +110,7 @@ final class SquareHostedInvoicePageTest extends TestCase
         $this->actingAs($client)->get(route('portal.invoice', [$company, $invoice]))->assertNotFound();
         $invoice->forceFill(['status' => 'issued'])->save();
         config(['services.square.access_token' => null]);
-        $this->actingAs($client)->get(route('portal.invoice', [$company, $invoice]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('square_page_url', null));
+        $this->actingAs($client)->get(route('portal.invoice', [$company, $invoice]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('payment.square', null));
         $this->connectSquare($workspace);
         $unlinked = $this->invoice($company, 'SYNTHETIC-UNLINKED');
         $this->assertNull(app(SquareInvoicePage::class)->forInvoice($workspace, $unlinked));

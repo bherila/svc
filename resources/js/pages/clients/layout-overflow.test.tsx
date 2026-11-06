@@ -12,6 +12,7 @@ import ClientTasks from '@/pages/clients/tasks';
 import Operations from '@/pages/operations';
 import Dashboard from '@/pages/workspaces/dashboard';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
+import { documentFixture } from '@/test/invoice-document-fixtures';
 import { dashboardRevenue } from '@/test/revenue-fixtures';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { clientOption, workspaceNavigation } from '@/test/workspace-navigation';
@@ -558,7 +559,7 @@ describe('client screens under data that does not fit', () => {
                         total_amount: 375000,
                     },
                 ]}
-                line_detail={{}}
+                document={documentFixture({ audience: 'operator' }, true)}
                 payments={[
                     {
                         id: 'payment-1',
@@ -610,7 +611,7 @@ describe('client screens under data that does not fit', () => {
                     balance_amount: 375000,
                 }}
                 lines={[]}
-                line_detail={{}}
+                document={documentFixture({ audience: 'operator' }, true)}
                 payments={[]}
                 timezone="America/Los_Angeles"
                 square={{

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountPreferencesController;
+use App\Http\Controllers\Billing\InvoiceProformaController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientTaskController;
@@ -150,6 +151,8 @@ Route::middleware('auth')->group(function (): void {
         )->name('clients.manage');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}', [ClientDirectoryController::class, 'agreement'])
             ->name('clients.agreement');
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}/proforma', [InvoiceProformaController::class, 'show'])
+            ->name('clients.proforma');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/proposals/{clientProposal}', [ClientDirectoryController::class, 'proposal'])
             ->name('clients.proposal');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}', [ClientDirectoryController::class, 'project'])

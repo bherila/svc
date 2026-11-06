@@ -206,8 +206,8 @@ final class AgentMcpInvoiceIssueTest extends TestCase
     {
         Mail::fake();
         [$user, $workspace, , $draft] = $this->fixture();
-        View::composer('invoices.show', function ($view): void {
-            if ($view->getData()['invoice']->status === 'paid') {
+        View::composer('invoices.document', function ($view): void {
+            if ($view->getData()['document']->status === 'paid') {
                 throw new \RuntimeException('Synthetic render failure.');
             }
         });

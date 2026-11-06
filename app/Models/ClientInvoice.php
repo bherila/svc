@@ -28,6 +28,7 @@ use RuntimeException;
  * @property CarbonImmutable|null $reopened_at
  * @property string|null $reopen_reason
  * @property CarbonImmutable|null $reissued_at
+ * @property CarbonImmutable|null $voided_at
  * @property CarbonImmutable|null $service_period_start
  * @property CarbonImmutable|null $service_period_end
  * @property string|null $invoice_kind

@@ -38,6 +38,7 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
+use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
@@ -619,6 +620,88 @@ if (getenv('SVC_LAYOUT_WORK_PORTAL') === '1') {
     ];
 }
 
+// The invoice document (--invoice-document): one issued invoice with every part
+// the document can print, all of it unbroken. Lines in four sections, a hours
+// statement with rollover and a catch-up, a still-deferred list the agreement
+// discloses, an appendix of entries (one with only an internal note, so the
+// client copy prints the generic label), a partial payment, and a Stripe
+// connection beside the Square one so the portal offers both. A second client
+// contact reads the portal; the active agreement lets the proforma preview.
+$documentPages = [];
+if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
+    $documentToday = app(WorkspaceClock::class)->today($workspace);
+    $project->forceFill(['is_visible_to_client' => true])->save();
+    $documentAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => str_repeat('SyntheticDocumentRetainer', 5),
+        'status' => 'expired', 'currency' => 'USD', 'starts_on' => $documentToday->subMonths(8)->startOfMonth()->toDateString(), 'ends_on' => $documentToday->subMonths(2)->toDateString(),
+        'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+        'show_deferred_backlog_to_client' => true, 'is_visible_to_client' => true,
+    ]);
+    // The agreement the proforma previews: active, with nothing billed under it yet.
+    $proformaAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => str_repeat('SyntheticProformaRetainer', 5),
+        'status' => 'active', 'currency' => 'USD', 'starts_on' => $documentToday->subMonths(1)->startOfMonth()->toDateString(),
+        'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+    ]);
+    $documentInvoice = ClientInvoice::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $documentAgreement->id,
+        'invoice_number' => 'DOC-SYNTHETIC-'.str_repeat('Z', 60), 'invoice_kind' => 'ad_hoc', 'status' => 'partially_paid', 'currency' => 'USD',
+        'issue_date' => $documentToday->subDays(5)->toDateString(), 'due_date' => $documentToday->addDays(25)->toDateString(),
+        'service_period_start' => $documentToday->subMonth()->startOfMonth()->toDateString(), 'service_period_end' => $documentToday->subMonth()->endOfMonth()->toDateString(),
+        'subtotal_amount' => 228_700, 'tax_amount' => 5_000, 'total_amount' => 233_700, 'paid_amount' => 50_000, 'balance_amount' => 183_700,
+        'is_visible_to_client' => true, 'reissued_at' => $documentToday->subDay()->toDateTimeString(),
+    ]);
+    $documentInvoice->forceFill([
+        'hours_statement' => (new InvoiceHoursStatement(...[
+            'cadence' => 'monthly', 'workStart' => '2026-10-01', 'workEnd' => '2026-10-31', 'retainerStart' => '2026-11-01', 'retainerEnd' => '2026-11-30',
+            'openingRetainerHours' => 10.0, 'openingRolloverHours' => 3.5, 'openingDeficitHours' => 1.0, 'openingExpiredHours' => 2.0, 'expiredWithinPeriodHours' => 0.0,
+            'ordinaryHours' => 14.5, 'ordinaryAppliedToWorkPool' => 12.5, 'ordinaryAppliedToNextRetainer' => 0.5, 'ordinaryBilledAtRate' => 1.5,
+            'subcontractorHours' => 2.0, 'deferredAppliedHours' => 1.25, 'deferredAppliedEntries' => 2, 'recarriedSettledHours' => 0.5,
+            'deferredBilledOnTerminationHours' => 0.0, 'catchUpBilledHours' => 1.0, 'minimumAvailabilityHours' => 2.0, 'minimumAvailabilityThresholdHours' => 8.0,
+            'interimBilledHours' => 0.25, 'rolledForwardHours' => 1.5, 'expiringHours' => 0.5, 'deficitCarriedForwardHours' => 0.0,
+            'deferredBacklogHours' => 3.5, 'deferredBacklogEntries' => 2, 'recarriedRemainingHours' => 0.25, 'nextRetainerHours' => 10.0,
+            'retainerSoldBy' => null, 'poolRemainingHours' => null, 'availableBeforeHours' => null,
+        ]))->toArray(),
+        'deferred_work_statement' => ['version' => 2, 'entries' => [
+            ['id' => 901, 'workedOn' => '2026-06-01', 'minutes' => 90, 'description' => str_repeat('SyntheticDeferredWork', 20), 'projectId' => $project->id],
+            ['id' => 902, 'workedOn' => '2026-06-15', 'minutes' => 120, 'description' => null, 'projectId' => $project->id],
+        ]],
+    ])->save();
+    $documentLines = [];
+    foreach ([
+        ['retainer', 'SyntheticRetainerLineWithoutBreaks'.str_repeat('R', 40), '1', 150_000, 0],
+        ['additional_hours', 'Additional hours '.str_repeat('SyntheticOverageDescription', 6), '2.5', 15_000, 5_000],
+        ['recurring_item', 'SyntheticHostingWithoutBreaks'.str_repeat('H', 40), '1', 10_000, 0],
+        ['expense', 'SyntheticStagingDatabaseWithoutBreaks'.str_repeat('E', 40), '1', 41_200, 0],
+        ['carried_deferred_applied', 'Deferred work applied (1.25 hrs)', '1', 0, 0],
+        ['credit', 'SyntheticCreditWithoutBreaks'.str_repeat('C', 40), '1', -5_000, 0],
+    ] as $order => [$type, $text, $quantity, $unit, $tax]) {
+        $documentLines[$type] = ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->id, 'client_invoice_id' => $documentInvoice->id, 'type' => $type, 'description' => $text,
+            'quantity' => $quantity, 'unit_amount' => $unit, 'tax_amount' => $tax, 'total_amount' => (int) round($unit * (float) $quantity) + $tax,
+            'sort_order' => $order + 1,
+        ]);
+    }
+    foreach ([[3, 90, 'SyntheticInternalNoteWithoutBreaks'.str_repeat('N', 40), false, null], [4, 60, 'Internal only', true, 'Reconciled the purchase order '.str_repeat('SyntheticClientNote', 8)], [5, 45, 'Internal only', false, null]] as [$day, $minutes, $note, $visible, $written]) {
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $owner->id,
+            'worked_on' => sprintf('2026-10-%02d', $day), 'minutes' => $minutes, 'description' => $note, 'is_billable' => true, 'is_deferred' => false,
+            'status' => 'approved', 'billing_rate_amount' => 15_000, 'currency' => 'USD', 'is_visible_to_client' => $visible, 'client_visible_description' => $written,
+        ]);
+        $documentLines['additional_hours']->timeEntries()->attach($entry->id, ['workspace_id' => $workspace->id]);
+    }
+    $documentConnections = app(WorkspacePaymentConnections::class);
+    $documentConnections->connect($workspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+        'external_account_id' => 'acct_synthetic_document', 'display_name' => 'Synthetic', 'environment' => 'test',
+        'secret' => 'sk_test_'.str_repeat('synthetic', 4).'0001', 'webhook_secret' => 'whsec_synthetic',
+    ]);
+    $documentPages = [
+        'document_invoice' => route('clients.invoice', [$workspace, $company, $documentInvoice], absolute: false),
+        'document_portal' => route('portal.invoice', [$company, $documentInvoice], absolute: false),
+        'document_proforma' => route('clients.proforma', [$workspace, $company, $proformaAgreement], absolute: false),
+    ];
+}
+
 $paymentPages = [];
 if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
     $connections = app(WorkspacePaymentConnections::class);
@@ -648,6 +731,7 @@ if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
 file_put_contents($runtime.'/fixture.json', json_encode([
     ...$paymentPages,
     ...$workPortal,
+    ...$documentPages,
     'selector' => route('workspaces.index', absolute: false),
     'workspace_create' => route('agent-api.v1.workspaces.store', absolute: false),
     'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),

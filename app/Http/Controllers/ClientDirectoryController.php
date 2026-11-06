@@ -30,6 +30,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
+use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Clients\CompanyProfile;
 use App\Services\Files\AttachmentAudience;
@@ -229,8 +230,35 @@ class ClientDirectoryController extends Controller
                 // The retainer meters read the capacity ledgers, which cost
                 // queries per agreement: they follow the first paint.
                 'this_period' => Inertia::defer(fn (): array => $revenue->thisPeriod($user, $workspace, $clientCompany)),
+                // "View proforma invoice", one finished URL per agreement that
+                // bills on a recurring cadence.
+                'proformas' => fn (): array => $this->proformas($workspace, $clientCompany),
             ] : []),
         ]);
+    }
+
+    /**
+     * The agreements whose next invoice can be previewed, with the finished URL
+     * of each proforma.
+     *
+     * @return list<array{id: string, title: string, href: string}>
+     */
+    private function proformas(Workspace $workspace, ClientCompany $company): array
+    {
+        return array_values(ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->where('status', 'active')
+            ->orderBy('starts_on')
+            ->orderBy('id')
+            ->get()
+            ->filter(static fn (ClientAgreement $agreement): bool => $agreement->billsOnARecurringCadence())
+            ->map(fn (ClientAgreement $agreement): array => [
+                'id' => (string) $agreement->public_id,
+                'title' => (string) $agreement->title,
+                'href' => route('clients.proforma', [$workspace, $company, $agreement], absolute: false),
+            ])
+            ->all());
     }
 
     /**
@@ -310,6 +338,7 @@ class ClientDirectoryController extends Controller
         InvoiceCorrectionService $corrections,
         AgentInvoicePresenter $invoices,
         AgentPaymentPresenter $payments,
+        InvoiceDocumentService $documents,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -484,12 +513,10 @@ class ClientDirectoryController extends Controller
                     ? null
                     : route('agent-api.v1.invoices.square-link.destroy', [$workspace, $clientInvoice->public_id], absolute: false),
             ],
-            // What each line is made of, keyed by line. The pivot has carried
-            // this since the billing workflow was written - a line billed from
-            // time attaches the entries it drew on - and nothing ever showed
-            // it, so a client reading "Deferred work items applied to retainer
-            // (12.50 hrs)" had no way to ask which work.
-            'line_detail' => InvoiceLineDetail::forInvoice($clientInvoice, InvoiceLineDetail::OPERATOR),
+            // The invoice as the one document the screen, the PDF and the proforma share:
+            // sections, totals, the hours statement, what is still deferred and the work
+            // behind each line, for the operator's audience.
+            'document' => $documents->document($clientInvoice, InvoiceLineDetail::OPERATOR)->toArray(),
             // Each line and payment exactly as the API presents it (#454): the
             // same presenter, so the screen and invoices.get / payments.list
             // cannot drift. The screen only adds what is its own - the hours

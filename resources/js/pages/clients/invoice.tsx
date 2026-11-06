@@ -1,7 +1,8 @@
 import { Head, Link } from '@inertiajs/react';
 import { useRef, useState } from 'react';
-import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
-import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
+import { InvoiceDocument } from '@/components/billing/invoice-document';
+import type { InvoiceDocumentData } from '@/components/billing/invoice-document';
+import { InvoicePaymentState } from '@/components/billing/invoice-rail';
 import { InvoiceReasonDialog } from '@/components/billing/invoice-reason-dialog';
 import { PaymentRemindersCard } from '@/components/billing/payment-reminders';
 import type { InvoiceRemindersState } from '@/components/billing/payment-reminders';
@@ -226,7 +227,7 @@ export default function ClientInvoiceDetail({
     corrections = [],
     invoice,
     lines,
-    line_detail: lineDetail,
+    document,
     payments,
     timezone,
     square = null,
@@ -255,8 +256,8 @@ export default function ClientInvoiceDetail({
     }[];
     invoice: CompanyInvoice;
     lines: InvoiceLine[];
-    /** The work behind each line, keyed by line id. Absent for a line with none. */
-    line_detail: Record<string, InvoiceLineItem[]>;
+    /** The invoice as the one document the screen, the PDF and the proforma share. */
+    document: InvoiceDocumentData;
     payments: InvoicePayment[];
     /** Who collects this invoice and its Square link; null for a viewer who cannot manage it. */
     square?: InvoiceSquareState | null;
@@ -1234,121 +1235,15 @@ export default function ClientInvoiceDetail({
                     </Card>
                 )}
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Totals</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">Total</dt>
-                                <dd className="tabular-nums">
-                                    {formatMoney(
-                                        invoice.total_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">Paid</dt>
-                                <dd className="tabular-nums">
-                                    {formatMoney(
-                                        invoice.paid_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                            <div className="flex gap-2">
-                                <dt className="text-muted-foreground">
-                                    Balance
-                                </dt>
-                                <dd className="tabular-nums">
-                                    {formatMoney(
-                                        invoice.balance_amount,
-                                        invoice.currency,
-                                    )}
-                                </dd>
-                            </div>
-                        </dl>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Lines</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {lines.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">
-                                This invoice has no lines.
-                            </p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            {/*
-                                             * The disclosure column, headed by
-                                             * nothing: a column of triangles is
-                                             * not something to name.
-                                             */}
-                                            <TableHead className="w-8" />
-                                            <TableHead className="min-w-64">
-                                                Description
-                                            </TableHead>
-                                            <TableHead>Type</TableHead>
-                                            <TableHead>Date</TableHead>
-                                            <TableHead>Quantity</TableHead>
-                                            <TableHead>Hours</TableHead>
-                                            <TableHead>Unit</TableHead>
-                                            <TableHead>Total</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {lines.map((line) => (
-                                            <InvoiceLineRows
-                                                key={line.id}
-                                                line={line}
-                                                items={lineDetail[line.id]}
-                                                columns={7}
-                                            >
-                                                <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
-                                                    {line.description}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {statusLabel(line.type)}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {formatDay(line.line_date)}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {formatQuantity(
-                                                        line.quantity,
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {line.hours ?? '—'}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {formatMoney(
-                                                        line.unit_amount,
-                                                        invoice.currency,
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="tabular-nums">
-                                                    {formatMoney(
-                                                        line.total_amount,
-                                                        invoice.currency,
-                                                    )}
-                                                </TableCell>
-                                            </InvoiceLineRows>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+                    <InvoiceDocument document={document} />
+                    <aside
+                        aria-label="Invoice status"
+                        className="grid grid-cols-1 gap-4"
+                    >
+                        <InvoicePaymentState document={document} />
+                    </aside>
+                </div>
 
                 <Card>
                     <CardHeader>

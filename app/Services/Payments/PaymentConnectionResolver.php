@@ -4,6 +4,7 @@ namespace App\Services\Payments;
 
 use App\Models\Workspace;
 use App\Models\WorkspacePaymentConnection;
+use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
 
 /**
@@ -110,5 +111,26 @@ final class PaymentConnectionResolver
     {
         return ! $this->connections->everConnected($workspace, $processor)
             && ! $this->connections->environmentMigrated($processor);
+    }
+
+    /**
+     * Whether this workspace's Stripe calls are made with the deployment's
+     * environment account: it has no connection and the environment may serve
+     * it, or its active connection is the environment one or borrows it.
+     *
+     * Only then does the deployment's publishable key belong to the account
+     * that creates a payment intent. A workspace on a key of its own would be
+     * handed a client secret its browser cannot confirm with that key.
+     */
+    public function stripeServedByEnvironment(Workspace $workspace): bool
+    {
+        $row = $this->connections->activeRow($workspace, PaymentProcessor::Stripe);
+        if ($row !== null) {
+            $source = $this->connections->credentialSource($row);
+
+            return $source !== null && $source->originEnum() === ConnectionOrigin::Environment;
+        }
+
+        return $this->environmentMayServe($workspace, PaymentProcessor::Stripe) && $this->stripeEnvironment() !== null;
     }
 }

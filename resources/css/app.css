@@ -207,3 +207,35 @@
         @apply font-sans;
     }
 }
+
+/*
+ * The invoice as paper: white sheet, dark ink, light rules, whatever the app
+ * theme is. The invoice component draws itself from the semantic tokens, so
+ * re-declaring the light ones on the sheet is all "Show as printed" and the
+ * print stylesheet need. The PDF is always this.
+ */
+.invoice-paper {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.205 0.02 265);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.205 0.02 265);
+    --muted: oklch(0.967 0.003 265);
+    --muted-foreground: oklch(0.446 0.03 257);
+    --border: oklch(0.872 0.01 258);
+    --destructive: oklch(0.505 0.213 27.518);
+    color-scheme: light;
+}
+
+@media print {
+    .invoice-sheet {
+        --background: oklch(1 0 0);
+        --foreground: oklch(0.205 0.02 265);
+        --card: oklch(1 0 0);
+        --card-foreground: oklch(0.205 0.02 265);
+        --muted: oklch(0.967 0.003 265);
+        --muted-foreground: oklch(0.446 0.03 257);
+        --border: oklch(0.872 0.01 258);
+        --destructive: oklch(0.505 0.213 27.518);
+        color-scheme: light;
+    }
+}
