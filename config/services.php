@@ -35,17 +35,22 @@ return [
         ],
     ],
 
+    // Stripe and Square credentials: each workspace stores its own key, encrypted,
+    // on its payment connection. The keys below are the legacy single-account
+    // path; they serve until `svc:payments:migrate-environment` has run, then
+    // are ignored and a follow-up removes them.
     'stripe' => [
         'publishable_key' => env('STRIPE_PUBLISHABLE_KEY'),
         'secret_key' => env('STRIPE_SECRET_KEY'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
-    // Read-only access to one seller's Square account (#438). svc never calls
-    // a Square write endpoint: the client allow-lists its reads. With no token,
-    // or no bound workspace, the feature is off everywhere and every Square
-    // operation is withheld. The token stays here: it is never stored in the
-    // database, logged, returned, or placed in an exception.
+    // Read-only access to a seller's Square account (#438). svc never calls a
+    // Square write endpoint: the client allow-lists its reads. Each workspace
+    // stores its own access token on its payment connection, encrypted; the
+    // token below is the legacy single-account path, honoured only until
+    // `svc:payments:migrate-environment` has run. With no token, or no bound
+    // workspace, a workspace without its own connection has no Square feature.
     'square' => [
         'access_token' => env('SQUARE_ACCESS_TOKEN'),
         'webhook_signature_key' => env('SQUARE_WEBHOOK_SIGNATURE_KEY'),

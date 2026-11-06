@@ -14,14 +14,14 @@ final class SquarePaymentMismatchAudit
     /** @return array{code: string, dashboard_url: string}|null */
     public function invoice(Workspace $workspace, ClientInvoice $invoice): ?array
     {
-        if ($invoice->workspace_id !== $workspace->id || ! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if ($invoice->workspace_id !== $workspace->id || ! SquareConfiguration::for($workspace)->isConfigured()) {
             return null;
         }
         $row = $this->query($workspace)->where('i.id', $invoice->id)->first(['l.square_invoice_id']);
         if ($row === null || ! is_string($row->square_invoice_id)) {
             return null;
         }
-        $url = SquareDashboardPage::invoice(SquareConfiguration::fromConfig()->environment, $row->square_invoice_id);
+        $url = SquareDashboardPage::invoice(SquareConfiguration::for($workspace)->environment, $row->square_invoice_id);
 
         return $url === null ? null : ['code' => 'paid_outside_square', 'dashboard_url' => $url];
     }
@@ -29,7 +29,7 @@ final class SquarePaymentMismatchAudit
     /** @return array{count: int, invoices: list<array<string, string>>, truncated: bool} */
     public function report(Workspace $workspace): array
     {
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             return ['count' => 0, 'invoices' => [], 'truncated' => false];
         }
         $query = $this->query($workspace);
@@ -37,7 +37,7 @@ final class SquarePaymentMismatchAudit
         $rows = (clone $query)->orderBy('i.id')->limit(100)->get(['i.public_id', 'c.public_id as company_public_id', 'l.square_invoice_id']);
         $items = [];
         foreach ($rows as $row) {
-            $url = SquareDashboardPage::invoice(SquareConfiguration::fromConfig()->environment, $row->square_invoice_id);
+            $url = SquareDashboardPage::invoice(SquareConfiguration::for($workspace)->environment, $row->square_invoice_id);
             if ($url !== null) {
                 $items[] = ['invoice_id' => $row->public_id, 'url' => route('clients.invoice', [$workspace, $row->company_public_id, $row->public_id]), 'code' => 'paid_outside_square', 'dashboard_url' => $url];
             }

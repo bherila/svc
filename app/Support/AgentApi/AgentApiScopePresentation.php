@@ -36,6 +36,7 @@ final class AgentApiScopePresentation implements DeclaresScopeImplications, Scop
         AgentApiScopes::PAYMENTS_READ,
         AgentApiScopes::EXPENSES_READ,
         AgentApiScopes::FINANCE_READ,
+        AgentApiScopes::REVENUE_READ,
     ];
 
     public function groups(): array
@@ -64,6 +65,7 @@ final class AgentApiScopePresentation implements DeclaresScopeImplications, Scop
                 AgentApiScopes::EXPENSES_READ,
                 AgentApiScopes::EXPENSES_WRITE,
                 AgentApiScopes::FINANCE_READ,
+                AgentApiScopes::REVENUE_READ,
             ]),
             new ScopeGroup('admin', 'Admin', [
                 AgentApiScopes::BILLING_DELIVER,
@@ -93,7 +95,7 @@ final class AgentApiScopePresentation implements DeclaresScopeImplications, Scop
             new ScopePreset(
                 'read_only',
                 'Read-only',
-                'Read your projects, tasks, notes and discussions, files, time, clients, proposals, invoices, payments, expenses and finance. Changes nothing.',
+                'Read your projects, tasks, notes and discussions, files, time, clients, proposals, invoices, payments, expenses, finance and revenue. Changes nothing.',
                 $this->readOnlyScopes(),
             ),
             new ScopePreset(

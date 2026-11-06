@@ -17,7 +17,9 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import AxeBuilder from '@axe-core/playwright';
 import { chromium, expect } from '@playwright/test';
+import { uiConsistencyRisks } from '../resources/js/test/ui-consistency.ts';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -35,6 +37,22 @@ const artifacts = path.join(
     path.basename(runtime),
 );
 const widths = [390, 820, 1440, 1920];
+// Screens built to the UX overhaul conventions: a token violation or a serious
+// axe finding fails the run here. Every other screen is measured and reported in
+// the "UI consistency / axe" column until its own slice lands - they predate the
+// conventions (several filled buttons, 12 px cards, low-contrast text) and a
+// screen leaves this reporting-only state by being added to the set, never by
+// loosening a rule.
+const uiGated = new Set([
+    'dashboard',
+    'workspace_clients',
+    'client_overview',
+    'workspace_invoices',
+    'workspace_time',
+    'workspace_finance',
+    'my_work',
+    'portal_home',
+]);
 const clientsOnly = process.argv.includes('--clients');
 const resourceChromeOnly = process.argv.includes('--resource-chrome');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
@@ -59,6 +77,14 @@ const expensesOnly = process.argv.includes('--expenses');
 const projectsOnly = process.argv.includes('--projects');
 const workspacesOnly = process.argv.includes('--workspaces');
 const credentialsOnly = process.argv.includes('--credentials');
+const paymentsOnly = process.argv.includes('--payments');
+const revenueOnly = process.argv.includes('--revenue');
+const workPortalOnly = process.argv.includes('--work-portal');
+const revenueScreens = new Set([
+    'dashboard',
+    'workspace_clients',
+    'client_overview',
+]);
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -169,9 +195,12 @@ try {
         TASK_PLANNING_DETAILS_ENABLED: taskLookupsOnly ? 'true' : 'false',
         SVC_LAYOUT_PROJECTS: projectsOnly ? '1' : '0',
         SVC_LAYOUT_WORKSPACES: workspacesOnly ? '1' : '0',
+        SVC_LAYOUT_PAYMENTS: paymentsOnly ? '1' : '0',
         SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
         SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
+        SVC_LAYOUT_REVENUE: revenueOnly ? '1' : '0',
+        SVC_LAYOUT_WORK_PORTAL: workPortalOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -452,6 +481,134 @@ try {
      * oversized index: unbroken labels, ids and descriptions, an Admin group,
      * and long saved credentials. Nothing is submitted.
      */
+    // The browser equivalent of horizontalOverflowRisks: nothing in main may
+    // reach past the viewport unless a scroller of its own holds it.
+    async function assertNoOverflowRisks(label, width) {
+        const risks = await page.evaluate(() => {
+            const out = [];
+
+            for (const element of document.querySelectorAll('main *')) {
+                const box = element.getBoundingClientRect();
+
+                if (box.width === 0 || box.right <= window.innerWidth + 1) {
+                    continue;
+                }
+
+                let held = false;
+
+                for (
+                    let parent = element.parentElement;
+                    parent && parent.tagName !== 'BODY';
+                    parent = parent.parentElement
+                ) {
+                    const overflow = getComputedStyle(parent).overflowX;
+
+                    if (overflow === 'auto' || overflow === 'scroll') {
+                        held = true;
+                        break;
+                    }
+                }
+
+                if (!held) {
+                    out.push(
+                        `${element.tagName}.${String(element.className).slice(0, 60)}`,
+                    );
+                }
+            }
+
+            return out;
+        });
+
+        if (risks.length > 0) {
+            failures.push(
+                `${label} at ${width}px: ${risks.slice(0, 5).join('; ')}`,
+            );
+        }
+    }
+
+    // Workspace payment connections: every state, with unbroken names, the
+    // masked key and a validation refusal. No processor is ever asked.
+    async function checkPayments(width) {
+        const fullKey = `rk_live_${'synthetic'.repeat(6)}a1b2`;
+        const states = [
+            ['disconnected', 'payments'],
+            ['stripe-connected', 'payments_stripe'],
+            ['square-connected', 'payments_square'],
+            ['reused', 'payments_reused'],
+        ];
+
+        for (const [state, key] of states) {
+            await page.goto(origin + fixture[key]);
+            await expect(
+                page.locator('main').getByRole('heading', {
+                    name: 'Payment connections',
+                }),
+            ).toBeVisible();
+
+            if (state === 'disconnected') {
+                await expect(
+                    page.getByLabel('Stripe restricted key'),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Square access token'),
+                ).toBeVisible();
+            } else if (state === 'stripe-connected') {
+                await expect(
+                    page.locator('[data-test="payment-stripe-hint"]'),
+                ).toHaveText('rk_live_…a1b2');
+            } else if (state === 'square-connected') {
+                await expect(
+                    page.locator('[data-test="payment-square-hint"]'),
+                ).toHaveText('…wxyz');
+                await expect(page.getByText('L'.repeat(64))).toBeVisible();
+            } else {
+                await expect(page.getByText('Shared from')).toBeVisible();
+            }
+
+            // The key never reaches the browser, only its masked hint.
+            expect(await page.content()).not.toContain(fullKey);
+            await capture('payments', state, width);
+            await assertNoOverflowRisks(`payments/${state}`, width);
+        }
+
+        // The reuse list, open, with its unbroken workspace names.
+        await page.goto(origin + fixture.payments);
+        await page.locator('#stripe-reuse').click();
+        await expect(
+            page.getByRole('listbox').getByRole('option').first(),
+        ).toBeVisible();
+        // The popup closes when the page is resized for a full-page capture, so
+        // measure it where it is and take a viewport screenshot of it.
+        const popup = await page.getByRole('listbox').boundingBox();
+
+        if (!popup || popup.x < 0 || popup.x + popup.width > width) {
+            failures.push(
+                `payments/reuse-open at ${width}px: the reuse list reaches outside the viewport.`,
+            );
+        }
+
+        await page.screenshot({
+            path: path.join(artifacts, `payments-reuse-open-${width}.png`),
+            animations: 'disabled',
+        });
+        await assertNoOverflowRisks('payments/reuse-open', width);
+        await page.keyboard.press('Escape');
+
+        await page.goto(origin + fixture.payments);
+        await page
+            .getByLabel('Stripe restricted key')
+            .fill(`pk_live_${'x'.repeat(48)}`);
+        await page
+            .locator('[data-test="payment-stripe"]')
+            .getByRole('button', { name: 'Connect', exact: true })
+            .click();
+        await expect(
+            page.locator('[data-test="payment-stripe"]').getByRole('alert'),
+        ).toBeVisible();
+        await capture('payments', 'validation-error', width);
+        await assertNoOverflowRisks('payments/validation-error', width);
+    }
+
     async function checkCredentials(width) {
         const section = page.locator('main');
         await expect(
@@ -609,6 +766,113 @@ try {
         await page.unroute('**/account/api-credentials', handler);
     }
 
+    // "My work" and the portal home (--work-portal). Both are read as the
+    // people they are for: a member who is not an owner or admin, and a client
+    // contact. The member's page must carry no price however it is read; the
+    // client's page must carry the Pay button, the estimate and nothing that is
+    // workspace-internal, and no approval queue (slice 8).
+    async function checkWorkPortal(screen, width) {
+        await page.waitForLoadState('networkidle');
+
+        if (screen === 'my_work') {
+            await expect(
+                page.getByRole('heading', { name: 'My work', level: 1 }),
+            ).toBeVisible();
+            await expect(page.getByRole('region', { name: 'Overdue' })).toBeVisible();
+            await expect(
+                page.getByRole('combobox', { name: /^Status of / }).first(),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('link', { name: 'My work', exact: true }).first(),
+            ).toHaveAttribute('aria-current', 'page').catch(() => undefined);
+            const body = await page.locator('body').innerText();
+
+            for (const forbidden of ['987654', '765432', '9,876', '7,654', 'Invoices', 'Finance', 'Revenue']) {
+                if (body.includes(forbidden)) {
+                    failures.push(`my_work at ${width}px prints "${forbidden}".`);
+                }
+            }
+
+            // The raw stored status never reaches a reader.
+            for (const raw of ['in_progress', 'invoiced_', 'billing_']) {
+                if (body.includes(raw)) {
+                    failures.push(`my_work at ${width}px prints the stored value "${raw}".`);
+                }
+            }
+        }
+
+        if (screen === 'portal_home') {
+            await expect(page.locator('[data-slot="card-title"]', { hasText: 'Balance' })).toBeVisible();
+            await expect(
+                page.getByRole('link', { name: /^Pay .*, invoice PAY-SYNTHETIC/ }),
+            ).toHaveAttribute('href', 'https://squareupsandbox.com/pay-invoice/inv_fixture_pay');
+            await expect(
+                page.getByRole('region', { name: 'Next invoice (estimate)' }),
+            ).toBeVisible();
+            await expect(page.getByText(/is still deferred|of work is still deferred/)).toBeVisible();
+            await expect(page.getByText(/to approve/i)).toHaveCount(0);
+            const body = await page.locator('body').innerText();
+
+            for (const forbidden of ['987654', 'Synthetic internal note', 'subcontractor']) {
+                if (body.toLowerCase().includes(forbidden.toLowerCase())) {
+                    failures.push(`portal_home at ${width}px prints "${forbidden}".`);
+                }
+            }
+        }
+    }
+
+    // The revenue screens draw after the first paint: the chart is a lazy
+    // chunk, and the retainer meters are a deferred prop. Wait for both so a
+    // screenshot shows the screen a reader sees, not its skeleton.
+    async function settleRevenueScreen(screen) {
+        await page.waitForLoadState('networkidle');
+
+        if (screen === 'dashboard' || screen === 'client_overview') {
+            await expect(
+                page.locator('[data-slot="revenue-chart-table"]'),
+            ).toBeAttached();
+            await expect(page.locator('.recharts-surface').first()).toBeVisible();
+        }
+
+        if (screen === 'workspace_clients') {
+            await expect(page.locator('[data-slot="roster"]')).toBeVisible();
+            await expect(
+                page.locator('[data-slot="retainer-meter"]:visible').first(),
+            ).toBeVisible();
+            // The meters are a deferred read: wait for it, not its placeholder.
+            await expect(page.getByText('Reading hours…')).toHaveCount(0);
+        }
+
+        if (screen === 'client_overview') {
+            await expect(
+                page.locator('[data-slot="this-period"] [data-slot="retainer-meter"]').first(),
+            ).toBeVisible();
+        }
+    }
+
+    async function captureRevenueStates(screen, width) {
+        if (screen === 'dashboard' || screen === 'client_overview') {
+            await page.getByRole('button', { name: 'Show as table' }).click();
+            await expect(
+                page.locator('[data-slot="revenue-chart-table"]'),
+            ).not.toHaveClass(/sr-only/);
+            await capture(screen, 'table', width, false);
+            await page.getByRole('button', { name: 'Hide table' }).click();
+            await page.getByRole('button', { name: 'Collected' }).click();
+            await expect(
+                page.getByRole('button', { name: 'Collected' }),
+            ).toHaveAttribute('aria-pressed', 'true');
+            await page.waitForLoadState('networkidle');
+            await capture(screen, 'collected', width, false);
+        }
+
+        if (screen === 'workspace_clients') {
+            await page.getByRole('searchbox', { name: 'Search clients' }).fill('Synthetic');
+            await page.waitForLoadState('networkidle');
+            await capture(screen, 'searched', width, false);
+        }
+    }
+
     async function capture(screen, state, width, measuredOnly = false) {
         await page.evaluate(() => document.fonts.ready);
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -621,6 +885,23 @@ try {
                 viewport: window.innerWidth,
                 documentWidth: document.documentElement.scrollWidth,
                 navbarHeight: rect?.height ?? null,
+                navbarBoxes: row
+                    ? Array.from(row.children).map((child) => {
+                          const bounds = child.getBoundingClientRect();
+
+                          return {
+                              label: (
+                                  child.getAttribute('aria-label') ||
+                                  child.textContent ||
+                                  child.tagName
+                              )
+                                  .trim()
+                                  .slice(0, 24),
+                              left: Math.round(bounds.left),
+                              right: Math.round(bounds.right),
+                          };
+                      })
+                    : [],
                 navbarChildCenters: row
                     ? Array.from(row.children)
                           .map((child) => {
@@ -640,6 +921,22 @@ try {
             metrics.navbarHeight === 48 &&
             centers.length > 0 &&
             Math.max(...centers) - Math.min(...centers) <= 1;
+        // Radius, padding and font size come from the cascade, so they are
+        // checked here and not in jsdom: cards against the spec tokens, one
+        // filled button per page, no bordered link in a card, every action
+        // button named. Advisory risks (a text button without an icon) are
+        // reported and do not fail. Then axe: serious or critical fails.
+        const uiRisks = await uiConsistencyRisks(page);
+        const uiErrors = uiRisks.filter((risk) => risk.severity === 'error');
+        const axe = await new AxeBuilder({ page }).analyze();
+        const axeSerious = axe.violations
+            .filter((violation) =>
+                ['serious', 'critical'].includes(violation.impact ?? ''),
+            )
+            .map(
+                (violation) =>
+                    `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes)`,
+            );
         const screenshot = `${screen}-${state}-${width}.png`;
         await page.screenshot({
             path: path.join(artifacts, screenshot),
@@ -653,6 +950,8 @@ try {
             measuredOnly,
             passes,
             ...metrics,
+            ui: uiRisks,
+            axe: axeSerious,
             screenshot,
         });
 
@@ -661,12 +960,31 @@ try {
                 `${screen}/${state} at ${width}px: overflow or navbar no longer one row.`,
             );
         }
+
+        if (!measuredOnly && uiGated.has(screen) && uiErrors.length > 0) {
+            failures.push(
+                `${screen}/${state} at ${width}px: UI consistency: ${uiErrors
+                    .slice(0, 5)
+                    .map((risk) => `${risk.rule} ${risk.detail}`)
+                    .join('; ')}`,
+            );
+        }
+
+        if (!measuredOnly && uiGated.has(screen) && axeSerious.length > 0) {
+            failures.push(
+                `${screen}/${state} at ${width}px: axe: ${axeSerious.join('; ')}`,
+            );
+        }
     }
 
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of invoiceSendOnly
+        for (const screen of paymentsOnly
+            ? ['payments']
+            : workPortalOnly
+            ? ['my_work', 'portal_home']
+            : invoiceSendOnly
             ? ['invoice']
             : invoiceHistoryOnly
               ? ['draft_time']
@@ -732,7 +1050,13 @@ try {
                                                       'reminder_invoice',
                                                       'settings',
                                                   ]
-                                                : timeOnly
+                                                : revenueOnly
+                                                  ? [
+                                                        'dashboard',
+                                                        'workspace_clients',
+                                                        'client_overview',
+                                                    ]
+                                                  : timeOnly
                                                   ? ['time', 'draft_time']
                                                   : backlogOnly
                                                     ? ['agreement']
@@ -747,6 +1071,11 @@ try {
                                                           'proposal',
                                                           'proposal_acceptance',
                                                           'operations',
+                                                          'dashboard',
+                                                          'workspace_clients',
+                                                          'workspace_invoices',
+                                                          'workspace_time',
+                                                          'workspace_finance',
                                                           'time',
                                                           'expenses',
                                                           'receipts',
@@ -808,6 +1137,12 @@ try {
 
             if (credentialsOnly) {
                 await checkCredentials(width);
+
+                continue;
+            }
+
+            if (paymentsOnly) {
+                await checkPayments(width);
 
                 continue;
             }
@@ -1691,8 +2026,20 @@ try {
                     .fill('SyntheticLayoutTitle'.repeat(8));
             }
 
+            if (revenueScreens.has(screen)) {
+                await settleRevenueScreen(screen);
+            }
+
+            if (workPortalOnly) {
+                await checkWorkPortal(screen, width);
+            }
+
             if (screen !== 'task_editor') {
                 await capture(screen, 'initial', width, false);
+            }
+
+            if (revenueOnly) {
+                await captureRevenueStates(screen, width);
             }
 
             if (invoiceSendOnly) {
@@ -3294,14 +3641,16 @@ try {
     );
     const rows = results.map(
         (row) =>
-            `| ${row.screen}/${row.state} | ${row.width} | ${row.documentWidth} | ${row.navbarHeight} | ${row.measuredOnly ? 'measurement only' : row.passes ? 'pass' : 'FAIL'} | [image](${row.screenshot}) |`,
+            `| ${row.screen}/${row.state} | ${row.width} | ${row.documentWidth} | ${row.navbarHeight} | ${row.measuredOnly ? 'measurement only' : row.passes ? 'pass' : 'FAIL'} | ${row.ui.filter((risk) => risk.severity === 'error').length} errors, ${row.ui.filter((risk) => risk.severity === 'advisory').length} advisory / ${row.axe.length} axe | [image](${row.screenshot}) |`,
     );
     writeFileSync(
         path.join(artifacts, 'report.md'),
         [
             '# Browser layout evidence',
             '',
-            resourceChromeOnly
+            paymentsOnly
+                ? 'Workspace payment connections (disconnected, Stripe connected with the masked key, Square connected, a reused connection and a validation refusal) with unbroken workspace, account and location names, at every required width. No processor is asked.'
+                : resourceChromeOnly
                 ? 'Synthetic invoice and native/portal proposal screens use the shared shell without page-owned back links, at every required width. Interactive proposal signing remains visible; no writes are submitted.'
                 : invoiceSendOnly
                   ? 'Invoice send conflict, uncertain replay and known-outcome refresh recovery at every required width; synthetic mail outcome adapter, with actual delivery proved by InvoiceSendOutcomeTest.'
@@ -3331,11 +3680,11 @@ try {
                                           ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
                                           : engagementOnly
                                             ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses/operations are asserted.',
+                                            : 'Synthetic local fixtures only. Invoice review/settings/proposal/operations/dashboard/time/expenses are asserted.',
 
             '',
-            '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
-            '| --- | --- | --- | --- | --- | --- |',
+            '| Page/state | Viewport | Document width | Navbar height | Gate | UI consistency / axe | Screenshot |',
+            '| --- | --- | --- | --- | --- | --- | --- |',
             ...rows,
             '',
             '## Manual screenshot review',

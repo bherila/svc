@@ -76,6 +76,21 @@ final class AccountingReadsTest extends TestCase
         $this->assertSame(3, AccountingInvoiceEntry::query()->where('workspace_id', $this->workspace->id)->count());
     }
 
+    public function test_accounting_reads_arrive_with_the_finance_toolset_under_progressive_discovery(): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::FINANCE_READ]);
+        $session = $this->initializeProgressive();
+        $tools = ['finance.cash_income.list', 'finance.income.yearly', 'finance.invoice_lines.list'];
+        $this->assertSame([], array_intersect($tools, $this->toolNames($session)));
+
+        $enable = $this->messages($this->mcp(['jsonrpc' => '2.0', 'id' => 100, 'method' => 'tools/call', 'params' => ['name' => 'toolsets.enable', 'arguments' => ['toolsets' => ['finance']]]], $session));
+        $this->assertFalse($enable[array_key_last($enable)]['result']['isError'] ?? false, json_encode($enable));
+        $this->assertSame($tools, array_values(array_intersect($tools, $this->toolNames($session))));
+
+        $call = $this->callTool($session, 'finance.income.yearly', ['workspace_id' => $this->workspace->public_id, 'year' => 2026]);
+        $this->assertFalse($call['result']['isError'], json_encode($call));
+    }
+
     public function test_cash_income_and_yearly_csv_json_reconcile_with_existing_finance_reads_and_mcp(): void
     {
         $invoice = $this->invoice();

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountPreferencesController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientTaskController;
@@ -10,11 +11,17 @@ use App\Http\Controllers\HistoricalLibraryController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
+use App\Http\Controllers\Payments\WorkspacePaymentConnectionController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SquareExploreController;
+use App\Http\Controllers\WorkspaceDashboardController;
 use App\Http\Controllers\WorkspaceEntryController;
+use App\Http\Controllers\WorkspaceFinanceController;
+use App\Http\Controllers\WorkspaceInvoiceListController;
+use App\Http\Controllers\WorkspaceMyWorkController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
+use App\Http\Controllers\WorkspaceTimeQueueController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PublishApiDocumentation;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
@@ -52,6 +59,11 @@ Route::middleware('auth')->group(function (): void {
     // question this screen asks has exactly one answer per row.
     Route::get('/app', WorkspaceSelectorController::class)->name('workspaces.index');
 
+    // The caller's own display preferences (how time is read). No id in the
+    // path: it can only ever write the signed-in person's row.
+    Route::patch('/account/preferences', [AccountPreferencesController::class, 'update'])
+        ->name('account.preferences.update');
+
     // What the command palette asks as you type. Throttled rather than
     // debounced-and-trusted: the debounce lives in the browser and a browser
     // is not where a rate limit belongs.
@@ -80,6 +92,31 @@ Route::middleware('auth')->group(function (): void {
     // inside the Inertia middleware. Attaching it here is also what keeps the
     // switcher's queries off the screens that show no switcher - the workspace
     // selector, webhooks, PDFs and downloads.
+    // The workspace tier: Dashboard (the landing page), the cross-client Invoices
+    // and Time lists, and Finance. The binding resolves the workspace through
+    // TenantRouteBinding, so a workspace this person is not in is a 404; each
+    // controller then authorizes its own audience (members for the Dashboard,
+    // owners and admins for the rest).
+    Route::get('/workspaces/{workspace}/dashboard', WorkspaceDashboardController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.dashboard');
+    Route::get('/workspaces/{workspace}/my-work', WorkspaceMyWorkController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.my-work');
+    Route::get('/workspaces/{workspace}/all/invoices', WorkspaceInvoiceListController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.invoices');
+    Route::get('/workspaces/{workspace}/all/time', WorkspaceTimeQueueController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.time');
+    Route::get('/workspaces/{workspace}/finance', WorkspaceFinanceController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.finance');
+    // Operations, kept exactly as it was: until the client overview and invoice
+    // lanes re-home each of its tools (draft proposals, proposal send, agreement
+    // activation, billing schedules, the per-project time form, per-client file
+    // panels) it is the only UI for them. Reached from the settings menu as
+    // "Operations (classic tools)"; no tab is lit.
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.operations');
@@ -91,6 +128,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/workspaces/{workspace}/history', [HistoricalLibraryController::class, 'index'])->name('history.index');
         Route::get('/workspaces/{workspace}/history/{historicalEntry}', [HistoricalLibraryController::class, 'show'])->name('history.show');
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');
+        Route::get('/workspaces/{workspace}/payments', [WorkspacePaymentConnectionController::class, 'show'])->name('workspaces.payments');
         Route::get('/workspaces/{workspace}/square', SquareExploreController::class)->name('square.explore');
         Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
@@ -134,6 +172,12 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/portal/{clientCompany}/proposals/{clientProposal}', [ClientPortalController::class, 'proposal'])
             ->name('portal.proposal');
     });
+
+    // Payment keys are entered here by an owner or admin and nowhere else; the
+    // controller checks the role again, and CSRF protection is the web group's.
+    Route::post('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'store'])->name('workspaces.payments.store');
+    Route::post('/workspaces/{workspace}/payments/{processor}/reuse', [WorkspacePaymentConnectionController::class, 'reuse'])->name('workspaces.payments.reuse');
+    Route::delete('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'destroy'])->name('workspaces.payments.destroy');
 
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
 

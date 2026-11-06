@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Models\Concerns\HasPublicId;
+use App\Support\Time\DurationStyle;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -26,13 +27,14 @@ use Laravel\Sanctum\HasApiTokens;
  * @property Carbon|null $updated_at
  * @property int|null $last_workspace_id
  * @property int|null $last_client_company_id
+ * @property DurationStyle $duration_style How this person reads time; invoices ignore it.
  *
  * Where this person was last working. Hidden and deliberately not fillable:
  * they are internal ids, they are written only by `WorkspaceReturnPoint` and
  * only after authorization, and serializing them would put one tenant's
  * numeric ids into another surface's JSON.
  */
-#[Fillable(['public_id', 'name', 'email', 'password'])]
+#[Fillable(['public_id', 'name', 'email', 'password', 'duration_style'])]
 #[Hidden([
     'id', 'password', 'remember_token', 'oauth_provider', 'oauth_subject',
     'last_workspace_id', 'last_client_company_id',
@@ -41,6 +43,14 @@ class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasPublicId, Notifiable;
+
+    /**
+     * The database default, mirrored so a model that has not been refreshed
+     * since `create()` reads the same value the row holds.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = ['duration_style' => 'decimal'];
 
     /**
      * Get the attributes that should be cast.
@@ -52,6 +62,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'duration_style' => DurationStyle::class,
         ];
     }
 

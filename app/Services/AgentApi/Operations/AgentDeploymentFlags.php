@@ -8,6 +8,7 @@ use App\Services\Square\SquareConfiguration;
 use App\Support\AgentApi\FirstPartySession;
 use Bherila\McpLaravelBridge\Capabilities\ConfigDeploymentFlags;
 use Bherila\McpLaravelBridge\Capabilities\DeploymentFlags;
+use Illuminate\Container\Container;
 
 /**
  * The installation switches an operation can depend on.
@@ -110,6 +111,14 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::PORTAL_INVITATIONS => 'SVC_PORTAL_INVITATIONS_ENABLED',
         self::PORTAL_INVITATION_WRITES => 'SVC_PORTAL_INVITATIONS_ENABLED',
     ];
+
+    /**
+     * The container key under which the application binds how to learn whether
+     * any workspace has its own Square connection (a closure returning bool).
+     * Nothing binds it in a bare container, as in unit tests, so Square
+     * availability is then the environment's alone and no query is made here.
+     */
+    public const string SQUARE_CONNECTIONS_PROBE = 'svc.square.any-connection';
 
     private function __construct(
         private readonly ConfigDeploymentFlags $cutovers,
@@ -217,7 +226,13 @@ final class AgentDeploymentFlags implements DeploymentFlags
         }
 
         if ($flag === self::SQUARE) {
-            return SquareConfiguration::fromConfig()->isConfigured();
+            // Pure configuration answers first; whether any workspace has its own
+            // connection is injected by the application, never queried here, so
+            // flag and contract evaluation stay free of the database.
+            $container = Container::getInstance();
+
+            return SquareConfiguration::fromConfig()->isConfigured()
+                || ($container->bound(self::SQUARE_CONNECTIONS_PROBE) && $container->make(self::SQUARE_CONNECTIONS_PROBE)());
         }
         if (self::isMcpSwitch($flag)) {
             if ($this->mcp === null) {

@@ -25,13 +25,23 @@ it, so the outer gutter never moves.
 
 ## The navbar is one row, and never wraps
 
-    ⏻ Workspace  [Client ▾]  Client Home  Invoices  Time  Tasks     ⌘K  ☾  ⚙
+Two tiers, one row. The workspace tier is the row with no client selected; picking a
+client drops into the client tier, where the same row names the client.
+
+    ⏻ Workspace   Dashboard  Clients  Invoices  Time  Finance            ⌕  ?  ☾  ⚙
+    ⏻ Workspace › Acme ▾ ⋯  Overview  Agreements  Invoices  Time  Tasks  Files   ⌕  ?  ☾  ⚙
 
 Read left to right it is a sentence about where the reader is: which tenant,
 which client, then which part of that client — then, pushed to the far end, the
 things that mean the same thing whatever the client is. An item whose meaning
 changes when the switcher does belongs on the left; everything else belongs on
 the right.
+
+The tab set for each tier is chosen on the server per role and arrives as
+finished URLs (`WorkspaceNavigationFactory`); a null is a tab that is not
+rendered. The switcher opens with "All clients", which goes back up to the
+Dashboard, and the menu beside the client's name (⋯) holds its settings and the
+modules that are not tabs (Expenses, Notes, Discussions).
 
 The workspace is named, and the exit control sits to its left. This was an
 "SVC" wordmark that quietly returned to the selector, and it failed twice over:
@@ -196,10 +206,37 @@ For the Square explore and linked operator/portal invoice pages, dispatch the
 mirrored hosted payment URL. Download and inspect every screenshot. The same
 focused harness is `node scripts/check-layout.mjs --square`.
 
+For the workspace payment connections page (`/workspaces/{workspace}/payments`), run
+`node scripts/check-layout.mjs --payments`. It covers the disconnected, Stripe
+connected (masked key only), Square connected, reused and validation-refusal
+states, plus the open reuse list, at 390, 820, 1440 and 1920 pixels with unbroken
+workspace, account and location names, and asserts the key never reaches the
+page. No processor is asked. Read every screenshot afterwards.
+
 For payment reminders, dispatch with `reminder_layout: true`: its
 `reminder-layout` artifact covers the operator invoice with a reminder log of
 oversized recipients and reasons, the send confirmation, and the client cadence
 switch on settings. Locally, `node scripts/check-layout.mjs --reminders`.
+
+For the Dashboard, client roster and client overview, run
+`node scripts/check-layout.mjs --revenue`. It seeds seven clients with unbroken
+names, agreements whose titles have no break, millions-priced invoices and
+agreements ending inside the projection window, waits for the lazy chart and
+the deferred retainer meters, and captures each screen at every required width
+with the chart's table open, the Collected basis chosen, and the roster
+searched. The build fetches fonts, so build first with the proxy's CA
+(`NODE_EXTRA_CA_CERTS`) and pass `--skip-build` where the harness's own
+sanitized build environment cannot reach the network.
+
+For "My work" and the portal home, run `node scripts/check-layout.mjs --work-portal`.
+It seeds a member who is not an owner or admin (a contributor on one project, a
+manager on another) with tasks in every due-date group and time in every review
+state, all priced in the rows so a rate reaching the page would show, and a client
+contact with an overdue invoice linked to a hosted payment page, an agreement with
+a recurring service, hours past the retainer, disclosed deferred work and approved
+time, all with unbroken names. Each page is read as the person it is for, asserts
+no price on My work and no workspace-internal text or approval queue on the portal,
+and is gated by the UI consistency and axe checks at every required width.
 
 For the deferred backlog on the operator agreement page (#366), run
 `node scripts/check-layout.mjs --deferred-backlog`. It seeds a separate

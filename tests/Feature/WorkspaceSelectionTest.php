@@ -213,25 +213,26 @@ final class WorkspaceSelectionTest extends TestCase
                 WorkspaceEntryController::rememberedClientKey($workspace) => $foreignCompany->public_id,
             ])
             ->get("/workspaces/{$workspace->public_id}")
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('workspaces/enter'));
+            // Not into the foreign company, and not into either of its own:
+            // the workspace tier's front page.
+            ->assertRedirect("/workspaces/{$workspace->public_id}/dashboard");
     }
 
-    public function test_several_clients_and_no_history_asks_rather_than_guessing(): void
+    public function test_several_clients_and_no_history_lands_on_the_dashboard_rather_than_guessing(): void
     {
         $owner = User::factory()->create();
         $workspace = $this->workspace('Synthetic Choose', 'synthetic-choose', $owner);
         $this->company($workspace, 'Aa Synthetic Choose Client', 'aa-choose');
         $this->company($workspace, 'Zz Synthetic Choose Client', 'zz-choose');
 
+        // No client is chosen for them. The Dashboard has the Clients tab, and
+        // its navigation lists both clients with nothing selected.
         $this->actingAs($owner)
             ->get("/workspaces/{$workspace->public_id}")
+            ->assertRedirect("/workspaces/{$workspace->public_id}/dashboard");
+        $this->get("/workspaces/{$workspace->public_id}/dashboard")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('workspaces/enter')
-                ->where('has_clients', true)
-                ->where('can_create_client', true)
-                // The switcher that answers the question is already on screen.
                 ->has('workspaceNavigation.clients', 2)
                 ->where('workspaceNavigation.current_client_id', null));
     }

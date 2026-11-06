@@ -558,6 +558,119 @@ stored payouts are unchanged and the charge pass revisits only payments still
 missing facts. `--workspace` keeps every write to one workspace. Output is
 counts only.
 
+## Payment connections per workspace
+
+A workspace is the business that gets paid, so its payment credentials belong to
+it: not to the deployment and not to a client. Each workspace stores its own
+Stripe restricted key and its own Square access token, entered once by an owner
+or admin on `/workspaces/{workspace}/payments`. There is no Stripe Connect and
+no OAuth; the `PaymentConnectionAdapter` interface is the seam a Connect or
+OAuth adapter would implement later, and nothing outside the adapters knows how a
+credential was obtained.
+
+### Storage
+
+`workspace_payment_connections`, one **active** row per workspace and processor
+(a unique index on `workspace_id, active_slot`; the slot is null once revoked):
+
+| Column | Meaning |
+| --- | --- |
+| `processor` | `stripe` or `square` (`PaymentProcessor`) |
+| `external_account_id` | Stripe `acct_...`, or the Square merchant id; read from the processor when the key is saved |
+| `secret`, `webhook_secret` | the key and the secret that signs this workspace's webhooks; **encrypted** model casts, hidden from every serialization, cleared on revoke |
+| `secret_hint` | what the browser may see: `rk_live_…a1b2` |
+| `webhook_endpoint_id` | the Stripe endpoint svc created (`we_...`), so it can be deleted; null when svc did not create it |
+| `endpoint_token` | the opaque, random 40-character identifier in this connection's webhook URL; never a sequential id |
+| `location_id`, `environment` | Square location; `live`/`test` (Stripe) or `production`/`sandbox` (Square) |
+| `origin` | `entered`, `reused` or `environment` (`ConnectionOrigin`) |
+| `reuses_connection_id` | for `reused` rows, the connection borrowed |
+| `connected_by_user_id`, `connected_at`, `revoked_at`, `revoked_by_user_id` | who and when |
+
+### Saving a key
+
+Only a workspace owner or admin may save, reuse or remove a connection (a member
+or a stranger gets 403, and the request never reaches the processor). The route
+is a CSRF-protected web route. On every save:
+
+1. the key is re-validated with a cheap read (`GET /v1/account` for Stripe,
+   `GET /v2/locations` for Square), so a bad key stores nothing and leaves the
+   earlier one in place;
+2. for Stripe, svc creates the workspace's webhook endpoint through the API,
+   pointing at `APP_URL/api/webhooks/stripe/{endpoint_token}`, and stores the
+   signing secret Stripe returns. For Square the owner registers that URL in the
+   Square dashboard (`APP_URL/api/webhooks/square/{endpoint_token}`) and enters
+   the signature key it shows;
+3. the row is written in one transaction. **Replacing or removing a key deletes
+   the old Stripe endpoint only after that transaction commits** (`DB::afterCommit`,
+   never a transaction-level test), with the old key, and a failure to delete is
+   swallowed because the local change already stands. Nothing runs on a queue.
+
+A key is never logged, never returned to the browser or the API, and never part of
+`toArray()`/JSON; only the masked hint is shown.
+
+### Reuse
+
+A workspace whose owner also owns another workspace with an active connection may
+use it without re-entering the key. It is modelled as a **second row that points
+at the first** (`origin = reused`, `reuses_connection_id`), not as a copy of the
+key and not as a shared account table:
+
+- the new row holds no key; credentials are always read from the source row, so a
+  rotated key reaches every borrower at once;
+- both workspaces must have a user holding the `owner` role on **both**, and the
+  acting user must be an owner or admin of both (so an admin of the borrower who is
+  not an owner of the source cannot reuse it);
+- the source's single webhook endpoint serves every borrower: an event is verified
+  with the source's secret and may land only in the source workspace or an active
+  borrower, confirmed against the workspace named in the payment metadata;
+- revoking the source revokes every borrower in the same transaction, so their
+  charges stop at once. Revoking a borrower touches only its own row.
+
+### Charging and resolution
+
+The connection is resolved from the **invoice's workspace** on every call
+(`PaymentConnectionResolver`, `StripeGateway::access($workspace)`,
+`SquareConfiguration::for($workspace)`, `SquareClient::forWorkspace($workspace)`);
+a client for the wrong workspace cannot be built. Stripe calls use the
+workspace's own key (direct API calls, as the single-key path always did); Square
+calls use the workspace's own token. A revoked or absent connection means "not
+connected": the payment intent is refused with `Stripe is not connected for this
+workspace.` and Square reads fail as not connected. A revoked workspace does not
+fall back to the environment.
+
+### Webhooks
+
+`POST /api/webhooks/stripe/{endpoint}` and `POST /api/webhooks/square/{endpoint}`
+are the per-workspace endpoints. The token picks the connection; the signature is
+checked with **that** connection's secret and no other. An unknown, malformed,
+revoked or borrowed token is 404; a bad signature is 400 (Stripe) or 403 (Square);
+in both cases nothing is applied. After a good signature the event may touch only
+the connection's workspace and its borrowers: a payment naming another workspace
+in its metadata is logged and ignored, and a Square event for another merchant is
+logged and ignored.
+
+### Migrating the environment credentials
+
+`STRIPE_*` and `SQUARE_*` (with `SQUARE_WORKSPACE`) keep working, exactly as
+before, until the migration command has run:
+
+```bash
+php artisan svc:payments:migrate-environment [--workspace=PUBLIC_ID] [--apply] [--format=json]
+```
+
+It is explicit and manual, a preview unless `--apply` is given (a preview calls
+nothing and writes nothing), and idempotent. With `--apply` it validates each
+environment credential with the same read, then stores it as the named workspace's
+(default `SQUARE_WORKSPACE`) connection with `origin = environment`, copying
+`STRIPE_WEBHOOK_SECRET` and `SQUARE_WEBHOOK_SIGNATURE_KEY`, and prints each new
+per-workspace webhook URL. It never replaces a connection someone entered. Once a
+processor has an `environment` row, the environment credentials no longer serve
+**any** workspace for it; the legacy `/api/webhooks/stripe` and
+`/api/webhooks/square` URLs keep working, verified with the migrated secret and
+confined to that workspace, until the operator re-points them. A follow-up removes
+the environment path. The command and its tests target local disposable databases
+only.
+
 ## Acknowledge an allocation review
 
 `finance.reconciliations.acknowledge` is an explicit finance API action for a

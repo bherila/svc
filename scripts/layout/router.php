@@ -56,7 +56,14 @@ $receiptWrite = getenv('SVC_LAYOUT_RECEIPTS') === '1' && is_string($requestPath)
     ($method === 'POST' && $requestPath === ($fixture['receipt_upload'] ?? null))
     || ($method === 'DELETE' && isset($fixture['receipt_prefix']) && preg_match('#^'.preg_quote($fixture['receipt_prefix'], '#').'[0-9a-f-]{36}$#D', $requestPath) === 1)
 );
-if ($method !== 'GET' && ! $projectWrite && ! $workspaceWrite && ! $receiptWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
+// The payments page's validation refusal: a POST of a key that is not a Stripe
+// key is refused before any processor is asked, so it can reach the real route.
+$paymentsWrite = getenv('SVC_LAYOUT_PAYMENTS') === '1' && $method === 'POST' && is_string($requestPath)
+    && preg_match('#^/workspaces/[0-9a-f-]{36}/payments/stripe$#D', $requestPath) === 1
+    && is_array($paymentsBody = json_decode((string) file_get_contents('php://input'), true))
+    && is_string($paymentsBody['secret'] ?? null)
+    && preg_match('/^(?:rk|sk)_/', $paymentsBody['secret']) !== 1;
+if ($method !== 'GET' && ! $paymentsWrite && ! $projectWrite && ! $workspaceWrite && ! $receiptWrite && ! $scheduleWrite && ! $expenseWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite && ! $clientWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }
@@ -69,5 +76,11 @@ if ($file !== false && str_starts_with($file, $public.'/build/') && is_file($fil
 }
 
 $app = require __DIR__.'/bootstrap.php';
-Auth::onceUsingId(in_array($requestPath, [$fixture['square_portal'], $fixture['task_portal']], true) ? $fixture['square_portal_user_id'] : $fixture['user_id']);
+Auth::onceUsingId(match (true) {
+    // The member who is not a manager reads My work as themselves.
+    isset($fixture['my_work']) && $requestPath === $fixture['my_work'] => $fixture['work_member_id'],
+    // The client contact reads the portal as the client.
+    in_array($requestPath, array_filter([$fixture['square_portal'], $fixture['task_portal'], $fixture['portal_home'] ?? null]), true) => $fixture['square_portal_user_id'],
+    default => $fixture['user_id'],
+});
 $app->handleRequest(Request::capture());

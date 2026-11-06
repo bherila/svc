@@ -20,7 +20,7 @@ final class SquarePaymentReconciler
     private const int DISPUTE_MAX_KNOWN_PAYMENTS = 10_000;
 
     public function __construct(
-        private readonly SquareClient $client,
+        private readonly SquareWorkspaceClients $clients,
         private readonly SquareLinkRepository $links,
         private readonly SquareInvoicePaymentReader $invoicePayments,
         private readonly SquarePaymentRecorder $payments,
@@ -43,7 +43,7 @@ final class SquarePaymentReconciler
      */
     public function refetch(Workspace $workspace, string $squareInvoiceId): ?SquareInvoiceRefetch
     {
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
         $link = $this->links->activeLinkForSquareInvoice($workspace->id, $squareInvoiceId);
@@ -74,10 +74,10 @@ final class SquarePaymentReconciler
 
     public function payment(Workspace $workspace, string $paymentId): void
     {
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
-        $payment = $this->client->getPayment($paymentId)['payment'] ?? null;
+        $payment = $this->clients->for($workspace)->getPayment($paymentId)['payment'] ?? null;
         $facts = is_array($payment) ? SquarePaymentFacts::from($payment, $paymentId) : throw SquareRequestFailed::unreadable();
         if ($facts === null) {
             return;
@@ -131,7 +131,7 @@ final class SquarePaymentReconciler
      */
     private function disputeSnapshot(Workspace $workspace): SquareDisputeSnapshot
     {
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
         $known = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
@@ -154,7 +154,7 @@ final class SquarePaymentReconciler
         $cursor = null;
         $seen = [];
         for ($page = 0; $page < self::DISPUTE_MAX_PAGES; $page++) {
-            $response = $this->client->listDisputes($cursor);
+            $response = $this->clients->for($workspace)->listDisputes($cursor);
             $records = array_key_exists('disputes', $response) ? $response['disputes'] : [];
             if (! is_array($records) || ! array_is_list($records) || count($records) > self::DISPUTE_MAX_RECORDS_PER_PAGE || ! empty($response['errors'])) {
                 throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);

@@ -100,7 +100,7 @@ class ClientPortalOperationsTest extends TestCase
             ->get("/portal/{$company->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('clients/home')
+                ->component('portal/home')
                 ->where('latest_invoice.invoice_number', 'INV-SYNTH-3')
                 ->where('latest_invoice.status', 'paid')
                 ->where('latest_invoice.total_amount', 10000)

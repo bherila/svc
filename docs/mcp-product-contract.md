@@ -90,6 +90,8 @@ The resource families have these responsibilities:
 
 **`finance`:** Manager payment-allocation, payout and processor-movement reads and reconciliation writes under separate finance scopes. See the [inventory](mcp.md#public-capability-inventory).
 
+**`revenue`:** Manager planning reads under `revenue:read`, which `finance:read` does not imply: key figures, monthly actuals by client and band, the per-agreement projection and the client roster with agreement health, each with its assumptions. See [Revenue planning reads](mcp.md#revenue-planning-reads).
+
 **`expenses`:** Authorized expense recording, approval, withdrawal, draft deletion and dedicated receipt access. See the [inventory](mcp.md#public-capability-inventory).
 
 **`expense_schedules`:** Recurring-expense reads, configuration and bounded generation under the expense cutover. See the [inventory](mcp.md#public-capability-inventory).
@@ -99,6 +101,8 @@ The resource families have these responsibilities:
 **`attachments`:** Generic file metadata, bytes, upload preparation, upload, deletion and sharing under current parent and publisher authority. See the [inventory](mcp.md#public-capability-inventory).
 
 **`square`:** Configured bounded provider reads and mirror/bootstrap operations; SVC remains the billing system of record and does not initiate provider payments. See the [inventory](mcp.md#public-capability-inventory).
+
+**`toolsets`:** MCP-only core tools that list, enable and disable toolsets for the current connection (progressive discovery). They change which authorized tools `tools/list` shows, nothing else: enabling a toolset grants no access and every call is authorized again. See [Progressive tool discovery](mcp.md#progressive-tool-discovery).
 
 **`oauth`:** REST-only revocation of the calling OAuth token family. See the [inventory](mcp.md#public-capability-inventory).
 

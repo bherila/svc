@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\AgentPortalInvitationController;
 use App\Http\Controllers\Api\V1\AgentProjectController;
 use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
+use App\Http\Controllers\Api\V1\AgentRevenueController;
 use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentSquareCoveredPaymentController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
@@ -42,6 +43,7 @@ use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Http\Middleware\ThrottleOuterAgentRequests;
 use App\Models\Workspace;
+use App\Services\AgentApi\Operations\RevenueOperations;
 use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Finance\ReconciliationTarget;
@@ -54,6 +56,9 @@ use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Middleware\CheckToken;
 
 Route::post('/webhooks/square', SquareWebhookController::class)->name('svc.billing.square.webhook');
+Route::post('/webhooks/square/{endpoint}', SquareWebhookController::class)
+    ->where('endpoint', '[A-Za-z0-9]{40}')
+    ->name('svc.billing.square.workspace-webhook');
 
 /*
  * Every agent operation is declared once in AgentOperationCatalog (#408):
@@ -278,6 +283,10 @@ Route::prefix('v1')
             $workspaceOperation($operationId, [AgentBillingAuditController::class, $action]);
         }
         $workspaceOperation('billing_audit.stale_and_missing', [AgentInvoiceOperationsController::class, 'audit']);
+        // The revenue planning reads (docs/ux-overhaul.md section 13), which MCP reaches through these routes.
+        foreach (RevenueOperations::DEFINITIONS as $operationId => [$action]) {
+            $workspaceOperation($operationId, [AgentRevenueController::class, $action]);
+        }
         // svc's read-only mirror of Square (#438), refreshed by the scheduled
         // sync or on request; reads of it never reach Square.
         foreach ([

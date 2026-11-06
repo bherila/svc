@@ -1,5 +1,10 @@
 import { Link, router } from '@inertiajs/react';
-import { CheckIcon, ChevronsUpDownIcon, PlusIcon } from 'lucide-react';
+import {
+    CheckIcon,
+    ChevronsUpDownIcon,
+    LayoutDashboardIcon,
+    PlusIcon,
+} from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Button } from '@/components/ui/button';
@@ -31,6 +36,7 @@ export function ClientCompanySwitcher({
     currentId,
     module,
     onCreateClient,
+    allClientsHref,
 }: {
     clients: ClientNavigationOption[];
     currentId: string | null;
@@ -38,6 +44,12 @@ export function ClientCompanySwitcher({
     module: ClientModule;
     /** Offered to a viewer who may add a client; absent for everyone else. */
     onCreateClient?: () => void;
+    /**
+     * The workspace tier's front page. When present the list opens with an
+     * "All clients" entry that goes back up to it; absent for a viewer with no
+     * workspace tier (a portal user), who has nowhere above their client.
+     */
+    allClientsHref?: string | null;
 }) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
@@ -105,13 +117,14 @@ export function ClientCompanySwitcher({
         // along - the row measured as fitting while a control sat underneath
         // another one.
         <div
-            className="relative max-w-56 min-w-20 shrink sm:min-w-0"
+            className="relative max-w-48 min-w-20 shrink sm:min-w-0"
             ref={container}
         >
             <Button
                 variant="secondary"
                 size="sm"
-                aria-label="Current client"
+                // Contains the visible text, as WCAG 2.5.3 (label in name) requires.
+                aria-label={`Current client: ${current?.name ?? 'none selected'}`}
                 aria-expanded={open}
                 aria-haspopup="dialog"
                 aria-controls={open ? listId : undefined}
@@ -147,6 +160,21 @@ export function ClientCompanySwitcher({
                         placeholder="Filter clients"
                         className="h-8"
                     />
+
+                    {typeof allClientsHref === 'string' && (
+                        <Link
+                            href={allClientsHref}
+                            onClick={() => setOpen(false)}
+                            data-test="all-clients"
+                            className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        >
+                            <LayoutDashboardIcon
+                                aria-hidden="true"
+                                className="size-3.5 shrink-0"
+                            />
+                            All clients
+                        </Link>
+                    )}
 
                     <ul className="mt-1 max-h-72 overflow-y-auto">
                         {matches.length === 0 && (

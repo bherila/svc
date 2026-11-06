@@ -13,6 +13,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Queries\ClientHome\PortalClientHomeQuery;
+use App\Queries\Portal\PortalOverviewQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\DeferredBacklogReadService;
@@ -72,11 +73,19 @@ class ClientPortalController extends Controller
      * a client the less their own screen told them. This is bounded, and every
      * section links to the module holding the rest.
      */
-    public function show(Request $request, ClientCompany $clientCompany, PortalClientHomeQuery $home): Response
+    public function show(Request $request, ClientCompany $clientCompany, PortalClientHomeQuery $home, PortalOverviewQuery $overview): Response
     {
         Gate::authorize('viewPortal', $clientCompany);
 
-        return Inertia::render('clients/home', $home->for($clientCompany, $this->viewer($request))->toArray());
+        $viewer = $request->user();
+        abort_unless($viewer instanceof User, 401);
+
+        // The glance (recent time, open tasks, the engagement) and, above it,
+        // the money: what is owed, this period's retainer and the next invoice.
+        return Inertia::render('portal/home', [
+            ...$home->for($clientCompany, $viewer)->toArray(),
+            ...$overview->for($clientCompany, $viewer),
+        ]);
     }
 
     /**

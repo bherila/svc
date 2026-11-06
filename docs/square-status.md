@@ -1,5 +1,21 @@
 # Square payment status
 
+Each workspace stores its own Square access token, location and webhook
+signature key (see [Payment connections per workspace](finance-api.md#payment-connections-per-workspace)),
+and Square delivers to that workspace's own URL, `APP_URL/api/webhooks/square/{endpoint}`,
+shown on its payments page. The signature is verified with that workspace's
+signature key over that exact URL; an unknown endpoint is 404, a bad signature
+403, and an event whose `merchant_id` is not the connection's merchant is logged
+and ignored. A reused connection's endpoint reconciles the source workspace and
+each borrower against its own links only. Every Square read uses the workspace's
+own token (`SquareClient::forWorkspace`), and the sync, reconcile and prune
+commands run once per workspace with a connection.
+
+The single-account receiver below, `POST /api/webhooks/square`, with the
+environment's `SQUARE_*` values, serves only until `svc:payments:migrate-environment`
+has run; afterwards it verifies with the migrated connection's key and reaches
+only that workspace.
+
 The signed receiver is `POST /api/webhooks/square`. Register the notification URL
 under the application's configured `APP_URL`, for example
 `https://svc.example.test/api/webhooks/square`, for `invoice.updated`,

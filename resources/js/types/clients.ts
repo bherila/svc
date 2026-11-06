@@ -6,6 +6,8 @@
  * to the payload.
  */
 
+import type { Roster, RosterHealth } from '@/types/revenue';
+
 export type WorkspaceRef = {
     id: string;
     name: string;
@@ -44,6 +46,13 @@ export type CompanyRow = {
 export type ClientIndexProps = {
     workspace: WorkspaceRef;
     companies: CompanyRow[];
+    /** Owners and admins only; absent for anyone else. */
+    roster?: Roster;
+    /**
+     * The roster's retainer meters by client id. A deferred prop: undefined
+     * until the server's second answer arrives.
+     */
+    health?: Record<string, RosterHealth>;
 };
 
 export type CompanyHeader = {

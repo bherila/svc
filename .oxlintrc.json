@@ -15,6 +15,10 @@
     {
       "name": "import-js",
       "specifier": "eslint-plugin-import"
+    },
+    {
+      "name": "svc-ui",
+      "specifier": "./tools/oxlint/svc-ui.mjs"
     }
   ],
   "categories": {
@@ -366,6 +370,24 @@
       ],
       "rules": {
         "typescript/unbound-method": "off"
+      }
+    },
+    {
+      "files": [
+        "resources/js/pages/**/*.tsx"
+      ],
+      "rules": {
+        "svc-ui/no-hand-rolled-box": "error",
+        "svc-ui/no-button-link-in-card": "error"
+      }
+    },
+    {
+      "files": [
+        "**/*.test.{ts,tsx,mjs}"
+      ],
+      "rules": {
+        "svc-ui/no-hand-rolled-box": "off",
+        "svc-ui/no-button-link-in-card": "off"
       }
     }
   ]

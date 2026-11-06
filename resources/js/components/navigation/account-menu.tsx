@@ -7,9 +7,15 @@ import {
     DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { apiRequest } from '@/lib/api';
+import { isAppearance, useAppearance } from '@/lib/appearance';
+import { DEFAULT_DURATION_STYLE, isDurationStyle } from '@/lib/duration';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import type { WorkspaceNavigation } from '@/types/navigation';
 
 /**
@@ -32,10 +38,16 @@ export function AccountMenu({
     workspaceSettingsHref?: string | null;
 }) {
     const page = usePage();
+    const [appearance, setAppearance] = useAppearance();
     const auth = page.props.auth;
     const applications = page.props.applications;
     const navigation = page.props
         .workspaceNavigation as WorkspaceNavigation | null;
+
+    const durationStyle = isDurationStyle(auth.user?.duration_style)
+        ? auth.user.duration_style
+        : DEFAULT_DURATION_STYLE;
+    const preferencesUrl = auth.user?.preferences_url;
 
     return (
         <DropdownMenu>
@@ -91,6 +103,30 @@ export function AccountMenu({
                         History
                     </DropdownMenuItem>
                 )}
+                {navigation?.operations_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.operations_href} />}
+                        data-test="account-operations"
+                    >
+                        Operations (classic tools)
+                    </DropdownMenuItem>
+                )}
+                {navigation?.payments_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.payments_href} />}
+                        data-test="account-payments"
+                    >
+                        Payments
+                    </DropdownMenuItem>
+                )}
+                {navigation?.task_labels_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.task_labels_href} />}
+                        data-test="account-task-labels"
+                    >
+                        Task labels
+                    </DropdownMenuItem>
+                )}
                 {navigation?.square_href && (
                     <DropdownMenuGroup>
                         <DropdownMenuItem asChild>
@@ -112,6 +148,73 @@ export function AccountMenu({
                             </Link>
                         </DropdownMenuItem>
                     </DropdownMenuGroup>
+                )}
+
+                {/*
+                 * Below `sm` the bar has no room for the theme control, so the
+                 * same choice lives here. From `sm` up this group is hidden and
+                 * the control in the bar is used.
+                 */}
+                <DropdownMenuSeparator className="sm:hidden" />
+                <DropdownMenuGroup className="sm:hidden">
+                    <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                        value={appearance}
+                        onValueChange={(value) => {
+                            if (isAppearance(value)) {
+                                setAppearance(value);
+                            }
+                        }}
+                    >
+                        <DropdownMenuRadioItem value="system">
+                            System
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="light">
+                            Light
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="dark">
+                            Dark
+                        </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+
+                {typeof preferencesUrl === 'string' && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                            <DropdownMenuLabel>Show time as</DropdownMenuLabel>
+                            <DropdownMenuRadioGroup
+                                value={durationStyle}
+                                onValueChange={(value) => {
+                                    // A display preference: saved with fetch and
+                                    // the shared props reloaded, not an Inertia
+                                    // mutation (business writes use /api/v1).
+                                    void apiRequest('PATCH', preferencesUrl, {
+                                        duration_style: value,
+                                    }).then((result) => {
+                                        if (result.ok) {
+                                            return refreshPageProps({
+                                                only: ['auth'],
+                                            });
+                                        }
+                                    });
+                                }}
+                            >
+                                <DropdownMenuRadioItem
+                                    value="decimal"
+                                    data-test="duration-style-decimal"
+                                >
+                                    2.5 h
+                                </DropdownMenuRadioItem>
+                                <DropdownMenuRadioItem
+                                    value="clock"
+                                    data-test="duration-style-clock"
+                                >
+                                    2:30
+                                </DropdownMenuRadioItem>
+                            </DropdownMenuRadioGroup>
+                        </DropdownMenuGroup>
+                    </>
                 )}
 
                 {/*

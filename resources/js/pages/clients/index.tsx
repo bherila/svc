@@ -1,6 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
-import { AppearanceSelector } from '@/components/appearance-selector';
-import { CommandPaletteTrigger } from '@/components/command-palette';
+import { ClientRoster } from '@/components/revenue/client-roster';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -11,6 +10,8 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import WorkspaceShell from '@/layouts/workspace-shell';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type {
@@ -119,29 +120,41 @@ function CompanyRowCells({
 export default function ClientIndex({
     workspace,
     companies,
+    roster,
+    health,
 }: ClientIndexProps) {
+    if (roster !== undefined) {
+        // Owners and admins: the revenue roster. The key is absent for anyone
+        // else, who keeps the plain list below.
+        return (
+            <WorkspaceShell activeSection="clients">
+                <Head title={`${workspace.name} clients`} />
+                <main
+                    className={cn(
+                        SHELL_CONTAINER,
+                        'grid grid-cols-1 gap-6 py-6',
+                    )}
+                    data-appearance-bridge
+                >
+                    <h1 className="text-[17px] font-semibold tracking-tight md:text-lg">
+                        Clients
+                    </h1>
+                    <ClientRoster roster={roster} health={health} />
+                </main>
+            </WorkspaceShell>
+        );
+    }
+
     return (
-        <>
+        <WorkspaceShell activeSection="clients">
             <Head title={`${workspace.name} clients`} />
             <main
-                className="mx-auto grid max-w-6xl grid-cols-1 gap-6 p-6"
+                className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-6')}
                 data-appearance-bridge
             >
-                <header className="flex flex-wrap items-end justify-between gap-3">
-                    <div className="grid grid-cols-1 gap-1">
-                        <Link
-                            href="/app"
-                            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                        >
-                            ← Workspaces
-                        </Link>
-                        <h1 className="text-2xl font-semibold">
-                            {workspace.name} clients
-                        </h1>
-                    </div>
-                    <CommandPaletteTrigger />
-                    <AppearanceSelector />
-                </header>
+                <h1 className="text-[17px] font-semibold tracking-tight md:text-lg">
+                    Clients
+                </h1>
 
                 <Card>
                     <CardHeader>
@@ -195,6 +208,6 @@ export default function ClientIndex({
                     .
                 </p>
             </main>
-        </>
+        </WorkspaceShell>
     );
 }

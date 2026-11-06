@@ -35,6 +35,10 @@ final class WorkspaceNavigation
         public readonly ?string $squareHref = null,
         public readonly ?string $historyHref = null,
         public readonly ?string $createClientUrl = null,
+        public readonly ?WorkspaceDestinations $workspaceDestinations = null,
+        public readonly ?string $taskLabelsHref = null,
+        public readonly ?string $operationsHref = null,
+        public readonly ?string $paymentsHref = null,
     ) {}
 
     /** The option the viewer is standing in, or null outside one. */
@@ -54,13 +58,17 @@ final class WorkspaceNavigation
      *     workspace_id: string,
      *     workspace_name: string,
      *     current_client_id: string|null,
-     *     clients: list<array{id: string, name: string, destinations: array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null}}>,
+     *     clients: list<array{id: string, name: string, destinations: array<string, string|null>}>,
      *     permissions: array{manage_workspace: bool, create_client: bool, manage_current_client: bool, search: bool},
      *     workspace_settings_href: string|null,
      *     mcp_setup_href: string|null,
      *     square_href: string|null,
      *     history_href: string|null,
      *     create_client_url: string|null,
+     *     workspace_destinations: array{dashboard: string|null, clients: string|null, invoices: string|null, time: string|null, finance: string|null}|null,
+     *     task_labels_href: string|null,
+     *     operations_href: string|null,
+     *     payments_href: string|null,
      * }
      */
     public function toArray(): array
@@ -79,6 +87,10 @@ final class WorkspaceNavigation
             'square_href' => $this->squareHref,
             'history_href' => $this->historyHref,
             'create_client_url' => $this->createClientUrl,
+            'workspace_destinations' => $this->workspaceDestinations?->toArray(),
+            'task_labels_href' => $this->taskLabelsHref,
+            'operations_href' => $this->operationsHref,
+            'payments_href' => $this->paymentsHref,
         ];
     }
 }

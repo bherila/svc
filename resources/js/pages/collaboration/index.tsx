@@ -2,6 +2,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import { CollaborationErrors } from '@/components/collaboration/content-controls';
 import { useCollaborationMutation } from '@/components/collaboration/use-collaboration-mutation';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useVersionedDraft } from '@/hooks/use-versioned-draft';
@@ -30,101 +31,110 @@ function NewTopic({
     const mutation = useCollaborationMutation();
 
     return (
-        <form
-            className="grid min-w-0 grid-cols-1 gap-3 rounded-lg border p-4"
-            onSubmit={(event) => {
-                event.preventDefault();
-                void mutation.run(
-                    'POST',
-                    href,
-                    { ...form.data, project_id: form.data.project_id || null },
-                    undefined,
-                    true,
-                );
-            }}
-        >
-            <h2 className="text-lg font-semibold">
-                Create a note or discussion
-            </h2>
-            <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                Type
-                <select
-                    disabled={mutation.locked}
-                    className="min-w-0 rounded-md border bg-background p-2"
-                    value={form.data.kind}
-                    onChange={(event) =>
-                        form.setData('kind', event.target.value)
-                    }
+        <Card className="min-w-0">
+            <CardContent>
+                <form
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        void mutation.run(
+                            'POST',
+                            href,
+                            {
+                                ...form.data,
+                                project_id: form.data.project_id || null,
+                            },
+                            undefined,
+                            true,
+                        );
+                    }}
+                    className="grid grid-cols-1 gap-3"
                 >
-                    <option value="note">Note</option>
-                    <option value="discussion">Discussion</option>
-                </select>
-            </label>
-            <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                Scope
-                <select
-                    disabled={mutation.locked}
-                    className="min-w-0 rounded-md border bg-background p-2"
-                    value={form.data.project_id}
-                    onChange={(event) =>
-                        form.setData('project_id', event.target.value)
-                    }
-                >
-                    {scopes.map((scope) => (
-                        <option key={scope.id} value={scope.id}>
-                            {scope.label}
-                        </option>
-                    ))}
-                </select>
-            </label>
-            <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                Title
-                <Input
-                    disabled={mutation.locked}
-                    required
-                    maxLength={255}
-                    value={form.data.title}
-                    onChange={(event) =>
-                        form.setData('title', event.target.value)
-                    }
-                />
-            </label>
-            <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                Content
-                <Textarea
-                    disabled={mutation.locked}
-                    required
-                    maxLength={50000}
-                    className="min-h-48"
-                    value={form.data.body}
-                    onChange={(event) =>
-                        form.setData('body', event.target.value)
-                    }
-                />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-                <input
-                    type="checkbox"
-                    disabled={mutation.locked}
-                    checked={form.data.is_visible_to_client}
-                    onChange={(event) =>
-                        form.setData(
-                            'is_visible_to_client',
-                            event.target.checked,
-                        )
-                    }
-                />
-                Visible to client
-            </label>
-            <CollaborationErrors errors={mutation.errors} />
-            <Button
-                type="submit"
-                disabled={mutation.pending}
-                className="justify-self-start"
-            >
-                {mutation.unresolved ? 'Check original change' : 'Create'}
-            </Button>
-        </form>
+                    <h2 className="text-lg font-semibold">
+                        Create a note or discussion
+                    </h2>
+                    <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
+                        Type
+                        <select
+                            disabled={mutation.locked}
+                            className="min-w-0 rounded-md border bg-background p-2"
+                            value={form.data.kind}
+                            onChange={(event) =>
+                                form.setData('kind', event.target.value)
+                            }
+                        >
+                            <option value="note">Note</option>
+                            <option value="discussion">Discussion</option>
+                        </select>
+                    </label>
+                    <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
+                        Scope
+                        <select
+                            disabled={mutation.locked}
+                            className="min-w-0 rounded-md border bg-background p-2"
+                            value={form.data.project_id}
+                            onChange={(event) =>
+                                form.setData('project_id', event.target.value)
+                            }
+                        >
+                            {scopes.map((scope) => (
+                                <option key={scope.id} value={scope.id}>
+                                    {scope.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
+                        Title
+                        <Input
+                            disabled={mutation.locked}
+                            required
+                            maxLength={255}
+                            value={form.data.title}
+                            onChange={(event) =>
+                                form.setData('title', event.target.value)
+                            }
+                        />
+                    </label>
+                    <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
+                        Content
+                        <Textarea
+                            disabled={mutation.locked}
+                            required
+                            maxLength={50000}
+                            className="min-h-48"
+                            value={form.data.body}
+                            onChange={(event) =>
+                                form.setData('body', event.target.value)
+                            }
+                        />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                        <input
+                            type="checkbox"
+                            disabled={mutation.locked}
+                            checked={form.data.is_visible_to_client}
+                            onChange={(event) =>
+                                form.setData(
+                                    'is_visible_to_client',
+                                    event.target.checked,
+                                )
+                            }
+                        />
+                        Visible to client
+                    </label>
+                    <CollaborationErrors errors={mutation.errors} />
+                    <Button
+                        type="submit"
+                        disabled={mutation.pending}
+                        className="justify-self-start"
+                    >
+                        {mutation.unresolved
+                            ? 'Check original change'
+                            : 'Create'}
+                    </Button>
+                </form>
+            </CardContent>
+        </Card>
     );
 }
 
@@ -169,26 +179,27 @@ export default function CollaborationIndex(props: CollaborationIndexProps) {
                 >
                     {props.topics.length ? (
                         props.topics.map((topic) => (
-                            <article
-                                key={topic.id}
-                                className="grid min-w-0 grid-cols-1 gap-1 rounded-lg border p-4"
-                            >
-                                <p className="text-sm text-muted-foreground">
-                                    {topic.kind_label}
-                                </p>
-                                <p className="text-sm wrap-anywhere text-muted-foreground">
-                                    {topic.scope_label}
-                                </p>
-                                <Link
-                                    href={topic.href}
-                                    className="font-medium wrap-anywhere underline"
-                                >
-                                    {topic.title}
-                                </Link>
-                                <p className="text-sm wrap-anywhere text-muted-foreground">
-                                    {topic.author_name}
-                                </p>
-                            </article>
+                            <Card key={topic.id} className="min-w-0">
+                                <CardContent>
+                                    <article className="grid grid-cols-1 gap-1">
+                                        <p className="text-sm text-muted-foreground">
+                                            {topic.kind_label}
+                                        </p>
+                                        <p className="text-sm wrap-anywhere text-muted-foreground">
+                                            {topic.scope_label}
+                                        </p>
+                                        <Link
+                                            href={topic.href}
+                                            className="font-medium wrap-anywhere underline"
+                                        >
+                                            {topic.title}
+                                        </Link>
+                                        <p className="text-sm wrap-anywhere text-muted-foreground">
+                                            {topic.author_name}
+                                        </p>
+                                    </article>
+                                </CardContent>
+                            </Card>
                         ))
                     ) : (
                         <p className="text-muted-foreground">

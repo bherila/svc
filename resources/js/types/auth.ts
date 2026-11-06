@@ -3,6 +3,10 @@ export type User = {
     name: string;
     email: string;
     avatar?: string;
+    /** How this person reads time; invoices ignore it. */
+    duration_style?: 'decimal' | 'clock';
+    /** Where the person's own display preferences are saved. */
+    preferences_url?: string;
     email_verified_at: string | null;
     created_at: string;
     updated_at: string;

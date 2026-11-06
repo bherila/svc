@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { Card, CardContent } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -52,18 +53,22 @@ export default function HistoryShow({ entry }: { entry: HistoryDetail }) {
                     </section>
                 )}
                 {entry.fields.length > 0 && (
-                    <dl className="grid min-w-0 grid-cols-1 gap-4 rounded-lg border p-4">
-                        {entry.fields.map((field, index) => (
-                            <div key={index} className="min-w-0">
-                                <dt className="text-sm text-muted-foreground">
-                                    {field.label}
-                                </dt>
-                                <dd className="wrap-anywhere whitespace-pre-wrap">
-                                    {field.value}
-                                </dd>
-                            </div>
-                        ))}
-                    </dl>
+                    <Card className="min-w-0">
+                        <CardContent>
+                            <dl className="grid grid-cols-1 gap-4">
+                                {entry.fields.map((field, index) => (
+                                    <div key={index} className="min-w-0">
+                                        <dt className="text-sm text-muted-foreground">
+                                            {field.label}
+                                        </dt>
+                                        <dd className="wrap-anywhere whitespace-pre-wrap">
+                                            {field.value}
+                                        </dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </CardContent>
+                    </Card>
                 )}
                 {entry.tables.map((table, index) => (
                     <section
@@ -71,7 +76,15 @@ export default function HistoryShow({ entry }: { entry: HistoryDetail }) {
                         className="grid min-w-0 grid-cols-1 gap-3"
                     >
                         <h2 className="text-lg font-semibold">{table.label}</h2>
-                        <div className="overflow-x-auto">
+                        <div
+                            className="overflow-x-auto"
+                            // A scroller the keyboard can reach: without a
+                            // tab stop a wide table cannot be scrolled by
+                            // someone who is not using a pointer.
+                            tabIndex={0}
+                            role="region"
+                            aria-label={`${table.label} table`}
+                        >
                             <table className="w-full text-left text-sm">
                                 <thead>
                                     <tr>
@@ -119,25 +132,26 @@ export default function HistoryShow({ entry }: { entry: HistoryDetail }) {
                             Related records
                         </h2>
                         {entry.children.map((child) => (
-                            <article
-                                key={child.id}
-                                className="min-w-0 rounded-lg border p-3"
-                            >
-                                <p className="text-xs text-muted-foreground">
-                                    {child.kind}
-                                </p>
-                                <Link
-                                    href={child.href}
-                                    className="wrap-anywhere underline"
-                                >
-                                    {child.title}
-                                </Link>
-                                <p className="text-sm wrap-anywhere text-muted-foreground">
-                                    {[child.occurred_on, child.author]
-                                        .filter(Boolean)
-                                        .join(' · ')}
-                                </p>
-                            </article>
+                            <Card key={child.id} className="min-w-0">
+                                <CardContent>
+                                    <article>
+                                        <p className="text-xs text-muted-foreground">
+                                            {child.kind}
+                                        </p>
+                                        <Link
+                                            href={child.href}
+                                            className="wrap-anywhere underline"
+                                        >
+                                            {child.title}
+                                        </Link>
+                                        <p className="text-sm wrap-anywhere text-muted-foreground">
+                                            {[child.occurred_on, child.author]
+                                                .filter(Boolean)
+                                                .join(' · ')}
+                                        </p>
+                                    </article>
+                                </CardContent>
+                            </Card>
                         ))}
                         {entry.children_href && (
                             <Link

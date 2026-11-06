@@ -1,8 +1,11 @@
 <?php
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientContact;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
@@ -25,6 +28,7 @@ use App\Services\Files\AttachmentStorageService;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
+use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquareLinkService;
@@ -38,6 +42,8 @@ use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
+use App\Support\Payments\ConnectionOrigin;
+use App\Support\Payments\PaymentProcessor;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use App\Support\WorkspaceClock;
@@ -90,7 +96,7 @@ $workspace = Workspace::query()->create([
     'timezone' => 'America/Los_Angeles',
 ]);
 $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
-if (getenv('SVC_LAYOUT_WORKSPACES') === '1') {
+if (getenv('SVC_LAYOUT_WORKSPACES') === '1' || getenv('SVC_LAYOUT_PAYMENTS') === '1') {
     $workspace->update(['name' => str_repeat('SyntheticWorkspaceWithoutBreaks', 4)]);
 }
 $company = ClientCompany::query()->create([
@@ -154,6 +160,71 @@ $proposal->items()->create([
     'workspace_id' => $workspace->id, 'description' => $description,
     'quantity' => 2, 'unit_amount' => 5000, 'cadence' => 'one_time', 'sort_order' => 0,
 ]);
+
+// Revenue screens (--revenue): seven clients named without a break, each with an
+// agreement whose title has none either, a recurring service, six months of
+// issued invoices priced in the millions, and agreements ending inside the
+// window. Everything the Dashboard, the roster and the client overview print
+// is read from these rows by the same code that serves them in production.
+if (getenv('SVC_LAYOUT_REVENUE') === '1') {
+    $today = app(WorkspaceClock::class)->today($workspace);
+    $revenueNumber = 0;
+    foreach (range(0, 6) as $index) {
+        $client = $index === 0 ? $company : ClientCompany::query()->create([
+            'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticRevenueClient', 3).$index,
+            'slug' => 'synthetic-revenue-client-'.$index,
+        ]);
+        $revenueAgreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $client->id,
+            'title' => str_repeat('SyntheticRevenueAgreementWithoutBreaks', 3), 'status' => 'active', 'currency' => 'USD',
+            'starts_on' => $today->subMonths(8)->startOfMonth()->toDateString(),
+            'ends_on' => $index % 2 === 1 ? $today->addMonths(2 + $index)->toDateString() : null,
+            'billing_cadence' => 'monthly', 'retainer_amount' => 250000000 + $index * 1000000, 'retainer_minutes' => 600,
+            'hourly_rate_amount' => 20000, 'signed_at' => $today->subMonths(8)->toDateTimeString(),
+        ]);
+        $item = ClientAgreementRecurringItem::query()->create([
+            'workspace_id' => $workspace->id, 'client_agreement_id' => $revenueAgreement->id, 'description' => str_repeat('SyntheticHostingServiceWithoutBreaks', 3),
+            'cadence' => 'quarterly', 'anchor_month' => 1, 'anchor_day' => 1, 'quantity' => '1.000', 'amount' => 30000000,
+            'currency' => 'USD', 'is_taxable' => false, 'is_active' => true, 'sort_order' => 1,
+        ]);
+        foreach (range(6, 1) as $back) {
+            $start = $today->startOfMonth()->subMonths($back);
+            $next = $start->addMonth();
+            $lines = [['retainer', 250000000 + $index * 1000000, $next->toDateString(), null]];
+            if ($next->month % 3 === 1) {
+                $lines[] = ['recurring_item', 30000000, $next->toDateString(), $item->id];
+            }
+            if ($back % 2 === 0) {
+                $lines[] = ['additional_hours', 40000000, $start->endOfMonth()->toDateString(), null];
+            }
+            if ($back === 1) {
+                $lines[] = ['expense', 5000000, $start->endOfMonth()->toDateString(), null];
+            }
+            $revenueNumber++;
+            $revenueInvoice = ClientInvoice::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $client->id, 'client_agreement_id' => $revenueAgreement->id,
+                'invoice_number' => 'SYNTHETIC-REV-'.str_repeat('Z', 40).$revenueNumber, 'status' => $back > 2 ? 'paid' : 'issued',
+                'currency' => 'USD', 'invoice_kind' => 'cadence_period',
+                'service_period_start' => $start->toDateString(), 'service_period_end' => $start->endOfMonth()->toDateString(),
+                'issue_date' => $next->toDateString(), 'due_date' => $next->addDays(14)->toDateString(),
+            ]);
+            $total = 0;
+            foreach ($lines as $sort => [$type, $amount, $lineDate, $itemId]) {
+                ClientInvoiceLine::query()->create([
+                    'workspace_id' => $workspace->id, 'client_invoice_id' => $revenueInvoice->id, 'client_agreement_id' => $revenueAgreement->id,
+                    'client_agreement_recurring_item_id' => $itemId, 'type' => $type, 'description' => 'Synthetic '.$type,
+                    'quantity' => '1', 'unit_amount' => $amount, 'tax_amount' => 0, 'total_amount' => $amount, 'line_date' => $lineDate, 'sort_order' => $sort,
+                ]);
+                $total += $amount;
+            }
+            $billedHours = array_sum(array_map(static fn (array $line): float => $line[0] === 'additional_hours' ? $line[1] / 20000 : 0.0, $lines));
+            $revenueInvoice->forceFill([
+                'hours_billed_at_rate' => number_format($billedHours, 4, '.', ''), 'subtotal_amount' => $total, 'tax_amount' => 0,
+                'total_amount' => $total, 'paid_amount' => $back > 2 ? $total : 0, 'balance_amount' => $back > 2 ? 0 : $total,
+            ])->save();
+        }
+    }
+}
 
 $engagementAgreementPath = null;
 if (getenv('SVC_LAYOUT_ENGAGEMENT') === '1') {
@@ -446,7 +517,137 @@ if ($planningTask !== null && getenv('SVC_LAYOUT_TASK_LOOKUPS') !== '1') {
     ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);
 }
 
+// Payment connections (--payments): one workspace per state, all owned by the
+// same synthetic owner, with unbroken names. Connected through the repository,
+// so no processor is asked; the keys are obviously fake.
+// "My work" and the portal home (--work-portal). A member who is not an owner or
+// admin holds one project as a contributor and one as a manager, with assigned
+// tasks across every due-date group and time in every review state, all priced
+// in the rows so that a rate reaching the page would show. The client contact
+// sees an overdue invoice linked to a hosted payment page, a second open one, an
+// agreement with a recurring service and an unbroken title, hours past the
+// retainer, deferred work the agreement discloses, approved time and open tasks.
+$workPortal = [];
+if (getenv('SVC_LAYOUT_WORK_PORTAL') === '1') {
+    $workToday = app(WorkspaceClock::class)->today($workspace);
+    $project->forceFill(['is_visible_to_client' => true])->save();
+    $logProject->forceFill(['is_visible_to_client' => true])->save();
+    $invoice->forceFill(['is_visible_to_client' => true, 'due_date' => $workToday->addDays(20)->toDateString()])->save();
+
+    $workMember = User::factory()->create(['name' => str_repeat('SyntheticSubcontractor', 4), 'email' => 'layout-subcontractor@example.test']);
+    $workspace->memberships()->create(['user_id' => $workMember->id, 'role' => 'member']);
+    foreach ([[$project, 'contributor'], [$logProject, 'manager']] as [$held, $role]) {
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $held->id, 'user_id' => $workMember->id, 'role' => $role]);
+    }
+    $assign = function (ClientProject $in, string $title, ?string $due, string $status = 'open') use ($workspace, $workMember): void {
+        $task = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $in->id, 'title' => $title, 'status' => $status, 'due_on' => $due, 'is_visible_to_client' => true]);
+        DB::table('client_task_assignments')->insert(['workspace_id' => $workspace->id, 'client_task_id' => $task->id, 'user_id' => $workMember->id, 'created_at' => now(), 'updated_at' => now()]);
+    };
+    foreach ([
+        [$project, 'SyntheticOverdueTaskWithoutBreaks'.str_repeat('Overdue', 8), $workToday->subDays(4)->toDateString(), 'open'],
+        [$logProject, 'SyntheticManagedTaskWithoutBreaks'.str_repeat('Managed', 8), $workToday->subDay()->toDateString(), 'in_progress'],
+        [$project, 'Synthetic task due today with a description long enough to wrap onto a second line on a phone', $workToday->toDateString(), 'open'],
+        [$logProject, 'SyntheticLaterThisWeekTask'.str_repeat('Week', 12), $workToday->endOfWeek()->toDateString(), 'open'],
+        [$project, 'SyntheticLaterTask'.str_repeat('Later', 14), $workToday->addWeeks(3)->toDateString(), 'in_progress'],
+        [$project, 'SyntheticUndatedTask'.str_repeat('Undated', 12), null, 'open'],
+    ] as [$in, $title, $due, $status]) {
+        $assign($in, $title, $due, $status);
+    }
+    foreach ([[0, $project, 90, 'approved'], [0, $logProject, 150, 'draft'], [1, $project, 60, 'submitted'], [3, $project, 45, 'invoiced'], [9, $logProject, 120, 'approved'], [20, $project, 30, 'invoiced']] as [$back, $in, $minutes, $status]) {
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $in->id, 'user_id' => $workMember->id,
+            'worked_on' => $workToday->subDays($back)->toDateString(), 'minutes' => $minutes, 'description' => 'Synthetic subcontractor work '.str_repeat('Unbroken', 6),
+            'is_billable' => true, 'status' => $status, 'billing_rate_amount' => 987654, 'billing_rate_source' => 'explicit', 'currency' => 'USD',
+            'subcontractor_cost_amount' => 765432,
+        ]);
+    }
+
+    $workAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+        'title' => str_repeat('SyntheticPortalAgreementWithoutBreaks', 3), 'status' => 'active', 'currency' => 'USD',
+        'starts_on' => $workToday->subMonths(6)->startOfMonth()->toDateString(), 'billing_cadence' => 'monthly',
+        'retainer_amount' => 250000000, 'retainer_minutes' => 600, 'hourly_rate_amount' => 20000,
+        'is_visible_to_client' => true, 'show_deferred_backlog_to_client' => true, 'signed_at' => $workToday->subMonths(6)->toDateTimeString(),
+    ]);
+    ClientAgreementRecurringItem::query()->create([
+        'workspace_id' => $workspace->id, 'client_agreement_id' => $workAgreement->id, 'description' => str_repeat('SyntheticWebHostingServiceWithoutBreaks', 3),
+        'cadence' => 'monthly', 'anchor_day' => 20, 'quantity' => '1.000', 'amount' => 30000000, 'currency' => 'USD', 'is_taxable' => false, 'is_active' => true, 'sort_order' => 1,
+    ]);
+    foreach (range(0, 4) as $index) {
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $owner->id,
+            'worked_on' => $workToday->startOfMonth()->addDays($index)->min($workToday)->toDateString(), 'minutes' => 150,
+            'description' => 'Synthetic internal note '.str_repeat('Internal', 8),
+            'client_visible_description' => 'Synthetic client summary '.str_repeat('WithoutBreaks', 8).' '.$index,
+            'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved',
+        ]);
+    }
+    foreach (range(0, 3) as $index) {
+        ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+            'title' => 'Synthetic client task '.str_repeat('UnbrokenTitle', 8).$index, 'status' => $index % 2 === 0 ? 'open' : 'in_progress', 'is_visible_to_client' => true]);
+    }
+
+    // The invoice to deal with first: overdue, priced in the millions, linked to a hosted payment page.
+    $payInvoice = $service->issue($service->createDraft($workspace, $company, [
+        'invoice_number' => 'PAY-SYNTHETIC-'.str_repeat('P', 60), 'currency' => 'USD',
+    ], [[
+        'type' => 'adjustment', 'description' => $description,
+        'quantity' => '1', 'unit_amount' => 920000000, 'tax_amount' => 0, 'sort_order' => 1,
+    ]]), $workspace);
+    $payInvoice->forceFill([
+        'is_visible_to_client' => true, 'due_date' => $workToday->subDays(40)->toDateString(), 'client_agreement_id' => $workAgreement->id,
+        'deferred_work_statement' => ['version' => 1, 'entries' => [
+            ['id' => 11, 'workedOn' => '2026-04-01', 'minutes' => 90, 'description' => str_repeat('SyntheticDeferredWork', 20)],
+            ['id' => 12, 'workedOn' => '2026-04-02', 'minutes' => 240, 'description' => null],
+        ]],
+    ])->save();
+    $payRow = app(SquareSnapshotMapper::class)->invoice([
+        'id' => 'inv_fixture_pay', 'version' => 1, 'invoice_number' => '000002-R-0001',
+        'location_id' => 'LOCFIXTURE01', 'status' => 'UNPAID', 'title' => str_repeat('SyntheticSquareTitle', 4),
+        'primary_recipient' => ['customer_id' => 'cust_fixture_layout', 'company_name' => 'Synthetic'],
+        'payment_requests' => [['due_date' => $date, 'computed_amount_money' => ['amount' => 920000000, 'currency' => 'USD']]],
+        'public_url' => 'https://squareupsandbox.com/pay-invoice/inv_fixture_pay',
+    ]);
+    app(SquareMirrorRepository::class)->storeInvoices($workspace, [$payRow], CarbonImmutable::now('UTC'));
+    app(SquareLinkService::class)->link($workspace, $payInvoice->refresh(), $owner, AgentApiVersion::for($payInvoice),
+        new SquareInvoiceReference('inv_fixture_pay', '000002-R-0001', 'USD', SquareMatchMethod::Manual), false);
+
+    $workPortal = [
+        'my_work' => route('workspaces.my-work', $workspace, absolute: false),
+        'work_member_id' => $workMember->id,
+        'portal_home' => route('portal.show', $company, absolute: false),
+    ];
+}
+
+$paymentPages = [];
+if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
+    $connections = app(WorkspacePaymentConnections::class);
+    $stripeWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticStripeWorkspaceWithoutBreaks', 3), 'slug' => 'layout-payments-stripe', 'timezone' => 'America/Los_Angeles']);
+    $squareWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticSquareWorkspaceWithoutBreaks', 3), 'slug' => 'layout-payments-square', 'timezone' => 'America/Los_Angeles']);
+    $reusedWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticReusedWorkspaceWithoutBreaks', 3), 'slug' => 'layout-payments-reused', 'timezone' => 'America/Los_Angeles']);
+    foreach ([$stripeWorkspace, $squareWorkspace, $reusedWorkspace] as $paymentWorkspace) {
+        $paymentWorkspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+    }
+    $stripeRow = $connections->connect($stripeWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+        'external_account_id' => 'acct_synthetic', 'display_name' => str_repeat('SyntheticBusinessNameWithoutBreaks', 6), 'environment' => 'live',
+        'secret' => 'rk_live_'.str_repeat('synthetic', 6).'a1b2', 'webhook_secret' => 'whsec_synthetic',
+    ]);
+    $connections->connect($squareWorkspace, PaymentProcessor::Square, ConnectionOrigin::Entered, $owner, [
+        'external_account_id' => 'MERCHANT_SYNTHETIC', 'display_name' => str_repeat('SyntheticSquareBusinessWithoutBreaks', 5), 'environment' => 'production',
+        'secret' => 'EAAA'.str_repeat('synthetic', 6).'wxyz', 'webhook_secret' => 'synthetic-signature', 'location_id' => str_repeat('L', 64),
+    ]);
+    $connections->reuse($reusedWorkspace, $stripeRow, $owner);
+    $paymentPages = [
+        'payments' => route('workspaces.payments', $workspace, absolute: false),
+        'payments_stripe' => route('workspaces.payments', $stripeWorkspace, absolute: false),
+        'payments_square' => route('workspaces.payments', $squareWorkspace, absolute: false),
+        'payments_reused' => route('workspaces.payments', $reusedWorkspace, absolute: false),
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    ...$paymentPages,
+    ...$workPortal,
     'selector' => route('workspaces.index', absolute: false),
     'workspace_create' => route('agent-api.v1.workspaces.store', absolute: false),
     'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),
@@ -502,6 +703,12 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'expenses' => route('clients.expenses', [$workspace, $company], absolute: false),
     'time' => route('clients.time', [$workspace, $company], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
+    'dashboard' => route('workspaces.dashboard', $workspace, absolute: false),
+    'client_overview' => route('clients.show', [$workspace, $company], absolute: false),
+    'workspace_clients' => route('clients.index', $workspace, absolute: false),
+    'workspace_invoices' => route('workspaces.invoices', $workspace, absolute: false),
+    'workspace_time' => route('workspaces.time', $workspace, absolute: false),
+    'workspace_finance' => route('workspaces.finance', $workspace, absolute: false),
 ], JSON_THROW_ON_ERROR));
 // Wayfinder runs Artisan from the repository during the asset build. Give it
 // this already-sanitized configuration so it skips the repository's .env too.

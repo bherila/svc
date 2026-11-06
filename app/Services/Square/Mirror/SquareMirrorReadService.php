@@ -430,7 +430,7 @@ final class SquareMirrorReadService
     private function admit(User|AgentPrincipal $actor, Workspace $workspace): void
     {
         abort_unless($this->access->isWorkspaceManager($actor, $workspace), 403, 'The Square mirror is available to workspace managers only.');
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
     }

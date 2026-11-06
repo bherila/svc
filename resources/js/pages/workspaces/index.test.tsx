@@ -100,7 +100,7 @@ describe('workspace selector', () => {
             screen.getByRole('button', { name: 'Account and settings' }),
         ).toBeInTheDocument();
         expect(
-            screen.queryByRole('button', { name: 'Current client' }),
+            screen.queryByRole('button', { name: /^Current client/ }),
         ).not.toBeInTheDocument();
     });
 });

@@ -21,6 +21,12 @@ final class AgentMcpInventoryTest extends TestCase
     use InspectsAgentOperations;
     use RefreshDatabase;
 
+    /**
+     * Tools that exist only on MCP, because they change which tools one MCP
+     * session lists (progressive discovery) and so have no REST operation.
+     */
+    private const array MCP_ONLY = ['toolsets.disable', 'toolsets.enable', 'toolsets.list'];
+
     // Exact integrated inventory: extend only when the corresponding handlers and contracts land.
     private const array TOOLS = [
         'agreements.activate',
@@ -162,6 +168,10 @@ final class AgentMcpInventoryTest extends TestCase
         'proposals.get',
         'proposals.list',
         'proposals.send',
+        'revenue.clients',
+        'revenue.monthly',
+        'revenue.projection',
+        'revenue.summary',
         'search',
         'square.customers.get',
         'square.customers.list',
@@ -214,6 +224,9 @@ final class AgentMcpInventoryTest extends TestCase
         'time_entries.log',
         'time_entries.unapprove',
         'time_entries.update',
+        'toolsets.disable',
+        'toolsets.enable',
+        'toolsets.list',
         'workspaces.create',
     ];
 
@@ -266,7 +279,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_189_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_199_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['task_planning.labels.create', 'task_planning.labels.update', 'task_planning.labels.archive', 'task_planning.labels.restore', 'task_planning.labels.replace', 'task_planning.dependencies.replace', 'task_planning.contacts.replace', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -277,14 +290,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(192, self::TOOLS);
+        $this->assertCount(199, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_189_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_199_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -369,7 +382,11 @@ final class AgentMcpInventoryTest extends TestCase
         }
         $actual = array_keys($mapped);
         sort($actual);
-        $this->assertSame(self::TOOLS, $actual);
+        $this->assertSame(array_values(array_diff(self::TOOLS, self::MCP_ONLY)), $actual);
+        // The carve-out is exact: these tools have no REST operation to map.
+        foreach (self::MCP_ONLY as $name) {
+            $this->assertNull($definitions[$name]->rest, $name);
+        }
     }
 
     public function test_missing_scopes_precede_role_and_every_tool_reports_its_required_scope(): void

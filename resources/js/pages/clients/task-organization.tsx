@@ -181,19 +181,21 @@ function ListPanel({
                 )}
             </CardHeader>
             <CardContent className="grid min-w-0 grid-cols-1 gap-4">
-                <div className="grid min-w-0 grid-cols-1 gap-2 rounded-md border p-3">
-                    <Link
-                        href={view.unlisted.browse_href}
-                        className="font-medium wrap-anywhere underline underline-offset-4"
-                    >
-                        Unlisted tasks
-                    </Link>
-                    <MoveHere
-                        view={view}
-                        target={view.unlisted.move_target}
-                        mutation={mutation}
-                    />
-                </div>
+                <Card className="min-w-0">
+                    <CardContent className="grid grid-cols-1 gap-2">
+                        <Link
+                            href={view.unlisted.browse_href}
+                            className="font-medium wrap-anywhere underline underline-offset-4"
+                        >
+                            Unlisted tasks
+                        </Link>
+                        <MoveHere
+                            view={view}
+                            target={view.unlisted.move_target}
+                            mutation={mutation}
+                        />
+                    </CardContent>
+                </Card>
                 <nav
                     aria-label="Task lists"
                     className="max-h-[32rem] min-w-0 overflow-y-auto"
@@ -203,104 +205,120 @@ function ListPanel({
                             const index = order.indexOf(list.id);
 
                             return (
-                                <li
-                                    key={list.id}
-                                    className="grid min-w-0 grid-cols-1 gap-3 rounded-md border p-3"
-                                >
-                                    <Link
-                                        href={list.browse_href}
-                                        className="font-medium wrap-anywhere underline underline-offset-4"
-                                    >
-                                        {list.name}
-                                    </Link>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <Badge variant="secondary">
-                                            {list.archived
-                                                ? 'Archived'
-                                                : list.is_visible_to_client
-                                                  ? 'Client sharing enabled'
-                                                  : 'Internal'}
-                                        </Badge>
-                                        {view.reorder_lists_href &&
-                                            index >= 0 &&
-                                            !view.moving && (
-                                                <OrderButtons
-                                                    name={list.name}
-                                                    index={index}
-                                                    count={order.length}
-                                                    disabled={mutation.locked}
-                                                    change={(offset) =>
-                                                        setDraft((current) => ({
-                                                            ids: reorder(
-                                                                current?.ids ??
-                                                                    view.ordered_list_ids,
-                                                                index,
-                                                                offset,
-                                                            ),
-                                                            version:
-                                                                current?.version ??
-                                                                view.lists_version,
-                                                        }))
-                                                    }
+                                <Card key={list.id} className="min-w-0">
+                                    <CardContent>
+                                        <li className="grid grid-cols-1 gap-3">
+                                            <Link
+                                                href={list.browse_href}
+                                                className="font-medium wrap-anywhere underline underline-offset-4"
+                                            >
+                                                {list.name}
+                                            </Link>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Badge variant="secondary">
+                                                    {list.archived
+                                                        ? 'Archived'
+                                                        : list.is_visible_to_client
+                                                          ? 'Client sharing enabled'
+                                                          : 'Internal'}
+                                                </Badge>
+                                                {view.reorder_lists_href &&
+                                                    index >= 0 &&
+                                                    !view.moving && (
+                                                        <OrderButtons
+                                                            name={list.name}
+                                                            index={index}
+                                                            count={order.length}
+                                                            disabled={
+                                                                mutation.locked
+                                                            }
+                                                            change={(offset) =>
+                                                                setDraft(
+                                                                    (
+                                                                        current,
+                                                                    ) => ({
+                                                                        ids: reorder(
+                                                                            current?.ids ??
+                                                                                view.ordered_list_ids,
+                                                                            index,
+                                                                            offset,
+                                                                        ),
+                                                                        version:
+                                                                            current?.version ??
+                                                                            view.lists_version,
+                                                                    }),
+                                                                )
+                                                            }
+                                                        />
+                                                    )}
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {!view.moving &&
+                                                    list.update_href && (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={
+                                                                mutation.locked
+                                                            }
+                                                            onClick={() =>
+                                                                open({
+                                                                    kind: 'edit-list',
+                                                                    list,
+                                                                })
+                                                            }
+                                                        >
+                                                            Edit list
+                                                        </Button>
+                                                    )}
+                                                {!view.moving &&
+                                                    list.archive_href && (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={
+                                                                mutation.locked
+                                                            }
+                                                            onClick={() =>
+                                                                open({
+                                                                    kind: 'archive-list',
+                                                                    list,
+                                                                })
+                                                            }
+                                                        >
+                                                            Archive list
+                                                        </Button>
+                                                    )}
+                                                {!view.moving &&
+                                                    list.restore_href && (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={
+                                                                mutation.locked
+                                                            }
+                                                            onClick={() =>
+                                                                open({
+                                                                    kind: 'restore-list',
+                                                                    list,
+                                                                })
+                                                            }
+                                                        >
+                                                            Restore list
+                                                        </Button>
+                                                    )}
+                                                <MoveHere
+                                                    view={view}
+                                                    target={list.move_target}
+                                                    mutation={mutation}
                                                 />
-                                            )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {!view.moving && list.update_href && (
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="outline"
-                                                disabled={mutation.locked}
-                                                onClick={() =>
-                                                    open({
-                                                        kind: 'edit-list',
-                                                        list,
-                                                    })
-                                                }
-                                            >
-                                                Edit list
-                                            </Button>
-                                        )}
-                                        {!view.moving && list.archive_href && (
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="outline"
-                                                disabled={mutation.locked}
-                                                onClick={() =>
-                                                    open({
-                                                        kind: 'archive-list',
-                                                        list,
-                                                    })
-                                                }
-                                            >
-                                                Archive list
-                                            </Button>
-                                        )}
-                                        {!view.moving && list.restore_href && (
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="outline"
-                                                disabled={mutation.locked}
-                                                onClick={() =>
-                                                    open({
-                                                        kind: 'restore-list',
-                                                        list,
-                                                    })
-                                                }
-                                            >
-                                                Restore list
-                                            </Button>
-                                        )}
-                                        <MoveHere
-                                            view={view}
-                                            target={list.move_target}
-                                            mutation={mutation}
-                                        />
-                                    </div>
-                                </li>
+                                            </div>
+                                        </li>
+                                    </CardContent>
+                                </Card>
                             );
                         })}
                     </ul>
@@ -440,101 +458,112 @@ function TaskPanel({
                         }
 
                         return (
-                            <li
-                                key={task.id}
-                                className="grid min-w-0 grid-cols-1 gap-3 rounded-md border p-4"
-                            >
-                                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="min-w-0 flex-1">
-                                        <Link
-                                            href={task.task_href}
-                                            className="font-medium wrap-anywhere underline underline-offset-4"
-                                        >
-                                            {task.title}
-                                        </Link>
-                                    </div>
-                                    {container.reorder_href && !view.moving && (
-                                        <OrderButtons
-                                            name={task.title}
-                                            index={index}
-                                            count={order.length}
-                                            disabled={mutation.locked}
-                                            change={(offset) =>
-                                                setDraft((current) => ({
-                                                    ids: reorder(
-                                                        current?.ids ??
-                                                            container.tasks.map(
-                                                                (task) =>
-                                                                    task.id,
-                                                            ),
-                                                        index,
-                                                        offset,
-                                                    ),
-                                                    version:
-                                                        current?.version ??
-                                                        container.version,
-                                                    target:
-                                                        current?.target ??
-                                                        container.target,
-                                                }))
-                                            }
-                                        />
-                                    )}
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <Badge variant="secondary">
-                                        {task.status_label}
-                                    </Badge>
-                                    <Badge variant="outline">
-                                        {task.effective_visible_to_client
-                                            ? 'Client sharing enabled'
-                                            : task.is_visible_to_client
-                                              ? 'Hidden by project or parent'
-                                              : 'Internal'}
-                                    </Badge>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Link
-                                        href={task.browse_href}
-                                        className="text-sm underline underline-offset-4"
-                                    >
-                                        Subtasks
-                                    </Link>
-                                    {!view.moving && task.create_child_href && (
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            disabled={mutation.locked}
-                                            onClick={() =>
-                                                open({
-                                                    kind: 'new-task',
-                                                    href: task.create_child_href!,
-                                                    target: task.child_target,
-                                                    title: 'New subtask',
-                                                })
-                                            }
-                                        >
-                                            New subtask
-                                        </Button>
-                                    )}
-                                    {!view.moving && (
-                                        <Link
-                                            href={task.move_picker_href}
-                                            className="text-sm underline underline-offset-4"
-                                        >
-                                            Move task
-                                        </Link>
-                                    )}
-                                    <MoveHere
-                                        view={view}
-                                        target={task.move_target}
-                                        mutation={mutation}
-                                    >
-                                        Move under this task
-                                    </MoveHere>
-                                </div>
-                            </li>
+                            <Card key={task.id} className="min-w-0">
+                                <CardContent>
+                                    <li className="grid grid-cols-1 gap-3">
+                                        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                            <div className="min-w-0 flex-1">
+                                                <Link
+                                                    href={task.task_href}
+                                                    className="font-medium wrap-anywhere underline underline-offset-4"
+                                                >
+                                                    {task.title}
+                                                </Link>
+                                            </div>
+                                            {container.reorder_href &&
+                                                !view.moving && (
+                                                    <OrderButtons
+                                                        name={task.title}
+                                                        index={index}
+                                                        count={order.length}
+                                                        disabled={
+                                                            mutation.locked
+                                                        }
+                                                        change={(offset) =>
+                                                            setDraft(
+                                                                (current) => ({
+                                                                    ids: reorder(
+                                                                        current?.ids ??
+                                                                            container.tasks.map(
+                                                                                (
+                                                                                    task,
+                                                                                ) =>
+                                                                                    task.id,
+                                                                            ),
+                                                                        index,
+                                                                        offset,
+                                                                    ),
+                                                                    version:
+                                                                        current?.version ??
+                                                                        container.version,
+                                                                    target:
+                                                                        current?.target ??
+                                                                        container.target,
+                                                                }),
+                                                            )
+                                                        }
+                                                    />
+                                                )}
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <Badge variant="secondary">
+                                                {task.status_label}
+                                            </Badge>
+                                            <Badge variant="outline">
+                                                {task.effective_visible_to_client
+                                                    ? 'Client sharing enabled'
+                                                    : task.is_visible_to_client
+                                                      ? 'Hidden by project or parent'
+                                                      : 'Internal'}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <Link
+                                                href={task.browse_href}
+                                                className="text-sm underline underline-offset-4"
+                                            >
+                                                Subtasks
+                                            </Link>
+                                            {!view.moving &&
+                                                task.create_child_href && (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        disabled={
+                                                            mutation.locked
+                                                        }
+                                                        onClick={() =>
+                                                            open({
+                                                                kind: 'new-task',
+                                                                href: task.create_child_href!,
+                                                                target: task.child_target,
+                                                                title: 'New subtask',
+                                                            })
+                                                        }
+                                                    >
+                                                        New subtask
+                                                    </Button>
+                                                )}
+                                            {!view.moving && (
+                                                <Link
+                                                    href={task.move_picker_href}
+                                                    className="text-sm underline underline-offset-4"
+                                                >
+                                                    Move task
+                                                </Link>
+                                            )}
+                                            <MoveHere
+                                                view={view}
+                                                target={task.move_target}
+                                                mutation={mutation}
+                                            >
+                                                Move under this task
+                                            </MoveHere>
+                                        </div>
+                                    </li>
+                                </CardContent>
+                            </Card>
                         );
                     })}
                 </ol>
@@ -831,18 +860,20 @@ export default function TaskOrganizationPage({
                     </Card>
                 )}
                 {mutation.error && !dialog && (
-                    <div className="grid min-w-0 grid-cols-1 gap-3 rounded-md border border-destructive p-4">
-                        <PlanningMutationError mutation={mutation} />
-                        <Button
-                            type="button"
-                            variant="outline"
-                            className="justify-self-start"
-                            disabled={mutation.locked}
-                            onClick={reloadCurrent}
-                        >
-                            Reload current state
-                        </Button>
-                    </div>
+                    <Card className="min-w-0 ring-destructive">
+                        <CardContent className="grid grid-cols-1 gap-3">
+                            <PlanningMutationError mutation={mutation} />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="justify-self-start"
+                                disabled={mutation.locked}
+                                onClick={reloadCurrent}
+                            >
+                                Reload current state
+                            </Button>
+                        </CardContent>
+                    </Card>
                 )}
                 <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
                     <ListPanel

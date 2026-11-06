@@ -1730,6 +1730,46 @@
             "mcp.switch:current-context"
         ]
     },
+    "revenue.clients": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.clients"
+        ]
+    },
+    "revenue.monthly": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.monthly"
+        ]
+    },
+    "revenue.projection": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.projection"
+        ]
+    },
+    "revenue.summary": {
+        "scopes": [
+            "revenue:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.revenue",
+            "mcp.switch:revenue.summary"
+        ]
+    },
     "search": {
         "scopes": [
             "identity:read"
@@ -2321,6 +2361,36 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:time_entries.update"
+        ]
+    },
+    "toolsets.disable": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.toolsets",
+            "mcp.switch:toolsets.disable"
+        ]
+    },
+    "toolsets.enable": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.toolsets",
+            "mcp.switch:toolsets.enable"
+        ]
+    },
+    "toolsets.list": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.toolsets",
+            "mcp.switch:toolsets.list"
         ]
     },
     "workspaces.create": {

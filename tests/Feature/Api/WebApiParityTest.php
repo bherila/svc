@@ -18,6 +18,7 @@ use Tests\TestCase;
 final class WebApiParityTest extends TestCase
 {
     private const array BROWSER_ONLY = [
+        'account.preferences.update' => 'web-only:a display preference of the signed-in person, not business data',
         // A credential may never mint another credential (#384).
         'bherila-auth.credentials.apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.apps.store' => 'deliberate:credentials are issued only by the signed-in person',
@@ -25,11 +26,16 @@ final class WebApiParityTest extends TestCase
         'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
+        'workspaces.payments.destroy' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
+        'workspaces.payments.reuse' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
+        'workspaces.payments.store' => 'deliberate:payment keys are entered only by a signed-in owner or admin',
         'logout' => 'web-only:sign-out',
         'svc.billing.brevo.webhook' => 'web-only:inbound webhook',
         'svc.billing.invoices.stripe-payment-intent' => 'web-only:payment processor hand-off',
         'svc.billing.stripe.webhook' => 'web-only:inbound webhook',
+        'svc.billing.stripe.workspace-webhook' => 'web-only:inbound webhook',
         'svc.billing.square.webhook' => 'web-only:inbound webhook',
+        'svc.billing.square.workspace-webhook' => 'web-only:inbound webhook',
         'svc.engagement.agreements.sign' => 'deliberate:a signature is an interactive act by the signer',
         'svc.engagement.proposals.accept' => 'deliberate:portal acceptance is an interactive signature by the recipient; REST/MCP separately support confirmed offline acceptance',
     ];

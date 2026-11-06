@@ -1,6 +1,8 @@
 import { Head, Link } from '@inertiajs/react';
+import { ClientOverviewSections } from '@/components/revenue/client-overview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatDay, formatShortDay } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
@@ -8,6 +10,7 @@ import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
 import { formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
+import type { ClientOverview, ThisPeriodRow } from '@/types/revenue';
 
 /**
  * One client, at a glance.
@@ -85,6 +88,13 @@ export type ClientHomeProps = {
         tasks: string | null;
     };
     settings_href: string | null;
+    /**
+     * The revenue overview, for owners and admins. The key is absent for
+     * anyone else, who gets the plain Client Home.
+     */
+    overview?: ClientOverview;
+    /** This period's retainer use; a deferred prop, undefined until it arrives. */
+    this_period?: ThisPeriodRow[];
 };
 
 /**
@@ -112,7 +122,7 @@ function Section({
     return (
         <section className="border-t border-border pt-6">
             <div className="flex items-baseline justify-between gap-4">
-                <h2 className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+                <h2 className="text-[17px] font-semibold tracking-tight md:text-lg">
                     {title}
                 </h2>
                 {href !== null && (
@@ -143,6 +153,8 @@ export default function ClientHome({
     engagement,
     links,
     settings_href: settingsHref,
+    overview,
+    this_period: thisPeriod,
 }: ClientHomeProps) {
     return (
         <WorkspaceShell activeModule="home">
@@ -173,74 +185,93 @@ export default function ClientHome({
                  * reading it.
                  */}
                 {engagement !== null && engagement.proposal_href !== null && (
-                    <div
-                        role="status"
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
-                    >
-                        <span>
-                            <span className="font-medium">
-                                {engagement.proposal_title}
-                            </span>{' '}
-                            is waiting for a response.
-                        </span>
-                        <Link
-                            href={engagement.proposal_href}
-                            className="underline underline-offset-4"
+                    <Card className="bg-muted/40 text-sm ring-border">
+                        <CardContent
+                            role="status"
+                            className="flex flex-wrap items-center justify-between gap-3"
                         >
-                            Review proposal
-                        </Link>
-                    </div>
+                            <span className="min-w-0 wrap-anywhere">
+                                <span className="font-medium">
+                                    {engagement.proposal_title}
+                                </span>{' '}
+                                is waiting for a response.
+                            </span>
+                            <Link
+                                href={engagement.proposal_href}
+                                className="underline underline-offset-4"
+                            >
+                                Review proposal
+                            </Link>
+                        </CardContent>
+                    </Card>
                 )}
 
-                <Section
-                    title="Latest invoice"
-                    href={links.invoices}
-                    viewAll="All invoices"
-                    empty="No invoices yet."
-                    isEmpty={latestInvoice === null}
-                >
-                    {latestInvoice !== null && (
-                        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
-                            <div className="grid min-w-0 grid-cols-1 gap-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Link
-                                        href={latestInvoice.href}
-                                        className="font-medium wrap-anywhere underline-offset-4 hover:underline"
-                                    >
-                                        {latestInvoice.invoice_number}
-                                    </Link>
-                                    <Badge variant="outline">
-                                        {statusLabel(latestInvoice.status)}
-                                    </Badge>
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                    {latestInvoice.issue_date === null
-                                        ? 'Undated'
-                                        : formatDay(latestInvoice.issue_date)}
-                                    {latestInvoice.due_date !== null &&
-                                        ` · due ${formatDay(latestInvoice.due_date)}`}
-                                </p>
-                            </div>
-                            <div className="text-end">
-                                <p className="font-medium tabular-nums">
-                                    {formatMoney(
-                                        latestInvoice.total_amount,
-                                        latestInvoice.currency,
-                                    )}
-                                </p>
-                                {latestInvoice.balance_amount > 0 && (
-                                    <p className="text-sm text-muted-foreground tabular-nums">
-                                        {formatMoney(
-                                            latestInvoice.balance_amount,
-                                            latestInvoice.currency,
-                                        )}{' '}
-                                        outstanding
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </Section>
+                {overview !== undefined && (
+                    <ClientOverviewSections
+                        overview={overview}
+                        thisPeriod={thisPeriod}
+                        invoicesHref={links.invoices}
+                    />
+                )}
+
+                {/* The overview's invoice table replaces the single latest invoice. */}
+                {overview === undefined && (
+                    <Section
+                        title="Latest invoice"
+                        href={links.invoices}
+                        viewAll="All invoices"
+                        empty="No invoices yet."
+                        isEmpty={latestInvoice === null}
+                    >
+                        {latestInvoice !== null && (
+                            <Card className="ring-border">
+                                <CardContent className="flex flex-wrap items-center justify-between gap-4">
+                                    <div className="grid min-w-0 grid-cols-1 gap-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <Link
+                                                href={latestInvoice.href}
+                                                className="font-medium wrap-anywhere underline-offset-4 hover:underline"
+                                            >
+                                                {latestInvoice.invoice_number}
+                                            </Link>
+                                            <Badge variant="outline">
+                                                {statusLabel(
+                                                    latestInvoice.status,
+                                                )}
+                                            </Badge>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                            {latestInvoice.issue_date === null
+                                                ? 'Undated'
+                                                : formatDay(
+                                                      latestInvoice.issue_date,
+                                                  )}
+                                            {latestInvoice.due_date !== null &&
+                                                ` · due ${formatDay(latestInvoice.due_date)}`}
+                                        </p>
+                                    </div>
+                                    <div className="text-end">
+                                        <p className="font-medium tabular-nums">
+                                            {formatMoney(
+                                                latestInvoice.total_amount,
+                                                latestInvoice.currency,
+                                            )}
+                                        </p>
+                                        {latestInvoice.balance_amount > 0 && (
+                                            <p className="text-sm text-muted-foreground tabular-nums">
+                                                {formatMoney(
+                                                    latestInvoice.balance_amount,
+                                                    latestInvoice.currency,
+                                                )}{' '}
+                                                outstanding
+                                            </p>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </Section>
+                )}
 
                 <Section
                     title="Recent time"
@@ -323,31 +354,36 @@ export default function ClientHome({
                  * terms are a page of their own and repeating them here would
                  * be a second, shorter, subtly different copy of them.
                  */}
-                {engagement !== null && engagement.agreement_href !== null && (
-                    <section className="border-t border-border pt-6">
-                        <h2 className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
-                            Engagement
-                        </h2>
-                        <p className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-                            <Link
-                                href={engagement.agreement_href}
-                                className="font-medium underline-offset-4 hover:underline"
-                            >
-                                {engagement.agreement_title}
-                            </Link>
-                            <Badge variant="outline">
-                                {statusLabel(engagement.agreement_status)}
-                            </Badge>
-                            {engagement.agreement_cadence !== null && (
-                                <span className="text-muted-foreground">
-                                    {statusLabel(
-                                        engagement.agreement_cadence,
-                                    ).toLowerCase()}
-                                </span>
-                            )}
-                        </p>
-                    </section>
-                )}
+                {overview === undefined &&
+                    engagement !== null &&
+                    engagement.agreement_href !== null && (
+                        <section
+                            id="agreements"
+                            className="scroll-mt-20 border-t border-border pt-6"
+                        >
+                            <h2 className="text-[17px] font-semibold tracking-tight md:text-lg">
+                                Engagement
+                            </h2>
+                            <p className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                                <Link
+                                    href={engagement.agreement_href}
+                                    className="font-medium underline-offset-4 hover:underline"
+                                >
+                                    {engagement.agreement_title}
+                                </Link>
+                                <Badge variant="outline">
+                                    {statusLabel(engagement.agreement_status)}
+                                </Badge>
+                                {engagement.agreement_cadence !== null && (
+                                    <span className="text-muted-foreground">
+                                        {statusLabel(
+                                            engagement.agreement_cadence,
+                                        ).toLowerCase()}
+                                    </span>
+                                )}
+                            </p>
+                        </section>
+                    )}
                 {files_href && (
                     <Link className="text-sm underline" href={files_href}>
                         Client files
