@@ -1568,7 +1568,12 @@ try {
                                                 'draft_time',
                                             ]
                                           : engagementOnly
-                                            ? ['client_agreements', 'agreement']
+                                            ? [
+                                                  'client_agreements',
+                                                  'agreement',
+                                                  'project_page',
+                                                  'client_overview',
+                                              ]
                                             : disputesOnly
                                               ? ['invoice', 'square_portal']
                                               : taskLookupsOnly
@@ -1934,6 +1939,28 @@ try {
                 await capture(screen, 'created', width);
                 await page.unroute(createPattern, createHandler);
                 await page.unroute(readPattern, readHandler);
+            }
+
+            if (engagementOnly && screen === 'project_page') {
+                // The per-project time form from the retired Operations
+                // screen is this link, and it opens the sheet on the project.
+                const logTime = page.getByRole('link', {
+                    name: 'Log time',
+                    exact: true,
+                });
+                await expect(logTime).toBeVisible();
+                expect(await logTime.getAttribute('href')).toContain(
+                    '?log_project=',
+                );
+                await capture(screen, 'log-time-link', width);
+            }
+
+            if (engagementOnly && screen === 'client_overview') {
+                // The activity feed from the same screen is the last card.
+                await expect(
+                    page.getByText('Activity', { exact: true }),
+                ).toBeVisible();
+                await capture(screen, 'activity', width);
             }
 
             if (screen === 'task_project') {
