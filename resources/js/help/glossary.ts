@@ -1,0 +1,75 @@
+/**
+ * The one glossary.
+ *
+ * Every word a new user may not know is defined here once, and the same
+ * wording is the vocabulary for emails, PDFs and MCP descriptions. A term is
+ * *defined* by exactly one help article (its `terms` front matter), which the
+ * coverage tests enforce.
+ */
+export type GlossaryEntry = { term: string; definition: string };
+
+export const GLOSSARY: readonly GlossaryEntry[] = [
+    {
+        term: 'Draft',
+        definition:
+            'Saved but not yet sent on. A draft can still be edited or thrown away.',
+    },
+    {
+        term: 'Submitted',
+        definition:
+            'Handed in for review. The person who did the work can no longer change it.',
+    },
+    {
+        term: 'Reviewed',
+        definition:
+            'Checked by the business that will invoice it, and waiting for the client to approve.',
+    },
+    {
+        term: 'Invoiced',
+        definition:
+            'Already billed on an issued invoice. It is locked and counts toward what the client owes.',
+    },
+    {
+        term: 'Approved',
+        definition:
+            'Accepted as correct and ready to bill. Approved work goes onto the next invoice.',
+    },
+    {
+        term: 'Disputed',
+        definition:
+            'Questioned by the client. It stays out of billing until the question is settled.',
+    },
+    {
+        term: 'Retainer',
+        definition:
+            'A block of hours the client pays for each period, whether or not they are all used.',
+    },
+    {
+        term: 'Rollover',
+        definition:
+            'Retainer hours left unused at the end of a period that carry into the next one.',
+    },
+    {
+        term: 'Overage',
+        definition:
+            'Hours worked beyond what the retainer covers, billed at the hourly rate.',
+    },
+    {
+        term: 'Shared project',
+        definition:
+            'A project run by one business with another business taking part in it.',
+    },
+    {
+        term: 'Partner',
+        definition:
+            'An independent business that does part of the work on a shared project.',
+    },
+];
+
+export function glossaryDefinition(term: string): string | null {
+    return (
+        GLOSSARY.find(
+            (entry) => entry.term.toLowerCase() === term.toLowerCase(),
+        )?.definition ?? null
+    );
+}

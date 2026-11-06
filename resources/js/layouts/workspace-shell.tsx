@@ -1,6 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { AppearanceSelector } from '@/components/appearance-selector';
+import { HelpPanel } from '@/components/help/help-panel';
 import { AccountMenu } from '@/components/navigation/account-menu';
 import { NewClientDialog } from '@/components/navigation/new-client-dialog';
 import { WorkspaceNavbar } from '@/components/navigation/workspace-navbar';
@@ -90,6 +91,8 @@ export default function WorkspaceShell({
             />
 
             {children}
+
+            <HelpPanel />
 
             {navigation.create_client_url && (
                 <NewClientDialog

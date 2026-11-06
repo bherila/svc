@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import { LogOutIcon } from 'lucide-react';
 import { AppearanceSelector } from '@/components/appearance-selector';
 import { CommandPaletteTrigger } from '@/components/command-palette';
+import { HelpButton } from '@/components/help/help-button';
 import { AccountMenu } from '@/components/navigation/account-menu';
 import { ClientCompanySwitcher } from '@/components/navigation/client-company-switcher';
 import { ClientModuleTabs } from '@/components/navigation/client-module-tabs';
@@ -118,6 +119,7 @@ export function WorkspaceNavbar({
 
                 <div className="ms-auto flex shrink-0 items-center gap-1">
                     {navigation.permissions.search && <CommandPaletteTrigger />}
+                    <HelpButton />
                     <AppearanceSelector />
                     <AccountMenu
                         workspaceSettingsHref={
