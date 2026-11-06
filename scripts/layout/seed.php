@@ -1,8 +1,11 @@
 <?php
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientContact;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
@@ -179,7 +182,7 @@ if (getenv('SVC_LAYOUT_REVENUE') === '1') {
             'billing_cadence' => 'monthly', 'retainer_amount' => 250000000 + $index * 1000000, 'retainer_minutes' => 600,
             'hourly_rate_amount' => 20000, 'signed_at' => $today->subMonths(8)->toDateTimeString(),
         ]);
-        $item = App\Models\ClientAgreementRecurringItem::query()->create([
+        $item = ClientAgreementRecurringItem::query()->create([
             'workspace_id' => $workspace->id, 'client_agreement_id' => $revenueAgreement->id, 'description' => str_repeat('SyntheticHostingServiceWithoutBreaks', 3),
             'cadence' => 'quarterly', 'anchor_month' => 1, 'anchor_day' => 1, 'quantity' => '1.000', 'amount' => 30000000,
             'currency' => 'USD', 'is_taxable' => false, 'is_active' => true, 'sort_order' => 1,
@@ -198,7 +201,7 @@ if (getenv('SVC_LAYOUT_REVENUE') === '1') {
                 $lines[] = ['expense', 5000000, $start->endOfMonth()->toDateString(), null];
             }
             $revenueNumber++;
-            $revenueInvoice = App\Models\ClientInvoice::query()->create([
+            $revenueInvoice = ClientInvoice::query()->create([
                 'workspace_id' => $workspace->id, 'client_company_id' => $client->id, 'client_agreement_id' => $revenueAgreement->id,
                 'invoice_number' => 'SYNTHETIC-REV-'.str_repeat('Z', 40).$revenueNumber, 'status' => $back > 2 ? 'paid' : 'issued',
                 'currency' => 'USD', 'invoice_kind' => 'cadence_period',
@@ -207,7 +210,7 @@ if (getenv('SVC_LAYOUT_REVENUE') === '1') {
             ]);
             $total = 0;
             foreach ($lines as $sort => [$type, $amount, $lineDate, $itemId]) {
-                App\Models\ClientInvoiceLine::query()->create([
+                ClientInvoiceLine::query()->create([
                     'workspace_id' => $workspace->id, 'client_invoice_id' => $revenueInvoice->id, 'client_agreement_id' => $revenueAgreement->id,
                     'client_agreement_recurring_item_id' => $itemId, 'type' => $type, 'description' => 'Synthetic '.$type,
                     'quantity' => '1', 'unit_amount' => $amount, 'tax_amount' => 0, 'total_amount' => $amount, 'line_date' => $lineDate, 'sort_order' => $sort,
