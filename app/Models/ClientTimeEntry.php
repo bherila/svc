@@ -39,6 +39,12 @@ use LogicException;
  * @property string|null $currency
  * @property string $status
  * @property CarbonImmutable|null $approved_at
+ * @property CarbonImmutable|null $client_approved_at
+ * @property int|null $client_approved_by_user_id
+ * @property string|null $client_approval_source
+ * @property CarbonImmutable|null $client_disputed_at
+ * @property int|null $client_disputed_by_user_id
+ * @property string|null $client_dispute_note
  * @property SubcontractorBillingMode|null $subcontractor_billing_mode
  * @property int $lock_version
  */
@@ -47,8 +53,10 @@ use LogicException;
     'worked_on', 'minutes', 'description', 'client_visible_description', 'job_type', 'split_from_time_entry_id', 'is_billable', 'is_deferred', 'is_visible_to_client', 'billing_rate_amount', 'billing_rate_source', 'currency',
     'status', 'approved_by_user_id', 'approved_at', 'subcontractor_billing_mode', 'subcontractor_cost_amount', 'subcontractor_cost_currency',
     'subcontractor_cost_metadata',
+    'client_approved_at', 'client_approved_by_user_id', 'client_approval_source',
+    'client_disputed_at', 'client_disputed_by_user_id', 'client_dispute_note',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id'])]
 class ClientTimeEntry extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
@@ -63,6 +71,8 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             'is_visible_to_client' => 'boolean',
             'billing_rate_amount' => 'integer',
             'approved_at' => 'immutable_datetime',
+            'client_approved_at' => 'immutable_datetime',
+            'client_disputed_at' => 'immutable_datetime',
             'subcontractor_billing_mode' => SubcontractorBillingMode::class,
             'subcontractor_cost_amount' => 'integer',
             'subcontractor_cost_metadata' => 'array',

@@ -20,14 +20,20 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
  * @property int $user_id
  * @property string $role
  * @property string $access_scope
+ * @property bool|null $can_approve_time_and_expenses Null: the default, the client's billing contact.
  */
-#[Fillable(['public_id', 'client_company_id', 'user_id', 'role', 'access_scope'])]
+#[Fillable(['public_id', 'client_company_id', 'user_id', 'role', 'access_scope', 'can_approve_time_and_expenses'])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'user_id'])]
 class ClientCompanyMembership extends Pivot implements WorkspaceOwned
 {
     use BelongsToWorkspace;
     use HasPublicId;
     use ScopesPivotDeletesToWorkspace;
+
+    protected function casts(): array
+    {
+        return ['can_approve_time_and_expenses' => 'boolean'];
+    }
 
     public $incrementing = true;
 

@@ -53,14 +53,22 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $status
  * @property int|null $approved_by_user_id
  * @property CarbonImmutable|null $approved_at
+ * @property CarbonImmutable|null $client_approved_at
+ * @property int|null $client_approved_by_user_id
+ * @property string|null $client_approval_source
+ * @property CarbonImmutable|null $client_disputed_at
+ * @property int|null $client_disputed_by_user_id
+ * @property string|null $client_dispute_note
  * @property string|null $external_finance_transaction_uuid Creation-only provenance, not a deduplication key.
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_project_id', 'client_invoice_line_id', 'created_by_user_id',
     'spent_on', 'amount', 'currency', 'description', 'client_expense_schedule_id', 'occurrence_on',
     'status', 'approved_by_user_id', 'approved_at', 'external_finance_transaction_uuid',
+    'client_approved_at', 'client_approved_by_user_id', 'client_approval_source',
+    'client_disputed_at', 'client_disputed_by_user_id', 'client_dispute_note',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_invoice_line_id', 'created_by_user_id', 'approved_by_user_id', 'client_expense_schedule_id', 'occurrence_on', 'external_finance_transaction_uuid'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_invoice_line_id', 'created_by_user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'client_expense_schedule_id', 'occurrence_on', 'external_finance_transaction_uuid'])]
 class ClientExpense extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
@@ -71,6 +79,8 @@ class ClientExpense extends Model implements WorkspaceOwned
             'spent_on' => DateOnly::class,
             'amount' => 'integer',
             'approved_at' => 'immutable_datetime',
+            'client_approved_at' => 'immutable_datetime',
+            'client_disputed_at' => 'immutable_datetime',
         ];
     }
 

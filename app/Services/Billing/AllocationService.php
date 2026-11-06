@@ -157,6 +157,15 @@ final class AllocationService
             'billing_rate_source' => $entry->billing_rate_source,
             'approved_by_user_id' => $entry->approved_by_user_id,
             'approved_at' => $entry->approved_at?->toIso8601String(),
+            // A fragment the client has decided on is no longer the same
+            // piece of work as one they have not: merging would delete the
+            // decision with the loser.
+            'client_approved_at' => $entry->client_approved_at?->toIso8601String(),
+            'client_approved_by_user_id' => $entry->client_approved_by_user_id,
+            'client_approval_source' => $entry->client_approval_source,
+            'client_disputed_at' => $entry->client_disputed_at?->toIso8601String(),
+            'client_disputed_by_user_id' => $entry->client_disputed_by_user_id,
+            'client_dispute_note' => $entry->client_dispute_note,
             'subcontractor_billing_mode' => $entry->subcontractor_billing_mode?->value,
             'subcontractor_cost_amount' => $entry->subcontractor_cost_amount,
             'subcontractor_cost_currency' => $entry->subcontractor_cost_currency,
