@@ -215,79 +215,153 @@ Approving a time entry today does two jobs at once. It fixes the entry's
 billing rate (`TimeEntryMutationService` stamps `billing_rate_amount` on
 approval), and it is the gate a draft invoice reads (`status = 'approved'`).
 So the consultant has to "approve" their own hours to bill them, and the
-record then claims an approval that nobody gave. The person whose acceptance
+record then claims an approval that nobody gave. The person whose approval
 actually matters, the client, never appears in it.
 
-Approval authority follows whoever **pays** for the time, not whoever owns the
-workspace.
+Approval belongs to whoever **pays** for the time. Review belongs to whoever
+the payer asks to vouch for it.
 
 ### Worked example: vetvet
 
-- **The fractional CTO (the workspace owner)** contracts with vetvet for a
-  monthly retainer with carry-forward. Vetvet pays the fCTO, so **vetvet
-  accepts the fCTO's hours**. It does that by paying the invoice.
-- **Another engineer** contracts directly with vetvet at their own rate. The
-  fCTO introduced them, and SVC gives them a place to log time. Vetvet pays the
-  engineer, and before it does, **vetvet asks the fCTO to approve the
-  engineer's hours**. So the fCTO approves them, and vetvet relies on that
-  approval. This is the existing `SubcontractorBillingMode::Direct`.
-- A subcontractor the fCTO pays and re-bills (`FlatHourly`, `Retainer`) is
-  approved by the fCTO, and then accepted by vetvet through the fCTO's invoice,
-  like the fCTO's own time.
+- **Herila (the fCTO)** has an agreement with vetvet: a monthly retainer with
+  carry-forward. Vetvet pays Herila, so **vetvet approves Herila's hours**.
+- **Other Eng** is a separate business with **its own agreement with vetvet**,
+  at its own rate. Herila introduced them. Vetvet pays Other Eng directly, and
+  before it does, it asks Herila to check Other Eng's hours. So **Herila
+  reviews and vetvet approves**.
+- Herila and Other Eng work in **one project**: they share tasks, hand work to
+  each other, and comment in the same threads.
+- Every person signs in through the same identity provider (configured per
+  deployment: `id.bherila.net` here), so each person is one `User` across every
+  workspace.
 
-| Time | Logged by | Locked / approved by | Accepted by |
-| --- | --- | --- | --- |
-| Consultant (no mode) | fCTO | Nobody separately: issuing the invoice locks it | Client, by paying the invoice |
-| `Retainer` / `FlatHourly` sub | Sub | fCTO (project owner/manager) | Client, by paying the invoice |
-| `Direct` sub | Sub | fCTO (project owner/manager), on the client's behalf | Client, by paying the sub outside SVC |
+| Time | Stored in | Reviewed by | Approved by | Billed by |
+| --- | --- | --- | --- | --- |
+| Herila's own | Herila's workspace | (none) | vetvet, in the portal or by paying | Herila's invoice |
+| A sub Herila pays and re-bills (`FlatHourly`, `Retainer`) | Herila's workspace | (none) | Herila, then vetvet through Herila's invoice | Herila's invoice |
+| Other Eng's | Other Eng's workspace | Herila, through a reviewer grant | vetvet, in the portal | Other Eng, outside SVC or in its own SVC workspace |
 
-### Defaults (to confirm)
+### 7a. Workspaces own money, and shared projects hold the collaboration
 
-1. **Own time has no approval step.** A draft invoice pulls in all unbilled
-   consultant time in its service period, whatever its status. The fCTO reviews
-   the hours on the draft. Issuing the invoice fixes the rate and moves the
-   entries to `invoiced`. The "Approve" button is not shown on consultant time.
-   This moves the rate stamp from approval to issue for consultant time only.
-   The billing rate is still resolved by `AgreementBillingRateResolver`, so the
-   amount is the same either way. The draft-invoice regenerator already re-reads
-   time on change.
-2. **Acceptance is derived, not stored.** An entry on an invoice reads as
-   *Accepted* when the invoice is `paid`, *Disputed* when it is `disputed`, and
-   *Awaiting payment* otherwise. Because it is computed from invoice status, a
-   refund, reopen or void updates it with no extra state to keep in sync. The
-   mapping over `InvoiceStatus` is an exhaustive `match`. Partial payment reads
-   as *Awaiting payment*, because hours are not split across a partial payment.
-3. **Subcontractor time keeps its approval step**, and the approval queue on
-   the workspace Time tab and the dashboard holds only time that someone other
-   than its author must approve. A person can never approve their own entry.
-   The server refuses it, even for owners.
-4. **Direct-billed contractors.**
-   - They sign in to "My work" (section 5), scoped to the projects they belong
-     to.
-   - The fCTO approves their hours per period from the approval queue.
-   - Vetvet sees the approved direct hours in the portal, in their own section
-     apart from the fCTO's, labelled "Approved by <name> on <date>". This is the
-     evidence vetvet asked for before paying.
-   - The engineer can download a timesheet (PDF and CSV) of approved hours for a
-     period to attach to their own invoice to vetvet. Hours only: SVC does not
-     record the engineer's rate with vetvet, because SVC is not a party to that
-     contract.
-   - Direct hours never draw on the fCTO's retainer. The client overview shows
-     them next to the retainer meter, not inside it.
-5. **Labels.** The words used in the interface are *Draft*, *Submitted*
-   (subcontractor time awaiting approval), *Approved* (subcontractor only),
-   *Invoiced*, *Accepted*, and *Disputed*, all printed through `statusLabel`.
-   Consultant time never shows "Approved".
+A workspace remains the tenant for **books**: agreements, rates, time,
+invoices, payments, expenses. Those never cross workspaces.
+
+A **shared project** is the collaboration space: tasks, comments, files.
+
+- It has exactly one **host workspace** (whoever created it, Herila here) and
+  any number of **participant workspaces**, each added by an explicit grant
+  that the host can revoke. Hosting can be handed to another participant later.
+- New table `client_project_participations` (`client_project_id`, host
+  `workspace_id`, `participant_workspace_id`, `granted_by_user_id`,
+  `granted_at`, `revoked_at`). Task, comment and file reads on a project resolve
+  "the host workspace, or an active participation", through one repository
+  method, never ad hoc. Every new path gets isolation tests: a non-participant
+  workspace, and a revoked participant, both get 404.
+- Participants' people can be assigned tasks and can comment. A task assigned
+  across workspaces shows the assignee's workspace name next to their name.
+- Each participant workspace has its own local `ClientProject` for its own
+  books, linked to the shared project by `shared_project_id`. **Time is logged
+  against the local project**, so it falls under that workspace's agreement and
+  rates. A time entry can name a shared task, but the host can never read the
+  entry's rate or amount.
+- Every client is still a `ClientCompany` in each workspace that bills it.
+  "vetvet" exists once in Herila's workspace and once in Other Eng's. Nothing
+  links the two rows. The person is the link (7c).
+
+The UI keeps the word **workspace**. It means "your business". A shared project
+is where several workspaces meet.
+
+### 7b. Lifecycle of an hour
+
+    Draft ─▶ (Submitted) ─▶ (Reviewed | Flagged) ─▶ Invoiced ─▶ Approved
+                                                      └──────▶ Disputed
+
+- **Draft.** Editable by its author.
+- **Submitted.** Only for time that needs review or approval by someone other
+  than its author before it can be billed: a sub Herila re-bills, or Other
+  Eng's time. The author submits a period (week or month).
+- **Reviewed or Flagged.** Only where a reviewer grant exists. The reviewer
+  marks a submitted period as reviewed, or flags single entries with a note. A
+  flagged entry goes back to its author.
+- **Invoiced.** Herila's own hours never wait for anyone. A draft invoice pulls
+  in all unbilled consultant time in its service period, and issuing it fixes
+  the rate. This moves the rate stamp from approval to issue for consultant
+  time only. The rate is still resolved by `AgreementBillingRateResolver`.
+  Nobody self-approves. Other Eng's time is never invoiced here unless Other
+  Eng turns on invoicing in its own workspace.
+- **Approved.** The client approves, in either of two ways:
+  - **explicitly**, in the portal, by period or entry (stored: `client_approved_by_user_id`, `client_approved_at`);
+  - **implicitly**, when the invoice carrying the entry is paid in full. This
+    is computed from invoice status, not stored, so a refund or reopen undoes it
+    by itself.
+
+  An explicit approval is never undone by a refund. It records what a person
+  said.
+- **Disputed.** The client disputes an entry with a note, or the invoice is
+  `disputed`. A disputed entry on an issued invoice goes through the existing
+  correction flow. It never edits the issued document.
+
+Approval and invoicing are independent: Herila bills on schedule, and vetvet
+approves whenever it gets to it. Mappings over `InvoiceStatus` and the new
+states are exhaustive `match` expressions. A person can never review or approve
+their own entry. The server refuses it whatever their role.
+
+### 7c. Vetvet's "Hours to approve"
+
+One queue in the portal for each client contact. It is built from **that
+user's** portal memberships across every workspace, so it covers both Herila's
+and Other Eng's hours without any link between the two vetvet records.
+
+    Hours to approve, October 2026
+
+    ▸ Herila (fCTO)   38.5 h   invoiced #1042            [Approve period]
+    ▸ Other Eng       22.0 h   reviewed by Ben, Nov 2 ✓  [Approve period]
+
+    Each row expands to its entries. Any entry can be disputed with a note.
+
+- Grouped by workspace (the vendor), then by period. Each group is read
+  through that workspace's own scoped repository. It's one bounded query per
+  workspace the user belongs to, never per entry.
+- The approval permission is a new portal capability, **Approve time**,
+  granted per contact. Not every contact who can see invoices can approve
+  hours.
+- Rates and amounts for Other Eng never appear here unless Other Eng invoices
+  through SVC. Vetvet approves hours.
+
+### 7d. Herila's reviewer view
+
+- Other Eng's workspace grants Herila a **reviewer grant** on one shared
+  project: `time_review_grants` (`workspace_id` of the granter,
+  `client_project_id`, `reviewer_user_id`, `granted_by_user_id`, `revoked_at`).
+  It allows reading Other Eng's submitted hours for that project (date,
+  minutes, description, task) and writing review marks. It never shows rates,
+  agreements or invoices.
+- These show up in Herila's action queue as "Other Eng — 22.0 h to review".
+- Herila doesn't need a membership in Other Eng's workspace. The grant is the
+  whole permission, it is revocable by Other Eng, and every read and write
+  through it is audited.
+
+### 7e. Other Eng's workspace
+
+A real workspace, but starting light: time on shared projects, submit and
+review states, and an **approved timesheet** download (PDF and CSV) for a
+period, which shows who reviewed and who approved each entry. Agreements and
+invoicing in SVC are off until they turn them on. They see "My work" (section
+5) as their home.
 
 ### Migration
 
-- Existing self-approved consultant entries keep `approved` in the database.
-  They are only relabelled. Nothing is rewritten in place.
-- Writes to approve consultant time return 409 with a message pointing to the
+- Existing self-approved consultant entries keep `approved` in the database,
+  and the interface relabels them by context. Nothing is rewritten in place.
+- Approving your own consultant time returns 409 with a message pointing to the
   draft invoice. MCP `time_entries.log` stops accepting `approve: true` for an
-  entry the actor authored, and the MCP contract docs change with it.
-- `scopeApproved()` and the retainer ledgers are unchanged, so rollover history
-  is not rebuilt.
+  entry the actor authored, and `docs/mcp-product-contract.md` changes with it.
+- `scopeApproved()` and the retainer ledgers keep reading `approved` and
+  `invoiced`, so rollover history is not rebuilt. Client approval is a separate
+  column, not a status.
+- If Other Eng already logs hours in Herila's workspace as `Direct` time, a
+  one-off, reviewed move takes those hours into Other Eng's new workspace. It
+  is run per participant, by explicit command, never automatically.
 
 ## Delivery slices (stacked commits, one PR)
 
@@ -302,8 +376,12 @@ workspace.
 5. **Client overview.**
 6. **Subcontractor "My work".**
 7. **Portal home.**
-8. **Time approval model** (section 7): separating locking from approval,
-   acceptance derived from payment, the direct-billed contractor workflow.
+8. **Approval without self-approval** (7b): consultant time pulls straight
+   onto drafts, and client approval works in the portal and through payment.
+9. **Shared projects** (7a): participations, cross-workspace task assignment
+   and comments, local linked projects.
+10. **Reviewer grants and the cross-workspace approval queue** (7c, 7d).
+11. **Light workspace and approved timesheet** (7e).
 
 ## Settled answers
 
@@ -315,9 +393,17 @@ workspace.
   their start date. Nothing is projected before `starts_on`.
 - **Currency**: a workspace is single-currency.
 - **Subcontractor identity** is decided by project membership and the time's
-  billing mode, not by workspace role (see section 7).
+  billing mode, not by workspace role. A contractor with their own agreement
+  with the client is their own workspace (section 7).
+- **Identity**: one shared identity provider for every user, so the same person
+  is the same `User` in every workspace and in the portal.
 
 ## Open questions
 
-None outstanding for slices 1 to 7. Section 7 records the defaults chosen for
-time approval. Confirm or correct them before slice 8.
+1. **Who creates Other Eng's workspace?** Does Herila invite them (creating
+   a light workspace on their first sign-in), or do they sign up themselves?
+2. **Does a client approval period end on the calendar month for every
+   vendor**, or follow each agreement's billing cadence?
+3. **Hosting handover**: if Herila leaves the vetvet engagement, does the
+   shared project pass to another participant, or to vetvet (which would need
+   vetvet to have a workspace of its own)?
