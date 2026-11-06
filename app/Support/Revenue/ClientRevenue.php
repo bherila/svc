@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Revenue;
 
 /**
@@ -26,7 +28,7 @@ final readonly class ClientRevenue
         public array $agreements,
     ) {}
 
-    public function endingSoon(): bool
+    private function endingSoon(): bool
     {
         foreach ($this->agreements as $health) {
             if ($health->endsWithin60Days) {
@@ -37,7 +39,7 @@ final readonly class ClientRevenue
         return false;
     }
 
-    public function overRetainer(): bool
+    private function overRetainer(): bool
     {
         foreach ($this->agreements as $health) {
             if ($health->overRetainer === true) {

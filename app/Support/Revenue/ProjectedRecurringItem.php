@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Revenue;
 
 use App\Models\ClientAgreementRecurringItem;
@@ -49,9 +51,9 @@ final readonly class ProjectedRecurringItem
     }
 
     /** The cadence the biller matches on; null for a value no case names. */
-    public function chargeCadence(): ?ChargeCadence
+    private function chargeCadence(): ?ChargeCadence
     {
-        return ChargeCadence::tryFrom((string) $this->cadence);
+        return ChargeCadence::tryFrom($this->cadence ?? '');
     }
 
     /** Minor units for one incidence, quantity included and tax excluded, as the biller prices it. */

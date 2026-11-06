@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Revenue;
 
 use App\Services\Revenue\RevenueActualsRepository;
@@ -84,9 +86,9 @@ final readonly class RevenueActualsInputs
             if ($payment->amount === 0) {
                 continue;
             }
-            $composition = $compositions[$payment->invoiceId] ?? ['gross' => 0, 'bands' => []];
-            $bands = array_filter($composition['bands'], static fn (int $amount): bool => $amount !== 0);
-            if ($composition['gross'] <= 0 || $bands === []) {
+            $composition = $compositions[$payment->invoiceId] ?? null;
+            $bands = array_filter($composition['bands'] ?? []);
+            if ($composition === null || $bands === [] || $composition['gross'] <= 0) {
                 // Nothing to apportion by: an invoice with no priced lines.
                 $amounts[] = new ActualAmount($payment->clientId, $payment->receivedOn, RevenueBand::OverageAndOther, $payment->amount);
 
@@ -99,11 +101,13 @@ final readonly class RevenueActualsInputs
                 $shares[$band] = (int) round($payment->amount * $amount / $composition['gross']);
             }
             arsort($bands);
+            // @infection-ignore-all Equivalent: the keys are band values, which are never numeric, so PHP keeps them as strings with or without the cast.
             $largest = (string) array_key_first($bands);
             $shares[$largest] += $target - array_sum($shares);
 
             foreach ($shares as $band => $share) {
                 if ($share !== 0) {
+                    // @infection-ignore-all Equivalent: as above, a band key is always a string; the cast states it for static analysis.
                     $amounts[] = new ActualAmount($payment->clientId, $payment->receivedOn, RevenueBand::from((string) $band), $share);
                 }
             }

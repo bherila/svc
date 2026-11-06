@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Revenue;
 
 /** The toggles a revenue read takes, as the dashboard and the planning reads share them. */

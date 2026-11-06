@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services\Revenue;
 
 use App\Services\Billing\Balances\MonthSummary;
@@ -58,8 +60,8 @@ final class RevenueSummaries
         $current = $projection->months[0];
         $currentBands = RevenueActuals::month(RevenueActuals::monthly($amounts), $current, $clientId);
 
-        $open = array_values(array_filter($actuals->openInvoices, static fn (OpenInvoice $invoice): bool => $clientId === null || $invoice->clientId === $clientId));
-        $overdue = array_values(array_filter($open, static fn (OpenInvoice $invoice): bool => $invoice->isOverdueOn($asOf)));
+        $open = array_filter($actuals->openInvoices, static fn (OpenInvoice $invoice): bool => $clientId === null || $invoice->clientId === $clientId);
+        $overdue = array_filter($open, static fn (OpenInvoice $invoice): bool => $invoice->isOverdueOn($asOf));
         $balance = static fn (array $invoices): int => array_sum(array_map(static fn (OpenInvoice $invoice): int => $invoice->balance, $invoices));
 
         $changes = $this->changes($clientId === null ? $inputs : $inputs->forClient($clientId));
@@ -69,8 +71,8 @@ final class RevenueSummaries
             $ytd,
             $ttm,
             [
-                'from' => $future[0].'-01',
-                'to' => CarbonImmutable::parse($future[count($future) - 1].'-01')->endOfMonth()->toDateString(),
+                'from' => $asOf->startOfMonth()->addMonthNoOverflow()->toDateString(),
+                'to' => $asOf->startOfMonth()->addMonthsNoOverflow(RevenueAssumptions::PROJECTION_MONTHS)->endOfMonth()->toDateString(),
                 'contracted' => array_sum(array_map(static fn (string $month): int => $projection->contracted($month, $clientId), $future)),
                 'projected_overage' => array_sum(array_map(static fn (string $month): int => $projection->projectedOverage($month, $clientId), $future)),
             ],
@@ -136,9 +138,9 @@ final class RevenueSummaries
 
         $rows = [];
         foreach ($actuals->clients as $clientId => $client) {
-            $agreements = array_values(array_filter($inputs->agreements, static fn (ProjectedAgreement $agreement): bool => $agreement->clientId === $clientId));
-            $open = array_values(array_filter($actuals->openInvoices, static fn (OpenInvoice $invoice): bool => $invoice->clientId === $clientId));
-            $overdue = array_values(array_filter($open, static fn (OpenInvoice $invoice): bool => $invoice->isOverdueOn($asOf)));
+            $agreements = array_filter($inputs->agreements, static fn (ProjectedAgreement $agreement): bool => $agreement->clientId === $clientId);
+            $open = array_filter($actuals->openInvoices, static fn (OpenInvoice $invoice): bool => $invoice->clientId === $clientId);
+            $overdue = array_filter($open, static fn (OpenInvoice $invoice): bool => $invoice->isOverdueOn($asOf));
             $health = [];
             foreach ($agreements as $agreement) {
                 if (array_key_exists($agreement->id, $ledgers)) {
@@ -159,7 +161,8 @@ final class RevenueSummaries
                 agreements: $health,
             );
 
-            if ($client->isActive || $row->mrr !== 0 || $row->ttm !== 0 || $row->ytd !== 0 || $row->openAmount !== 0 || $health !== []) {
+            // Year to date lies inside the trailing twelve months, so a client with either has the second.
+            if ($client->isActive || $row->mrr !== 0 || $row->ttm !== 0 || $row->openAmount !== 0 || $health !== []) {
                 $rows[] = $row;
             }
         }
@@ -191,23 +194,25 @@ final class RevenueSummaries
         $asOf = $assumptions->asOf->startOfDay();
         $monthly = RevenueActuals::monthly($actuals->amounts($assumptions->basis));
         $current = $asOf->format('Y-m');
+        $clients = array_map(static fn (RevenueClient $client): array => [$client->publicId, $client->name], $actuals->clients);
         $projectedClients = [];
         foreach ($projection->rows as $row) {
-            $projectedClients[$row->clientId] = new RevenueClient($row->clientId, $row->clientPublicId, $row->clientName, true);
+            $projectedClients[$row->clientId] = [$row->clientPublicId, $row->clientName];
         }
-        $clients = $actuals->clients + $projectedClients;
+        $clients += $projectedClients;
 
         $rows = [];
         for ($offset = -12; $offset <= RevenueAssumptions::PROJECTION_MONTHS; $offset++) {
             $month = $asOf->startOfMonth()->addMonthsNoOverflow($offset)->format('Y-m');
             $perClient = [];
-            foreach ($clients as $id => $client) {
+            foreach ($clients as $id => [$publicId, $name]) {
                 if ($clientId !== null && $id !== $clientId) {
                     continue;
                 }
                 $figures = $this->figures($monthly[$id][$month] ?? new BandAmounts, $projection->contracted($month, $id), $projection->projectedOverage($month, $id), $assumptions, $band);
-                if ($figures['total'] !== 0 || array_filter($figures, static fn (?int $value): bool => $value !== null && $value !== 0) !== []) {
-                    $perClient[] = ['client_id' => $client->publicId, 'client_name' => $client->name, ...$figures];
+                // A null figure is switched off and reads as zero; a total is nonzero only when a figure is.
+                if (array_filter($figures) !== []) {
+                    $perClient[] = ['client_id' => $publicId, 'client_name' => $name, ...$figures];
                 }
             }
             usort($perClient, static fn (array $a, array $b): int => [$b['total'], $a['client_id']] <=> [$a['total'], $b['client_id']]);
@@ -235,6 +240,7 @@ final class RevenueSummaries
             'projected_overage' => $in('overage_and_other') && $assumptions->includeProjectedOverage ? $projectedOverage : null,
         ];
 
+        // @infection-ignore-all Equivalent: array_sum() counts a null as zero; the map states the int for static analysis.
         return [...$figures, 'total' => array_sum(array_map(static fn (?int $value): int => $value ?? 0, $figures))];
     }
 

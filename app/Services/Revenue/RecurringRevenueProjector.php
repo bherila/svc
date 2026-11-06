@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services\Revenue;
 
 use App\Models\ClientAgreementRecurringItem;
@@ -73,7 +75,7 @@ final class RecurringRevenueProjector
         $rows = [];
         foreach ($months as $month) {
             foreach ($byClient as $clientId => $client) {
-                $amounts = $client['months'][$month] ?? ['retainer' => 0, 'recurring_items' => 0, 'projected_overage' => 0];
+                $amounts = $client['months'][$month];
                 $rows[] = new MonthlyProjection(
                     month: $month,
                     clientId: $clientId,
@@ -89,10 +91,8 @@ final class RecurringRevenueProjector
         return new RevenueProjection($months, $rows, $agreements);
     }
 
-    /**
-     * The overage method for one agreement, on its own.
-     */
-    public function overageFor(ProjectedAgreement $agreement, ProjectionInputs $inputs): ProjectedOverage
+    /** The overage method for one agreement. */
+    private function overageFor(ProjectedAgreement $agreement, ProjectionInputs $inputs): ProjectedOverage
     {
         $history = $inputs->overageHistory[$agreement->id] ?? [];
         $historyMonths = 0;
@@ -111,7 +111,7 @@ final class RecurringRevenueProjector
     }
 
     /** @return list<string> the current month and the twelve after it, as `Y-m` */
-    public static function windowMonths(ProjectionInputs $inputs): array
+    private static function windowMonths(ProjectionInputs $inputs): array
     {
         $months = [];
         for ($offset = 0; $offset <= RevenueAssumptions::PROJECTION_MONTHS; $offset++) {
@@ -129,6 +129,7 @@ final class RecurringRevenueProjector
         foreach ($this->retainerCharges($agreement, $inputs) as [$date, $amount]) {
             $month = $date->format('Y-m');
             if (isset($amounts[$month]) && ! $inputs->isBilled(ProjectionInputs::retainerKey($agreement->id, $date->toDateString()))) {
+                // @infection-ignore-all Equivalent: a retainer is sold at most once a month - one charge per calendar month for a monthly agreement, one per cycle start otherwise - so adding and assigning agree.
                 $amounts[$month]['retainer'] += $amount;
             }
         }
@@ -147,12 +148,10 @@ final class RecurringRevenueProjector
         }
 
         $overage = $this->overageFor($agreement, $inputs);
-        if ($overage->monthlyAverage !== 0) {
-            foreach ($amounts as $month => $monthAmounts) {
-                $monthStart = CarbonImmutable::parse($month.'-01')->startOfDay();
-                if ($agreement->coversAnyOf($monthStart, $monthStart->endOfMonth()->startOfDay())) {
-                    $amounts[$month] = [...$monthAmounts, 'projected_overage' => $monthAmounts['projected_overage'] + $overage->monthlyAverage];
-                }
+        foreach ($amounts as $month => $monthAmounts) {
+            $monthStart = CarbonImmutable::createFromFormat('!Y-m', $month);
+            if ($monthStart instanceof CarbonImmutable && $agreement->coversAnyOf($monthStart, $monthStart->endOfMonth()->startOfDay())) {
+                $amounts[$month] = [...$monthAmounts, 'projected_overage' => $monthAmounts['projected_overage'] + $overage->monthlyAverage];
             }
         }
 
@@ -166,9 +165,6 @@ final class RecurringRevenueProjector
      */
     private function retainerCharges(ProjectedAgreement $agreement, ProjectionInputs $inputs): iterable
     {
-        if (! $agreement->hasRetainerFee()) {
-            return;
-        }
         $windowStart = $inputs->windowStart();
         $windowEnd = $inputs->windowEnd();
 
@@ -181,9 +177,8 @@ final class RecurringRevenueProjector
                     Carbon::instance($month),
                     Carbon::instance($month->endOfMonth()->startOfDay()),
                 );
-                if ($multiplier > 0) {
-                    yield [$month, self::minor(round($agreement->periodRetainerFee() * $multiplier, 2))];
-                }
+                // Priced as the monthly generator prices it: the fee rounded to cents, then to minor units.
+                yield [$month, self::minor(round($agreement->periodRetainerFee() * $multiplier, 2))];
             }
 
             return;
@@ -195,6 +190,7 @@ final class RecurringRevenueProjector
         foreach ($this->cycles->cyclesForAgreement($agreement, $through) as $cycle) {
             $start = CarbonImmutable::instance($cycle->start)->startOfDay();
             if ($start->gt($windowEnd)) {
+                // @infection-ignore-all Equivalent: the cycles ascend, so every later one is also past the window and continuing yields nothing more.
                 break;
             }
             if ($start->lt($windowStart)) {
@@ -217,7 +213,7 @@ final class RecurringRevenueProjector
         }
         $monthlyHours = $agreement->retainerMonthlyHours();
         if ($monthlyHours <= 0) {
-            return (float) $cycle->monthCount;
+            return $cycle->monthCount;
         }
 
         $hours = 0.0;
@@ -236,9 +232,6 @@ final class RecurringRevenueProjector
      */
     private function itemCharges(ProjectedAgreement $agreement, ProjectionInputs $inputs): iterable
     {
-        if ($agreement->recurringItems === []) {
-            return;
-        }
         // The first invoice sells the cycle containing the start: the calendar
         // month for a monthly agreement, the start itself otherwise.
         $firstCycleStart = $agreement->effectiveBillingCadence() === BillingCadence::Monthly
@@ -246,10 +239,8 @@ final class RecurringRevenueProjector
             : $agreement->startsOn->startOfDay();
         $rangeStart = $inputs->windowStart()->max($firstCycleStart);
         $end = $agreement->effectiveEnd();
+        // An agreement that ends before the range opens leaves it empty, and the biller places nothing in an empty range.
         $rangeEnd = $end === null ? $inputs->windowEnd() : $inputs->windowEnd()->min($end);
-        if ($rangeStart->gt($rangeEnd)) {
-            return;
-        }
 
         $model = $agreement->toBillerModel();
         // The biller refuses an item whose cadence no case names, rather than
@@ -260,7 +251,7 @@ final class RecurringRevenueProjector
         )->values());
 
         foreach ($this->items->linesForCycle($model, Carbon::instance($rangeStart), Carbon::instance($rangeEnd)) as $line) {
-            yield [(int) $line['item']->id, CarbonImmutable::instance($line['line_date'])->startOfDay(), (int) $this->items->buildLine($line)->total_amount];
+            yield [$line['item']->id, CarbonImmutable::instance($line['line_date'])->startOfDay(), $this->items->buildLine($line)->total_amount];
         }
     }
 
@@ -272,7 +263,7 @@ final class RecurringRevenueProjector
     private static function addMonths(array $into, array $add): array
     {
         foreach ($add as $month => $amounts) {
-            $current = $into[$month] ?? ['retainer' => 0, 'recurring_items' => 0, 'projected_overage' => 0];
+            $current = $into[$month];
             $into[$month] = [
                 'retainer' => $current['retainer'] + $amounts['retainer'],
                 'recurring_items' => $current['recurring_items'] + $amounts['recurring_items'],

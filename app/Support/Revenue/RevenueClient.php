@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Revenue;
 
 /** A client company as the revenue reads name it: its public id and name. */

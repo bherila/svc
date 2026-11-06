@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Revenue;
 
 use App\Contracts\RetainerAgreementTerms;
@@ -119,14 +121,9 @@ final readonly class ProjectedAgreement implements RetainerAgreementTerms
      */
     public function billsOnARecurringCadence(): bool
     {
-        $cadence = (string) ($this->billingCadence ?? '');
+        $cadence = $this->billingCadence ?? '';
 
         return $cadence === '' || BillingCadence::tryFrom($cadence) !== null;
-    }
-
-    public function hasRetainerFee(): bool
-    {
-        return $this->periodRetainerFee() > 0;
     }
 
     /** The retainer fee spread over a month, in minor units: the period fee over the cycle's months. */
@@ -178,12 +175,12 @@ final readonly class ProjectedAgreement implements RetainerAgreementTerms
 
     public function effectiveBillingCadence(): BillingCadence
     {
-        return BillingCadence::tryFrom((string) $this->billingCadence) ?? BillingCadence::Monthly;
+        return BillingCadence::tryFrom($this->billingCadence ?? '') ?? BillingCadence::Monthly;
     }
 
     public function effectiveFirstCycleProration(): FirstCycleProration
     {
-        return FirstCycleProration::tryFrom((string) $this->firstCycleProration) ?? FirstCycleProration::ProrateHours;
+        return FirstCycleProration::tryFrom($this->firstCycleProration ?? '') ?? FirstCycleProration::ProrateHours;
     }
 
     public function retainerStartsOn(): CarbonImmutable
@@ -198,12 +195,12 @@ final readonly class ProjectedAgreement implements RetainerAgreementTerms
 
     public function retainerMonthlyHours(): float
     {
-        return ((int) ($this->retainerMinutes ?? 0)) / 60;
+        return ($this->retainerMinutes ?? 0) / 60;
     }
 
     public function retainerMonthlyFee(): float
     {
-        return ((int) ($this->retainerAmount ?? 0)) / 100;
+        return ($this->retainerAmount ?? 0) / 100;
     }
 
     public function periodRetainerHoursOverride(): ?float
@@ -227,7 +224,7 @@ final readonly class ProjectedAgreement implements RetainerAgreementTerms
 
         return $override === null
             ? $this->retainerMonthlyHours()
-            : round($override / max(1, $this->effectiveBillingCadence()->monthsInCycle()), 4);
+            : round($override / $this->effectiveBillingCadence()->monthsInCycle(), 4);
     }
 
     public function periodRetainerFee(): float

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Revenue;
 
 use App\Services\Revenue\RecurringRevenueProjector;
@@ -45,12 +47,12 @@ final readonly class RevenueProjection
         ));
     }
 
-    /** @return list<MonthlyProjection> */
+    /** @return array<int, MonthlyProjection> */
     private function matching(string $month, ?int $clientId): array
     {
-        return array_values(array_filter(
+        return array_filter(
             $this->rows,
             static fn (MonthlyProjection $row): bool => $row->month === $month && ($clientId === null || $row->clientId === $clientId),
-        ));
+        );
     }
 }

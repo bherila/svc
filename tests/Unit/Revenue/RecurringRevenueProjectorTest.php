@@ -268,6 +268,64 @@ final class RecurringRevenueProjectorTest extends TestCase
         $this->assertSame(0, $this->agreement(startsOn: '2027-01-01', retainerAmount: 100000)->monthlyRecurringOn(CarbonImmutable::parse(self::AS_OF)));
     }
 
+    public function test_an_agreement_after_a_one_time_one_is_still_projected(): void
+    {
+        $projection = $this->project([$this->agreement(id: 1, cadence: 'one_time', retainerAmount: 9000), $this->agreement(id: 2, retainerAmount: 100000)]);
+
+        $this->assertSame(['agreement-2'], array_map(static fn (AgreementProjection $row): string => $row->agreement->publicId, $projection->agreements));
+        $this->assertCount(13, $projection->rows);
+        $this->assertSame(100000, $projection->contracted('2027-05'));
+    }
+
+    public function test_every_item_has_a_next_charge_date_or_null(): void
+    {
+        $agreement = $this->agreement(items: [$monthly = $this->item('monthly', anchorDay: 3), $past = $this->item('one_time', effectiveOn: '2026-05-01')]);
+
+        $this->assertSame([$monthly->id => '2026-11-03', $past->id => null], $this->project([$agreement])->agreements[0]->nextChargeOn);
+    }
+
+    public function test_a_prorated_month_is_priced_to_the_cent_then_to_minor_units(): void
+    {
+        // 1000.03 x 17/31 (0.5484) = 548.4165: 548.42, not 548.4.
+        $this->assertSame(54842, $this->months($this->project([$this->agreement(retainerAmount: 100003, endsOn: '2027-03-17')])->agreements[0])['2027-03']['retainer']);
+        // 1000 x 5/31 (0.1613) = 161.30 exactly, whatever the binary representation.
+        $this->assertSame(16130, $this->months($this->project([$this->agreement(retainerAmount: 100000, endsOn: '2027-03-05')])->agreements[0])['2027-03']['retainer']);
+        // 1000.01 x 14/31 (0.4516) = 451.6045: 451.60, where rounding to tenths of a cent first would give 451.61.
+        $this->assertSame(45160, $this->months($this->project([$this->agreement(retainerAmount: 100001, endsOn: '2027-03-14')])->agreements[0])['2027-03']['retainer']);
+    }
+
+    public function test_a_cadence_cycle_without_overrides_is_priced_by_the_hours_its_months_grant(): void
+    {
+        // 7.5 hours a month, ending 1 February: January's 7.5 and one day of February's, over 7.5 = 1.0357.
+        $this->assertSame(103570, $this->months($this->project([$this->agreement(cadence: 'quarterly', retainerAmount: 100000, retainerMinutes: 450, endsOn: '2027-02-01')])->agreements[0])['2027-01']['retainer']);
+        // No monthly hours: the cycle is priced by its month count.
+        $this->assertSame(300000, $this->months($this->project([$this->agreement(cadence: 'quarterly', retainerAmount: 100000)])->agreements[0])['2027-01']['retainer']);
+    }
+
+    public function test_a_monthly_agreement_sells_items_from_the_first_of_its_opening_month(): void
+    {
+        $agreement = $this->agreement(startsOn: '2026-12-15', items: [$this->item('monthly', anchorDay: 1, amount: 700, effectiveOn: '2026-12-01')]);
+
+        $this->assertSame(700, $this->months($this->project([$agreement])->agreements[0])['2026-12']['recurring_items']);
+    }
+
+    public function test_a_cadence_agreement_sells_items_from_its_start_day(): void
+    {
+        $agreement = $this->agreement(cadence: 'quarterly', startsOn: '2027-01-15', items: [$this->item('monthly', anchorDay: 1, amount: 700, effectiveOn: '2027-01-01')]);
+        $months = $this->months($this->project([$agreement])->agreements[0]);
+
+        $this->assertSame([0, 700], [$months['2027-01']['recurring_items'], $months['2027-02']['recurring_items']]);
+    }
+
+    public function test_a_monthly_row_reports_its_client_and_amounts(): void
+    {
+        $agreement = $this->agreement(retainerAmount: 100000, items: [$this->item('monthly', amount: 700)]);
+        $row = $this->project([$agreement], [$agreement->id => $this->steadyHistory(6000)])->rowsFor('2027-02')[0];
+
+        $this->assertSame(['month' => '2027-02', 'client_id' => 'client-10', 'client_name' => 'Synthetic client 10', 'contracted' => 100700, 'contracted_retainer' => 100000, 'contracted_recurring_items' => 700, 'projected_overage' => 6000], $row->toArray());
+        $this->assertSame(10, $row->clientId);
+    }
+
     /**
      * @param  list<ProjectedAgreement>  $agreements
      * @param  array<int, array<string, int>>  $history
