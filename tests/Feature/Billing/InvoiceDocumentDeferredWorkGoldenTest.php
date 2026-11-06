@@ -3,10 +3,12 @@
 namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\Billing\InvoiceDeferredWorkSnapshot;
 use App\Support\Billing\InvoiceLineDetail;
 use Carbon\Carbon;
@@ -20,22 +22,24 @@ use Tests\TestCase;
 /**
  * Golden tests for the "Still deferred" section of the invoice document.
  *
- * ## What the document does today, which is not what the brief assumed
- *
  * The section is read from the snapshot stored with the invoice
- * (`deferred_work_statement`) and is printed whenever one is stored and
- * readable, for the operator copy and the client copy alike. The document
- * itself never consults `show_deferred_backlog_to_client`: that agreement flag
- * gates the portal's live backlog panel (`ClientPortalController`), not this
- * section. These tests pin the document as it is, so a rewrite that begins to
- * gate the section on the flag has to say so by changing them.
+ * (`deferred_work_statement`). The operator copy prints it whenever one is
+ * stored and readable. The client copy prints it only when the invoice's
+ * agreement opts in with `show_deferred_backlog_to_client`, the same setting
+ * that gates the portal's live backlog panel, read as it stands now; with no
+ * agreement the client sees nothing (`InvoiceDeferredWorkDisclosure`).
+ *
+ * Invoices built here default to an opted-in agreement so the remaining tests
+ * exercise the section itself; the gate has its own tests below.
  *
  * Both stored versions are covered: version 2 (project lineage frozen per
  * entry, #610) and the legacy version 1 reading, which still prints.
  */
 class InvoiceDocumentDeferredWorkGoldenTest extends TestCase
 {
-    use BuildsGoldenInvoices;
+    use BuildsGoldenInvoices {
+        goldenInvoice as baseGoldenInvoice;
+    }
     use RefreshDatabase;
 
     private const SUMMARY = '2 entries · 3.5000 hours · oldest worked date 2026-06-01';
@@ -49,6 +53,31 @@ class InvoiceDocumentDeferredWorkGoldenTest extends TestCase
     {
         parent::setUp();
         $this->setUpGoldenTenant();
+    }
+
+    /**
+     * A golden invoice on an agreement that shows clients the backlog, unless
+     * the caller names an agreement or passes `client_agreement_id => null`.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function goldenInvoice(array $attributes = []): ClientInvoice
+    {
+        if (! array_key_exists('client_agreement_id', $attributes)) {
+            $attributes['client_agreement_id'] = $this->agreementShowingBacklog(true)->id;
+        }
+
+        return $this->baseGoldenInvoice($attributes);
+    }
+
+    private function agreementShowingBacklog(bool $show): ClientAgreement
+    {
+        return ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'title' => 'Synthetic flag retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-01-01',
+            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+            'show_deferred_backlog_to_client' => $show,
+        ]);
     }
 
     protected function documentFacts(): InvoiceDocumentFacts
@@ -126,21 +155,52 @@ class InvoiceDocumentDeferredWorkGoldenTest extends TestCase
     }
 
     #[DataProvider('audiencesAndFlag')]
-    public function test_the_section_prints_for_both_audiences_whatever_the_agreement_flag_says(string $audience, bool $flag): void
+    public function test_the_client_copy_follows_the_agreement_setting_and_the_operator_copy_always_prints(string $audience, bool $flag): void
     {
-        $agreement = ClientAgreement::query()->create([
-            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
-            'title' => 'Synthetic flag retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-01-01',
-            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
-            'show_deferred_backlog_to_client' => $flag,
-        ]);
+        $agreement = $this->agreementShowingBacklog($flag);
         $invoice = $this->goldenInvoice(['client_agreement_id' => $agreement->id, 'deferred_work_statement' => $this->version2()]);
 
-        $this->assertSame($flag, $invoice->agreement?->show_deferred_backlog_to_client);
-        $this->assertSame(
-            ['summary' => self::SUMMARY, 'entries' => self::ENTRIES],
-            $this->documentFacts()->extract($invoice, $audience)['still_deferred'],
-        );
+        $expected = $audience === InvoiceLineDetail::OPERATOR || $flag
+            ? ['summary' => self::SUMMARY, 'entries' => self::ENTRIES]
+            : null;
+
+        $this->assertSame($expected, $this->documentFacts()->extract($invoice, $audience)['still_deferred']);
+    }
+
+    public function test_turning_the_setting_off_withdraws_the_list_from_an_issued_invoice(): void
+    {
+        $agreement = $this->agreementShowingBacklog(true);
+        $invoice = $this->goldenInvoice(['client_agreement_id' => $agreement->id, 'deferred_work_statement' => $this->version2()]);
+        $this->assertNotNull($this->documentFacts()->extract($invoice, InvoiceLineDetail::CLIENT)['still_deferred']);
+
+        $agreement->update(['show_deferred_backlog_to_client' => false]);
+
+        $this->assertNull($this->documentFacts()->extract($invoice->fresh() ?? $invoice, InvoiceLineDetail::CLIENT)['still_deferred']);
+        $this->assertNull(AgentInvoicePresenter::portalDetails($invoice->fresh() ?? $invoice)['deferred_work']);
+        $this->assertNotNull($this->documentFacts()->extract($invoice, InvoiceLineDetail::OPERATOR)['still_deferred']);
+    }
+
+    public function test_an_invoice_without_an_agreement_shows_clients_no_list(): void
+    {
+        $invoice = $this->goldenInvoice(['client_agreement_id' => null, 'deferred_work_statement' => $this->version2()]);
+
+        $this->assertNull($this->documentFacts()->extract($invoice, InvoiceLineDetail::CLIENT)['still_deferred']);
+        $this->assertNull(AgentInvoicePresenter::portalDetails($invoice)['deferred_work']);
+        $this->assertNotNull($this->documentFacts()->extract($invoice, InvoiceLineDetail::OPERATOR)['still_deferred']);
+    }
+
+    public function test_an_agreement_of_another_company_never_opts_the_client_in(): void
+    {
+        $other = ClientCompany::query()->create(['workspace_id' => $this->workspace->id, 'name' => 'Synthetic other client', 'slug' => 'synthetic-other-golden']);
+        $foreign = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $other->id,
+            'title' => 'Synthetic foreign retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-01-01',
+            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
+            'show_deferred_backlog_to_client' => true,
+        ]);
+        $invoice = $this->goldenInvoice(['client_agreement_id' => $foreign->id, 'deferred_work_statement' => $this->version2()]);
+
+        $this->assertNull($this->documentFacts()->extract($invoice, InvoiceLineDetail::CLIENT)['still_deferred']);
     }
 
     #[DataProvider('audiences')]
@@ -229,7 +289,7 @@ class InvoiceDocumentDeferredWorkGoldenTest extends TestCase
             'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
             'title' => 'Synthetic lineage retainer', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-04-01',
             'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 10000,
-            'show_deferred_backlog_to_client' => false,
+            'show_deferred_backlog_to_client' => true,
         ]);
         // A full pool of ordinary work, so the older deferred work has to wait.
         $this->goldenEntry('2026-05-10', 600);

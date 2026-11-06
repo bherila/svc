@@ -291,6 +291,12 @@ the termination path.
 The agreement's **Show deferred backlog to client** setting is off by default.
 When enabled, a client who may already read that visible agreement also sees its
 backlog there; the client receives no settlement control or internal issue detail.
+The same setting governs the itemised "Still deferred" list on the client copy
+of an invoice (portal page, PDF, email attachment): with the setting off, or an
+invoice with no agreement, the client copy omits the list, and turning it off
+later withdraws it from invoices already sent. The operator copy always shows
+it, and the hours statement's backlog totals are unaffected
+(`InvoiceDeferredWorkDisclosure`).
 This does not publish the agreement or extend project access. No new email is
 sent when the setting changes or a settlement draft is created.
 
