@@ -14,6 +14,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTaskList;
 use App\Models\PaymentReconciliation;
 use App\Models\User;
+use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -58,6 +59,9 @@ final class FillableCoverageTest extends TestCase
      * @var array<class-string, array<string, string>>
      */
     private const MODEL_EXEMPT = [
+        Workspace::class => [
+            'has_square_connection' => 'A navigation hint derived from workspace_payment_connections and written only by WorkspacePaymentConnections after a connection changes; never caller mass assignment.',
+        ],
         ClientCollaborationTopic::class => [
             'edited_at' => 'Set only by CollaborationAction through the scoped repository after an authorized text edit, using the workspace clock; callers cannot supply an edit timestamp.',
         ],
