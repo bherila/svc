@@ -50,6 +50,8 @@ const uiGated = new Set([
     'workspace_invoices',
     'workspace_time',
     'workspace_finance',
+    'my_work',
+    'portal_home',
 ]);
 const clientsOnly = process.argv.includes('--clients');
 const resourceChromeOnly = process.argv.includes('--resource-chrome');
@@ -77,6 +79,7 @@ const workspacesOnly = process.argv.includes('--workspaces');
 const credentialsOnly = process.argv.includes('--credentials');
 const paymentsOnly = process.argv.includes('--payments');
 const revenueOnly = process.argv.includes('--revenue');
+const workPortalOnly = process.argv.includes('--work-portal');
 const revenueScreens = new Set([
     'dashboard',
     'workspace_clients',
@@ -197,6 +200,7 @@ try {
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
         SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
         SVC_LAYOUT_REVENUE: revenueOnly ? '1' : '0',
+        SVC_LAYOUT_WORK_PORTAL: workPortalOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -762,6 +766,61 @@ try {
         await page.unroute('**/account/api-credentials', handler);
     }
 
+    // "My work" and the portal home (--work-portal). Both are read as the
+    // people they are for: a member who is not an owner or admin, and a client
+    // contact. The member's page must carry no price however it is read; the
+    // client's page must carry the Pay button, the estimate and nothing that is
+    // workspace-internal, and no approval queue (slice 8).
+    async function checkWorkPortal(screen, width) {
+        await page.waitForLoadState('networkidle');
+
+        if (screen === 'my_work') {
+            await expect(
+                page.getByRole('heading', { name: 'My work', level: 1 }),
+            ).toBeVisible();
+            await expect(page.getByRole('region', { name: 'Overdue' })).toBeVisible();
+            await expect(
+                page.getByRole('combobox', { name: /^Status of / }).first(),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('link', { name: 'My work', exact: true }).first(),
+            ).toHaveAttribute('aria-current', 'page').catch(() => undefined);
+            const body = await page.locator('body').innerText();
+
+            for (const forbidden of ['987654', '765432', '9,876', '7,654', 'Invoices', 'Finance', 'Revenue']) {
+                if (body.includes(forbidden)) {
+                    failures.push(`my_work at ${width}px prints "${forbidden}".`);
+                }
+            }
+
+            // The raw stored status never reaches a reader.
+            for (const raw of ['in_progress', 'invoiced_', 'billing_']) {
+                if (body.includes(raw)) {
+                    failures.push(`my_work at ${width}px prints the stored value "${raw}".`);
+                }
+            }
+        }
+
+        if (screen === 'portal_home') {
+            await expect(page.locator('[data-slot="card-title"]', { hasText: 'Balance' })).toBeVisible();
+            await expect(
+                page.getByRole('link', { name: /^Pay .*, invoice PAY-SYNTHETIC/ }),
+            ).toHaveAttribute('href', 'https://squareupsandbox.com/pay-invoice/inv_fixture_pay');
+            await expect(
+                page.getByRole('region', { name: 'Next invoice (estimate)' }),
+            ).toBeVisible();
+            await expect(page.getByText(/is still deferred|of work is still deferred/)).toBeVisible();
+            await expect(page.getByText(/to approve/i)).toHaveCount(0);
+            const body = await page.locator('body').innerText();
+
+            for (const forbidden of ['987654', 'Synthetic internal note', 'subcontractor']) {
+                if (body.toLowerCase().includes(forbidden.toLowerCase())) {
+                    failures.push(`portal_home at ${width}px prints "${forbidden}".`);
+                }
+            }
+        }
+    }
+
     // The revenue screens draw after the first paint: the chart is a lazy
     // chunk, and the retainer meters are a deferred prop. Wait for both so a
     // screenshot shows the screen a reader sees, not its skeleton.
@@ -923,6 +982,8 @@ try {
 
         for (const screen of paymentsOnly
             ? ['payments']
+            : workPortalOnly
+            ? ['my_work', 'portal_home']
             : invoiceSendOnly
             ? ['invoice']
             : invoiceHistoryOnly
@@ -1967,6 +2028,10 @@ try {
 
             if (revenueScreens.has(screen)) {
                 await settleRevenueScreen(screen);
+            }
+
+            if (workPortalOnly) {
+                await checkWorkPortal(screen, width);
             }
 
             if (screen !== 'task_editor') {

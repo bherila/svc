@@ -18,6 +18,7 @@ use App\Http\Controllers\WorkspaceDashboardController;
 use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceFinanceController;
 use App\Http\Controllers\WorkspaceInvoiceListController;
+use App\Http\Controllers\WorkspaceMyWorkController;
 use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Controllers\WorkspaceTimeQueueController;
@@ -99,6 +100,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/workspaces/{workspace}/dashboard', WorkspaceDashboardController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.dashboard');
+    Route::get('/workspaces/{workspace}/my-work', WorkspaceMyWorkController::class)
+        ->middleware(ResolveWorkspaceNavigation::class)
+        ->name('workspaces.my-work');
     Route::get('/workspaces/{workspace}/all/invoices', WorkspaceInvoiceListController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.invoices');

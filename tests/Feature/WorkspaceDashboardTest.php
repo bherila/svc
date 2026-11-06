@@ -279,10 +279,14 @@ class WorkspaceDashboardTest extends TestCase
         foreach (['clients', 'invoices', 'time', 'finance'] as $tab) {
             $this->assertNotNull($owner[$tab], $tab);
         }
+        // Owners and admins have the Dashboard and the cross-client Time list
+        // instead of My work.
+        $this->assertNull($owner['my_work']);
 
         $member = $destinations($this->member);
         $this->assertNotNull($member['dashboard']);
         $this->assertNotNull($member['clients']);
+        $this->assertSame("/workspaces/{$this->workspace->public_id}/my-work", $member['my_work']);
         foreach (['invoices', 'time', 'finance'] as $tab) {
             $this->assertNull($member[$tab], $tab);
         }

@@ -31,7 +31,7 @@ export type ClientModule =
 
 /** The workspace tier's tabs, shown while no client is selected. */
 export type WorkspaceSection =
-    'dashboard' | 'clients' | 'invoices' | 'time' | 'finance';
+    'my_work' | 'dashboard' | 'clients' | 'invoices' | 'time' | 'finance';
 
 /**
  * Finished URLs, generated per viewer after authorization.
@@ -56,6 +56,8 @@ export type ClientModuleDestinations = {
 
 /** The workspace tier, chosen on the server per role; a null is not rendered. */
 export type WorkspaceDestinations = {
+    /** Members who do not run the workspace; null for owners and admins. */
+    my_work: string | null;
     dashboard: string | null;
     clients: string | null;
     invoices: string | null;

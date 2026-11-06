@@ -228,6 +228,16 @@ searched. The build fetches fonts, so build first with the proxy's CA
 (`NODE_EXTRA_CA_CERTS`) and pass `--skip-build` where the harness's own
 sanitized build environment cannot reach the network.
 
+For "My work" and the portal home, run `node scripts/check-layout.mjs --work-portal`.
+It seeds a member who is not an owner or admin (a contributor on one project, a
+manager on another) with tasks in every due-date group and time in every review
+state, all priced in the rows so a rate reaching the page would show, and a client
+contact with an overdue invoice linked to a hosted payment page, an agreement with
+a recurring service, hours past the retainer, disclosed deferred work and approved
+time, all with unbroken names. Each page is read as the person it is for, asserts
+no price on My work and no workspace-internal text or approval queue on the portal,
+and is gated by the UI consistency and axe checks at every required width.
+
 For the deferred backlog on the operator agreement page (#366), run
 `node scripts/check-layout.mjs --deferred-backlog`. It seeds a separate
 synthetic client with an unbroken name, an agreement whose title has no break,

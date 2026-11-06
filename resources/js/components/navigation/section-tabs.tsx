@@ -21,6 +21,7 @@ import type {
  * The tab strip, for both tiers of the navbar.
  *
  *     Workspace tier   Dashboard  Clients  Invoices  Time  Finance
+ *                      (My work first, for members who do not run the workspace)
  *     Client tier      Overview  Agreements  Invoices  Time  Tasks  Files
  *
  * One list per tier, defined here, rather than a set each page declares: pages
@@ -65,6 +66,7 @@ const WORKSPACE_TABS: readonly {
     key: WorkspaceSection;
     label: string;
 }[] = [
+    { key: 'my_work', label: 'My work' },
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'clients', label: 'Clients' },
     { key: 'invoices', label: 'Invoices' },
