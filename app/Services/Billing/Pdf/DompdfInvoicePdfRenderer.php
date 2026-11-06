@@ -7,6 +7,7 @@ use Dompdf\Dompdf;
 use Dompdf\Frame;
 use Dompdf\Options;
 use Illuminate\Contracts\View\View;
+use RuntimeException;
 
 /**
  * The Dompdf implementation of {@see InvoicePdfRenderer}.
@@ -56,18 +57,7 @@ final class DompdfInvoicePdfRenderer implements InvoicePdfRenderer
      */
     public function laidOut(InvoiceDocument $document, ?callable $onFrame = null): Dompdf
     {
-        $directory = $this->fontDirectory();
-        $options = new Options;
-        $options->set('isRemoteEnabled', false);
-        $options->set('isHtml5ParserEnabled', true);
-        $options->set('fontDir', $directory);
-        $options->set('fontCache', $directory);
-        $options->set('defaultFont', 'DejaVu Sans');
-        // Dompdf reads a font only from inside its chroot; the shipped TTFs are
-        // the one place outside its own directory that it may read.
-        $options->set('chroot', [resource_path('fonts'), $directory]);
-        $dompdf = new Dompdf($options);
-        $this->registerFonts($dompdf);
+        $dompdf = new Dompdf($this->options($this->preparedFontDirectory()));
         if ($onFrame !== null) {
             $dompdf->setCallbacks([['event' => 'end_frame', 'f' => static function (Frame $frame) use ($onFrame): void {
                 $onFrame($frame);
@@ -81,37 +71,79 @@ final class DompdfInvoicePdfRenderer implements InvoicePdfRenderer
         return $dompdf;
     }
 
-    /** Where Dompdf keeps its font metrics: writable, and shared by every request. */
-    private function fontDirectory(): string
+    private function options(string $directory): Options
+    {
+        $options = new Options;
+        $options->set('isRemoteEnabled', false);
+        $options->set('isHtml5ParserEnabled', true);
+        $options->set('fontDir', $directory);
+        $options->set('fontCache', $directory);
+        $options->set('defaultFont', 'DejaVu Sans');
+        // Dompdf reads a font only from inside its chroot; the shipped TTFs are
+        // the one place outside its own directory that it may read.
+        $options->set('chroot', [resource_path('fonts'), $directory]);
+
+        return $options;
+    }
+
+    /**
+     * Where Dompdf keeps its font metrics: writable, shared by every request
+     * and every worker, and written exactly once.
+     *
+     * Registering a font writes the metrics files and rewrites the family
+     * index, and Dompdf writes more cache files the first time it lays a font
+     * out. Left to each render, two workers starting together read each other's
+     * half-written files and one render fails. So the first caller registers
+     * Inter and warms every cache under an exclusive lock, and publishes a
+     * marker once the directory is complete; after that nothing writes to it,
+     * and a reader can never meet a partial file.
+     */
+    private function preparedFontDirectory(): string
     {
         $directory = storage_path('framework/dompdf-fonts');
-        if (! is_dir($directory)) {
-            mkdir($directory, 0775, true);
+        if (! is_dir($directory) && ! @mkdir($directory, 0775, true) && ! is_dir($directory)) {
+            throw new RuntimeException('The invoice font directory could not be created.');
+        }
+        $marker = $directory.'/inter-1.ready';
+        if (is_file($marker)) {
+            return $directory;
+        }
+
+        $lock = fopen($directory.'/.lock', 'c');
+        try {
+            if ($lock !== false) {
+                flock($lock, LOCK_EX);
+            }
+            clearstatcache(true, $marker);
+            if (! is_file($marker)) {
+                $this->registerFonts($directory);
+                $pending = $marker.'.'.getmypid();
+                file_put_contents($pending, 'ready');
+                rename($pending, $marker);
+            }
+        } finally {
+            if ($lock !== false) {
+                flock($lock, LOCK_UN);
+                fclose($lock);
+            }
         }
 
         return $directory;
     }
 
-    /**
-     * Register Inter once. The metrics files Dompdf writes are kept, so after the
-     * first render this is a lookup; the font is added again only if it is missing.
-     */
-    private function registerFonts(Dompdf $dompdf): void
+    /** Register Inter and lay out a line in each face, so every cache file exists. */
+    private function registerFonts(string $directory): void
     {
+        $dompdf = new Dompdf($this->options($directory));
         $metrics = $dompdf->getFontMetrics();
-        $directory = resource_path('fonts/inter');
-        $faces = [
-            ['normal', 'Inter-Regular.ttf'],
-            ['bold', 'Inter-Bold.ttf'],
-        ];
-        foreach ($faces as [$weight, $file]) {
-            $registered = $metrics->getFont(self::FONT_FAMILY, $weight);
-            if ($registered !== null && str_contains($registered, 'Inter')) {
-                continue;
-            }
-            $metrics->registerFont(['family' => self::FONT_FAMILY, 'style' => 'normal', 'weight' => $weight], $directory.'/'.$file);
+        $fonts = resource_path('fonts/inter');
+        foreach ([['normal', 'Inter-Regular.ttf'], ['bold', 'Inter-Bold.ttf']] as [$weight, $file]) {
+            $metrics->registerFont(['family' => self::FONT_FAMILY, 'style' => 'normal', 'weight' => $weight], $fonts.'/'.$file);
         }
         $metrics->saveFontFamilies();
+        $dompdf->loadHtml('<p style="font-family: Inter, DejaVu Sans">Inter <b>bold</b></p><p style="font-family: DejaVu Sans">DejaVu <b>bold</b></p>');
+        $dompdf->setPaper(self::US_LETTER_POINTS);
+        $dompdf->render();
     }
 
     /**
