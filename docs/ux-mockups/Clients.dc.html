@@ -11,35 +11,36 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 <style>
 :root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
 input,textarea,select{background:#0b1120;color:#e5e7eb}
 body{margin:0;background:#0b1120}
 a{color:#93c5fd}a:hover{color:#bfdbfe}
 </style>
 </helmet>
-<div style="width: 1440px; height: 1000px; box-sizing: border-box; font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
+<div style="min-height: 100%; box-sizing: border-box; font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
   <header style="background: #111827; border-bottom: 1px solid #1f2937">
-    <div style="padding: 0 32px; height: 56px; display: flex; align-items: center; gap: 24px">
+    <div style="padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 24px">
       <div style="font-weight: 600; font-size: 15px">⏻  Herila Consulting</div>
-      <nav aria-label="Workspace" style="display: flex; gap: 4px; font-size: 14px; flex: 1">
+      <nav aria-label="Workspace" style="display: flex; gap: 4px; font-size: 14px; flex: 1; min-width: 0; overflow-x: auto">
         <a href="Main.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Dashboard</a>
         <a href="#" style="padding: 8px 12px; border-radius: 6px; background: #172554; color: #93c5fd; font-weight: 600; text-decoration: none">Clients</a>
         <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Invoices</a>
         <a href="Review.dc.html" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Time</a>
         <a href="#" style="padding: 8px 12px; border-radius: 6px; color: #cbd5e1; text-decoration: none">Finance</a>
       </nav>
-      <span style="font-size: 13px; color: #9ca3af; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">Search  ⌘K</span>
+      <button type="button" aria-label="Search (⌘K)" title="Search (⌘K)" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid #1f2937; background: #111827; border-radius: 8px; color: #e5e7eb; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
       <span style="font-size: 13px; border: 1px solid #1f2937; border-radius: 6px; padding: 6px 10px">? Help</span>
     </div>
   </header>
-  <main style="padding: 28px 32px; display: flex; flex-direction: column; gap: 18px">
+  <main style="max-width: 1440px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 18px">
     <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px">
       <div>
         <h1 style="margin: 0; font-size: 24px; font-weight: 600">Clients</h1>
-        <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">6 clients · $18,450 a month recurring · select a client to open it</p>
+        <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">6 clients · $18,450 a month recurring</p>
       </div>
       <a href="#" style="background: #e5e7eb; color: #111827; border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 500; text-decoration: none">New client</a>
     </div>
-    <div role="group" aria-label="Filter clients" style="display: flex; gap: 8px; font-size: 13px">
+    <div role="group" aria-label="Filter clients" style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
       <span style="border: 1px solid #3b82f6; background: #172554; border-radius: 999px; padding: 6px 12px; font-weight: 500">All · 6</span>
       <span style="border: 1px solid #374151; border-radius: 999px; padding: 6px 12px">Active · 5</span>
       <span style="border: 1px solid #374151; border-radius: 999px; padding: 6px 12px">Ending soon · 1</span>
@@ -47,15 +48,15 @@ a{color:#93c5fd}a:hover{color:#bfdbfe}
       <span style="border: 1px solid #374151; border-radius: 999px; padding: 6px 12px">Has overdue · 2</span>
     </div>
     <div style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; overflow: hidden">
-      <table style="width: 100%; border-collapse: collapse; font-size: 14px">
+      <div style="overflow-x: auto"><table style="width: 100%; min-width: 980px; border-collapse: collapse; font-size: 14px">
         <thead>
           <tr style="background: #0b1120; color: #9ca3af; font-size: 12px; text-align: left">
             <th scope="col" style="padding: 12px 16px; font-weight: 600; min-width: 220px">Client</th>
-            <th scope="col" style="padding: 12px 16px; font-weight: 600; text-align: right">Monthly recurring</th>
+            <th scope="col" style="padding: 12px 16px; font-weight: 600; text-align: right">Monthly recurring<button type="button" aria-label="About this column" title="Quarterly and annual charges converted to a monthly figure. One-time charges are left out." style="display: inline-flex; vertical-align: middle; border: 0; background: transparent; color: #9ca3af; padding: 2px; margin-left: 2px; cursor: pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></button></th>
             <th scope="col" style="padding: 12px 16px; font-weight: 600; text-align: right">Year to date</th>
             <th scope="col" style="padding: 12px 16px; font-weight: 600">Last 12 months</th>
             <th scope="col" style="padding: 12px 16px; font-weight: 600; text-align: right">Unpaid</th>
-            <th scope="col" style="padding: 12px 16px; font-weight: 600; min-width: 260px">This month’s retainer</th>
+            <th scope="col" style="padding: 12px 16px; font-weight: 600; min-width: 260px">This month’s retainer<button type="button" aria-label="About this column" title="Hours used against hours included this month, including rolled-over hours." style="display: inline-flex; vertical-align: middle; border: 0; background: transparent; color: #9ca3af; padding: 2px; margin-left: 2px; cursor: pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></button></th>
           </tr>
         </thead>
         <tbody>
@@ -92,13 +93,12 @@ a{color:#93c5fd}a:hover{color:#bfdbfe}
             <td style="padding: 12px 16px"></td>
           </tr>
         </tbody>
-      </table>
+      </table></div>
     </div>
-    <p style="margin: 0; font-size: 13px; color: #9ca3af">Monthly recurring converts quarterly and annual charges to a monthly figure. One-time charges aren’t included. The bar shows hours used against hours included in this month’s retainer, including hours rolled over.</p>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
   renderVals() {
     const sparkOf = (vals) => { const max = Math.max.apply(null, vals); return vals.map((v) => 'flex:1;width:6px;border-radius:1px;background:#3b82f6;height:' + Math.max(2, Math.round(v / max * 28)) + 'px;'); };

@@ -11,6 +11,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 <style>
 :root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
 body{margin:0;background:#0b1120}
 a{color:#93c5fd}a:hover{color:#bfdbfe}
 button{font-family:inherit}
@@ -18,7 +19,7 @@ button{font-family:inherit}
 </helmet>
 <div style="font-family: Inter, system-ui, sans-serif; color: #e5e7eb; background: #0b1120">
   <header style="background: #111827; border-bottom: 1px solid #1f2937">
-    <div style="max-width: 1440px; margin: 0 auto; padding: 0 32px; height: 56px; display: flex; align-items: center; gap: 20px">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 16px; height: 56px; display: flex; align-items: center; gap: 20px">
       <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; white-space: nowrap">
         <span style="font-weight: 600">⏻  Herila Consulting</span><span style="color: #6b7280" aria-hidden="true">›</span>
         <span style="border: 1px solid #1f2937; border-radius: 6px; padding: 5px 10px; font-weight: 600">Acme Veterinary ▾</span>
@@ -35,14 +36,14 @@ button{font-family:inherit}
     </div>
   </header>
 
-  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 24px 32px 48px; display: flex; flex-direction: column; gap: 18px">
+  <main style="max-width: 1440px; margin: 0 auto; box-sizing: border-box; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 18px">
     <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
       <div>
         <h1 style="margin: 0; font-size: 22px; font-weight: 600">Invoice 1041</h1>
         <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af">October 2026 · $9,200.00 · due Nov 15</p>
       </div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap">
-        <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 14px; font-size: 14px; color: #e5e7eb; text-decoration: none">Download PDF</a>
+        <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 14px; font-size: 14px; color: #e5e7eb; text-decoration: none; display: inline-flex; align-items: center; gap: 6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>Download PDF</a>
         <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 14px; font-size: 14px; color: #e5e7eb; text-decoration: none">More ▾</a>
       </div>
     </div>
@@ -72,11 +73,11 @@ button{font-family:inherit}
         </div>
       </div>
 
-      <aside style="flex: 1 1 320px; min-width: 300px; display: flex; flex-direction: column; gap: 16px; font-size: 14px">
+      <aside style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; font-size: 14px">
         <section aria-label="Balance" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
           <div style="display: flex; justify-content: space-between; align-items: baseline"><h2 style="margin: 0; font-size: 15px; font-weight: 600">Waiting for payment</h2><span style="color: #9ca3af; font-size: 13px">due in 9 days</span></div>
           <div style="font-size: 28px; font-weight: 600">$9,200.00</div>
-          <p style="margin: 0; color: #9ca3af; font-size: 13px; line-height: 1.5">Nothing needs you yet. If it’s still unpaid on Nov 15, it moves to your Needs you list.</p>
+          <p style="margin: 0; color: #9ca3af; font-size: 13px">Nothing needs you until Nov 15</p>
           <div style="display: flex; flex-direction: column; gap: 8px">
             <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 12px; font-size: 13px; color: #e5e7eb; text-decoration: none; text-align: center">Record a payment received elsewhere</a>
             <a href="#" style="border: 1px solid #374151; border-radius: 8px; padding: 9px 12px; font-size: 13px; color: #e5e7eb; text-decoration: none; text-align: center">Send a reminder now</a>
@@ -86,14 +87,14 @@ button{font-family:inherit}
         <section aria-label="Hours approval" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
           <h2 style="margin: 0; font-size: 15px; font-weight: 600">Hours approval</h2>
           <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #1f2937" role="img" aria-label="12 of 41.5 hours approved"><span style="width: 29%; background: #86efac"></span></div>
-          <div style="color: #cbd5e1; font-size: 13px; line-height: 1.5">12.0 of 41.5 h approved by Dana Okafor in the portal on Nov 4. The rest are approved when this invoice is paid. No disputes.</div>
+          <div style="color: #cbd5e1; font-size: 13px">12.0 of 41.5 h approved by Dana · rest on payment</div>
         </section>
 
         <section aria-label="Expenses on this invoice" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
           <h2 style="margin: 0; font-size: 15px; font-weight: 600">Expenses · 2 receipts</h2>
-          <div style="display: flex; justify-content: space-between; font-size: 13px"><span>Staging database</span><a href="#">B1 · pdf</a></div>
-          <div style="display: flex; justify-content: space-between; font-size: 13px"><span>Lab-results API usage</span><a href="#">B2 · pdf</a></div>
-          <div style="color: #9ca3af; font-size: 12px">Attached to the PDF as appendix B. Acme can open them in its portal.</div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="display: inline-flex; gap: 8px; align-items: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Staging database</span><a href="#">B1</a></div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="display: inline-flex; gap: 8px; align-items: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Lab-results API usage</span><a href="#">B2</a></div>
+          <div style="color: #9ca3af; font-size: 12px">Appendix B of the PDF</div>
         </section>
 
         <section aria-label="Activity" style="background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">

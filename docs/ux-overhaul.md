@@ -437,6 +437,39 @@ Decided on the design canvas (2026-11-06):
 - **Pickers.** Project and task pickers are search-as-you-type comboboxes.
   The task picker offers "Create task" inline when nothing matches; the new
   task is created on the selected project and assigned to its creator.
+- **Text budget.** At most one line of supporting text per card or list row.
+  Explanations live in `?` tips (`Tooltip` from `components/ui`, opened on
+  click or focus as well as hover) and in the help panel. A banner explaining
+  a concept appears only on someone's first visit, can be dismissed, and
+  stays dismissed (`<details>` "Why?" disclosures afterwards).
+- **Icons.** `lucide-react`, which is already a dependency, at 16 px inline
+  and 20 px for list-row leading icons. An icon either sits next to a text
+  label (and is `aria-hidden`), or is the only content of a button with an
+  `aria-label` and a tooltip. Status uses an icon plus words, never colour
+  alone.
+- **Accessibility (WCAG 2.2 AA):**
+  - real `button`, `a` and `label` elements, with a visible `:focus-visible`
+    ring;
+  - text contrast of 4.5:1 or more in both themes;
+  - touch targets of 44 px or more on coarse pointers;
+  - comboboxes following the ARIA combobox pattern (Base UI's);
+  - `aria-current` on the current step of a flow;
+  - charts with a "Show as table" alternative;
+  - `aria-live` on values that change, such as the selected month;
+  - a keyboard-only and screen-reader pass for each slice. Add
+    `@axe-core/playwright` to the browser checks, and make any serious or
+    critical violation fail them.
+- **Phone first.**
+  - **Layout:** 16 px side padding, single-column stacking via
+    `flex-wrap`/`grid-cols-1`, and `minmax(min(100%, N), 1fr)` grids so no
+    track is wider than the screen.
+  - **Navbar:** stays one row. The workspace name truncates, and search and
+    help become icon buttons.
+  - **Wide tables** scroll inside their own box on phones. The Clients table
+    becomes cards below `md`.
+  - **Flow steps** wrap.
+  - **Checks:** every slice is checked in a browser at 390, 820, 1440 and
+    1920 px. The canvas has phone boards that embed the real screens.
 - **Proforma invoice.** "View proforma invoice" on the client overview, and
   "Next invoice · estimate" in the portal, both render the next cadence
   invoice from the agreement and the time logged so far. They are built on
@@ -560,6 +593,81 @@ Proposal:
   `AgentMcpContractTest` gains a test that the core set plus every toolset
   equals today's full list.
 
+## 12. Payment connections per workspace
+
+A workspace is the business that gets paid, so payment settings belong to it,
+not to the deployment and not to each client.
+
+- **Deployment level** (environment file, entered once): one Stripe Connect
+  platform (client ID, platform secret, Connect webhook secret) and one Square
+  application (application ID and secret, webhook signature key).
+- **Workspace level**: `workspace_payment_connections`, one active row per
+  processor:
+  - processor: an enum, `stripe` or `square`;
+  - the external account ID (`acct_…` or the Square merchant ID);
+  - encrypted OAuth tokens and expiry where needed;
+  - who connected it and when, and when it was revoked.
+
+  Owners and admins connect through the processor's OAuth flow ("Connect
+  Stripe" or "Connect Square"), with a `state` value bound to the workspace
+  and user. Nobody pastes keys.
+- **Reuse**: a workspace whose owner has another workspace already connected
+  can use that connection without a second OAuth flow.
+- **Charging**: Stripe uses direct charges on the connected account; Square
+  uses the connection's token. The connection is resolved from the invoice's
+  workspace, never from config.
+- **Webhooks**: routed by connected account ID and confirmed against the
+  workspace recorded in the payment metadata. An event that matches no
+  active connection is logged and ignored.
+- **Migration**: an explicit, manual command turns today's environment
+  credentials (`STRIPE_*`, `SQUARE_*`, `SQUARE_WORKSPACE`) into the configured
+  workspace's first connection. The environment path keeps working until
+  that command has run, then a follow-up removes it.
+- **Isolation tests**: no workspace can charge into, read, or receive
+  webhooks for another's connection. Revoking a connection stops charges at
+  once.
+- **No queue worker runs in production**: token exchange and refresh happen
+  in the request, and irrevocable external calls are deferred to commit
+  explicitly.
+- **Other businesses**: a partner workspace (section 7e) connects its own
+  account, or none.
+
+## 13. Revenue and accounting data over REST and MCP
+
+The dashboard, REST and MCP read the same immutable DTOs (section 2), so the
+three can't disagree.
+
+- **Planning reads** under a new `revenue:read` scope, separate from
+  `finance:read`:
+  - `revenue.summary`: YTD, last 12 months, next 12 months and unpaid, by
+    basis;
+  - `revenue.monthly`: per month and per client, with recurring, overage and
+    other, expenses and projected bands, and the same basis and toggle
+    parameters as the dashboard;
+  - `revenue.projection`: per-agreement rows with their recurring items,
+    start and end dates, and the overage method.
+
+  Every response carries an `assumptions` block: as of when, basis, overage
+  window, minimum history, and a method version. A stored projection can
+  then be explained later.
+- **Accounting reads** under `finance:read`:
+  - invoice lines with tax broken out per line;
+  - cash-basis income (payments, refunds and reversals by date);
+  - processor fees and payouts (already exposed);
+  - a calendar-year income export in CSV and JSON.
+
+  All lists take stable IDs and an `updated_since` cursor, so tax and
+  bookkeeping tools sync incrementally. Corrections arrive as new reversing
+  records, never as edits to issued ones.
+- **No outbound webhooks yet.** No queue worker runs in production, so
+  integrations pull on a schedule. Outbound notifications (invoice issued,
+  payment received, agreement ending) would later be sent in the request
+  after commit.
+- **Contract**: `public/openapi/svc-agent-v1.json`, the MCP catalog in the
+  `revenue` and `finance` toolsets (section 11), and descriptions drawn from
+  the in-app glossary (section 8). Parity tests check that REST, MCP and the
+  dashboard return the same figures for the same fixture.
+
 ## Delivery slices (stacked commits, one PR)
 
 0. **Help scaffolding** (section 8): the `docs/help` loader, glossary,
@@ -587,6 +695,9 @@ Proposal:
     portal page and proforma.
 13. **MCP progressive discovery** (section 11), together with the revenue
     tools from section 2.
+14. **Payment connections per workspace** (section 12). Codex handoff, task 2.
+15. **Revenue and accounting data over REST and MCP** (section 13), after
+    slice 2's DTOs land.
 
 ## Settled answers
 
