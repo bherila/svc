@@ -13,6 +13,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiResult, ApiSchema } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
@@ -420,6 +427,11 @@ function MemberRow({
     );
     const stored = approvalSettingOf(member.can_approve_time_and_expenses);
     const [approval, setApproval] = useState<ApprovalSetting>(stored);
+    const approvalItems: { value: ApprovalSetting; label: string }[] = [
+        { value: 'default', label: member.approval.default_label },
+        { value: 'allow', label: 'Can approve' },
+        { value: 'deny', label: 'Cannot approve' },
+    ];
     const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [removing, setRemoving] = useState(false);
@@ -474,20 +486,29 @@ function MemberRow({
                 <Label htmlFor={`portal-${member.id}-approval`}>
                     Can approve time and expenses
                 </Label>
-                <select
-                    id={`portal-${member.id}-approval`}
-                    className="h-9 max-w-xs rounded-md border bg-transparent px-2"
+                <Select
+                    items={approvalItems}
                     value={approval}
-                    onChange={(event) =>
-                        setApproval(event.target.value as ApprovalSetting)
-                    }
+                    onValueChange={(value) => {
+                        if (value !== null) {
+                            setApproval(value);
+                        }
+                    }}
                 >
-                    <option value="default">
-                        {member.approval.default_label}
-                    </option>
-                    <option value="allow">Can approve</option>
-                    <option value="deny">Cannot approve</option>
-                </select>
+                    <SelectTrigger
+                        id={`portal-${member.id}-approval`}
+                        className="max-w-xs"
+                    >
+                        <SelectValue className="wrap-anywhere" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {approvalItems.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                                {item.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
                 <p className="text-xs wrap-anywhere text-muted-foreground">
                     Now: {member.approval.label}. Nobody approves their own
                     work.

@@ -206,12 +206,9 @@ describe('portal access', () => {
         const select = screen.getByRole('combobox', {
             name: 'Can approve time and expenses',
         });
-        expect(select).toHaveValue('default');
-        expect(
-            within(select).getByRole('option', {
-                name: 'Not the billing contact (default)',
-            }),
-        ).toBeInTheDocument();
+        // The trigger shows the label, never the stored value.
+        expect(select).toHaveTextContent('Not the billing contact (default)');
+        expect(select).not.toHaveTextContent('default,');
         expect(
             screen.getByText(/Now: Not the billing contact \(default\)/),
         ).toBeInTheDocument();
@@ -225,14 +222,20 @@ describe('portal access', () => {
             name: 'Can approve time and expenses',
         });
 
-        await user.selectOptions(approval, 'allow');
+        await user.click(approval);
+        await user.click(
+            await screen.findByRole('option', { name: 'Can approve' }),
+        );
         await user.click(screen.getByRole('button', { name: 'Save access' }));
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
         expect(request(0).body).toMatchObject({
             can_approve_time_and_expenses: true,
         });
 
-        await user.selectOptions(approval, 'deny');
+        await user.click(approval);
+        await user.click(
+            await screen.findByRole('option', { name: 'Cannot approve' }),
+        );
         await user.click(screen.getByRole('button', { name: 'Save access' }));
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
         expect(request(1).body).toMatchObject({
@@ -240,7 +243,12 @@ describe('portal access', () => {
         });
 
         // Back to what the page was rendered with: nothing to send.
-        await user.selectOptions(approval, 'default');
+        await user.click(approval);
+        await user.click(
+            await screen.findByRole('option', {
+                name: 'Not the billing contact (default)',
+            }),
+        );
         await user.click(screen.getByRole('button', { name: 'Save access' }));
         await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
         expect(request(2).body).not.toHaveProperty(
@@ -275,9 +283,14 @@ describe('portal access', () => {
         const approval = screen.getByRole('combobox', {
             name: 'Can approve time and expenses',
         });
-        expect(approval).toHaveValue('deny');
+        expect(approval).toHaveTextContent('Cannot approve');
 
-        await user.selectOptions(approval, 'default');
+        await user.click(approval);
+        await user.click(
+            await screen.findByRole('option', {
+                name: 'Not the billing contact (default)',
+            }),
+        );
         await user.click(screen.getByRole('button', { name: 'Save access' }));
 
         await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
