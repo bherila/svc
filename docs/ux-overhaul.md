@@ -306,6 +306,24 @@ approves whenever it gets to it. Mappings over `InvoiceStatus` and the new
 states are exhaustive `match` expressions. A person can never review or approve
 their own entry. The server refuses it whatever their role.
 
+### 7b′. Expenses follow the same approval
+
+Clients approve **expenses as well as hours** (decided 2026-11-06).
+
+- **Your check.** The operator's existing expense approval (`ExpenseStatus`
+  approved) stays as the "Ready to bill" check: the receipt is right and the
+  expense belongs to this client. It is labelled *Ready to bill*, not
+  *Approved*.
+- **Client approval** is separate, as for hours. It is stored per expense
+  (`client_approved_by_user_id`, `client_approved_at`), or implied by paying
+  in full the invoice that carries the expense. A client disputes a single
+  expense with a note, and the correction flow handles it.
+- **One list.** The portal queue becomes **To approve**, with hours and
+  expenses grouped by vendor and month. Each expense shows its receipt
+  inline.
+- **Proforma.** An expense not yet ready to bill is listed on the proforma but
+  left out of its total.
+
 ### 7c. Vetvet's "Hours to approve"
 
 One queue in the portal for each client contact. It is built from **that
