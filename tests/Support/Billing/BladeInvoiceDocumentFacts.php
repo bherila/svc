@@ -3,14 +3,13 @@
 namespace Tests\Support\Billing;
 
 use App\Models\ClientInvoice;
-use App\Services\Billing\InvoiceDocumentService;
 use DOMDocument;
 use DOMElement;
 use DOMNode;
 use DOMXPath;
 
 /**
- * {@see InvoiceDocumentFacts} read from today's `invoices.show` Blade HTML.
+ * {@see InvoiceDocumentFacts} read from the HTML of an invoice document, by structure.
  *
  * It reads the same HTML the PDF is rendered from, by structure (the class
  * names the template already carries), so a stylesheet change moves nothing
@@ -20,7 +19,8 @@ use DOMXPath;
  */
 final class BladeInvoiceDocumentFacts implements InvoiceDocumentFacts
 {
-    public function __construct(private readonly InvoiceDocumentService $documents) {}
+    /** @param object{html: callable} $documents Anything with `html(ClientInvoice, string): View`. */
+    public function __construct(private readonly object $documents) {}
 
     public function extract(ClientInvoice $invoice, string $audience): array
     {
@@ -75,6 +75,10 @@ final class BladeInvoiceDocumentFacts implements InvoiceDocumentFacts
     {
         $lines = [];
         foreach ($xpath->query('//table[thead/tr/th[1][normalize-space()="Description"]]/tbody/tr') ?: [] as $row) {
+            // A section's title and its subtotal are structure and arithmetic, not lines.
+            if ($row instanceof DOMElement && (str_contains($row->getAttribute('class'), 'section-subtotal') || str_contains($row->getAttribute('class'), 'section-title'))) {
+                continue;
+            }
             $cells = $this->cells($row);
             $lines[] = [
                 'description' => $cells[0], 'type' => $cells[1], 'quantity' => $cells[2],

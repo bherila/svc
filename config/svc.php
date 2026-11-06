@@ -1,6 +1,11 @@
 <?php
 
 return [
+    // Which InvoicePdfRenderer draws the invoice PDF. Dompdf is the only
+    // implementation; another engine is added as a new value here and a new
+    // class, and is held to the same golden-fact tests.
+    'invoice_pdf_renderer' => env('SVC_INVOICE_PDF_RENDERER', 'dompdf'),
+
     'filesystem_disk' => env('SVC_FILESYSTEM_DISK', 'svc_files'),
 
     // Keep false for the first reader deployment. After the floor is verified,

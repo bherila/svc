@@ -17,6 +17,8 @@ use App\Services\AgentApi\Operations\AgentPrincipalResolver;
 use App\Services\ApiCredentials\OpenApiGrantableScopes;
 use App\Services\Billing\Mail\InvoiceMailSender;
 use App\Services\Billing\Mail\LaravelInvoiceMailSender;
+use App\Services\Billing\Pdf\DompdfInvoicePdfRenderer;
+use App\Services\Billing\Pdf\InvoicePdfRenderer;
 use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
@@ -58,6 +60,7 @@ use Illuminate\Validation\Rules\Password;
 use Laravel\Passport\Passport;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use RuntimeException;
 use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
 use Symfony\Component\Mailer\Transport\Dsn;
 
@@ -84,6 +87,10 @@ class AppServiceProvider extends ServiceProvider
         Passport::useClientModel(OAuthClient::class);
         $this->app->singleton(ReplayHistoryBasis::class);
         $this->app->bind(InvoiceMailSender::class, LaravelInvoiceMailSender::class);
+        $this->app->bind(InvoicePdfRenderer::class, static fn ($app): InvoicePdfRenderer => match ((string) config('svc.invoice_pdf_renderer')) {
+            'dompdf' => $app->make(DompdfInvoicePdfRenderer::class),
+            default => throw new RuntimeException('Unknown invoice PDF renderer "'.(string) config('svc.invoice_pdf_renderer').'".'),
+        });
         // Holds which credential an MCP write tool call already verified, for that call only.
         $this->app->singleton(ProviderIdentityWrites::class);
         // Offer a REST credential only scopes some REST operation requires.
