@@ -158,6 +158,71 @@ $proposal->items()->create([
     'quantity' => 2, 'unit_amount' => 5000, 'cadence' => 'one_time', 'sort_order' => 0,
 ]);
 
+// Revenue screens (--revenue): seven clients named without a break, each with an
+// agreement whose title has none either, a recurring service, six months of
+// issued invoices priced in the millions, and agreements ending inside the
+// window. Everything the Dashboard, the roster and the client overview print
+// is read from these rows by the same code that serves them in production.
+if (getenv('SVC_LAYOUT_REVENUE') === '1') {
+    $today = app(WorkspaceClock::class)->today($workspace);
+    $revenueNumber = 0;
+    foreach (range(0, 6) as $index) {
+        $client = $index === 0 ? $company : ClientCompany::query()->create([
+            'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticRevenueClient', 3).$index,
+            'slug' => 'synthetic-revenue-client-'.$index,
+        ]);
+        $revenueAgreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $client->id,
+            'title' => str_repeat('SyntheticRevenueAgreementWithoutBreaks', 3), 'status' => 'active', 'currency' => 'USD',
+            'starts_on' => $today->subMonths(8)->startOfMonth()->toDateString(),
+            'ends_on' => $index % 2 === 1 ? $today->addMonths(2 + $index)->toDateString() : null,
+            'billing_cadence' => 'monthly', 'retainer_amount' => 250000000 + $index * 1000000, 'retainer_minutes' => 600,
+            'hourly_rate_amount' => 20000, 'signed_at' => $today->subMonths(8)->toDateTimeString(),
+        ]);
+        $item = App\Models\ClientAgreementRecurringItem::query()->create([
+            'workspace_id' => $workspace->id, 'client_agreement_id' => $revenueAgreement->id, 'description' => str_repeat('SyntheticHostingServiceWithoutBreaks', 3),
+            'cadence' => 'quarterly', 'anchor_month' => 1, 'anchor_day' => 1, 'quantity' => '1.000', 'amount' => 30000000,
+            'currency' => 'USD', 'is_taxable' => false, 'is_active' => true, 'sort_order' => 1,
+        ]);
+        foreach (range(6, 1) as $back) {
+            $start = $today->startOfMonth()->subMonths($back);
+            $next = $start->addMonth();
+            $lines = [['retainer', 250000000 + $index * 1000000, $next->toDateString(), null]];
+            if ($next->month % 3 === 1) {
+                $lines[] = ['recurring_item', 30000000, $next->toDateString(), $item->id];
+            }
+            if ($back % 2 === 0) {
+                $lines[] = ['additional_hours', 40000000, $start->endOfMonth()->toDateString(), null];
+            }
+            if ($back === 1) {
+                $lines[] = ['expense', 5000000, $start->endOfMonth()->toDateString(), null];
+            }
+            $revenueNumber++;
+            $revenueInvoice = App\Models\ClientInvoice::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $client->id, 'client_agreement_id' => $revenueAgreement->id,
+                'invoice_number' => 'SYNTHETIC-REV-'.str_repeat('Z', 40).$revenueNumber, 'status' => $back > 2 ? 'paid' : 'issued',
+                'currency' => 'USD', 'invoice_kind' => 'cadence_period',
+                'service_period_start' => $start->toDateString(), 'service_period_end' => $start->endOfMonth()->toDateString(),
+                'issue_date' => $next->toDateString(), 'due_date' => $next->addDays(14)->toDateString(),
+            ]);
+            $total = 0;
+            foreach ($lines as $sort => [$type, $amount, $lineDate, $itemId]) {
+                App\Models\ClientInvoiceLine::query()->create([
+                    'workspace_id' => $workspace->id, 'client_invoice_id' => $revenueInvoice->id, 'client_agreement_id' => $revenueAgreement->id,
+                    'client_agreement_recurring_item_id' => $itemId, 'type' => $type, 'description' => 'Synthetic '.$type,
+                    'quantity' => '1', 'unit_amount' => $amount, 'tax_amount' => 0, 'total_amount' => $amount, 'line_date' => $lineDate, 'sort_order' => $sort,
+                ]);
+                $total += $amount;
+            }
+            $billedHours = array_sum(array_map(static fn (array $line): float => $line[0] === 'additional_hours' ? $line[1] / 20000 : 0.0, $lines));
+            $revenueInvoice->forceFill([
+                'hours_billed_at_rate' => number_format($billedHours, 4, '.', ''), 'subtotal_amount' => $total, 'tax_amount' => 0,
+                'total_amount' => $total, 'paid_amount' => $back > 2 ? $total : 0, 'balance_amount' => $back > 2 ? 0 : $total,
+            ])->save();
+        }
+    }
+}
+
 $engagementAgreementPath = null;
 if (getenv('SVC_LAYOUT_ENGAGEMENT') === '1') {
     $proposal->forceFill(['status' => 'draft', 'sent_at' => null])->save();
@@ -536,6 +601,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'time' => route('clients.time', [$workspace, $company], absolute: false),
     'operations' => route('workspaces.operations', $workspace, absolute: false),
     'dashboard' => route('workspaces.dashboard', $workspace, absolute: false),
+    'client_overview' => route('clients.show', [$workspace, $company], absolute: false),
     'workspace_clients' => route('clients.index', $workspace, absolute: false),
     'workspace_invoices' => route('workspaces.invoices', $workspace, absolute: false),
     'workspace_time' => route('workspaces.time', $workspace, absolute: false),

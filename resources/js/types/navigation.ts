@@ -100,4 +100,6 @@ export type WorkspaceNavigation = {
     task_labels_href?: string | null;
     /** The classic Operations tools, until each is re-homed. */
     operations_href?: string | null;
+    /** Owners and admins only; null for anyone else. */
+    payments_href?: string | null;
 };

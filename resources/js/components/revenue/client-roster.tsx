@@ -143,12 +143,15 @@ function SortHead({
     filters,
     onSort,
     children,
+    after,
     className,
 }: {
     sort: RosterSort;
     filters: Roster['filters'];
     onSort: (sort: RosterSort) => void;
     children: React.ReactNode;
+    /** Beside the sort button, never inside it: a button may not hold a button. */
+    after?: React.ReactNode;
     className?: string;
 }) {
     const active = filters.sort === sort;
@@ -178,6 +181,7 @@ function SortHead({
                 {children}
                 <Icon aria-hidden="true" className="size-3.5" />
             </button>
+            {after}
         </TableHead>
     );
 }
@@ -351,9 +355,10 @@ export function ClientRoster({
                                             filters={filters}
                                             onSort={sortBy}
                                             sort="mrr"
+                                            after={<TermTip term="MRR" />}
                                             className="text-right"
                                         >
-                                            MRR <TermTip term="MRR" />
+                                            MRR
                                         </SortHead>
                                         <SortHead
                                             filters={filters}
@@ -483,7 +488,7 @@ export function ClientRoster({
 
                             return (
                                 <li key={row.client_id} className="min-w-0">
-                                    <Card size="sm">
+                                    <Card>
                                         <CardContent className="grid grid-cols-1 gap-3">
                                             <p className="text-sm">
                                                 <ClientName row={row} />
@@ -519,7 +524,7 @@ export function ClientRoster({
                             );
                         })}
                     </ul>
-                    <Card size="sm" className="md:hidden">
+                    <Card className="md:hidden">
                         <CardContent className="grid grid-cols-2 gap-3 text-sm">
                             <div className="min-w-0">
                                 <p className="text-xs text-muted-foreground">

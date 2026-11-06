@@ -292,7 +292,9 @@ describe('client home without an overview', () => {
         expect(container.querySelector('[data-slot="stat-tile"]')).toBeNull();
         expect(screen.getByText('Latest invoice')).toBeInTheDocument();
         expect(container.querySelector('#agreements')).toBe(
-            screen.getByRole('heading', { name: 'Engagement' }).closest('section'),
+            screen
+                .getByRole('heading', { name: 'Engagement' })
+                .closest('section'),
         );
         expect(screen.queryByText('Recent invoices')).not.toBeInTheDocument();
         expect(screen.queryByText('Log time')).not.toBeInTheDocument();

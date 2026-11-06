@@ -383,7 +383,7 @@ function Proposals({ overview }: { overview: ClientOverview }) {
                                     <p className="text-xs text-muted-foreground">
                                         {statusLabel(proposal.status)}
                                         {proposal.sent_at !== null &&
-                                            ` · sent ${formatDay(proposal.sent_at)}`}
+                                            ` · ${formatDay(proposal.sent_at)}`}
                                     </p>
                                 </div>
                                 <Link

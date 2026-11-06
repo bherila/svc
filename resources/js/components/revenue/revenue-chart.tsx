@@ -309,7 +309,7 @@ export default function RevenueChart({
                             dataKey="month"
                             tickLine={false}
                             axisLine={false}
-                            interval={phone ? 0 : 1}
+                            interval={1}
                             tick={{
                                 fill: 'var(--muted-foreground)',
                                 fontSize: 11,
@@ -473,7 +473,7 @@ export default function RevenueChart({
                                             : formatMoney(amount, currency)}
                                     </TableCell>
                                 ))}
-                                <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
+                                <TableCell className="max-w-0 min-w-64 wrap-anywhere whitespace-normal">
                                     {clientsLine(month, currency) || '—'}
                                 </TableCell>
                             </TableRow>

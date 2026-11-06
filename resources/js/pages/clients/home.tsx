@@ -190,7 +190,7 @@ export default function ClientHome({
                             role="status"
                             className="flex flex-wrap items-center justify-between gap-3"
                         >
-                            <span>
+                            <span className="min-w-0 wrap-anywhere">
                                 <span className="font-medium">
                                     {engagement.proposal_title}
                                 </span>{' '}

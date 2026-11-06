@@ -46,6 +46,7 @@ const widths = [390, 820, 1440, 1920];
 const uiGated = new Set([
     'dashboard',
     'workspace_clients',
+    'client_overview',
     'workspace_invoices',
     'workspace_time',
     'workspace_finance',
@@ -75,6 +76,12 @@ const projectsOnly = process.argv.includes('--projects');
 const workspacesOnly = process.argv.includes('--workspaces');
 const credentialsOnly = process.argv.includes('--credentials');
 const paymentsOnly = process.argv.includes('--payments');
+const revenueOnly = process.argv.includes('--revenue');
+const revenueScreens = new Set([
+    'dashboard',
+    'workspace_clients',
+    'client_overview',
+]);
 const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
@@ -189,6 +196,7 @@ try {
         SVC_LAYOUT_DISPUTES: disputesOnly ? '1' : '0',
         SVC_LAYOUT_CLIENTS: clientsOnly ? '1' : '0',
         SVC_LAYOUT_RECEIPTS: receiptsOnly ? '1' : '0',
+        SVC_LAYOUT_REVENUE: revenueOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -754,6 +762,58 @@ try {
         await page.unroute('**/account/api-credentials', handler);
     }
 
+    // The revenue screens draw after the first paint: the chart is a lazy
+    // chunk, and the retainer meters are a deferred prop. Wait for both so a
+    // screenshot shows the screen a reader sees, not its skeleton.
+    async function settleRevenueScreen(screen) {
+        await page.waitForLoadState('networkidle');
+
+        if (screen === 'dashboard' || screen === 'client_overview') {
+            await expect(
+                page.locator('[data-slot="revenue-chart-table"]'),
+            ).toBeAttached();
+            await expect(page.locator('.recharts-surface').first()).toBeVisible();
+        }
+
+        if (screen === 'workspace_clients') {
+            await expect(page.locator('[data-slot="roster"]')).toBeVisible();
+            await expect(
+                page.locator('[data-slot="retainer-meter"]:visible').first(),
+            ).toBeVisible();
+            // The meters are a deferred read: wait for it, not its placeholder.
+            await expect(page.getByText('Reading hours…')).toHaveCount(0);
+        }
+
+        if (screen === 'client_overview') {
+            await expect(
+                page.locator('[data-slot="this-period"] [data-slot="retainer-meter"]').first(),
+            ).toBeVisible();
+        }
+    }
+
+    async function captureRevenueStates(screen, width) {
+        if (screen === 'dashboard' || screen === 'client_overview') {
+            await page.getByRole('button', { name: 'Show as table' }).click();
+            await expect(
+                page.locator('[data-slot="revenue-chart-table"]'),
+            ).not.toHaveClass(/sr-only/);
+            await capture(screen, 'table', width, false);
+            await page.getByRole('button', { name: 'Hide table' }).click();
+            await page.getByRole('button', { name: 'Collected' }).click();
+            await expect(
+                page.getByRole('button', { name: 'Collected' }),
+            ).toHaveAttribute('aria-pressed', 'true');
+            await page.waitForLoadState('networkidle');
+            await capture(screen, 'collected', width, false);
+        }
+
+        if (screen === 'workspace_clients') {
+            await page.getByRole('searchbox', { name: 'Search clients' }).fill('Synthetic');
+            await page.waitForLoadState('networkidle');
+            await capture(screen, 'searched', width, false);
+        }
+    }
+
     async function capture(screen, state, width, measuredOnly = false) {
         await page.evaluate(() => document.fonts.ready);
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -929,7 +989,13 @@ try {
                                                       'reminder_invoice',
                                                       'settings',
                                                   ]
-                                                : timeOnly
+                                                : revenueOnly
+                                                  ? [
+                                                        'dashboard',
+                                                        'workspace_clients',
+                                                        'client_overview',
+                                                    ]
+                                                  : timeOnly
                                                   ? ['time', 'draft_time']
                                                   : backlogOnly
                                                     ? ['agreement']
@@ -1899,8 +1965,16 @@ try {
                     .fill('SyntheticLayoutTitle'.repeat(8));
             }
 
+            if (revenueScreens.has(screen)) {
+                await settleRevenueScreen(screen);
+            }
+
             if (screen !== 'task_editor') {
                 await capture(screen, 'initial', width, false);
+            }
+
+            if (revenueOnly) {
+                await captureRevenueStates(screen, width);
             }
 
             if (invoiceSendOnly) {

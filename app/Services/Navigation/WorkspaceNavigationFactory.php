@@ -117,6 +117,9 @@ final class WorkspaceNavigationFactory
             taskLabelsHref: $isMember ? route('tasks.planning.labels.page', $workspace, absolute: false) : null,
             // The classic tools page, for the members who could always open it.
             operationsHref: $isMember ? route('workspaces.operations', $workspace, absolute: false) : null,
+            // The workspace's payment connections (Stripe, Square). Managers
+            // only: it is where the keys that get the workspace paid are kept.
+            paymentsHref: $manages ? route('workspaces.payments', $workspace, absolute: false) : null,
         );
     }
 

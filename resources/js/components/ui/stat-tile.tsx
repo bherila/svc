@@ -30,7 +30,7 @@ function StatTile({
       {...props}
     >
       <div className="text-xs text-muted-foreground wrap-anywhere">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums wrap-anywhere">
+      <div className="mt-1 text-xl font-semibold sm:text-2xl tabular-nums wrap-anywhere">
         {value}
       </div>
       {context !== undefined && context !== null && (

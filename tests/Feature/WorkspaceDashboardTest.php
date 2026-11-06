@@ -288,6 +288,22 @@ class WorkspaceDashboardTest extends TestCase
         }
     }
 
+    public function test_the_payments_link_is_a_finished_url_for_managers_only(): void
+    {
+        $payments = fn (User $user) => $this->actingAs($user)->get($this->path())->assertOk()->viewData('page')['props']['workspaceNavigation']['payments_href'];
+
+        $this->assertSame("/workspaces/{$this->workspace->public_id}/payments", $payments($this->owner));
+        $this->assertNull($payments($this->member));
+
+        $admin = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
+        $this->assertSame("/workspaces/{$this->workspace->public_id}/payments", $payments($admin));
+
+        // The link is only a link: the page it opens authorizes again.
+        $this->actingAs($this->member)->get("/workspaces/{$this->workspace->public_id}/payments")->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('canManage', false));
+    }
+
     public function test_the_client_tier_offers_agreements_and_files_to_managers_only(): void
     {
         $tabs = fn (User $user) => $this->actingAs($user)->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}")->assertOk()->viewData('page')['props']['workspaceNavigation']['clients'][0]['destinations'];

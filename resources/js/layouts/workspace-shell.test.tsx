@@ -495,6 +495,46 @@ describe('workspace shell', () => {
         ).toHaveAttribute('href', '/workspaces/workspace-1/mcp');
     });
 
+    it('offers Payments from the server-sent URL, and only when there is one', async () => {
+        navigation = workspaceNavigation({
+            payments_href: '/workspaces/workspace-1/payments',
+        });
+
+        const { unmount } = render(
+            <WorkspaceShell activeModule="home">
+                <p>Body</p>
+            </WorkspaceShell>,
+        );
+
+        await userEvent.click(
+            screen.getByRole('button', { name: 'Account and settings' }),
+        );
+
+        expect(
+            await screen.findByRole('menuitem', { name: 'Payments' }),
+        ).toHaveAttribute('href', '/workspaces/workspace-1/payments');
+
+        unmount();
+        navigation = workspaceNavigation({ payments_href: null });
+
+        render(
+            <WorkspaceShell activeModule="home">
+                <p>Body</p>
+            </WorkspaceShell>,
+        );
+
+        await userEvent.click(
+            screen.getByRole('button', { name: 'Account and settings' }),
+        );
+
+        expect(
+            await screen.findByRole('menuitem', { name: 'Sign out' }),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByRole('menuitem', { name: 'Payments' }),
+        ).not.toBeInTheDocument();
+    });
+
     it('offers adding a client only to a viewer who may create one', async () => {
         navigation = workspaceNavigation({
             permissions: {
