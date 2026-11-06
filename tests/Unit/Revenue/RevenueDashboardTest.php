@@ -165,4 +165,66 @@ final class RevenueDashboardTest extends TestCase
         $this->assertArrayNotHasKey('overage', $cards[0]);
         $this->assertArrayNotHasKey('is_taxable', $cards[0]['recurring_items'][0]);
     }
+
+    public function test_every_month_comes_back_with_its_own_key_in_order(): void
+    {
+        $rows = RevenueDashboard::months(
+            [$this->month('2026-09', []), $this->month('2026-10', [], 'current'), $this->month('2026-11', [], 'projected')],
+            fn (string $m): string => "/m/{$m}",
+            fn (): string => '',
+        );
+
+        $this->assertSame(['2026-09', '2026-10', '2026-11'], array_column($rows, 'month'));
+        $this->assertSame(['actual', 'current', 'projected'], array_column($rows, 'kind'));
+        $this->assertSame(['/m/2026-09', '/m/2026-10', '/m/2026-11'], array_column($rows, 'href'));
+        $this->assertSame([], RevenueDashboard::months([], fn (): string => '', fn (): string => ''));
+    }
+
+    public function test_hours_round_to_the_nearest_minute_not_up_or_down(): void
+    {
+        $row = fn (float $used): array => [
+            'agreement_id' => 'a', 'title' => 'T', 'period_start' => '2026-11-01', 'period_end' => '2026-11-30', 'hours_used' => $used,
+            'hours_included' => $used, 'over_retainer' => false, 'ends_within_60_days' => false, 'ends_on' => null, 'ledger_status' => 'ok',
+        ];
+        $minutes = fn (float $hours): ?int => RevenueDashboard::thisPeriod([$row($hours)], fn (): string => '')[0]['minutes_used'];
+
+        $this->assertSame(0, $minutes(0.0075));
+        $this->assertSame(1, $minutes(0.0125));
+        $this->assertSame(1, $minutes(0.0084));
+        $this->assertSame(2, $minutes(0.0292));
+    }
+
+    public function test_this_period_names_each_agreement_by_id_in_order(): void
+    {
+        $row = fn (string $id): array => [
+            'agreement_id' => $id, 'title' => "T{$id}", 'period_start' => '2026-11-01', 'period_end' => '2026-11-30', 'hours_used' => 1.0,
+            'hours_included' => 2.0, 'over_retainer' => false, 'ends_within_60_days' => false, 'ends_on' => null, 'ledger_status' => 'ok',
+        ];
+
+        $period = RevenueDashboard::thisPeriod([$row('a1'), $row('a2')], fn (string $id): string => "/a/{$id}");
+
+        $this->assertSame(['a1', 'a2'], array_column($period, 'agreement_id'));
+        $this->assertSame(['T'.'a1', 'T'.'a2'], array_column($period, 'title'));
+        $this->assertSame(['/a/a1', '/a/a2'], array_column($period, 'href'));
+    }
+
+    public function test_cards_skip_an_agreement_not_in_force_and_keep_the_ones_after_it(): void
+    {
+        $agreement = fn (string $id, string $status): array => [
+            'agreement_id' => $id, 'title' => "T{$id}", 'status' => $status, 'billing_cadence' => 'monthly', 'starts_on' => '2026-01-01', 'ends_on' => null, 'signed' => true,
+            'retainer' => ['period_fee' => 100, 'monthly_equivalent' => 100, 'first_cycle_proration' => 'none'], 'monthly_recurring' => 130,
+            'recurring_items' => [
+                ['item_id' => 'i1', 'description' => 'One', 'cadence' => 'monthly', 'amount' => 1, 'is_active' => true, 'expires_on' => null, 'next_charge_on' => null],
+                ['item_id' => 'i2', 'description' => 'Two', 'cadence' => 'annual', 'amount' => 2, 'is_active' => false, 'expires_on' => '2027-01-01', 'next_charge_on' => '2027-01-01'],
+            ],
+        ];
+
+        $cards = RevenueDashboard::agreementCards([$agreement('a0', 'terminated'), $agreement('a1', 'active'), $agreement('a2', 'expired'), $agreement('a3', 'active')], fn (string $id): string => "/a/{$id}");
+
+        $this->assertSame(['a1', 'a3'], array_column($cards, 'agreement_id'));
+        $this->assertSame(['/a/a1', '/a/a3'], array_column($cards, 'href'));
+        $this->assertSame(['i1', 'i2'], array_column($cards[0]['recurring_items'], 'item_id'));
+        $this->assertSame(['One', 'Two'], array_column($cards[1]['recurring_items'], 'description'));
+        $this->assertSame([], RevenueDashboard::agreementCards([], fn (): string => ''));
+    }
 }

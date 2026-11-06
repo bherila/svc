@@ -186,4 +186,71 @@ final class ClientRosterViewTest extends TestCase
             'c2' => ['status' => 'none', 'minutes_used' => null, 'minutes_included' => null, 'over_retainer' => false],
         ], ClientRosterView::healthByClient($roster));
     }
+
+    public function test_the_search_keeps_its_first_character_and_is_cut_only_at_the_cap(): void
+    {
+        $this->assertSame('xyz', ClientRosterView::fromInput(['q' => 'xyz'])->search);
+        $this->assertSame('abc', ClientRosterView::fromInput(['q' => '  abc  '])->search);
+        $this->assertSame(str_repeat('a', 100), ClientRosterView::fromInput(['q' => str_repeat('a', 101)])->search);
+        $this->assertSame('x'.str_repeat('a', 99), ClientRosterView::fromInput(['q' => 'x'.str_repeat('a', 120)])->search);
+    }
+
+    public function test_search_ignores_case_in_names_that_are_not_ascii(): void
+    {
+        $roster = [$this->client('c1', 'Émile Société'), $this->client('c2', 'Plain')];
+        $names = fn (string $q): array => array_column(ClientRosterView::fromInput(['q' => $q])->apply($roster, fn (string $id): string => $id)['clients'], 'client_id');
+
+        $this->assertSame(['c1'], $names('émile'));
+        $this->assertSame(['c1'], $names('SOCIÉTÉ'));
+        $this->assertSame([], $names('ÉMILE X'));
+    }
+
+    public function test_names_sort_by_their_lowercase_in_any_script_whichever_order_they_arrive(): void
+    {
+        $upper = $this->client('c1', 'Éz');
+        $lower = $this->client('c2', 'éa');
+        $sort = fn (array $roster, string $dir): array => array_column(ClientRosterView::fromInput(['dir' => $dir])->apply($roster, fn (string $id): string => $id)['clients'], 'client_id');
+
+        foreach ([[$upper, $lower], [$lower, $upper]] as $roster) {
+            $this->assertSame(['c2', 'c1'], $sort($roster, 'asc'));
+            $this->assertSame(['c1', 'c2'], $sort($roster, 'desc'));
+        }
+    }
+
+    /** @return iterable<string, array{float, float, int, int}> */
+    public static function meterRounding(): iterable
+    {
+        yield 'rounds up past the half minute' => [0.0125, 0.0125, 1, 1];
+        yield 'rounds down below the half minute' => [0.0075, 0.0075, 0, 0];
+        yield 'used and included are rounded on their own' => [0.0125, 0.0075, 1, 0];
+        yield 'and the other way about' => [0.0075, 0.0125, 0, 1];
+    }
+
+    #[DataProvider('meterRounding')]
+    public function test_the_meter_rounds_hours_to_the_nearest_whole_minute(float $used, float $included, int $minutesUsed, int $minutesIncluded): void
+    {
+        $meter = ClientRosterView::health([$this->health(AgreementHealth::OK, $used, $included)]);
+
+        $this->assertSame($minutesUsed, $meter['minutes_used']);
+        $this->assertSame($minutesIncluded, $meter['minutes_included']);
+    }
+
+    public function test_the_meter_sums_hours_across_agreements_before_rounding(): void
+    {
+        $meter = ClientRosterView::health([$this->health(AgreementHealth::OK, 0.0075, 0.0075), $this->health(AgreementHealth::OK, 0.0075, 0.0075)]);
+
+        // 0.015 h is 0.9 of a minute: 1, where rounding each part first gives 0.
+        $this->assertSame(1, $meter['minutes_used']);
+        $this->assertSame(1, $meter['minutes_included']);
+    }
+
+    public function test_a_meter_over_agreements_listed_with_gaps_still_sums_the_metered_ones(): void
+    {
+        $meter = ClientRosterView::health([
+            5 => $this->health(AgreementHealth::NO_RETAINER),
+            9 => $this->health(AgreementHealth::OK, 1.0, 2.0),
+        ]);
+
+        $this->assertSame(['status' => 'ok', 'minutes_used' => 60, 'minutes_included' => 120], $meter);
+    }
 }

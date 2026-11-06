@@ -144,7 +144,7 @@ final readonly class ClientRosterView
             return ['status' => AgreementHealth::LEDGER_UNREADABLE, 'minutes_used' => null, 'minutes_included' => null];
         }
 
-        $metered = array_values(array_filter($agreements, static fn (array $row): bool => $row['ledger_status'] === AgreementHealth::OK));
+        $metered = array_filter($agreements, static fn (array $row): bool => $row['ledger_status'] === AgreementHealth::OK);
         if ($metered === []) {
             return ['status' => AgreementHealth::NO_RETAINER, 'minutes_used' => null, 'minutes_included' => null];
         }
