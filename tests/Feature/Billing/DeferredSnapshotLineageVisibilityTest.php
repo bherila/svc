@@ -134,7 +134,7 @@ final class DeferredSnapshotLineageVisibilityTest extends TestCase
         $this->actingAs($this->scoped)
             ->get("/portal/{$this->company->public_id}/invoices/{$issued->public_id}")
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('invoice.deferred_work.entries.0.description', 'Synthetic granted deferred work'));
+            ->assertInertia(fn (Assert $page) => $page->where('document.deferred_work.entries.0.description', 'Synthetic granted deferred work'));
         $this->assertRecipients($issued, [$this->scoped->email, $this->wholeCompany->email]);
     }
 
@@ -160,9 +160,9 @@ final class DeferredSnapshotLineageVisibilityTest extends TestCase
             ->get("/portal/{$this->company->public_id}/invoices/{$issued->public_id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('invoice.deferred_work.entry_count', 1)
-                ->where('invoice.deferred_work.total_hours', 1)
-                ->where('invoice.deferred_work.entries.0.description', 'Synthetic legacy deferred work'));
+                ->where('document.deferred_work.entry_count', 1)
+                ->where('document.deferred_work.total_hours', 1)
+                ->where('document.deferred_work.entries.0.description', 'Synthetic legacy deferred work'));
         $html = app(InvoiceDocumentService::class)->html($issued)->render();
         $this->assertStringContainsString('Still deferred', $html);
         $this->assertStringContainsString('Synthetic legacy deferred work', $html);
