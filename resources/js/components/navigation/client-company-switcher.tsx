@@ -127,7 +127,7 @@ export function ClientCompanySwitcher({
                 aria-label={
                     current
                         ? `Current client: ${current.name}`
-                        : 'Select a client'
+                        : 'Current client: none selected. Select a client'
                 }
                 aria-expanded={open}
                 aria-haspopup="dialog"
