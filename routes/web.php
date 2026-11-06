@@ -10,6 +10,7 @@ use App\Http\Controllers\HistoricalLibraryController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
+use App\Http\Controllers\Payments\WorkspacePaymentConnectionController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SquareExploreController;
 use App\Http\Controllers\WorkspaceEntryController;
@@ -91,6 +92,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/workspaces/{workspace}/history', [HistoricalLibraryController::class, 'index'])->name('history.index');
         Route::get('/workspaces/{workspace}/history/{historicalEntry}', [HistoricalLibraryController::class, 'show'])->name('history.show');
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');
+        Route::get('/workspaces/{workspace}/payments', [WorkspacePaymentConnectionController::class, 'show'])->name('workspaces.payments');
         Route::get('/workspaces/{workspace}/square', SquareExploreController::class)->name('square.explore');
         Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
@@ -134,6 +136,12 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/portal/{clientCompany}/proposals/{clientProposal}', [ClientPortalController::class, 'proposal'])
             ->name('portal.proposal');
     });
+
+    // Payment keys are entered here by an owner or admin and nowhere else; the
+    // controller checks the role again, and CSRF protection is the web group's.
+    Route::post('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'store'])->name('workspaces.payments.store');
+    Route::post('/workspaces/{workspace}/payments/{processor}/reuse', [WorkspacePaymentConnectionController::class, 'reuse'])->name('workspaces.payments.reuse');
+    Route::delete('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'destroy'])->name('workspaces.payments.destroy');
 
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
 
