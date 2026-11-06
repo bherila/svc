@@ -84,7 +84,7 @@ final readonly class InvoiceDeferredWorkSnapshot
                 || ! is_int($entry['minutes'] ?? null)
                 || $entry['minutes'] < 0
                 || (! is_string($entry['description'] ?? null) && ($entry['description'] ?? null) !== null)
-                || (! $legacy && (! array_key_exists('projectId', $entry) || (! is_int($entry['projectId']) && $entry['projectId'] !== null)))) {
+                || (! $legacy && ! is_int($entry['projectId'] ?? null))) {
                 return null;
             }
             $entries[] = [
@@ -132,9 +132,9 @@ final readonly class InvoiceDeferredWorkSnapshot
     /**
      * The distinct projects whose work this snapshot discloses, ascending.
      *
-     * Entries recorded with no project contribute none, exactly as an invoice
-     * line without a project does. Unknown legacy lineage is not a project and
-     * is reported by {@see hasUnverifiableLineage()} instead.
+     * Every version 2 entry names its project; one that does not is refused as
+     * malformed by {@see fromArray()}. Unknown legacy lineage is not a project
+     * and is reported by {@see hasUnverifiableLineage()} instead.
      *
      * @return list<int>
      */

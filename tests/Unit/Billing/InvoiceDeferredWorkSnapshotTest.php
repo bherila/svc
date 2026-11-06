@@ -87,16 +87,21 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         self::assertNull($snapshot->withoutSettledEntries([1, 2]));
     }
 
-    public function test_a_modern_entry_recorded_without_a_project_is_known_lineage(): void
+    /**
+     * Every time entry belongs to a project (the column is required), so a
+     * version 2 entry without one is corrupt or hand-made. It is refused like
+     * any malformed snapshot, so its text never reaches a document, rather
+     * than read as known lineage that no grant check would cover.
+     */
+    public function test_a_modern_entry_without_a_project_is_malformed_and_never_reaches_a_document(): void
     {
-        $snapshot = InvoiceDeferredWorkSnapshot::fromArray(['version' => 2, 'entries' => [
-            ['id' => 1, 'workedOn' => '2026-05-01', 'minutes' => 60, 'description' => null, 'projectId' => null],
+        self::assertNull(InvoiceDeferredWorkSnapshot::fromArray(['version' => 2, 'entries' => [
+            ['id' => 1, 'workedOn' => '2026-05-01', 'minutes' => 60, 'description' => 'Synthetic work', 'projectId' => null],
             ['id' => 2, 'workedOn' => '2026-05-01', 'minutes' => 60, 'description' => null, 'projectId' => 3],
-        ]]);
-
-        self::assertNotNull($snapshot);
-        self::assertFalse($snapshot->hasUnverifiableLineage());
-        self::assertSame([3], $snapshot->projectIds());
+        ]]));
+        self::assertNull(InvoiceDeferredWorkSnapshot::fromArray(['version' => 2, 'entries' => [
+            ['id' => 1, 'workedOn' => '2026-05-01', 'minutes' => 60, 'description' => null],
+        ]]));
     }
 
     public function test_missing_optional_description_reads_as_null_without_a_warning(): void
