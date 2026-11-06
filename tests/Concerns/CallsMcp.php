@@ -46,6 +46,11 @@ trait CallsMcp
     protected function mcp(array $message, ?string $session = null, array $headers = []): TestResponse
     {
         $headers += ['Mcp-Protocol-Version' => '2025-06-18'];
+        // A test that flushes the headers it was given (flushHeaders) must still connect
+        // as a client that opts into the full list, unless it asks for progressive.
+        if (($message['method'] ?? null) === 'initialize') {
+            $headers += [McpToolsetSelection::CONNECT_HEADER => 'all'];
+        }
         if ($session !== null) {
             $headers['Mcp-Session-Id'] = $session;
         }
