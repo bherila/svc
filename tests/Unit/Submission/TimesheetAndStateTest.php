@@ -86,4 +86,22 @@ final class TimesheetAndStateTest extends TestCase
         $dash = TimesheetCsv::render([['worked_on' => '2026-10-14', 'project' => '-1', 'task' => '', 'description' => 'd', 'minutes' => 0, 'worked_by' => null, 'approved_by' => null, 'approved_via' => 'Client', 'approved_at' => null]]);
         $this->assertSame("2026-10-14,'-1,,d,0.00,0,,,Client,\r\n", substr($dash, strlen($header) + 2));
     }
+
+    public function test_every_cell_is_written_as_text_whatever_type_it_arrives_in(): void
+    {
+        // Strict types make an uncast value a TypeError, so each cast is exercised by a non-string.
+        $csv = TimesheetCsv::render([[
+            'worked_on' => 20261014, 'project' => 7, 'task' => 8, 'description' => 9, 'minutes' => 90.9,
+            'worked_by' => 10, 'approved_by' => 11, 'approved_via' => 12, 'approved_at' => 13,
+        ]]);
+
+        $this->assertSame("20261014,7,8,9,1.50,90,10,11,12,13\r\n", substr($csv, strlen(implode(',', TimesheetCsv::HEADER)) + 2));
+    }
+
+    public function test_absent_optional_cells_are_empty_not_missing(): void
+    {
+        $csv = TimesheetCsv::render([['worked_on' => '2026-10-14', 'description' => 'd', 'minutes' => 60, 'approved_via' => 'Client']]);
+
+        $this->assertSame("2026-10-14,,,d,1.00,60,,,Client,\r\n", substr($csv, strlen(implode(',', TimesheetCsv::HEADER)) + 2));
+    }
 }

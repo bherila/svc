@@ -84,6 +84,14 @@ final class SubmissionOperationContractTest extends TestCase
         }
     }
 
+    public function test_the_read_filters_are_pinned_exactly(): void
+    {
+        $parameters = SubmissionOperations::documentation()['timesheets.approved']['parameters'];
+
+        $this->assertSame(['name' => 'period', 'in' => 'query', 'schema' => ['type' => 'string', 'pattern' => '^\d{4}-(0[1-9]|1[0-2])$']], $parameters[1]);
+        $this->assertSame(['name' => 'project_id', 'in' => 'query', 'schema' => ['type' => 'string', 'format' => 'uuid']], $parameters[2]);
+    }
+
     public function test_each_operation_is_a_rest_operation_its_mcp_tool_reaches(): void
     {
         $previous = Container::getInstance();
