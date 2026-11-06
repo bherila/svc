@@ -34,6 +34,9 @@ final class AgentMcpReadOnlyTest extends TestCase
     use McpHttpConformanceAssertions;
     use RefreshDatabase;
 
+    /** Every MCP connection lists these: they need `mcp:use` alone. */
+    private const array TOOLSET_TOOLS = ['toolsets.list', 'toolsets.enable', 'toolsets.disable'];
+
     public function test_mcp_exposes_only_the_fixed_read_catalog_and_uses_rest_authorization(): void
     {
         $user = User::factory()->create();
@@ -1128,7 +1131,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
 
-        $this->assertSame(['projects.list', 'projects.get'], array_column($tools, 'name'));
+        $this->assertSame(['projects.list', 'projects.get', ...self::TOOLSET_TOOLS], array_column($tools, 'name'));
     }
 
     public function test_per_capability_kill_switches_remove_tools_and_the_global_switch_refuses_service(): void
@@ -1140,7 +1143,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         config(['agent_api.mcp_feature_flags' => ['projects.list' => false]]);
         $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)
             ->assertOk()->json('result.tools');
-        $this->assertSame(['projects.get'], array_column($tools, 'name'));
+        $this->assertSame(['projects.get', ...self::TOOLSET_TOOLS], array_column($tools, 'name'));
 
         $this->mcp([
             'jsonrpc' => '2.0',

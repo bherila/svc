@@ -627,15 +627,16 @@ final class AgentMcpContractTest extends TestCase
         $this->assertInstanceOf(stdClass::class, $decoded->result->capabilities->tools);
         $this->assertInstanceOf(stdClass::class, $decoded->result->capabilities->resources);
 
-        // And what the handshake buys is an empty list rather than an error: the
-        // server implements tools, this caller may call none of them.
+        // And what the handshake buys is a list rather than an error: the server
+        // implements tools, this caller may call none of them but the toolset
+        // tools, which every MCP connection may (they need `mcp:use` alone).
         $session = $response->headers->get('Mcp-Session-Id');
         $this->assertIsString($session);
         $tools = $this->mcp(
             ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []],
             $session,
         )->assertOk()->json('result.tools');
-        $this->assertSame([], $tools);
+        $this->assertSame(['toolsets.list', 'toolsets.enable', 'toolsets.disable'], array_column($tools, 'name'));
     }
 
     public function test_a_feature_flagged_off_group_is_not_advertised(): void
