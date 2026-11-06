@@ -2826,13 +2826,13 @@ try {
                         .getByRole('form', { name: 'Draft invoice' })
                         .first();
                     await draft
-                        .getByPlaceholder('Invoice number', { exact: true })
+                        .getByLabel('Invoice number', { exact: true })
                         .fill('SYNTHETIC-RECOVERY');
                     await draft
-                        .getByPlaceholder('Line description', { exact: true })
+                        .getByLabel('Line description', { exact: true })
                         .fill('SyntheticUnbrokenInvoiceDescription'.repeat(10));
                     await draft
-                        .getByPlaceholder('Unit price', { exact: true })
+                        .getByLabel('Unit price (USD)', { exact: true })
                         .fill('123.45');
                     await checkInvoiceRecovery(
                         screen,
@@ -2843,7 +2843,7 @@ try {
                             name: 'Draft invoice',
                             exact: true,
                         }),
-                        draft.getByPlaceholder('Invoice number', {
+                        draft.getByLabel('Invoice number', {
                             exact: true,
                         }),
                     );
@@ -2971,18 +2971,36 @@ try {
             }
 
             if (engagementOnly && screen === 'client_agreements') {
-                await page
+                const proposalForm = page.getByRole('form', {
+                    name: 'Draft proposal',
+                });
+                await proposalForm
                     .getByLabel('Proposal title', { exact: true })
-                    .first()
                     .fill('SyntheticProposalTitle'.repeat(12));
-                await page
-                    .getByLabel('Proposal line description', { exact: true })
-                    .first()
+                await proposalForm
+                    .getByLabel('Line description', { exact: true })
                     .fill('SyntheticProposalLine'.repeat(12));
-                await page
-                    .getByLabel('Proposal price', { exact: true })
-                    .first()
+                await proposalForm
+                    .getByLabel('Price (USD)', { exact: true })
                     .fill('1234.50');
+                // Every field says what it is in a visible label, and the
+                // schedule's cadence is the shared select, reading words
+                // rather than the stored value.
+                const scheduleForm = page
+                    .getByRole('form', { name: /^Add billing schedule for / })
+                    .first();
+                await expect(
+                    scheduleForm.getByText('Cadence', { exact: true }),
+                ).toBeVisible();
+                await expect(
+                    scheduleForm.getByText('Next run', { exact: true }),
+                ).toBeVisible();
+                await expect(
+                    scheduleForm.getByRole('combobox', { name: 'Cadence' }),
+                ).not.toContainText('_');
+                await scheduleForm
+                    .getByLabel('Line description', { exact: true })
+                    .fill('SyntheticRecurringLine'.repeat(12));
                 await capture(screen, 'engagement-draft', width);
                 await page
                     .getByRole('button', { name: 'Activate', exact: true })

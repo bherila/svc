@@ -2,18 +2,17 @@ import { useForm } from '@inertiajs/react';
 import { PlusIcon, RotateCcwIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { FormField } from '@/components/form-field';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useInvoiceMutation } from '@/hooks/use-invoice-mutation';
 import type { ApiSchema } from '@/lib/api';
 import { toMinorUnits } from '@/lib/money';
 
-const inputClass =
-    'w-full min-w-0 rounded-xl border border-border bg-card px-3 py-2 text-sm text-card-foreground outline-none focus:border-cyan-600 focus-visible:ring-2 focus-visible:ring-cyan-600/50';
-
 /**
  * The draft-invoice form, on the client's Invoices page.
  *
- * Moved from the classic Operations page with its behaviour intact: the finished
+ * Moved from the retired Operations page with its behaviour intact: the finished
  * `href` is the server's capability (absent for a viewer who may not draft),
  * the write keeps one idempotency key and one body across an uncertain
  * response, and the form stays locked until the original request is verified.
@@ -121,58 +120,67 @@ function InvoiceDraft({
         <form
             aria-label="Draft invoice"
             onSubmit={submit}
-            className="grid grid-cols-1 gap-2 md:grid-cols-6"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6"
         >
-            <input
-                disabled={mutation.locked}
-                className={inputClass}
-                placeholder="Invoice number"
-                aria-label="Invoice number"
-                value={form.data.invoice_number}
-                onChange={(event) =>
-                    form.setData('invoice_number', event.target.value)
-                }
-                required
-            />
-            <input
-                disabled={mutation.locked}
-                className={inputClass}
-                type="date"
-                aria-label="Due date"
-                value={form.data.due_date}
-                onChange={(event) =>
-                    form.setData('due_date', event.target.value)
-                }
-            />
-            <input
-                disabled={mutation.locked}
-                className={`${inputClass} md:col-span-2`}
-                placeholder="Line description"
-                aria-label="Line description"
-                value={form.data.description}
-                onChange={(event) =>
-                    form.setData('description', event.target.value)
-                }
-                required
-            />
-            <input
-                disabled={mutation.locked}
-                className={inputClass}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Unit price"
-                aria-label="Unit price"
-                value={form.data.unit_price}
-                onChange={(event) =>
-                    form.setData('unit_price', event.target.value)
-                }
-                required
-            />
+            <FormField label="Invoice number">
+                {(id) => (
+                    <Input
+                        id={id}
+                        disabled={mutation.locked}
+                        value={form.data.invoice_number}
+                        onChange={(event) =>
+                            form.setData('invoice_number', event.target.value)
+                        }
+                        required
+                    />
+                )}
+            </FormField>
+            <FormField label="Due date">
+                {(id) => (
+                    <Input
+                        id={id}
+                        disabled={mutation.locked}
+                        type="date"
+                        value={form.data.due_date}
+                        onChange={(event) =>
+                            form.setData('due_date', event.target.value)
+                        }
+                    />
+                )}
+            </FormField>
+            <FormField label="Line description" className="sm:col-span-2">
+                {(id) => (
+                    <Input
+                        id={id}
+                        disabled={mutation.locked}
+                        value={form.data.description}
+                        onChange={(event) =>
+                            form.setData('description', event.target.value)
+                        }
+                        required
+                    />
+                )}
+            </FormField>
+            <FormField label="Unit price (USD)">
+                {(id) => (
+                    <Input
+                        id={id}
+                        disabled={mutation.locked}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.data.unit_price}
+                        onChange={(event) =>
+                            form.setData('unit_price', event.target.value)
+                        }
+                        required
+                    />
+                )}
+            </FormField>
             {error !== null && (
                 <p
                     role="alert"
-                    className="text-sm wrap-anywhere text-destructive md:col-span-6"
+                    className="text-sm wrap-anywhere text-destructive sm:col-span-2 lg:col-span-6"
                 >
                     {error}
                 </p>

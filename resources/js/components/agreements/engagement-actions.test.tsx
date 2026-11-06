@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     EngagementAction,
@@ -98,10 +99,10 @@ describe('engagement API controls', () => {
         fireEvent.change(screen.getByLabelText('Proposal title'), {
             target: { value: 'Synthetic draft' },
         });
-        fireEvent.change(screen.getByLabelText('Proposal line description'), {
+        fireEvent.change(screen.getByLabelText('Line description'), {
             target: { value: 'Synthetic line' },
         });
-        fireEvent.change(screen.getByLabelText('Proposal price'), {
+        fireEvent.change(screen.getByLabelText('Price (USD)'), {
             target: { value: '12.50' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Draft proposal' }));
@@ -140,10 +141,10 @@ describe('engagement API controls', () => {
                 }}
             />,
         );
-        fireEvent.change(screen.getByLabelText('Recurring line description'), {
+        fireEvent.change(screen.getByLabelText('Line description'), {
             target: { value: 'Synthetic recurring line' },
         });
-        fireEvent.change(screen.getByLabelText('Recurring amount'), {
+        fireEvent.change(screen.getByLabelText('Amount (EUR)'), {
             target: { value: '25.00' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Add schedule' }));
@@ -158,6 +159,145 @@ describe('engagement API controls', () => {
             cadence: 'quarterly',
             currency: 'EUR',
             line_template: [{ unit_amount: 2500 }],
+        });
+    });
+});
+
+/** Every field says what it is in a label that stays when a value is typed. */
+describe('labelled engagement forms', () => {
+    function expectLabelled(container: HTMLElement) {
+        const controls = container.querySelectorAll<HTMLElement>(
+            'input:not([type=hidden]):not([aria-hidden=true]), select, textarea, [role=combobox]',
+        );
+
+        expect(controls.length).toBeGreaterThan(0);
+
+        for (const control of controls) {
+            const label = container.querySelector(`label[for="${control.id}"]`);
+
+            expect(label, `a label for ${control.outerHTML}`).not.toBeNull();
+            expect(label?.textContent?.trim()).not.toBe('');
+            expect(control).not.toHaveAttribute('placeholder');
+        }
+    }
+
+    function labelTexts(container: HTMLElement) {
+        return Array.from(container.querySelectorAll('label')).map(
+            (label) => label.textContent,
+        );
+    }
+
+    it('labels every proposal field and leaves no placeholder doing a label’s job', () => {
+        const { container } = render(
+            <ProposalDraftForm
+                href="/api/synthetic/proposals"
+                companyId="synthetic-company"
+                version={version}
+            />,
+        );
+
+        expectLabelled(container);
+        expect(labelTexts(container)).toEqual([
+            'Proposal title',
+            'Line description',
+            'Price (USD)',
+        ]);
+    });
+
+    it('labels every schedule field, and uses the shared select showing words rather than the stored cadence', () => {
+        const { container } = render(
+            <ScheduleDraftForm
+                href="/api/synthetic/schedules"
+                companyId="synthetic-company"
+                timezone="UTC"
+                agreement={{
+                    id: 'synthetic-agreement',
+                    title: 'Synthetic agreement',
+                    version,
+                    billing_cadence: 'semi_annual',
+                    currency: 'EUR',
+                }}
+            />,
+        );
+
+        expectLabelled(container);
+        expect(container.querySelector('select')).toBeNull();
+        expect(
+            screen.getByRole('form', {
+                name: 'Add billing schedule for Synthetic agreement',
+            }),
+        ).toBeInTheDocument();
+        const cadence = screen.getByRole('combobox', { name: 'Cadence' });
+        expect(cadence).toHaveTextContent('Semi-annual');
+        expect(cadence).not.toHaveTextContent('semi_annual');
+        expect(labelTexts(container)).toEqual([
+            'Cadence',
+            'Next run',
+            'Line description',
+            'Amount (EUR)',
+        ]);
+    });
+
+    it('gives the same form repeated on a page ids of its own', () => {
+        const agreement = {
+            id: 'synthetic-agreement',
+            version,
+            billing_cadence: 'monthly',
+            currency: 'USD',
+        };
+        const { container } = render(
+            <>
+                <ScheduleDraftForm
+                    href="/api/synthetic/schedules"
+                    companyId="synthetic-company"
+                    timezone="UTC"
+                    agreement={agreement}
+                />
+                <ScheduleDraftForm
+                    href="/api/synthetic/schedules"
+                    companyId="synthetic-company"
+                    timezone="UTC"
+                    agreement={{ ...agreement, id: 'other-agreement' }}
+                />
+            </>,
+        );
+        const ids = Array.from(container.querySelectorAll('label')).map(
+            (label) => label.htmlFor,
+        );
+
+        expect(new Set(ids).size).toBe(ids.length);
+        expect(ids).toHaveLength(8);
+    });
+
+    it('sends the cadence chosen in the shared select', async () => {
+        api.request.mockResolvedValue({ ok: true, data: {} });
+        render(
+            <ScheduleDraftForm
+                href="/api/synthetic/schedules"
+                companyId="synthetic-company"
+                timezone="UTC"
+                agreement={{
+                    id: 'synthetic-agreement',
+                    version,
+                    billing_cadence: 'monthly',
+                    currency: 'USD',
+                }}
+            />,
+        );
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('combobox', { name: 'Cadence' }));
+        await user.click(await screen.findByRole('option', { name: 'Annual' }));
+        fireEvent.change(screen.getByLabelText('Line description'), {
+            target: { value: 'Synthetic recurring line' },
+        });
+        fireEvent.change(screen.getByLabelText('Amount (USD)'), {
+            target: { value: '1' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Add schedule' }));
+
+        await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+        expect(api.request.mock.calls[0][2]).toMatchObject({
+            cadence: 'annual',
         });
     });
 });
