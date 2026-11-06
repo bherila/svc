@@ -39,8 +39,8 @@ final class AgentMcpToolsetsTest extends TestCase
             $this->tool('projects.update', ['projects:read', 'projects:write', 'tasks:read']),
             $this->tool('square.invoices.list', ['billing:read'], ['mcp.switch:mcp.read.square']),
             $this->tool('only.connection', ['mcp:use']),
-            $this->tool('time.update', ['time:write']),
             new Operation(id: 'rest.only', title: 'REST', description: 'No MCP binding.', effect: Effect::Read, requirement: new Requirement(scopes: ['rest:read'])),
+            $this->tool('time.update', ['time:write']),
         ]);
         $this->assertSame(['projects' => ['projects.update'], 'square' => ['square.invoices.list'], 'tasks' => ['tasks.get', 'projects.update'], 'time' => ['time.update']], $toolsets->groups());
         $session = new Session(new InMemorySessionStore);
