@@ -38,6 +38,7 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
+use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
@@ -651,7 +652,7 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
         'is_visible_to_client' => true, 'reissued_at' => $documentToday->subDay()->toDateTimeString(),
     ]);
     $documentInvoice->forceFill([
-        'hours_statement' => (new App\Support\Billing\InvoiceHoursStatement(...[
+        'hours_statement' => (new InvoiceHoursStatement(...[
             'cadence' => 'monthly', 'workStart' => '2026-10-01', 'workEnd' => '2026-10-31', 'retainerStart' => '2026-11-01', 'retainerEnd' => '2026-11-30',
             'openingRetainerHours' => 10.0, 'openingRolloverHours' => 3.5, 'openingDeficitHours' => 1.0, 'openingExpiredHours' => 2.0, 'expiredWithinPeriodHours' => 0.0,
             'ordinaryHours' => 14.5, 'ordinaryAppliedToWorkPool' => 12.5, 'ordinaryAppliedToNextRetainer' => 0.5, 'ordinaryBilledAtRate' => 1.5,

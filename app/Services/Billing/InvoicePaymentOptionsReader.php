@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
+use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareCollectionGuard;
 use App\Support\Billing\Document\DocumentMode;
@@ -20,6 +21,7 @@ final class InvoicePaymentOptionsReader
 {
     public function __construct(
         private readonly StripeGateway $stripe,
+        private readonly PaymentConnectionResolver $connections,
         private readonly SquareInvoicePage $square,
         private readonly SquareCollectionGuard $collection,
     ) {}
@@ -37,7 +39,7 @@ final class InvoicePaymentOptionsReader
                 (bool) $invoice->is_visible_to_client,
             );
         if (! $payable) {
-            return InvoicePaymentOptions::compose(false, null, false, false, null, '');
+            return InvoicePaymentOptions::compose(false, null, false, false, false, null, '');
         }
 
         return InvoicePaymentOptions::compose(
@@ -45,6 +47,7 @@ final class InvoicePaymentOptionsReader
             $this->square->forInvoice($workspace, $invoice)['url'] ?? null,
             $this->collection->isSquareCollected($invoice),
             $this->stripe->access($workspace) !== null,
+            $this->connections->stripeServedByEnvironment($workspace),
             $this->stripe->publishableKey(),
             route('svc.billing.invoices.stripe-payment-intent', [$workspace, $invoice], absolute: false),
         );

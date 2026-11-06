@@ -14,10 +14,12 @@ namespace App\Support\Billing;
  * - **Square**: the hosted payment page of the linked Square invoice. Offered
  *   whenever there is one, including for an invoice Square collects.
  * - **Stripe**: the route that creates a payment intent, and the publishable
- *   key the browser confirms it with. Offered only when the workspace's own
- *   Stripe connection is active, the deployment can confirm a payment in the
- *   browser, and Square does not collect this invoice - SVC never asks for
- *   money Square is already collecting.
+ *   key the browser confirms it with. Offered only when the workspace has an
+ *   active Stripe connection, the publishable key is known to belong to the
+ *   account that creates the intent (today only the deployment's environment
+ *   account; a connection holds a secret key and no publishable one), and
+ *   Square does not collect this invoice - SVC never asks for money Square is
+ *   already collecting. Fail closed: unknown means not offered.
  *
  * Nothing is offered for an invoice that is not payable: a draft, a dispute, a
  * void, a paid one, or one the client may not see.
@@ -32,6 +34,7 @@ final class InvoicePaymentOptions
         ?string $squareUrl,
         bool $squareCollects,
         bool $stripeConnected,
+        bool $publishableKeyBelongsToAccount,
         ?string $publishableKey,
         string $intentHref,
     ): array {
@@ -40,7 +43,7 @@ final class InvoicePaymentOptions
         }
 
         return [
-            'stripe' => ! $squareCollects && $stripeConnected && $publishableKey !== null && $publishableKey !== ''
+            'stripe' => ! $squareCollects && $stripeConnected && $publishableKeyBelongsToAccount && $publishableKey !== null && $publishableKey !== ''
                 ? ['intent_href' => $intentHref, 'publishable_key' => $publishableKey]
                 : null,
             'square' => $squareUrl === null ? null : ['href' => $squareUrl],
