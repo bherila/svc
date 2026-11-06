@@ -253,6 +253,113 @@ final class NextInvoiceEstimatorTest extends TestCase
         }
     }
 
+    public function test_overage_is_priced_to_the_nearest_minor_unit_and_its_hours_to_two_places(): void
+    {
+        $agreement = $this->agreement(retainerAmount: 800000);
+
+        // 133.3 rounds down, 2.5 rounds up: neither floor nor ceil agrees with both.
+        $this->assertSame(133, $this->estimate($agreement, overageHours: 1.333, hourlyRate: 100)?->parts[1]['amount']);
+        $this->assertSame(3, $this->estimate($agreement, overageHours: 2.5, hourlyRate: 1)?->parts[1]['amount']);
+        $this->assertSame(1.23, $this->estimate($agreement, overageHours: 1.2345, hourlyRate: 100)?->parts[1]['hours']);
+        $this->assertSame(1.24, $this->estimate($agreement, overageHours: 1.2351, hourlyRate: 100)?->parts[1]['hours']);
+    }
+
+    public function test_four_cycles_unsold_is_still_no_estimate_beyond_the_lookahead(): void
+    {
+        $agreement = $this->agreement(cadence: 'quarterly', retainerAmount: 800000);
+        $billed = [];
+        foreach (['2026-10-01', '2027-01-01', '2027-04-01'] as $date) {
+            $billed[ProjectionInputs::retainerKey($agreement->id, $date)] = true;
+        }
+
+        // The fourth cycle (July 2027) is unsold but is not looked at.
+        $this->assertNull($this->estimate($agreement, $billed));
+    }
+
+    public function test_a_sold_incidence_is_skipped_and_the_ones_after_it_are_kept(): void
+    {
+        $item = $this->item('monthly', anchorDay: 10, amount: 1000);
+        $agreement = $this->agreement(cadence: 'quarterly', retainerAmount: 800000, items: [$item]);
+
+        $estimate = $this->estimate($agreement, [ProjectionInputs::itemKey($item->id, '2026-10-10') => true]);
+
+        $this->assertNotNull($estimate);
+        $dates = array_values(array_column(array_filter($estimate->parts, static fn (array $part): bool => $part['kind'] === 'recurring_item'), 'date'));
+        $this->assertSame(['2026-11-10', '2026-12-10'], $dates);
+    }
+
+    public function test_a_cycle_priced_from_granted_hours_agrees_with_the_projector_on_every_start_day(): void
+    {
+        // Large amounts so a digit lost in the multiplier shows in the price.
+        foreach (['quarterly', 'semi_annual', 'annual'] as $cadence) {
+            foreach (range(1, 28) as $day) {
+                $startsOn = sprintf('2026-08-%02d', $day);
+                $agreement = $this->agreement(cadence: $cadence, startsOn: $startsOn, retainerAmount: 99999937, retainerMinutes: 7777);
+                $today = CarbonImmutable::parse($startsOn);
+                $estimate = (new NextInvoiceEstimator)->estimate($agreement, $today, [], 0.0, null);
+                $this->assertNotNull($estimate);
+
+                $expected = (new RecurringRevenueProjector)->project(new ProjectionInputs($today, [$agreement]))->agreements[0]->months[substr($estimate->periodStart, 0, 7)]['retainer'];
+
+                $this->assertSame($expected, $estimate->parts[0]['amount'], "$cadence from $startsOn");
+            }
+        }
+    }
+
+    public function test_prices_agree_with_the_projector_across_many_amounts_and_hour_grants(): void
+    {
+        $day = CarbonImmutable::parse('2026-11-06');
+        $cases = [];
+        foreach (range(1, 300) as $amount) {
+            $cases[] = ['monthly', '2026-01-01', $amount, null];
+            $cases[] = ['monthly', '2026-11-15', $amount * 7, null];
+            $cases[] = ['quarterly', '2026-01-01', $amount, null];
+        }
+        foreach ([7777, 6001, 9999, 10007, 3333, 1, 7, 11, 13, 17, 19, 23] as $minutes) {
+            foreach ([99999937, 12345679, 7] as $amount) {
+                foreach (range(1, 28) as $start) {
+                    $cases[] = ['quarterly', sprintf('2026-08-%02d', $start), $amount, $minutes];
+                }
+            }
+        }
+
+        foreach ($cases as [$cadence, $startsOn, $amount, $minutes]) {
+            $agreement = $this->agreement(cadence: $cadence, startsOn: $startsOn, retainerAmount: $amount, retainerMinutes: $minutes);
+            $today = $minutes === null ? $day : CarbonImmutable::parse($startsOn);
+            $estimate = (new NextInvoiceEstimator)->estimate($agreement, $today, [], 0.0, null);
+            $this->assertNotNull($estimate);
+            $expected = (new RecurringRevenueProjector)->project(new ProjectionInputs($today, [$agreement]))->agreements[0]->months[substr($estimate->periodStart, 0, 7)]['retainer'] ?? null;
+            if ($expected === null) {
+                continue;
+            }
+
+            $this->assertSame($expected, $estimate->parts[0]['amount'] ?? 0, "$cadence $startsOn $amount $minutes");
+        }
+    }
+
+    public function test_a_cent_that_floats_just_under_a_whole_number_is_not_truncated(): void
+    {
+        // 0.29 * 100 is 28.999999999999996: only rounding gives 29 minor units.
+        foreach ([29, 57, 58, 113, 114, 115, 116, 201] as $cents) {
+            $estimate = $this->estimate($this->agreement(cadence: 'quarterly', periodRetainerAmount: $cents, retainerAmount: 1));
+
+            $this->assertSame($cents, $estimate?->parts[0]['amount'], (string) $cents);
+        }
+    }
+
+    public function test_a_monthly_retainer_agrees_with_the_projector_on_every_start_day(): void
+    {
+        foreach (range(1, 28) as $day) {
+            $startsOn = sprintf('2026-11-%02d', $day);
+            $agreement = $this->agreement(startsOn: $startsOn, retainerAmount: 99999937);
+            $today = CarbonImmutable::parse('2026-11-01');
+            $estimate = (new NextInvoiceEstimator)->estimate($agreement, $today, [], 0.0, null);
+            $expected = (new RecurringRevenueProjector)->project(new ProjectionInputs($today, [$agreement]))->agreements[0]->months['2026-11']['retainer'];
+
+            $this->assertSame($expected, $estimate?->parts[0]['amount'], $startsOn);
+        }
+    }
+
     /** @param array<string, true> $billed */
     private function estimate(ProjectedAgreement $agreement, array $billed = [], float $overageHours = 0.0, ?int $hourlyRate = null): ?NextInvoiceEstimate
     {

@@ -36,7 +36,7 @@ final readonly class RetainerPeriodUse
     {
         $rows = array_values(array_filter($ledger, static fn (MonthSummary $row): bool => $row->cycleStart !== null
             ? $row->cycleStart === $periodStart
-            : $row->yearMonth >= substr($periodStart, 0, 7) && $row->yearMonth <= substr($periodEnd, 0, 7)));
+            : self::touches($row->yearMonth, $periodStart, $periodEnd)));
 
         if ($rows === []) {
             return null;
@@ -51,6 +51,16 @@ final readonly class RetainerPeriodUse
             max(0.0, $first->opening->rolloverHours),
             max(0.0, $latest->closing->negativeBalance),
         );
+    }
+
+    /** Whether a `Y-m` ledger month is one the period [start, end] (both `Y-m-d`) touches. */
+    private static function touches(string $yearMonth, string $periodStart, string $periodEnd): bool
+    {
+        $notBefore = $yearMonth >= substr($periodStart, 0, 7);
+        // @infection-ignore-all Equivalent: a `Y-m` string sorts before every `Y-m-d` of its own month, so `<`, `<=` and any prefix length of the end date agree.
+        $notAfter = $yearMonth <= $periodEnd;
+
+        return $notBefore && $notAfter;
     }
 
     /** @return array{minutes_used: int, minutes_included: int, rollover_minutes: int, overage_minutes: int} */

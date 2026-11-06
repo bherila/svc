@@ -88,6 +88,13 @@ final class TimeRollupTest extends TestCase
         $this->assertSame(['Charlie', 'Alpha', 'Bravo', 'Delta'], array_column($summary['week']['projects'], 'project'));
     }
 
+    public function test_a_numeric_looking_state_is_still_a_string(): void
+    {
+        $summary = (new TimeRollup('2026-11-06'))->summarize([$this->entry('p', 'Alpha', '2026-11-03', 5, '404')]);
+
+        $this->assertSame([['status' => '404', 'minutes' => 5]], $summary['week']['projects'][0]['states']);
+    }
+
     /** @return array{project_id: string, project: string, worked_on: string, minutes: int, status: string} */
     private function entry(string $id, string $name, string $day, int $minutes, string $status = 'draft'): array
     {

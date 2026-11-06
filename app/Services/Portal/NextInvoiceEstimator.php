@@ -143,6 +143,7 @@ final class NextInvoiceEstimator
     private function cycleRetainer(ProjectedAgreement $agreement, CarbonImmutable $start, CarbonImmutable $end): int
     {
         $monthStarts = $this->monthStarts($start, $end);
+        // @infection-ignore-all Equivalent: `isProrated` is read by no pricing service here ({@see RetainerCalculator} and {@see self::cycleMultiplier()} price from the dates and month starts), so true and false price the same.
         $cycle = new BillingCycle(Carbon::instance($start), Carbon::instance($end), false, count($monthStarts), $monthStarts);
 
         return (int) round($this->retainers->cycleRetainerFee($agreement, $cycle, ['retainer_multiplier' => $this->cycleMultiplier($agreement, $cycle)]) * 100);

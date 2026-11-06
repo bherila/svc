@@ -82,6 +82,34 @@ final class RetainerPeriodUseTest extends TestCase
         $this->assertSame(0, (new NextInvoiceEstimate('2026-12-01', '2026-12-31', null, []))->total());
     }
 
+    public function test_sums_are_rounded_to_four_places_and_minutes_to_the_nearest(): void
+    {
+        $use = RetainerPeriodUse::forPeriod([
+            $this->row('2026-10', '2026-10-01', hours: 1.00004, retainer: 2.00006, rollover: 0, negative: 0),
+            $this->row('2026-11', '2026-10-01', hours: 0.00003, retainer: 0.00001, rollover: 0, negative: 0),
+        ], '2026-10-01', '2026-12-31');
+
+        $this->assertNotNull($use);
+        $this->assertSame(1.0001, $use->hoursUsed);
+        $this->assertSame(2.0001, $use->hoursIncluded);
+
+        // 60.498 min rounds down and 60.552 rounds up, for every figure.
+        foreach ([[1.0083, 60], [1.0092, 61]] as [$hours, $minutes]) {
+            $figures = (new RetainerPeriodUse($hours, $hours, $hours, $hours))->toArray();
+            $this->assertSame([$minutes, $minutes, $minutes, $minutes], array_values($figures));
+        }
+    }
+
+    public function test_a_periods_last_month_is_matched_by_prefix_and_the_first_by_its_month(): void
+    {
+        $ledger = [$this->row('2026-12', null, hours: 5, retainer: 9, rollover: 0, negative: 0)];
+
+        $this->assertSame(5.0, RetainerPeriodUse::forPeriod($ledger, '2026-11-15', '2026-12-31')?->hoursUsed);
+        $this->assertSame(5.0, RetainerPeriodUse::forPeriod($ledger, '2026-12-01', '2026-12-01')?->hoursUsed);
+        $this->assertNotNull(RetainerPeriodUse::forPeriod($ledger, '2026-12-15', '2027-01-14'));
+        $this->assertNull(RetainerPeriodUse::forPeriod($ledger, '2027-01-01', '2027-01-31'));
+    }
+
     private function row(string $month, ?string $cycleStart, float $hours, float $retainer, float $rollover, float $negative): MonthSummary
     {
         return new MonthSummary(

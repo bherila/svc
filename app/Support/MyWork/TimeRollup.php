@@ -69,7 +69,7 @@ final readonly class TimeRollup
             $total += $entry['minutes'];
         }
 
-        $rows = array_values(array_map(function (array $project): array {
+        $rows = array_map(function (array $project): array {
             $states = [];
             foreach ($project['states'] as $status => $minutes) {
                 $states[] = ['status' => (string) $status, 'minutes' => $minutes];
@@ -77,7 +77,7 @@ final readonly class TimeRollup
             usort($states, fn (array $a, array $b): int => $this->rank($a['status']) <=> $this->rank($b['status']));
 
             return [...$project, 'states' => $states];
-        }, $projects));
+        }, $projects);
         usort($rows, static fn (array $a, array $b): int => [$b['minutes'], $a['project']] <=> [$a['minutes'], $b['project']]);
 
         return ['start' => $start, 'end' => $end, 'total_minutes' => $total, 'projects' => $rows];

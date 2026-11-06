@@ -33,13 +33,23 @@ final readonly class PortalBalance
      *
      * @return array{id: string, number: string, balance: int, currency: string, due_date: string|null}|null
      */
-    public function first(): ?array
+    private function first(): ?array
     {
         $open = $this->open;
-        usort($open, static fn (array $a, array $b): int => [$a['due_date'] === null, $a['due_date'] ?? '', $a['number']]
-            <=> [$b['due_date'] === null, $b['due_date'] ?? '', $b['number']]);
+        usort($open, static fn (array $a, array $b): int => self::order($a) <=> self::order($b));
 
         return $open[0] ?? null;
+    }
+
+    /**
+     * Dated invoices before undated ones, then earliest due date, then number.
+     *
+     * @param  array{id: string, number: string, balance: int, currency: string, due_date: string|null}  $invoice
+     * @return array{bool, string, string}
+     */
+    private static function order(array $invoice): array
+    {
+        return [$invoice['due_date'] === null, $invoice['due_date'] ?? '', $invoice['number']];
     }
 
     /**
@@ -47,9 +57,9 @@ final readonly class PortalBalance
      */
     public function toArray(): array
     {
-        $currencies = array_values(array_unique(array_column($this->open, 'currency')));
+        $currencies = array_unique(array_column($this->open, 'currency'));
         $single = count($currencies) <= 1;
-        $overdue = array_values(array_filter($this->open, fn (array $invoice): bool => $invoice['due_date'] !== null && $invoice['due_date'] < $this->today));
+        $overdue = array_filter($this->open, fn (array $invoice): bool => $invoice['due_date'] !== null && $invoice['due_date'] < $this->today);
         $first = $this->first();
 
         return [
