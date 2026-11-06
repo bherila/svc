@@ -1043,11 +1043,13 @@ try {
             }
 
             await capture(screen, 'loaded', width, false);
+
             for (const summary of await page
                 .locator('[data-slot="to-approve"] details > summary')
                 .all()) {
                 await summary.click();
             }
+
             await page
                 .getByRole('button', { name: /^Dispute Granted provider work/ })
                 .first()
