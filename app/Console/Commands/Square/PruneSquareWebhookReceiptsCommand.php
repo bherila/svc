@@ -14,13 +14,11 @@ final class PruneSquareWebhookReceiptsCommand extends MutationCommand
 
     public function handle(SquareWebhookReceipts $receipts): int
     {
-        $publicId = SquareConfiguration::fromConfig()->workspacePublicId;
-        $workspace = $publicId === null ? null : $this->workspaceByPublicId($publicId);
         if (! $this->applying()) {
             return $this->planned();
         }
         $total = 0;
-        if ($workspace !== null) {
+        foreach (SquareConfiguration::servedWorkspaces() as $workspace) {
             do {
                 $deleted = $receipts->prune($workspace);
                 $total += $deleted;

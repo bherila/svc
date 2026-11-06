@@ -201,7 +201,7 @@ final class SquareCustomerImporter
     private function admit(User $user, Workspace $workspace): void
     {
         abort_unless($this->access->isWorkspaceManager($user, $workspace), 403, 'Importing a Square customer is for workspace managers only.');
-        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+        if (! SquareConfiguration::for($workspace)->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }
     }

@@ -128,7 +128,7 @@ final class PaymentReminderRepository
         $link = $this->links->activeLink($invoice);
         // The mirror's copy is used only while Square is connected to this
         // workspace, as everywhere else that sends a person to a Square page.
-        $snapshot = $link === null || ! SquareConfiguration::fromConfig()->servesWorkspace($workspace) ? null
+        $snapshot = $link === null || ! SquareConfiguration::for($workspace)->isConfigured() ? null
             : SquareInvoiceSnapshot::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('square_invoice_id', $link->square_invoice_id)

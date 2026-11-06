@@ -129,6 +129,15 @@ final class SyncProcessorMovementsCommand extends MutationCommand
                 $rows->pop();
             }
             foreach ($rows as $row) {
+                // Nothing to read for a workspace with no Stripe connection:
+                // step past it without counting it as a refusal.
+                if ($gateway->access($row->workspace) === null) {
+                    if ($apply && $payment === null && ! Cache::forever($cursorKey, ['last' => $row->id, 'incomplete' => $cycleIncomplete])) {
+                        throw new DomainException;
+                    }
+
+                    continue;
+                }
                 try {
                     $result = $sync->sync($row->workspace, $row->id, $apply, $budget, recoverDisputes: true);
                     $counts['records_read']++;
@@ -174,17 +183,43 @@ final class SyncProcessorMovementsCommand extends MutationCommand
         return $counts;
     }
 
-    /** @return MovementCounts */
+    /**
+     * Every connected Square workspace in turn (or just `--workspace`), each
+     * with its own token. One workspace's failure is reported in the note and
+     * never skips the next.
+     *
+     * @return MovementCounts
+     */
     private function square(SquareProcessorMovementSync $sync, ?Workspace $only, CarbonImmutable $since, CarbonImmutable $until, int $limit, ProcessorReadBudget $budget, bool $apply): array
     {
         $counts = $this->counts();
-        $configuration = SquareConfiguration::fromConfig();
-        $workspace = $configuration->workspace();
-        if ($workspace === null || ($only !== null && $workspace->id !== $only->id)) {
-            $counts['note'] = $workspace === null ? 'not_configured' : 'different_workspace';
+        $targets = $only !== null
+            ? (SquareConfiguration::for($only)->isConfigured() ? [$only] : [])
+            : SquareConfiguration::servedWorkspaces();
+        if ($targets === []) {
+            $counts['note'] = $only === null ? 'not_configured' : 'different_workspace';
 
             return $counts;
         }
+        // Worst first: a failure outranks a cap, which outranks a review note.
+        $severity = ['sync_incomplete' => 3, 'record_limit' => 2, 'needs_review' => 1];
+        foreach ($targets as $workspace) {
+            $one = $this->squareWorkspace($sync, $workspace, $since, $until, $limit, $budget, $apply);
+            foreach (['records_read', 'created', 'unchanged', 'enriched', 'conflict', 'deferred', 'ignored', 'refused'] as $key) {
+                $counts[$key] += $one[$key];
+            }
+            if (($severity[$one['note'] ?? ''] ?? 0) > ($severity[$counts['note'] ?? ''] ?? 0)) {
+                $counts['note'] = $one['note'];
+            }
+        }
+
+        return $counts;
+    }
+
+    /** @return MovementCounts */
+    private function squareWorkspace(SquareProcessorMovementSync $sync, Workspace $workspace, CarbonImmutable $since, CarbonImmutable $until, int $limit, ProcessorReadBudget $budget, bool $apply): array
+    {
+        $counts = $this->counts();
         try {
             $selection = json_encode([$this->option('since'), $this->option('until')], JSON_THROW_ON_ERROR);
             $scan = $sync->continuePayouts($workspace, $since, $until, $selection, $apply, $budget);

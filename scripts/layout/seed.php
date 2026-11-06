@@ -25,6 +25,7 @@ use App\Services\Files\AttachmentStorageService;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
+use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquareLinkService;
@@ -38,6 +39,8 @@ use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
+use App\Support\Payments\ConnectionOrigin;
+use App\Support\Payments\PaymentProcessor;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use App\Support\WorkspaceClock;
@@ -90,7 +93,7 @@ $workspace = Workspace::query()->create([
     'timezone' => 'America/Los_Angeles',
 ]);
 $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
-if (getenv('SVC_LAYOUT_WORKSPACES') === '1') {
+if (getenv('SVC_LAYOUT_WORKSPACES') === '1' || getenv('SVC_LAYOUT_PAYMENTS') === '1') {
     $workspace->update(['name' => str_repeat('SyntheticWorkspaceWithoutBreaks', 4)]);
 }
 $company = ClientCompany::query()->create([
@@ -446,7 +449,37 @@ if ($planningTask !== null && getenv('SVC_LAYOUT_TASK_LOOKUPS') !== '1') {
     ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);
 }
 
+// Payment connections (--payments): one workspace per state, all owned by the
+// same synthetic owner, with unbroken names. Connected through the repository,
+// so no processor is asked; the keys are obviously fake.
+$paymentPages = [];
+if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
+    $connections = app(WorkspacePaymentConnections::class);
+    $stripeWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticStripeWorkspaceWithoutBreaks', 3), 'slug' => 'layout-payments-stripe', 'timezone' => 'America/Los_Angeles']);
+    $squareWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticSquareWorkspaceWithoutBreaks', 3), 'slug' => 'layout-payments-square', 'timezone' => 'America/Los_Angeles']);
+    $reusedWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticReusedWorkspaceWithoutBreaks', 3), 'slug' => 'layout-payments-reused', 'timezone' => 'America/Los_Angeles']);
+    foreach ([$stripeWorkspace, $squareWorkspace, $reusedWorkspace] as $paymentWorkspace) {
+        $paymentWorkspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+    }
+    $stripeRow = $connections->connect($stripeWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+        'external_account_id' => 'acct_synthetic', 'display_name' => str_repeat('SyntheticBusinessNameWithoutBreaks', 6), 'environment' => 'live',
+        'secret' => 'rk_live_'.str_repeat('synthetic', 6).'a1b2', 'webhook_secret' => 'whsec_synthetic',
+    ]);
+    $connections->connect($squareWorkspace, PaymentProcessor::Square, ConnectionOrigin::Entered, $owner, [
+        'external_account_id' => 'MERCHANT_SYNTHETIC', 'display_name' => str_repeat('SyntheticSquareBusinessWithoutBreaks', 5), 'environment' => 'production',
+        'secret' => 'EAAA'.str_repeat('synthetic', 6).'wxyz', 'webhook_secret' => 'synthetic-signature', 'location_id' => str_repeat('L', 64),
+    ]);
+    $connections->reuse($reusedWorkspace, $stripeRow, $owner);
+    $paymentPages = [
+        'payments' => route('workspaces.payments', $workspace, absolute: false),
+        'payments_stripe' => route('workspaces.payments', $stripeWorkspace, absolute: false),
+        'payments_square' => route('workspaces.payments', $squareWorkspace, absolute: false),
+        'payments_reused' => route('workspaces.payments', $reusedWorkspace, absolute: false),
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    ...$paymentPages,
     'selector' => route('workspaces.index', absolute: false),
     'workspace_create' => route('agent-api.v1.workspaces.store', absolute: false),
     'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),

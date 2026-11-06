@@ -6,6 +6,7 @@ use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareEndpoint;
 use App\Services\Square\SquareRequestFailed;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -19,6 +20,7 @@ use Throwable;
 final class SquareClientTest extends TestCase
 {
     use FakesSquare;
+    use RefreshDatabase;
 
     protected function setUp(): void
     {

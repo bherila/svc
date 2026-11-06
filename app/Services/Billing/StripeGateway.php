@@ -2,6 +2,9 @@
 
 namespace App\Services\Billing;
 
+use App\Models\Workspace;
+use App\Services\Payments\PaymentConnectionResolver;
+use App\Services\Payments\StripeAccess;
 use RuntimeException;
 use Stripe\Event;
 use Stripe\Exception\SignatureVerificationException;
@@ -9,8 +12,15 @@ use Stripe\StripeClient;
 use Stripe\Webhook;
 use UnexpectedValueException;
 
+/**
+ * The Stripe adapter. Which key a call is made with comes from the workspace's
+ * own connection ({@see PaymentConnectionResolver}); the deployment's
+ * environment key serves only until the migration command has run.
+ */
 final class StripeGateway
 {
+    public function __construct(private readonly PaymentConnectionResolver $connections) {}
+
     public function isConfigured(): bool
     {
         return $this->publishableKey() !== null
@@ -18,19 +28,25 @@ final class StripeGateway
             && $this->webhookSecret() !== null;
     }
 
-    public function mode(): ?string
+    /**
+     * `test`, `live`, `unknown`, or null when there are no credentials. With a
+     * workspace, the mode of that workspace's own key; without, the
+     * environment key's.
+     */
+    public function mode(?Workspace $workspace = null): ?string
     {
+        if ($workspace !== null) {
+            return $this->connections->stripe($workspace)?->mode;
+        }
         $secret = $this->secretKey();
 
-        if ($secret === null) {
-            return null;
-        }
+        return $secret === null ? null : StripeAccess::modeOf($secret);
+    }
 
-        return match (true) {
-            str_starts_with($secret, 'sk_test_') => 'test',
-            str_starts_with($secret, 'sk_live_') => 'live',
-            default => 'unknown',
-        };
+    /** The credentials this workspace's Stripe calls use, or null when it has none. */
+    public function access(Workspace $workspace): ?StripeAccess
+    {
+        return $this->connections->stripe($workspace);
     }
 
     public function publishableKey(): ?string
@@ -38,15 +54,16 @@ final class StripeGateway
         return $this->configuredString('publishable_key');
     }
 
-    public function client(): StripeClient
+    /** A client with the workspace's own key, and no other. */
+    public function client(Workspace $workspace): StripeClient
     {
-        $secret = $this->secretKey();
+        $access = $this->access($workspace);
 
-        if ($secret === null) {
-            throw new RuntimeException('Stripe is not configured.');
+        if ($access === null) {
+            throw new RuntimeException('Stripe is not connected for this workspace.');
         }
 
-        return new StripeClient($secret);
+        return $access->client();
     }
 
     /**
@@ -61,6 +78,18 @@ final class StripeGateway
             throw new UnexpectedValueException('The Stripe webhook secret is not configured.');
         }
 
+        return $this->constructWebhookEventWith($payload, $signature, $secret);
+    }
+
+    /**
+     * Verify a delivery against the signing secret of the endpoint it arrived
+     * at: a workspace's own secret, never one chosen from the payload.
+     *
+     * @throws SignatureVerificationException
+     * @throws UnexpectedValueException
+     */
+    public function constructWebhookEventWith(string $payload, ?string $signature, #[\SensitiveParameter] string $secret): Event
+    {
         if ($signature === null || $signature === '') {
             throw SignatureVerificationException::factory('Missing Stripe signature.', $payload, null);
         }

@@ -15,7 +15,7 @@ use InvalidArgumentException;
  *
  * Every request is built from a {@see SquareEndpoint} case, the allow-list of
  * reads, and nothing else: there is no generic request method and no write.
- * Each call re-reads {@see SquareConfiguration}, sends the pinned
+ * Each call re-reads the workspace's {@see SquareConfiguration}, sends the pinned
  * Square-Version, uses bounded timeouts, never follows a redirect (which could
  * carry the credential to another host), and retries only these reads - on a
  * connection failure, 429 or 5xx - with doubling backoff. A failure becomes a
@@ -33,7 +33,13 @@ final class SquareClient
     /** The longest pause between attempts; a longer Retry-After is answered as 429 at once. */
     private const int MAX_PAUSE_MILLISECONDS = 2000;
 
-    public function __construct(private readonly HttpFactory $http) {}
+    /**
+     * Built unscoped by the container (the environment's single account, only
+     * until the migration command has run) or, for a workspace, by
+     * {@see SquareWorkspaceClients}, which hands it that workspace's own
+     * configuration. This class stays only Square reads.
+     */
+    public function __construct(private readonly HttpFactory $http, private readonly ?SquareConfiguration $scope = null) {}
 
     /** @return array<string, mixed> */
     public function listLocations(): array
@@ -208,7 +214,7 @@ final class SquareClient
      */
     private function send(SquareEndpoint $endpoint, ?string $id = null, array $query = [], ?array $body = null): array
     {
-        $configuration = SquareConfiguration::fromConfig();
+        $configuration = $this->scope ?? SquareConfiguration::legacy();
         if (! $configuration->isConfigured()) {
             throw SquareRequestFailed::notConnected();
         }

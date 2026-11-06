@@ -14,6 +14,14 @@ Route::middleware('web')
     ->withoutMiddleware([ValidateCsrfToken::class, PreventRequestForgery::class])
     ->name('svc.billing.stripe.webhook');
 
+// One workspace's own endpoint. The token is opaque and random; the signature is
+// checked with that workspace's secret (see StripeWebhookController).
+Route::middleware('web')
+    ->post('/api/webhooks/stripe/{endpoint}', StripeWebhookController::class)
+    ->where('endpoint', '[A-Za-z0-9]{40}')
+    ->withoutMiddleware([ValidateCsrfToken::class, PreventRequestForgery::class])
+    ->name('svc.billing.stripe.workspace-webhook');
+
 // What became of an invoice email. Brevo does not sign its webhooks, so the
 // controller requires a configured shared token and refuses everything when
 // none is set - see it for why that failure direction is the safe one.

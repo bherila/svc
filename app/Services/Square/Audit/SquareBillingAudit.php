@@ -31,7 +31,7 @@ final class SquareBillingAudit
      */
     public function report(Workspace $workspace): array
     {
-        $configuration = SquareConfiguration::fromConfig();
+        $configuration = SquareConfiguration::for($workspace);
         if (! $configuration->servesWorkspace($workspace)) {
             return self::empty();
         }

@@ -7,8 +7,10 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeEvent;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
+use App\Services\Payments\StripeEventRoute;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\StripeEventMustBeRetried;
+use App\Support\Billing\StripeEventOutsideConnection;
 use App\Support\Billing\StripePayoutFacts;
 use App\Support\Billing\StripeRefundStatus;
 use App\Support\Concurrency\Locks;
@@ -56,7 +58,28 @@ final class StripeWebhookService
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
-    public function process(Event $event, string $payload): bool
+    /** Where the event in hand may land; set by {@see process()} for the one event it handles. */
+    private ?StripeEventRoute $route = null;
+
+    /**
+     * @param  StripeEventRoute  $route  the connected account the event belongs to, and the workspaces connected to it
+     */
+    public function process(Event $event, string $payload, StripeEventRoute $route): bool
+    {
+        $this->route = $route;
+        try {
+            return $this->processRouted($event, $payload);
+        } finally {
+            $this->route = null;
+        }
+    }
+
+    private function route(): StripeEventRoute
+    {
+        return $this->route ?? throw new \LogicException('A Stripe event is processed with the route it arrived on.');
+    }
+
+    private function processRouted(Event $event, string $payload): bool
     {
         $data = $event->toArray();
         $object = is_array($data['data']['object'] ?? null) ? $data['data']['object'] : [];
@@ -97,6 +120,22 @@ final class StripeWebhookService
                 return $this->handleDispute($event, $object, $ledger);
             }
             $processed = $this->handle($event, $object, $ledger);
+        } catch (StripeEventOutsideConnection) {
+            // The event names a record of a workspace that is not connected to
+            // the account it came from. Nothing was written (the handler's
+            // transaction rolled back); it is acknowledged and never applied.
+            Log::warning('Stripe event names a workspace that is not connected to its account; ignored.', [
+                'event' => (string) $event->id,
+                'type' => (string) $event->type,
+            ]);
+            $ledger->forceFill([
+                'workspace_id' => null,
+                'status' => 'processed',
+                'error_summary' => 'Ignored: the record belongs to a workspace not connected to this Stripe account.',
+                'processed_at' => $this->clock->now(),
+            ])->save();
+
+            return true;
         } catch (\DomainException $exception) {
             $ledger->forceFill([
                 'status' => 'failed',
@@ -164,7 +203,12 @@ final class StripeWebhookService
     private function handlePayout(Event $event, array $object, ClientStripeEvent $ledger): bool
     {
         $payout = StripePayoutFacts::from($object, max(0, (int) ($event->created ?? 0)) * 1000);
-        $result = $this->settlements->apply($payout, $this->settlements->members($payout));
+        $route = $this->route();
+        $result = $this->settlements->apply(
+            $payout,
+            $this->settlements->members($payout, $route->access()),
+            connectedWorkspaceIds: $route->workspaceIds ?? null,
+        );
         $ledger->forceFill([
             'workspace_id' => $result->soleWorkspaceId(),
             'status' => 'processed',
@@ -186,11 +230,13 @@ final class StripeWebhookService
     private function recordChargeSettlement(array $object): void
     {
         $identifier = is_string($object['id'] ?? null) ? $object['id'] : '';
-        if ($identifier === '' || $this->gateway->mode() === null) {
+        if ($identifier === '') {
             return;
         }
-        $payment = ClientInvoicePayment::query()->where('provider', 'stripe')->where('provider_payment_identifier', $identifier)->first();
-        if ($payment === null || $payment->workspace_id < 1) {
+        $payment = ClientInvoicePayment::query()->where('provider', 'stripe')->where('provider_payment_identifier', $identifier)
+            ->when($this->route()->workspaceIds !== null, fn (Builder $payments) => $payments->whereIn('workspace_id', $this->route()->workspaceIds ?? []))
+            ->first();
+        if ($payment === null || $payment->workspace_id < 1 || $this->gateway->mode($payment->workspace) === null) {
             return;
         }
         try {
@@ -241,6 +287,7 @@ final class StripeWebhookService
                 $ledger->workspace_id = $method instanceof ClientStripePaymentMethod && $method->workspace_id > 0
                     ? $method->workspace_id
                     : null;
+                $this->assertConnected($ledger->workspace_id);
             } elseif ($event->type === 'payment_method.detached') {
                 $providerId = is_string($object['id'] ?? null) ? $object['id'] : '';
                 if ($providerId === '') {
@@ -248,6 +295,7 @@ final class StripeWebhookService
                 }
                 $workspaceId = $this->paymentMethods->detach($providerId, (string) $event->id, $providerCreatedAt);
                 $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
+                $this->assertConnected($ledger->workspace_id);
             } elseif ($event->type === 'customer.updated') {
                 $customerId = is_string($object['id'] ?? null) ? $object['id'] : '';
                 $settings = is_array($object['invoice_settings'] ?? null) ? $object['invoice_settings'] : [];
@@ -265,6 +313,7 @@ final class StripeWebhookService
                     $providerCreatedAt,
                 );
                 $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
+                $this->assertConnected($ledger->workspace_id);
             } else {
                 $this->handleInvoiceEvent($event, $object, $ledger, $paymentWorkspaceId, $standingRefunds);
             }
@@ -345,6 +394,20 @@ final class StripeWebhookService
         }
     }
 
+    /**
+     * A write that resolved its workspace from the processor's own ids must
+     * have landed in a workspace connected to the account the event came from.
+     * The enclosing transaction rolls back when it did not.
+     *
+     * @throws StripeEventOutsideConnection
+     */
+    private function assertConnected(?int $workspaceId): void
+    {
+        if ($workspaceId !== null && ! $this->route()->permits($workspaceId)) {
+            throw new StripeEventOutsideConnection;
+        }
+    }
+
     /** @param array<string, mixed> $object */
     private function isUndoneRefund(string $type, array $object): bool
     {
@@ -379,7 +442,7 @@ final class StripeWebhookService
                 if ($cursor !== null) {
                     $params['starting_after'] = $cursor;
                 }
-                $body = $this->gateway->client()->refunds->all($params)->toArray();
+                $body = $this->route()->access()->client()->refunds->all($params)->toArray();
                 $refunds = $body['data'] ?? null;
                 $hasMore = $body['has_more'] ?? null;
                 if (($body['object'] ?? null) !== 'list' || ! is_bool($hasMore)
@@ -500,7 +563,7 @@ final class StripeWebhookService
             return null;
         }
 
-        return $this->gateway->client()->paymentMethods->retrieve($paymentMethod, [])->toArray();
+        return $this->route()->access()->client()->paymentMethods->retrieve($paymentMethod, [])->toArray();
     }
 
     /** @param array<string, mixed> $object
@@ -515,9 +578,14 @@ final class StripeWebhookService
             self::paymentReference(is_array($charge) ? ($charge['payment_intent'] ?? null) : null),
         ]));
 
+        // A payment of a workspace that is not connected to the account the
+        // event came from is not found, so the event cannot touch it.
+        $allowed = $this->route()->workspaceIds;
+
         return ClientInvoicePayment::query()
             ->where('provider', 'stripe')
-            ->whereIn('provider_payment_identifier', $ids);
+            ->whereIn('provider_payment_identifier', $ids)
+            ->when($allowed !== null, static fn (Builder $payments) => $payments->whereIn('workspace_id', $allowed ?? []));
     }
 
     private static function paymentReference(mixed $value): ?string
@@ -539,6 +607,15 @@ final class StripeWebhookService
         }
         $workspace = Workspace::query()->where('public_id', $workspaceId)->first();
         if ($workspace === null) {
+            return;
+        }
+        // The account the event came from must be this workspace's own: the
+        // workspace named in metadata is confirmed, never trusted on its own.
+        if (! $this->route()->permits($workspace->id)) {
+            Log::warning('Stripe payment names a workspace that is not connected to its account; ignored.', [
+                'event' => (string) $event->id,
+            ]);
+
             return;
         }
         $invoice = ClientInvoice::query()

@@ -212,12 +212,6 @@ parameters:
 			path: app/Services/Billing/RecurringItemBiller.php
 
 		-
-			message: '#^Cannot access property \$public_id on App\\Models\\Workspace\|null\.$#'
-			identifier: property.nonObject
-			count: 1
-			path: app/Services/Billing/StripePaymentIntentService.php
-
-		-
 			message: '#^Cannot cast mixed to int\.$#'
 			identifier: cast.int
 			count: 2

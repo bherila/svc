@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Square;
 
 use App\Console\Commands\MutationCommand;
+use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareInvoiceReconciliation;
@@ -33,8 +34,8 @@ final class ReconcileSquarePaymentsCommand extends MutationCommand
 
             return self::INVALID;
         }
-        $configuration = SquareConfiguration::fromConfig();
-        if (! $configuration->isConfigured()) {
+        $workspaces = SquareConfiguration::servedWorkspaces();
+        if ($workspaces === []) {
             if ($invoice !== null) {
                 $this->components->warn('Square is not configured, so the invoice was not reconciled.');
 
@@ -48,19 +49,34 @@ final class ReconcileSquarePaymentsCommand extends MutationCommand
 
             return self::SUCCESS;
         }
-        $workspace = $configuration->workspace();
-        if ($workspace === null) {
-            $this->components->warn('The configured workspace does not exist.');
-
-            return self::FAILURE;
-        }
         if (! $this->applying()) {
             return $this->planned();
         }
 
         if ($invoice !== null) {
-            return $this->reconcileOne($single, $workspace, $invoice);
+            // The invoice picks the workspace; only a workspace Square serves is eligible.
+            $owner = ClientInvoice::query()->where('public_id', $invoice)->value('workspace_id');
+            foreach ($workspaces as $workspace) {
+                if ($workspace->id === $owner) {
+                    return $this->reconcileOne($single, $workspace, $invoice);
+                }
+            }
+            $this->components->warn('No invoice with that id exists in the workspace Square serves.');
+
+            return self::FAILURE;
         }
+        $exit = self::SUCCESS;
+        foreach ($workspaces as $workspace) {
+            if ($this->sweep($reconciler, $workspace) !== self::SUCCESS) {
+                $exit = self::FAILURE;
+            }
+        }
+
+        return $exit;
+    }
+
+    private function sweep(SquarePaymentReconciler $reconciler, Workspace $workspace): int
+    {
         $failed = 0;
         foreach ($reconciler->linkedInvoices($workspace) as $link) {
             try {

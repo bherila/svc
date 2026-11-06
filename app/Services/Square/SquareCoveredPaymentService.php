@@ -151,7 +151,7 @@ final class SquareCoveredPaymentService
         $payments = $this->reader->read($workspace, $squareInvoiceId, $invoice->currency, refreshMirror: false);
 
         return new SquareCoveredPaymentObservation($coverage->public_id, $payments,
-            $payments === [] ? [] : $this->disputes->read(array_map(static fn (SquarePaymentFacts $fact): string => $fact->id, $payments)), $workspace->timezone);
+            $payments === [] ? [] : $this->disputes->read($workspace, array_map(static fn (SquarePaymentFacts $fact): string => $fact->id, $payments)), $workspace->timezone);
     }
 
     private function refusal(ClientInvoice $invoice, SquarePaymentFacts $fact, SquareCoveredPaymentObservation $observation, int $pending): ?string

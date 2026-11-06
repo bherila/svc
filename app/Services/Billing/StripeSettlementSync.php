@@ -6,6 +6,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ProcessorPayout;
 use App\Models\Workspace;
 use App\Services\Finance\ProcessorSettlementRecorder;
+use App\Services\Payments\StripeAccess;
 use App\Support\Billing\StripeBalanceEntry;
 use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Billing\StripePayoutFacts;
@@ -14,6 +15,7 @@ use App\Support\Finance\PayoutFacts;
 use App\Support\Finance\PayoutSyncResult;
 use App\Support\Finance\PayoutType;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use RuntimeException;
 use Stripe\Exception\ExceptionInterface;
 
@@ -26,8 +28,9 @@ use Stripe\Exception\ExceptionInterface;
  * {@see StripeEventMustBeRetried}: the webhook answers it with a retryable
  * error and the backfill counts it.
  *
- * One Stripe account serves the installation, and a payout carries no
- * workspace. A payout belongs to every workspace one of its balance
+ * A payout carries no workspace, only the connected account it belongs to,
+ * and the callers restrict it to the workspaces connected to that account.
+ * Within that, a payout belongs to every workspace one of its balance
  * transactions names a payment of - a charge it settles, or a refund or
  * dispute it pays back - and each gets its own row. Stripe lists a payout's
  * balance transactions only for an automatic payout, so a manual or instant
@@ -49,14 +52,14 @@ final class StripeSettlementSync
      *
      * @throws StripeEventMustBeRetried
      */
-    public function members(PayoutFacts $payout): array
+    public function members(PayoutFacts $payout, StripeAccess $access): array
     {
         if ($payout->type !== PayoutType::Automatic) {
             return [];
         }
         $entries = [];
-        $this->read(function () use ($payout, &$entries): void {
-            $transactions = $this->gateway->client()->balanceTransactions->all([
+        $this->read(function () use ($payout, $access, &$entries): void {
+            $transactions = $access->client()->balanceTransactions->all([
                 'payout' => $payout->identifier,
                 'limit' => 100,
                 'expand' => ['data.source'],
@@ -77,11 +80,15 @@ final class StripeSettlementSync
     /**
      * Store the payout for each workspace it reaches, and record on each
      * charged payment that it settled in this payout, with its fee and charge
-     * time. `$onlyWorkspaceId` keeps every write to that one workspace.
+     * time. `$onlyWorkspaceId` keeps every write to that one workspace, and
+     * `$connectedWorkspaceIds`, when given, to the workspaces connected to the
+     * account the payout belongs to: a payment of any other workspace is not
+     * touched even if its processor id appears in the payout.
      *
      * @param  list<StripeBalanceEntry>  $members
+     * @param  list<int>|null  $connectedWorkspaceIds
      */
-    public function apply(PayoutFacts $payout, array $members, bool $apply = true, ?int $onlyWorkspaceId = null): PayoutSyncResult
+    public function apply(PayoutFacts $payout, array $members, bool $apply = true, ?int $onlyWorkspaceId = null, ?array $connectedWorkspaceIds = null): PayoutSyncResult
     {
         $identifiers = [];
         foreach ($members as $member) {
@@ -93,6 +100,7 @@ final class StripeSettlementSync
         $owners = [];
         foreach (array_chunk(array_values(array_unique($identifiers)), 500) as $chunk) {
             foreach (ClientInvoicePayment::query()->where('provider', 'stripe')->whereIn('provider_payment_identifier', $chunk)
+                ->when($connectedWorkspaceIds !== null, static fn (Builder $payments) => $payments->whereIn('workspace_id', $connectedWorkspaceIds ?? []))
                 ->get(['workspace_id', 'provider_payment_identifier']) as $payment) {
                 $identifier = $payment->getAttribute('provider_payment_identifier');
                 $workspaceId = $payment->workspaceId();
@@ -104,7 +112,9 @@ final class StripeSettlementSync
         $workspaceIds = array_values($owners);
         // A report about a payout already stored (a failure after it was
         // paid, or one Stripe no longer lists members for) reaches it.
-        foreach (ProcessorPayout::query()->where('provider', 'stripe')->where('provider_payout_identifier', $payout->identifier)->get(['workspace_id']) as $stored) {
+        foreach (ProcessorPayout::query()->where('provider', 'stripe')->where('provider_payout_identifier', $payout->identifier)
+            ->when($connectedWorkspaceIds !== null, static fn (Builder $payouts) => $payouts->whereIn('workspace_id', $connectedWorkspaceIds ?? []))
+            ->get(['workspace_id']) as $stored) {
             $workspaceIds[] = $stored->workspaceId();
         }
         $workspaceIds = array_values(array_unique(array_filter($workspaceIds, static fn (?int $id): bool => $id !== null)));
@@ -153,8 +163,9 @@ final class StripeSettlementSync
             return false;
         }
         $charge = null;
-        $this->read(function () use ($identifier, &$charge): void {
-            $client = $this->gateway->client();
+        $workspace = $this->workspaceOf($payment);
+        $this->read(function () use ($identifier, $workspace, &$charge): void {
+            $client = $this->gateway->client($workspace);
             if (str_starts_with($identifier, 'pi_')) {
                 // The intent's charges, newest first: the one that succeeded is
                 // the payment. Read through the charges, never the intent,
@@ -185,7 +196,7 @@ final class StripeSettlementSync
         );
         $identifiers = array_values(array_filter([$identifier, is_string($charge['id'] ?? null) ? $charge['id'] : null]));
 
-        return $this->recorder->recordPaymentSettlement($this->workspaceOf($payment), 'stripe', $identifiers, $settlement, $apply);
+        return $this->recorder->recordPaymentSettlement($workspace, 'stripe', $identifiers, $settlement, $apply);
     }
 
     /**
@@ -196,10 +207,10 @@ final class StripeSettlementSync
      *
      * @throws StripeEventMustBeRetried
      */
-    public function payouts(?CarbonImmutable $since, int $observedAtMs): iterable
+    public function payouts(?CarbonImmutable $since, int $observedAtMs, StripeAccess $access): iterable
     {
         try {
-            $payouts = $this->gateway->client()->payouts->all(array_filter([
+            $payouts = $access->client()->payouts->all(array_filter([
                 'limit' => 100,
                 'created' => $since === null ? null : ['gte' => $since->getTimestamp()],
             ], static fn (mixed $value): bool => $value !== null));

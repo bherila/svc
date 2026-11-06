@@ -20,8 +20,13 @@ final class SyncSquareMirrorCommand extends MutationCommand
 
     public function handle(SquareMirrorSync $sync): int
     {
-        $configuration = SquareConfiguration::fromConfig();
-        if (! $configuration->isConfigured()) {
+        $workspaces = SquareConfiguration::servedWorkspaces();
+        if ($workspaces === [] && SquareConfiguration::legacy()->isConfigured()) {
+            $this->components->warn('The workspace Square is bound to does not exist.');
+
+            return self::FAILURE;
+        }
+        if ($workspaces === []) {
             if ($this->option('format') === 'json') {
                 $this->json(['configured' => false, 'synced' => false]);
             } else {
@@ -30,16 +35,22 @@ final class SyncSquareMirrorCommand extends MutationCommand
 
             return self::SUCCESS;
         }
-        $workspace = $configuration->workspace();
-        if (! $workspace instanceof Workspace) {
-            $this->components->warn('The workspace Square is bound to does not exist.');
-
-            return self::FAILURE;
-        }
         if (! $this->applying()) {
             return $this->planned();
         }
+        // One run per workspace with its own Square connection.
+        $exit = self::SUCCESS;
+        foreach ($workspaces as $workspace) {
+            if ($this->syncOne($sync, $workspace) !== self::SUCCESS) {
+                $exit = self::FAILURE;
+            }
+        }
 
+        return $exit;
+    }
+
+    private function syncOne(SquareMirrorSync $sync, Workspace $workspace): int
+    {
         $sync->abandonStale($workspace);
         $run = $sync->perform($workspace, $sync->request($workspace, SquareSyncRun::TRIGGER_SCHEDULE));
         if ($this->option('format') === 'json') {
