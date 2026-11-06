@@ -8,10 +8,10 @@ use App\Models\Workspace;
 use App\Services\Billing\StripeGateway;
 use App\Services\Billing\StripeSettlementSync;
 use App\Services\Payments\PaymentConnectionResolver;
-use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareRequestFailed;
 use App\Services\Square\SquareSettlementSync;
+use App\Services\Square\SquareWorkspaceClients;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Finance\PayoutSyncResult;
@@ -66,7 +66,7 @@ final class BackfillPayoutsCommand extends MutationCommand
 
     private bool $failed = false;
 
-    public function handle(StripeGateway $gateway, StripeSettlementSync $stripe, SquareSettlementSync $square, SquareClient $squareClient, WorkspaceClock $clock): int
+    public function handle(StripeGateway $gateway, StripeSettlementSync $stripe, SquareSettlementSync $square, SquareWorkspaceClients $squareClient, WorkspaceClock $clock): int
     {
         $format = (string) $this->option('format');
         $provider = (string) $this->option('provider');
@@ -150,48 +150,67 @@ final class BackfillPayoutsCommand extends MutationCommand
         $this->report['stripe'] = $counts;
     }
 
-    private function square(SquareSettlementSync $sync, SquareClient $client, ?CarbonImmutable $since, ?Workspace $only, bool $apply): void
+    /**
+     * Every connected Square workspace in turn (or just `--workspace`), each
+     * read with its own token. One workspace's failure is noted and the next
+     * workspace still runs; the command then exits non-zero.
+     */
+    private function square(SquareSettlementSync $sync, SquareWorkspaceClients $clients, ?CarbonImmutable $since, ?Workspace $only, bool $apply): void
     {
         $counts = $this->counts();
-        // One workspace per run: --workspace picks it, otherwise the first one Square serves.
-        $served = SquareConfiguration::servedWorkspaces();
-        $workspace = $only !== null
-            ? (SquareConfiguration::for($only)->isConfigured() ? $only : null)
-            : ($served[0] ?? null);
-        if ($workspace === null) {
+        $targets = $only !== null
+            ? (SquareConfiguration::for($only)->isConfigured() ? [$only] : [])
+            : SquareConfiguration::servedWorkspaces();
+        if ($targets === []) {
             $this->report['square'] = $counts;
-            $this->notes['square'] = 'skipped: '.($only === null && $served === [] ? 'not configured' : 'not connected to this workspace');
+            $this->notes['square'] = 'skipped: '.($only === null ? 'not configured' : 'not connected to this workspace');
 
             return;
         }
-        try {
-            foreach ($sync->payouts($workspace, $since, $apply) as $result) {
-                $counts['payouts_read']++;
-                $this->tally($counts, $result);
+        $stopped = [];
+        foreach ($targets as $workspace) {
+            try {
+                $this->squareWorkspace($sync, $clients, $workspace, $since, $apply, $counts);
+            } catch (SquareRequestFailed $failure) {
+                $stopped[] = $workspace->public_id.': '.$failure->getMessage();
+                $this->failed = true;
             }
-            foreach ($this->unsettled('square', $workspace)->lazyById(100) as $payment) {
-                $counts['charges_read']++;
-                $id = (string) $payment->provider_payment_identifier;
-                try {
-                    $read = $client->forWorkspace($workspace)->getPayment($id)['payment'] ?? null;
-                    $facts = is_array($read) ? SquarePaymentFacts::from($read, $id) : throw SquareRequestFailed::unreadable();
-                } catch (SquareRequestFailed $failure) {
-                    if (! $failure->isRecordSpecific()) {
-                        throw $failure;
-                    }
-                    $counts['charges_unreadable']++;
-
-                    continue;
-                }
-                if ($facts !== null && $sync->recordCharge($workspace, $facts, $apply)) {
-                    $counts['charges_changed']++;
-                }
-            }
-        } catch (SquareRequestFailed $failure) {
-            $this->notes['square'] = 'stopped: '.$failure->getMessage();
-            $this->failed = true;
+        }
+        if ($stopped !== []) {
+            $this->notes['square'] = 'stopped: '.implode('; ', $stopped);
         }
         $this->report['square'] = $counts;
+    }
+
+    /**
+     * @param  array<string, int>  $counts
+     *
+     * @throws SquareRequestFailed
+     */
+    private function squareWorkspace(SquareSettlementSync $sync, SquareWorkspaceClients $clients, Workspace $workspace, ?CarbonImmutable $since, bool $apply, array &$counts): void
+    {
+        foreach ($sync->payouts($workspace, $since, $apply) as $result) {
+            $counts['payouts_read']++;
+            $this->tally($counts, $result);
+        }
+        foreach ($this->unsettled('square', $workspace)->lazyById(100) as $payment) {
+            $counts['charges_read']++;
+            $id = (string) $payment->provider_payment_identifier;
+            try {
+                $read = $clients->for($workspace)->getPayment($id)['payment'] ?? null;
+                $facts = is_array($read) ? SquarePaymentFacts::from($read, $id) : throw SquareRequestFailed::unreadable();
+            } catch (SquareRequestFailed $failure) {
+                if (! $failure->isRecordSpecific()) {
+                    throw $failure;
+                }
+                $counts['charges_unreadable']++;
+
+                continue;
+            }
+            if ($facts !== null && $sync->recordCharge($workspace, $facts, $apply)) {
+                $counts['charges_changed']++;
+            }
+        }
     }
 
     /**

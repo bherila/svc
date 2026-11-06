@@ -183,19 +183,43 @@ final class SyncProcessorMovementsCommand extends MutationCommand
         return $counts;
     }
 
-    /** @return MovementCounts */
+    /**
+     * Every connected Square workspace in turn (or just `--workspace`), each
+     * with its own token. One workspace's failure is reported in the note and
+     * never skips the next.
+     *
+     * @return MovementCounts
+     */
     private function square(SquareProcessorMovementSync $sync, ?Workspace $only, CarbonImmutable $since, CarbonImmutable $until, int $limit, ProcessorReadBudget $budget, bool $apply): array
     {
         $counts = $this->counts();
-        // One workspace per run: --workspace picks it, otherwise the first one Square serves.
-        $workspace = $only !== null
-            ? (SquareConfiguration::for($only)->isConfigured() ? $only : null)
-            : (SquareConfiguration::servedWorkspaces()[0] ?? null);
-        if ($workspace === null) {
+        $targets = $only !== null
+            ? (SquareConfiguration::for($only)->isConfigured() ? [$only] : [])
+            : SquareConfiguration::servedWorkspaces();
+        if ($targets === []) {
             $counts['note'] = $only === null ? 'not_configured' : 'different_workspace';
 
             return $counts;
         }
+        // Worst first: a failure outranks a cap, which outranks a review note.
+        $severity = ['sync_incomplete' => 3, 'record_limit' => 2, 'needs_review' => 1];
+        foreach ($targets as $workspace) {
+            $one = $this->squareWorkspace($sync, $workspace, $since, $until, $limit, $budget, $apply);
+            foreach (['records_read', 'created', 'unchanged', 'enriched', 'conflict', 'deferred', 'ignored', 'refused'] as $key) {
+                $counts[$key] += $one[$key];
+            }
+            if (($severity[$one['note'] ?? ''] ?? 0) > ($severity[$counts['note'] ?? ''] ?? 0)) {
+                $counts['note'] = $one['note'];
+            }
+        }
+
+        return $counts;
+    }
+
+    /** @return MovementCounts */
+    private function squareWorkspace(SquareProcessorMovementSync $sync, Workspace $workspace, CarbonImmutable $since, CarbonImmutable $until, int $limit, ProcessorReadBudget $budget, bool $apply): array
+    {
+        $counts = $this->counts();
         try {
             $selection = json_encode([$this->option('since'), $this->option('until')], JSON_THROW_ON_ERROR);
             $scan = $sync->continuePayouts($workspace, $since, $until, $selection, $apply, $budget);
