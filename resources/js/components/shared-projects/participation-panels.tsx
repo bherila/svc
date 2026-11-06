@@ -33,7 +33,7 @@ import type {
 } from '@/types/shared-projects';
 
 /** Confirm, then send one browser-only change and refresh what the server says is true. */
-function ConfirmedAction({
+export function ConfirmedAction({
     open,
     onOpenChange,
     title,

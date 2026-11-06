@@ -127,6 +127,22 @@ export function AccountMenu({
                         Shared projects
                     </DropdownMenuItem>
                 )}
+                {navigation?.reviewers_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.reviewers_href} />}
+                        data-test="account-reviewers"
+                    >
+                        Reviewers
+                    </DropdownMenuItem>
+                )}
+                {navigation?.approvals_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.approvals_href} />}
+                        data-test="account-approvals"
+                    >
+                        To approve
+                    </DropdownMenuItem>
+                )}
                 {navigation?.task_labels_href && (
                     <DropdownMenuItem
                         render={<Link href={navigation.task_labels_href} />}

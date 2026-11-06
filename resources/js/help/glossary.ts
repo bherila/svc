@@ -55,6 +55,11 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
             'Hours worked beyond what the retainer covers, billed at the hourly rate.',
     },
     {
+        term: 'Reviewer access',
+        definition:
+            'Permission a business gives someone outside it to approve or dispute the hours and expenses it bills one client for.',
+    },
+    {
         term: 'Shared project',
         definition:
             'A project run by one business with another business taking part in it.',
