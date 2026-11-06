@@ -96,7 +96,7 @@ final class RevenueReadService
     }
 
     /** @return array{assumptions: array<string, mixed>, clients: list<array<string, mixed>>, totals: array<string, int>} */
-    public function clients(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query): array
+    public function clients(User|AgentPrincipal $user, Workspace $workspace, RevenueQuery $query, bool $withLedgers = true): array
     {
         [$assumptions, $clientId] = $this->context($user, $workspace, $query);
         $inputs = $this->projectionInputs->load($workspace, $assumptions->asOf);
@@ -105,7 +105,7 @@ final class RevenueReadService
             $inputs = $inputs->forClient($clientId);
             $actuals = $actuals->forClient($clientId);
         }
-        $roster = $this->summaries->clients($actuals, $inputs, $assumptions, $this->ledgers->inForce($workspace, $inputs));
+        $roster = $this->summaries->clients($actuals, $inputs, $assumptions, $withLedgers ? $this->ledgers->inForce($workspace, $inputs) : $this->ledgers->unread($inputs));
 
         return [
             'assumptions' => $assumptions->toArray(),

@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { ClientRoster } from '@/components/revenue/client-roster';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -119,7 +120,31 @@ function CompanyRowCells({
 export default function ClientIndex({
     workspace,
     companies,
+    roster,
+    health,
 }: ClientIndexProps) {
+    if (roster !== undefined) {
+        // Owners and admins: the revenue roster. The key is absent for anyone
+        // else, who keeps the plain list below.
+        return (
+            <WorkspaceShell activeSection="clients">
+                <Head title={`${workspace.name} clients`} />
+                <main
+                    className={cn(
+                        SHELL_CONTAINER,
+                        'grid grid-cols-1 gap-6 py-6',
+                    )}
+                    data-appearance-bridge
+                >
+                    <h1 className="text-[17px] font-semibold tracking-tight md:text-lg">
+                        Clients
+                    </h1>
+                    <ClientRoster roster={roster} health={health} />
+                </main>
+            </WorkspaceShell>
+        );
+    }
+
     return (
         <WorkspaceShell activeSection="clients">
             <Head title={`${workspace.name} clients`} />

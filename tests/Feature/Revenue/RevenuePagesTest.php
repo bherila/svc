@@ -5,8 +5,11 @@ namespace Tests\Feature\Revenue;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Services\Revenue\RevenueReadService;
+use App\Support\AgentApi\ProjectRole;
 use App\Support\Revenue\RevenueQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
@@ -205,5 +208,101 @@ final class RevenuePagesTest extends TestCase
         $this->assertSame($path, $props['clear_month_href']);
         $this->assertContains($mine['october']->public_id, array_column($props['invoices'], 'id'));
         $this->assertLessThan(count($this->actingAs($mine['owner'])->get($path)->viewData('page')['props']['invoices']), count($props['invoices']));
+    }
+
+    // ---- Client roster ----
+
+    public function test_an_owner_gets_the_revenue_roster_with_the_server_filtered_totals(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $path = "/workspaces/{$mine['workspace']->public_id}/clients";
+
+        $this->actingAs($mine['owner'])->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('clients/index')
+            ->where('roster.href', $path)
+            ->where('roster.filters', ['q' => '', 'filter' => 'all', 'sort' => 'name', 'dir' => 'asc'])
+            ->where('roster.total_count', 3)
+            ->has('roster.clients', 3)
+            ->where('roster.clients.0.name', 'Synthetic Alpha mine')
+            ->where('roster.clients.0.href', "{$path}/{$mine['alpha']->public_id}")
+            ->has('roster.clients.0.ttm.series', 12)
+            ->where('roster.clients.2.ending_soon', true)
+            ->has('roster.totals.mrr')
+            ->missing('health'));
+
+        $filtered = $this->actingAs($mine['owner'])->get($path.'?filter=ending_soon&q=gamma&sort=mrr&dir=desc')->assertOk()->viewData('page')['props']['roster'];
+        $this->assertSame(['Synthetic Gamma mine'], array_column($filtered['clients'], 'name'));
+        $this->assertSame($filtered['clients'][0]['mrr'], $filtered['totals']['mrr']);
+        $this->assertSame(3, $filtered['total_count']);
+    }
+
+    public function test_the_retainer_meters_follow_the_first_paint_and_come_from_the_ledgers(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $path = "/workspaces/{$mine['workspace']->public_id}/clients";
+
+        $page = $this->actingAs($mine['owner'])->get($path)->assertOk()->viewData('page');
+        $this->assertSame(['health'], $page['deferredProps']['default']);
+
+        $health = $this->actingAs($mine['owner'])->withHeaders($this->partial('clients/index', 'health'))->get($path)->assertOk()->json('props.health');
+        $this->assertSame('ok', $health[$mine['alpha']->public_id]['status']);
+        $this->assertSame(600, $health[$mine['alpha']->public_id]['minutes_included']);
+        $this->assertSame('none', $health[$mine['beta']->public_id]['status'], 'An agreement that has not started has no ledger period yet.');
+        $this->assertArrayHasKey('over_retainer', $health[$mine['alpha']->public_id]);
+    }
+
+    public function test_filtering_to_over_retainer_reads_the_meters_up_front(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+
+        $props = $this->actingAs($mine['owner'])->get("/workspaces/{$mine['workspace']->public_id}/clients?filter=over_retainer")->assertOk()->viewData('page');
+
+        $this->assertArrayHasKey('health', $props['props']);
+        $this->assertArrayNotHasKey('deferredProps', $props);
+    }
+
+    public function test_a_member_keeps_the_plain_list_and_sees_no_revenue_roster(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $member = $this->member($mine);
+        $project = ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => 'Synthetic Alpha project', 'status' => 'active']);
+        ClientProjectMembership::query()->create(['workspace_id' => $mine['workspace']->id, 'client_project_id' => $project->id, 'user_id' => $member->id, 'role' => ProjectRole::Contributor->value]);
+
+        $response = $this->actingAs($member)->get("/workspaces/{$mine['workspace']->public_id}/clients?filter=all")->assertOk();
+
+        $response->assertInertia(fn (Assert $page) => $page->has('companies', 1)->missing('roster')->missing('health'));
+        foreach (['"mrr"', '"ytd"', 'Synthetic Gamma mine', 'overdue_amount'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, (string) $response->getContent());
+        }
+    }
+
+    public function test_another_workspaces_clients_never_reach_the_roster(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $theirs = $this->revenueWorkspace('theirs', 7);
+
+        $response = $this->actingAs($mine['owner'])->get("/workspaces/{$mine['workspace']->public_id}/clients")->assertOk();
+
+        $this->assertInertiaPayloadOmits($response, ['theirs', $theirs['alpha']->public_id, '700000'], 'Synthetic Alpha mine');
+    }
+
+    public function test_the_roster_does_not_query_once_per_client_or_agreement(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $n = 0;
+
+        $this->assertQueryCountIndependentOfRows(
+            fn () => $this->actingAs($mine['owner'])->get("/workspaces/{$mine['workspace']->public_id}/clients")->assertOk(),
+            function () use ($mine, &$n): void {
+                for ($i = 0; $i < 6; $i++) {
+                    $n++;
+                    $company = ClientCompany::query()->create(['workspace_id' => $mine['workspace']->id, 'name' => "Bulk Client {$n}", 'slug' => "bulk-client-{$n}"]);
+                    ClientAgreement::query()->create([
+                        'workspace_id' => $mine['workspace']->id, 'client_company_id' => $company->id, 'title' => "Bulk {$n}", 'status' => 'active', 'currency' => 'USD',
+                        'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'retainer_amount' => 10000, 'retainer_minutes' => 600,
+                    ]);
+                }
+            },
+        );
     }
 }

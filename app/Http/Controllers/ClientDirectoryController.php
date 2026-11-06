@@ -36,6 +36,7 @@ use App\Services\Files\AttachmentFilePage;
 use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Finance\FinanceReconciliationBadges;
+use App\Services\Revenue\RevenueReadService;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Tasks\Planning\TaskPlanningDetailsLoader;
 use App\Services\Tasks\Planning\TaskPlanningDetailsPresenter;
@@ -63,6 +64,8 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Files\AttachmentListing;
+use App\Support\Revenue\ClientRosterView;
+use App\Support\Revenue\RevenueQuery;
 use App\Support\Revenue\ServiceMonth;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -91,7 +94,7 @@ class ClientDirectoryController extends Controller
 {
     public function __construct(private readonly AgreementReadPresenter $agreements) {}
 
-    public function index(Request $request, Workspace $workspace, ProjectAccess $access): Response
+    public function index(Request $request, Workspace $workspace, ProjectAccess $access, RevenueReadService $revenue): Response
     {
         Gate::authorize('view', $workspace);
 
@@ -130,6 +133,7 @@ class ClientDirectoryController extends Controller
 
         $companies = $this->reachable($companies, $access->reachableCompanyIds($user, $workspace));
         $retainers = $this->retainerUsage($workspace, $companies);
+        $manages = Gate::forUser($user)->allows('manage', $workspace);
 
         return Inertia::render('clients/index', [
             'workspace' => AgentWorkspacePresenter::identity($workspace),
@@ -140,7 +144,44 @@ class ClientDirectoryController extends Controller
                 'open_invoice_count' => (int) $company->getAttribute('open_invoice_count'),
                 'retainer' => $retainers[$company->id] ?? null,
             ])->values()->all(),
+            // Owners and admins get the revenue roster (docs/ux-overhaul.md
+            // section 3); the key is absent for anyone else, who keeps the
+            // plain list above. Searching, filtering and sorting are asked of
+            // the server by query string, so the totals row is the server's.
+            ...($manages ? $this->rosterProps($request, $workspace, $user, $revenue) : []),
         ]);
+    }
+
+    /**
+     * The roster and its retainer meters.
+     *
+     * The meters come from the capacity ledgers, which cost queries per
+     * agreement, so they are a deferred prop: the table paints with every
+     * revenue figure and the meters follow. Filtering to "over retainer"
+     * needs them to decide the rows, so that one filter reads them up front.
+     *
+     * @return array<string, mixed>
+     */
+    private function rosterProps(Request $request, Workspace $workspace, User $user, RevenueReadService $revenue): array
+    {
+        $view = ClientRosterView::fromInput($request->query());
+        $upFront = $view->filter === 'over_retainer';
+        $read = $revenue->clients($user, $workspace, new RevenueQuery, withLedgers: $upFront);
+        $rows = $view->apply($read['clients'], fn (string $clientId): string => route('clients.show', [$workspace, $clientId], absolute: false));
+
+        return [
+            'roster' => [
+                'href' => route('clients.index', $workspace, absolute: false),
+                'filters' => $view->toArray(),
+                'currency' => $read['assumptions']['currency'],
+                'as_of' => $read['assumptions']['as_of'],
+                'total_count' => count($read['clients']),
+                ...$rows,
+            ],
+            'health' => $upFront
+                ? ClientRosterView::healthByClient($read['clients'])
+                : Inertia::defer(fn (): array => ClientRosterView::healthByClient($revenue->clients($user, $workspace, new RevenueQuery)['clients'])),
+        ];
     }
 
     /**
