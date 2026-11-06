@@ -224,6 +224,85 @@ changes out of the filter would never be delivered again, and `overdue` changes
 as the date passes without the invoice changing at all. Sync without them and
 filter the synced records.
 
+## Accounting reads
+
+For bookkeeping and tax software. Three reads under `finance:read`, plus a CSV
+download, all for workspace **owners and admins only** (a member, including one
+holding the Sanctum finance token, is refused with 403) and all scoped to the
+workspace. Money is signed integer minor units of the workspace's single
+currency. Everything is computed in the request; nothing is queued or stored.
+The schemas are in the OpenAPI document; MCP tools of the same names (all but
+the CSV) are in the `finance` toolset.
+
+### Invoice lines with tax broken out
+
+`GET /api/v1/workspaces/{workspace}/invoice-lines` (`finance.invoice_lines.list`)
+
+A ledger of entries, never edits:
+
+| `entry_type` | What it records | Amounts |
+| --- | --- | --- |
+| `invoice_line` | a line of an issued invoice, as issued (corrections rolled back) | the line's `net_amount`, `tax_amount`, `total_amount` |
+| `correction` | the money change of an in-place correction (`invoices.correct`) | signed change; a wording-only correction is no entry |
+| `void` | each line of a voided invoice | the line's amounts negated |
+
+`correction` and `void` entries carry the issued line's id in
+`reverses_entry_id` (a correction also its `correction_id`), so summing the
+entries of one `line_id` gives what the line stands for now. A credit is a
+negative line of the invoice it applies to. Each entry has `taxable`,
+`tax_rate` (the effective tax over the net to four places, as lines store a tax
+amount and not a rate; `null` when untaxed), `line_type` (the stored token, to
+map from) and `line_type_label` (to display), the invoice's service period,
+and `client_id` and `project_id` public ids. `effective_on` is the invoice's
+issue date, or for a correction and a void the day recorded in the workspace
+calendar. Drafts are no entries.
+
+Filters: `entry_type`, `client_id`, `invoice_id`, and `from`/`to` on
+`effective_on`.
+
+### Cash-basis income
+
+`GET /api/v1/workspaces/{workspace}/cash-income` (`finance.cash_income.list`)
+
+`payment` entries for received payments (succeeded, refunded or disputed) with
+the processor `fee_minor` where reported, and the signed entries bound to the
+same `payment_id`: refunds recorded by hand (`refund`, and `refund_reversal`
+naming the refund), and the processor's `refund`, `refund_reversal`,
+`dispute_debit`, `dispute_credit`, `fee` and `fee_reversal`, which reuse
+[`finance.processor_movements.list`](#signed-processor-movements). Payouts and
+allocations stay on `finance.payouts.list` and `finance.invoice_payments.list`.
+`effective_on` is the received date, the day a hand-recorded refund was
+recorded in the workspace calendar, or the movement's occurrence date. A
+processor refund not yet reported as a movement has no date and is not an
+entry; the payment's `refunded_amount_minor` still shows it. Payments carry a
+`version`; deduplicate them by `(id, version)`.
+
+Filters: `entry_type`, `client_id`, `invoice_id`, and `from`/`to` on
+`effective_on`; the dates are refused beside `updated_since`/`watermark`
+because a payment's received date can be corrected.
+
+### Incremental sync
+
+Both lists work as the [change feeds](#incremental-sync) above: newest entry
+first, 50 a page (at most 100), `updated_since` (inclusive), `watermark` and an
+opaque `cursor` carrying the last entry's timestamp and ids. A correction made
+after a sync appears on the next one, as a new entry.
+
+### Yearly income export
+
+`GET /api/v1/workspaces/{workspace}/income-export?year=2030` (`finance.income_export.get`, JSON)
+`GET /api/v1/workspaces/{workspace}/income-export/csv?year=2030` (`finance.income_export.csv`, streamed CSV)
+
+Twelve months and a total: `invoiced_net_minor`, `invoiced_tax_minor`,
+`invoiced_total_minor`, `expenses_passed_through_minor` (the net of expense
+lines billed at cost, part of the invoiced net), `cash_received_minor`,
+`refunds_minor`, `disputes_minor`, `fees_minor` and `net_cash_minor` (received
+plus refunds plus disputes less fees). The figures are the two lists summed by
+the month of each entry's `effective_on`, so a correction, void or refund
+counts in the month it was recorded. An `assumptions` block gives `as_of`, the
+timezone, how entries are placed and the method version. The CSV is a header,
+twelve month rows and a `total` row of the same integers.
+
 ## Signed processor movements
 
 `finance.processor_movements.list` (`GET /api/v1/workspaces/{workspace}/processor-movements`)

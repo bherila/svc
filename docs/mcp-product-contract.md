@@ -88,7 +88,7 @@ The resource families have these responsibilities:
 
 **`payments`:** Received-payment reads and deliberate bookkeeping of receipts, corrections, status changes, returned money and reversal of an erroneous refund record; no provider transaction is initiated. See the [inventory](mcp.md#public-capability-inventory).
 
-**`finance`:** Manager payment-allocation, payout and processor-movement reads and reconciliation writes under separate finance scopes. See the [inventory](mcp.md#public-capability-inventory).
+**`finance`:** Manager payment-allocation, payout and processor-movement reads, the accounting reads (invoice lines with tax, cash-basis income, the yearly income export) and reconciliation writes under separate finance scopes. See the [inventory](mcp.md#public-capability-inventory).
 
 **`revenue`:** Manager planning reads under `revenue:read`, which `finance:read` does not imply: key figures, monthly actuals by client and band, the per-agreement projection and the client roster with agreement health, each with its assumptions. See [Revenue planning reads](mcp.md#revenue-planning-reads).
 

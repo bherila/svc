@@ -1006,6 +1006,41 @@
             "mcp.switch:expenses.update"
         ]
     },
+    "finance.cash_income.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.cash_income.list"
+        ]
+    },
+    "finance.income_export.csv": {
+        "scopes": [
+            "finance:read"
+        ]
+    },
+    "finance.income_export.get": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.income_export.get"
+        ]
+    },
+    "finance.invoice_lines.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.invoice_lines.list"
+        ]
+    },
     "finance.invoice_payments.list": {
         "scopes": [
             "finance:read"

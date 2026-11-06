@@ -261,6 +261,7 @@ final class AgentRestDocumentation
             ...TaskPlanningOperations::documentation(),
             ...SquareCoveredPaymentOperations::documentation(),
             ...RevenueOperations::documentation(),
+            ...AccountingOperations::documentation(),
             ...AttachmentSharingOperations::documentation(),
             ...self::collaborationOperations(),
             'agreements.activate' => [

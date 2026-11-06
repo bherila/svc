@@ -2,6 +2,7 @@
 
 namespace App\Services\AgentApi\Operations;
 
+use App\Services\Mcp\AgentMcpAccountingTools;
 use App\Services\Mcp\AgentMcpAgreementResource;
 use App\Services\Mcp\AgentMcpAgreementTools;
 use App\Services\Mcp\AgentMcpAttachmentSharingTools;
@@ -74,6 +75,7 @@ final class AgentOperationCatalog
         ...AttachmentSharingOperations::ROUTES,
         ...SquareCoveredPaymentOperations::ROUTES,
         ...RevenueOperations::ROUTES,
+        ...AccountingOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -272,7 +274,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools(), ...$this->toolsetTools());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->accountingTools(), ...$this->revenueTools(), ...$this->toolsetTools());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1781,6 +1783,27 @@ final class AgentOperationCatalog
                 extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
             );
         }
+
+        return $operations;
+    }
+
+    /**
+     * The accounting reads for bookkeeping and tax software (docs/ux-overhaul.md
+     * section 13), for workspace managers under `finance:read`, so the
+     * `finance` toolset offers them with the rest of the finance reads. Reads
+     * only, behind no write cutover; the MCP switches can still withhold the
+     * tools. The CSV download is REST only.
+     *
+     * @return list<Operation>
+     */
+    private function accountingTools(): array
+    {
+        $operations = [];
+        foreach (AccountingOperations::DEFINITIONS as $id => [$handler, $title]) {
+            $operations[] = $this->tool($id, $title, self::documented($id), [AgentMcpAccountingTools::class, $handler], Effect::Read, true, 'mcp.read', manager: true);
+        }
+        $this->managerOnly['finance.income_export.csv'] = true;
+        $operations[] = $this->restOperation('finance.income_export.csv', 'Download the yearly income as CSV', Effect::Download);
 
         return $operations;
     }

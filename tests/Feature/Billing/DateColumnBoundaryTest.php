@@ -311,6 +311,10 @@ final class DateColumnBoundaryTest extends TestCase
                 '(string) $query->arrivalFrom', '(string) $query->arrivalTo',
                 '$query->occurredFrom', '$query->occurredTo',
             ],
+            // AccountingFeedQuery::fromInput() validates both bounds with date_format:Y-m-d; they are
+            // the readonly `$query->from` and `$query->to`, read into locals before the query.
+            'app/Services/Accounting/InvoiceLineFeedSources.php' => ['$from', '$to'],
+            'app/Services/Accounting/CashIncomeFeedSources.php' => ['$from', '$to'],
         ];
 
         $columns = implode('|', array_map(static fn (string $column): string => preg_quote($column, '/'), self::dateOnlyColumns()));

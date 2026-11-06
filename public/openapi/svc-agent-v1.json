@@ -8191,6 +8191,531 @@
                 "x-mcp-tool": "expenses.unapprove"
             }
         },
+        "/workspaces/{workspace}/cash-income": {
+            "get": {
+                "operationId": "finance.cash_income.list",
+                "description": "Income received, as an append-only ledger of cash entries. An entry_type payment entry is a payment that was received (succeeded, refunded or disputed; never a pending, failed or canceled one) for its whole amount_minor on its received date, with its processor fee_minor where the processor has reported one, its method, its provider (null when recorded by hand) and its refunded_amount_minor so far. Money that leaves a payment later is its own signed entry bound to the same payment_id: a refund recorded by hand (refund, negative) and the reversal of one recorded in error (refund_reversal, positive, naming the refund in reverses_entry_id), or a refund, dispute or fee the processor reported (refund, refund_reversal, dispute_debit, dispute_credit, fee, fee_reversal, with fee_minor its signed expense). net_minor is amount_minor less fee_minor. effective_on is the received date for a payment, the day it was recorded in the workspace calendar for a refund recorded by hand, and the occurrence date for a processor movement. These reuse finance.invoice_payments.list and finance.processor_movements.list, which stay the way to read allocations, payouts and the processor's own detail. A processor refund the processor has not reported as a movement has no date and is not an entry, but still shows in the payment's refunded_amount_minor. A payment entry carries a version that moves when the payment is corrected or refunded; deduplicate payments by (id, version) and the rest by id. Newest entry first (when it was recorded, then its source and ids), 50 a page unless per_page is (at most 100). Always a cursor listing inside a snapshot watermark: the first page of a pass fixes the watermark (now less 120 seconds, or an earlier time given) and every page returns it in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Consecutive passes overlap by design: deduplicate by id. A cursor from another workspace, query or watermark is refused with 422. A payment's received date can be corrected, so from and to (on effective_on) are refused beside updated_since or watermark; entry_type, client_id and invoice_id may be combined with them. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "entry_type",
+                        "in": "query",
+                        "description": "Only entries of this type.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "payment",
+                                "refund",
+                                "refund_reversal",
+                                "dispute_debit",
+                                "dispute_credit",
+                                "fee",
+                                "fee_reversal"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "client_id",
+                        "in": "query",
+                        "description": "One client of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "invoice_id",
+                        "in": "query",
+                        "description": "One invoice of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "description": "Only entries effective on or after this date.",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "description": "Only entries effective on or before this date.",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List cash-basis income entries",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceCashEntryListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks finance:read, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "finance.cash_income.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "finance.cash_income.list"
+            }
+        },
+        "/workspaces/{workspace}/income-export/csv": {
+            "get": {
+                "operationId": "finance.income_export.csv",
+                "description": "The figures of finance.income_export.get for one calendar year (year) as a CSV download: a header row, one row per month and a total row, every amount an integer in minor units. Computed in the request and streamed. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "year",
+                        "in": "query",
+                        "required": true,
+                        "description": "The calendar year.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 2000,
+                            "maximum": 2100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A CSV file with one row per month and a total row",
+                        "content": {
+                            "text/csv": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks finance:read, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "download",
+                "x-agent-idempotent": true,
+                "x-svc-flags": []
+            }
+        },
+        "/workspaces/{workspace}/income-export": {
+            "get": {
+                "operationId": "finance.income_export.get",
+                "description": "One calendar year (year) of income by month, in the workspace calendar, summed from the same entries finance.invoice_lines.list and finance.cash_income.list return so it cannot disagree with them. Per month: invoiced_net_minor and invoiced_tax_minor (tax apart from the net) and invoiced_total_minor, of which expenses_passed_through_minor is the net of expense lines billed at cost; cash_received_minor; refunds_minor (refunds net of their reversals, negative); disputes_minor; fees_minor (the processor's signed expense); and net_cash_minor (received plus refunds plus disputes less fees). Corrections, voids and refunds count in the month they were recorded, not in the month of the invoice or payment they reverse. The same figures are totalled for the year. The assumptions block says how entries are placed and the method version. Returns JSON; the REST route finance.income_export.csv streams the same figures as CSV. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "year",
+                        "in": "query",
+                        "required": true,
+                        "description": "The calendar year.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 2000,
+                            "maximum": 2100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Read a calendar year of income by month",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceIncomeExportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks finance:read, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "finance.income_export.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "finance.income_export.get"
+            }
+        },
+        "/workspaces/{workspace}/invoice-lines": {
+            "get": {
+                "operationId": "finance.invoice_lines.list",
+                "description": "The lines of every issued invoice with tax broken out, as an append-only ledger. An entry_type invoice_line entry is a line as it was issued: net_amount (before its own tax), tax_amount, total_amount, taxable, tax_rate (the effective tax over the net to four places, since a line stores a tax amount and not a rate; null when untaxed), line_type (the stored token, to map from) and line_type_label (to display), the invoice's service period, and the client_id and project_id (null for a line with no project) public ids. An issued line is never rewritten in this feed. A correction to an unpaid issued invoice (invoices.correct) arrives as a new entry_type correction whose signed amounts are the change it made (a wording-only correction changes no money and arrives as nothing), and a void as one entry_type void per line with the line's amounts negated. Each names the invoice_line entry it reverses in reverses_entry_id, and a correction its correction_id (invoices.corrections.get). Summing the entries of one line gives what the line stands for now. A credit is a negative line of the invoice it applies to. effective_on is the invoice's issue date for a line, and the day it was recorded in the workspace calendar for a correction or a void. A draft is no entry, and an invoice reopened for reissue is a draft until it is issued again. Newest entry first (when it was recorded, then its source and ids), 50 a page unless per_page is (at most 100). Always a cursor listing inside a snapshot watermark: the first page of a pass fixes the watermark (now less 120 seconds, or an earlier time given) and every page returns it in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Consecutive passes overlap by design: deduplicate by id. A cursor from another workspace, query or watermark is refused with 422. Entries never change, so entry_type, client_id, invoice_id and from/to (on effective_on) may all be combined with updated_since. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "entry_type",
+                        "in": "query",
+                        "description": "Only entries of this type.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "invoice_line",
+                                "correction",
+                                "void"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "client_id",
+                        "in": "query",
+                        "description": "One client of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "invoice_id",
+                        "in": "query",
+                        "description": "One invoice of the workspace.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "description": "Only entries effective on or after this date.",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "description": "Only entries effective on or before this date.",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List invoice line entries with tax broken out",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceInvoiceLineEntryListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks finance:read, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it, or client_id names no client of this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "finance.invoice_lines.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "finance.invoice_lines.list"
+            }
+        },
         "/workspaces/{workspace}/invoice-payments": {
             "get": {
                 "operationId": "finance.invoice_payments.list",
@@ -22067,6 +22592,471 @@
                         "format": "uuid"
                     }
                 }
+            },
+            "FinanceCashEntry": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "version": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "entry_type": {
+                        "type": "string",
+                        "enum": [
+                            "payment",
+                            "refund",
+                            "refund_reversal",
+                            "dispute_debit",
+                            "dispute_credit",
+                            "fee",
+                            "fee_reversal"
+                        ]
+                    },
+                    "entry_type_label": {
+                        "type": "string"
+                    },
+                    "recorded_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "amount_minor": {
+                        "type": "integer"
+                    },
+                    "fee_minor": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "net_minor": {
+                        "type": "integer"
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency"
+                    },
+                    "payment_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "reverses_entry_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "invoice_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "invoice_number": {
+                        "type": "string"
+                    },
+                    "client_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "provider": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "stripe",
+                            "square",
+                            null
+                        ]
+                    },
+                    "method": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status_label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "refunded_amount_minor": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "needs_review": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "id",
+                    "version",
+                    "entry_type",
+                    "entry_type_label",
+                    "recorded_at",
+                    "effective_on",
+                    "amount_minor",
+                    "fee_minor",
+                    "net_minor",
+                    "currency",
+                    "payment_id",
+                    "reverses_entry_id",
+                    "invoice_id",
+                    "invoice_number",
+                    "client_id",
+                    "provider",
+                    "method",
+                    "status_label",
+                    "refunded_amount_minor",
+                    "needs_review"
+                ],
+                "description": "One entry of the cash-income ledger. Amounts are signed integer minor units: money in is positive, money out negative; fee_minor is the processor's signed expense."
+            },
+            "FinanceCashEntryListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FinanceCashEntry"
+                        }
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/ChangeFeedMeta"
+                    }
+                },
+                "required": [
+                    "data",
+                    "meta"
+                ]
+            },
+            "FinanceIncomeAssumptions": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "as_of": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "timezone": {
+                        "type": "string"
+                    },
+                    "invoiced_placement": {
+                        "type": "string"
+                    },
+                    "cash_placement": {
+                        "type": "string"
+                    },
+                    "method_version": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "as_of",
+                    "timezone",
+                    "invoiced_placement",
+                    "cash_placement",
+                    "method_version"
+                ]
+            },
+            "FinanceIncomeExport": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "year": {
+                        "type": "integer"
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency"
+                    },
+                    "months": {
+                        "type": "array",
+                        "minItems": 12,
+                        "maxItems": 12,
+                        "items": {
+                            "$ref": "#/components/schemas/FinanceIncomeMonth"
+                        }
+                    },
+                    "totals": {
+                        "$ref": "#/components/schemas/FinanceIncomeFigures"
+                    },
+                    "assumptions": {
+                        "$ref": "#/components/schemas/FinanceIncomeAssumptions"
+                    }
+                },
+                "required": [
+                    "year",
+                    "currency",
+                    "months",
+                    "totals",
+                    "assumptions"
+                ]
+            },
+            "FinanceIncomeExportResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/FinanceIncomeExport"
+                    }
+                },
+                "required": [
+                    "data"
+                ]
+            },
+            "FinanceIncomeFigures": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "invoiced_net_minor": {
+                        "type": "integer"
+                    },
+                    "invoiced_tax_minor": {
+                        "type": "integer"
+                    },
+                    "invoiced_total_minor": {
+                        "type": "integer"
+                    },
+                    "expenses_passed_through_minor": {
+                        "type": "integer"
+                    },
+                    "cash_received_minor": {
+                        "type": "integer"
+                    },
+                    "refunds_minor": {
+                        "type": "integer"
+                    },
+                    "disputes_minor": {
+                        "type": "integer"
+                    },
+                    "fees_minor": {
+                        "type": "integer"
+                    },
+                    "net_cash_minor": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "invoiced_net_minor",
+                    "invoiced_tax_minor",
+                    "invoiced_total_minor",
+                    "expenses_passed_through_minor",
+                    "cash_received_minor",
+                    "refunds_minor",
+                    "disputes_minor",
+                    "fees_minor",
+                    "net_cash_minor"
+                ]
+            },
+            "FinanceIncomeMonth": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "month": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$"
+                    },
+                    "invoiced_net_minor": {
+                        "type": "integer"
+                    },
+                    "invoiced_tax_minor": {
+                        "type": "integer"
+                    },
+                    "invoiced_total_minor": {
+                        "type": "integer"
+                    },
+                    "expenses_passed_through_minor": {
+                        "type": "integer"
+                    },
+                    "cash_received_minor": {
+                        "type": "integer"
+                    },
+                    "refunds_minor": {
+                        "type": "integer"
+                    },
+                    "disputes_minor": {
+                        "type": "integer"
+                    },
+                    "fees_minor": {
+                        "type": "integer"
+                    },
+                    "net_cash_minor": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "month",
+                    "invoiced_net_minor",
+                    "invoiced_tax_minor",
+                    "invoiced_total_minor",
+                    "expenses_passed_through_minor",
+                    "cash_received_minor",
+                    "refunds_minor",
+                    "disputes_minor",
+                    "fees_minor",
+                    "net_cash_minor"
+                ]
+            },
+            "FinanceInvoiceLineEntry": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "entry_type": {
+                        "type": "string",
+                        "enum": [
+                            "invoice_line",
+                            "correction",
+                            "void"
+                        ]
+                    },
+                    "entry_type_label": {
+                        "type": "string"
+                    },
+                    "recorded_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "reverses_entry_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "correction_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "invoice_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "invoice_number": {
+                        "type": "string"
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency"
+                    },
+                    "client_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "project_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "line_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "line_type": {
+                        "type": "string"
+                    },
+                    "line_type_label": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "net_amount": {
+                        "type": "integer"
+                    },
+                    "tax_amount": {
+                        "type": "integer"
+                    },
+                    "total_amount": {
+                        "type": "integer"
+                    },
+                    "tax_rate": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^\\d+\\.\\d{4}$"
+                    },
+                    "taxable": {
+                        "type": "boolean"
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    }
+                },
+                "required": [
+                    "id",
+                    "entry_type",
+                    "entry_type_label",
+                    "recorded_at",
+                    "effective_on",
+                    "reverses_entry_id",
+                    "correction_id",
+                    "invoice_id",
+                    "invoice_number",
+                    "currency",
+                    "client_id",
+                    "project_id",
+                    "line_id",
+                    "line_type",
+                    "line_type_label",
+                    "description",
+                    "net_amount",
+                    "tax_amount",
+                    "total_amount",
+                    "tax_rate",
+                    "taxable",
+                    "service_period_start",
+                    "service_period_end"
+                ],
+                "description": "One entry of the invoice-line ledger. Amounts are signed integer minor units; a correction or void entry is the signed change, and names the invoice_line entry it reverses."
+            },
+            "FinanceInvoiceLineEntryListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FinanceInvoiceLineEntry"
+                        }
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/ChangeFeedMeta"
+                    }
+                },
+                "required": [
+                    "data",
+                    "meta"
+                ]
             },
             "FinanceInvoicePayment": {
                 "type": "object",

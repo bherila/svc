@@ -509,7 +509,10 @@ see the read-only `square.*` pass-through tools described under
 [Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
 `finance:read` also see `finance.invoice_payments.list`,
 `finance.payouts.list` and `finance.processor_movements.list`, described under
-[Finance reconciliation](#finance-reconciliation-457). Managers holding
+[Finance reconciliation](#finance-reconciliation-457), and the accounting reads
+`finance.invoice_lines.list`, `finance.cash_income.list` and
+`finance.income_export.get`, described under
+[Accounting reads](#accounting-reads-for-bookkeeping-and-tax-software). Managers holding
 `revenue:read` also see `revenue.summary`, `revenue.monthly`,
 `revenue.projection` and `revenue.clients`, described under
 [Revenue planning reads](#revenue-planning-reads).
@@ -1211,6 +1214,36 @@ All paths start with `/api/v1/workspaces/{workspace}`:
   each in-force agreement's capacity ledger for its health, reporting
   `ledger_status: ledger_unreadable` rather than failing when one refuses.
   Everything runs in the request.
+
+### Accounting reads for bookkeeping and tax software
+
+`finance.invoice_lines.list`, `finance.cash_income.list` and
+`finance.income_export.get` are the accounting reads of [the UX
+overhaul](ux-overhaul.md) (section 13), declared by `AccountingOperations`,
+served through `AgentMcpAccountingTools` (each tool dispatches to its REST route)
+and gated by `finance:read`, so the progressive-discovery `finance` toolset offers
+them with the other finance reads. Unlike `finance.invoice_payments.list` they
+are for workspace owners and admins only, whatever the door: a member holding
+the Sanctum finance token is refused with 403. REST has a fourth route,
+`finance.income_export.csv` (`GET .../income-export/csv?year=`), which streams
+the export as a CSV download and has no tool. Full contract:
+[Accounting reads](finance-api.md#accounting-reads).
+
+- **Append-only.** An invoice line is one `invoice_line` entry, as it was
+  issued. An in-place correction (`invoices.correct`) arrives later as a new
+  `correction` entry whose signed amounts are the change, and a void as one
+  `void` entry per line with its amounts negated; both name the entry they
+  reverse in `reverses_entry_id`. Cash is the same: a `payment` entry, and
+  separate signed `refund`, `refund_reversal`, `dispute_*` and `fee*` entries.
+- **Incremental sync.** Newest entry first, 50 a page (at most 100), always a
+  cursor listing inside a snapshot watermark: follow `meta.next_cursor` until
+  null, then start the next pass with `updated_since` set to the returned
+  `watermark` (inclusive; passes overlap, so deduplicate by `id`, payments by
+  `id` and `version`). The cursor is opaque and encrypted, carries the last
+  entry's timestamp and ids so entries sharing a second are never skipped or
+  repeated, and is bound to its workspace and query.
+- **Computed in the request.** Nothing is stored or queued; the yearly export is
+  summed from the same entries, so it cannot disagree with them.
 
 ### Changing a due date or scheduled issue date
 

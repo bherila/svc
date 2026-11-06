@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentAccountingController;
 use App\Http\Controllers\Api\V1\AgentAttachmentSharingController;
 use App\Http\Controllers\Api\V1\AgentBillingAuditController;
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
@@ -388,6 +389,10 @@ Route::prefix('v1')
         // write's audit - reaches a tenant the caller is not in.
         foreach (['finance.invoice_payments.list' => 'index', 'finance.payouts.list' => 'payouts', 'finance.processor_movements.list' => 'movements'] as $operationId => $action) {
             $workspaceOperation($operationId, [FinanceReconciliationController::class, $action]);
+        }
+        // The accounting reads for bookkeeping and tax software: owners/admins only, whatever the door.
+        foreach (['finance.invoice_lines.list' => 'invoiceLines', 'finance.cash_income.list' => 'cashIncome', 'finance.income_export.get' => 'incomeExport', 'finance.income_export.csv' => 'incomeExportCsv'] as $operationId => $action) {
+            $workspaceOperation($operationId, [AgentAccountingController::class, $action]);
         }
         foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy', 'finance.reconciliations.acknowledge' => 'acknowledge'] as $operationId => $action) {
             $workspaceOperation($operationId, [FinanceReconciliationController::class, $action])

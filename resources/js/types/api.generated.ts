@@ -1129,6 +1129,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/cash-income': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Income received, as an append-only ledger of cash entries. An entry_type payment entry is a payment that was received (succeeded, refunded or disputed; never a pending, failed or canceled one) for its whole amount_minor on its received date, with its processor fee_minor where the processor has reported one, its method, its provider (null when recorded by hand) and its refunded_amount_minor so far. Money that leaves a payment later is its own signed entry bound to the same payment_id: a refund recorded by hand (refund, negative) and the reversal of one recorded in error (refund_reversal, positive, naming the refund in reverses_entry_id), or a refund, dispute or fee the processor reported (refund, refund_reversal, dispute_debit, dispute_credit, fee, fee_reversal, with fee_minor its signed expense). net_minor is amount_minor less fee_minor. effective_on is the received date for a payment, the day it was recorded in the workspace calendar for a refund recorded by hand, and the occurrence date for a processor movement. These reuse finance.invoice_payments.list and finance.processor_movements.list, which stay the way to read allocations, payouts and the processor's own detail. A processor refund the processor has not reported as a movement has no date and is not an entry, but still shows in the payment's refunded_amount_minor. A payment entry carries a version that moves when the payment is corrected or refunded; deduplicate payments by (id, version) and the rest by id. Newest entry first (when it was recorded, then its source and ids), 50 a page unless per_page is (at most 100). Always a cursor listing inside a snapshot watermark: the first page of a pass fixes the watermark (now less 120 seconds, or an earlier time given) and every page returns it in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Consecutive passes overlap by design: deduplicate by id. A cursor from another workspace, query or watermark is refused with 422. A payment's received date can be corrected, so from and to (on effective_on) are refused beside updated_since or watermark; entry_type, client_id and invoice_id may be combined with them. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored. */
+        get: operations['finance.cash_income.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/income-export/csv': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The figures of finance.income_export.get for one calendar year (year) as a CSV download: a header row, one row per month and a total row, every amount an integer in minor units. Computed in the request and streamed. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored. */
+        get: operations['finance.income_export.csv'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/income-export': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description One calendar year (year) of income by month, in the workspace calendar, summed from the same entries finance.invoice_lines.list and finance.cash_income.list return so it cannot disagree with them. Per month: invoiced_net_minor and invoiced_tax_minor (tax apart from the net) and invoiced_total_minor, of which expenses_passed_through_minor is the net of expense lines billed at cost; cash_received_minor; refunds_minor (refunds net of their reversals, negative); disputes_minor; fees_minor (the processor's signed expense); and net_cash_minor (received plus refunds plus disputes less fees). Corrections, voids and refunds count in the month they were recorded, not in the month of the invoice or payment they reverse. The same figures are totalled for the year. The assumptions block says how entries are placed and the method version. Returns JSON; the REST route finance.income_export.csv streams the same figures as CSV. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored. */
+        get: operations['finance.income_export.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoice-lines': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The lines of every issued invoice with tax broken out, as an append-only ledger. An entry_type invoice_line entry is a line as it was issued: net_amount (before its own tax), tax_amount, total_amount, taxable, tax_rate (the effective tax over the net to four places, since a line stores a tax amount and not a rate; null when untaxed), line_type (the stored token, to map from) and line_type_label (to display), the invoice's service period, and the client_id and project_id (null for a line with no project) public ids. An issued line is never rewritten in this feed. A correction to an unpaid issued invoice (invoices.correct) arrives as a new entry_type correction whose signed amounts are the change it made (a wording-only correction changes no money and arrives as nothing), and a void as one entry_type void per line with the line's amounts negated. Each names the invoice_line entry it reverses in reverses_entry_id, and a correction its correction_id (invoices.corrections.get). Summing the entries of one line gives what the line stands for now. A credit is a negative line of the invoice it applies to. effective_on is the invoice's issue date for a line, and the day it was recorded in the workspace calendar for a correction or a void. A draft is no entry, and an invoice reopened for reissue is a draft until it is issued again. Newest entry first (when it was recorded, then its source and ids), 50 a page unless per_page is (at most 100). Always a cursor listing inside a snapshot watermark: the first page of a pass fixes the watermark (now less 120 seconds, or an earlier time given) and every page returns it in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Consecutive passes overlap by design: deduplicate by id. A cursor from another workspace, query or watermark is refused with 422. Entries never change, so entry_type, client_id, invoice_id and from/to (on effective_on) may all be combined with updated_since. Workspace owners/admins only: a member who is not an owner or admin, including the holder of a Sanctum finance token, is refused with 403. Amounts are signed integer minor units of the workspace currency (a workspace has one). Computed in the request; nothing is stored. */
+        get: operations['finance.invoice_lines.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoice-payments': {
         parameters: {
             query?: never;
@@ -3588,6 +3656,124 @@ export interface components {
             description: string;
             /** Format: uuid */
             project_id?: string | null;
+        };
+        /** @description One entry of the cash-income ledger. Amounts are signed integer minor units: money in is positive, money out negative; fee_minor is the processor's signed expense. */
+        FinanceCashEntry: {
+            id: components['schemas']['Uuid'];
+            version: string | null;
+            /** @enum {string} */
+            entry_type:
+                | 'payment'
+                | 'refund'
+                | 'refund_reversal'
+                | 'dispute_debit'
+                | 'dispute_credit'
+                | 'fee'
+                | 'fee_reversal';
+            entry_type_label: string;
+            /** Format: date-time */
+            recorded_at: string;
+            /** Format: date */
+            effective_on: string;
+            amount_minor: number;
+            fee_minor: number | null;
+            net_minor: number;
+            currency: components['schemas']['Currency'];
+            payment_id: components['schemas']['Uuid'];
+            /** Format: uuid */
+            reverses_entry_id: string | null;
+            invoice_id: components['schemas']['Uuid'];
+            invoice_number: string;
+            client_id: components['schemas']['Uuid'];
+            /** @enum {string|null} */
+            provider: 'stripe' | 'square' | null;
+            method: string | null;
+            status_label: string | null;
+            refunded_amount_minor: number | null;
+            needs_review: boolean;
+        };
+        FinanceCashEntryListResponse: {
+            data: components['schemas']['FinanceCashEntry'][];
+            meta: components['schemas']['ChangeFeedMeta'];
+        };
+        FinanceIncomeAssumptions: {
+            /** Format: date */
+            as_of: string;
+            timezone: string;
+            invoiced_placement: string;
+            cash_placement: string;
+            method_version: number;
+        };
+        FinanceIncomeExport: {
+            year: number;
+            currency: components['schemas']['Currency'];
+            months: components['schemas']['FinanceIncomeMonth'][];
+            totals: components['schemas']['FinanceIncomeFigures'];
+            assumptions: components['schemas']['FinanceIncomeAssumptions'];
+        };
+        FinanceIncomeExportResponse: {
+            data: components['schemas']['FinanceIncomeExport'];
+        };
+        FinanceIncomeFigures: {
+            invoiced_net_minor: number;
+            invoiced_tax_minor: number;
+            invoiced_total_minor: number;
+            expenses_passed_through_minor: number;
+            cash_received_minor: number;
+            refunds_minor: number;
+            disputes_minor: number;
+            fees_minor: number;
+            net_cash_minor: number;
+        };
+        FinanceIncomeMonth: {
+            month: string;
+            invoiced_net_minor: number;
+            invoiced_tax_minor: number;
+            invoiced_total_minor: number;
+            expenses_passed_through_minor: number;
+            cash_received_minor: number;
+            refunds_minor: number;
+            disputes_minor: number;
+            fees_minor: number;
+            net_cash_minor: number;
+        };
+        /** @description One entry of the invoice-line ledger. Amounts are signed integer minor units; a correction or void entry is the signed change, and names the invoice_line entry it reverses. */
+        FinanceInvoiceLineEntry: {
+            id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            entry_type: 'invoice_line' | 'correction' | 'void';
+            entry_type_label: string;
+            /** Format: date-time */
+            recorded_at: string;
+            /** Format: date */
+            effective_on: string;
+            /** Format: uuid */
+            reverses_entry_id: string | null;
+            /** Format: uuid */
+            correction_id: string | null;
+            invoice_id: components['schemas']['Uuid'];
+            invoice_number: string;
+            currency: components['schemas']['Currency'];
+            client_id: components['schemas']['Uuid'];
+            /** Format: uuid */
+            project_id: string | null;
+            line_id: components['schemas']['Uuid'];
+            line_type: string;
+            line_type_label: string;
+            description: string;
+            net_amount: number;
+            tax_amount: number;
+            total_amount: number;
+            tax_rate: string | null;
+            taxable: boolean;
+            /** Format: date */
+            service_period_start: string | null;
+            /** Format: date */
+            service_period_end: string | null;
+        };
+        FinanceInvoiceLineEntryListResponse: {
+            data: components['schemas']['FinanceInvoiceLineEntry'][];
+            meta: components['schemas']['ChangeFeedMeta'];
         };
         FinanceInvoicePayment: {
             /** Format: uuid */
@@ -11216,6 +11402,325 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.cash_income.list': {
+        parameters: {
+            query?: {
+                /** @description Only entries of this type. */
+                entry_type?:
+                    | 'payment'
+                    | 'refund'
+                    | 'refund_reversal'
+                    | 'dispute_debit'
+                    | 'dispute_credit'
+                    | 'fee'
+                    | 'fee_reversal';
+                /** @description One client of the workspace. */
+                client_id?: string;
+                /** @description One invoice of the workspace. */
+                invoice_id?: string;
+                /** @description Only entries effective on or after this date. */
+                from?: string;
+                /** @description Only entries effective on or before this date. */
+                to?: string;
+                per_page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List cash-basis income entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceCashEntryListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks finance:read, or the caller is not a workspace owner or admin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.income_export.csv': {
+        parameters: {
+            query: {
+                /** @description The calendar year. */
+                year: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A CSV file with one row per month and a total row */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'text/csv': string;
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks finance:read, or the caller is not a workspace owner or admin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.income_export.get': {
+        parameters: {
+            query: {
+                /** @description The calendar year. */
+                year: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read a calendar year of income by month */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceIncomeExportResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks finance:read, or the caller is not a workspace owner or admin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.invoice_lines.list': {
+        parameters: {
+            query?: {
+                /** @description Only entries of this type. */
+                entry_type?: 'invoice_line' | 'correction' | 'void';
+                /** @description One client of the workspace. */
+                client_id?: string;
+                /** @description One invoice of the workspace. */
+                invoice_id?: string;
+                /** @description Only entries effective on or after this date. */
+                from?: string;
+                /** @description Only entries effective on or before this date. */
+                to?: string;
+                per_page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List invoice line entries with tax broken out */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceInvoiceLineEntryListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks finance:read, or the caller is not a workspace owner or admin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it, or client_id names no client of this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A parameter is invalid (`errors` names it): an unknown parameter or entry type, a malformed date, to before from, per_page out of range, a watermark in the future, a date filter beside updated_since where it is refused. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
