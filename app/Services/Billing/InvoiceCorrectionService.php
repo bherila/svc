@@ -9,6 +9,7 @@ use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTask;
 use App\Models\Workspace;
+use App\Services\Accounting\InvoiceAccountingJournal;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Square\SquareCollectionGuard;
 use App\Support\Billing\InvoiceLineType;
@@ -119,6 +120,7 @@ final class InvoiceCorrectionService
                 'unit_amount' => (int) $line->unit_amount,
                 'tax_amount' => (int) $line->tax_amount,
             ])->all();
+            app(InvoiceAccountingJournal::class)->ensure($locked);
             $submittedIds = collect($lines)->pluck('id')->sort()->values()->all();
             $existingIds = $existing->keys()->sort()->values()->all();
             if ($submittedIds !== $existingIds) {
@@ -227,6 +229,7 @@ final class InvoiceCorrectionService
             ])->save();
 
             $correction = $this->evidence->append($workspace, $locked, $fromRevision, $reason, $previousDueDate, $changes);
+            app(InvoiceAccountingJournal::class)->correction($locked, $correction);
 
             $this->activities->record(
                 $workspace,

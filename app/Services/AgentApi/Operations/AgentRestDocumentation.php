@@ -257,6 +257,7 @@ final class AgentRestDocumentation
     public static function operations(): array
     {
         return [
+            ...AccountingOperations::documentation(),
             ...TaskOrganizationOperations::documentation(),
             ...TaskPlanningOperations::documentation(),
             ...SquareCoveredPaymentOperations::documentation(),

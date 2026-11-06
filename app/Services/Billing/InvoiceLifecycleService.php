@@ -13,6 +13,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Accounting\InvoiceAccountingJournal;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
@@ -625,6 +626,8 @@ final class InvoiceLifecycleService
                 ...($squareCollected ? ['automatic_delivery_note' => 'Square collects this invoice, so SVC does not email it to the client.'] : []),
             ])->save();
 
+            app(InvoiceAccountingJournal::class)->issued($locked);
+
             foreach ($locked->lines()->with('timeEntries')->get() as $line) {
                 // The workspace on the statement, not only on the invoice
                 // the lines hang off: a relation update is a builder write and
@@ -915,6 +918,9 @@ final class InvoiceLifecycleService
 
             $this->releaseAllocations($locked);
             $previousStatus = $locked->status;
+            $accounting = app(InvoiceAccountingJournal::class);
+            $accounting->ensure($locked);
+            $accounting->reverse($locked, 'void', (string) $locked->document_revision);
             $locked->forceFill([
                 'status' => 'void',
                 'voided_at' => $this->clock->now($locked->workspace),
@@ -1035,6 +1041,10 @@ final class InvoiceLifecycleService
                 ->where('workspace_id', $locked->workspace_id)
                 ->where('type', InvoiceLineType::DeferredBuyDown->value)
                 ->get(['id', 'total_amount']);
+            $accounting = app(InvoiceAccountingJournal::class);
+            $accounting->ensure($locked);
+            $accounting->reverse($locked, 'reopen', (string) $locked->document_revision);
+
             $settlementLineIds = $settlementLines->modelKeys();
             $settlementHistory = null;
             if ($settlementLineIds !== []) {

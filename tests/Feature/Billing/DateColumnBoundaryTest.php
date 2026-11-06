@@ -294,6 +294,9 @@ final class DateColumnBoundaryTest extends TestCase
     public function test_every_date_column_range_bound_in_the_application_is_a_date_string(): void
     {
         $reviewedStringBounds = [
+            // AccountingQuery::from validates both readonly bounds with date_format:Y-m-d.
+            'app/Services/Accounting/AccountingReadRepository.php' => ['$query->from', '$query->to'],
+            'app/Services/Accounting/CashIncomeRepository.php' => ['$query->from', '$query->to'],
             // Built by `toDateString()` in `currentCycle()`.
             'app/Http/Controllers/ClientDirectoryController.php' => ['$window[\'start\']', '$window[\'end\']'],
             // Split from the replay's invoice key, whose period is built from
