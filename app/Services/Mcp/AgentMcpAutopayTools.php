@@ -23,13 +23,13 @@ final class AgentMcpAutopayTools
         #[Schema(format: 'uuid')] string $client_id,
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema] bool $enabled,
+        #[Schema] bool $confirm,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         #[Schema(minimum: 1)] ?int $limit_amount = null,
         #[Schema(minLength: 10, maxLength: 1000)] ?string $attestation = null,
-        #[Schema] ?bool $confirm = null,
     ): array {
-        $body = ['expected_version' => $expected_version, 'enabled' => $enabled];
-        foreach (['limit_amount' => $limit_amount, 'attestation' => $attestation, 'confirm' => $confirm] as $field => $value) {
+        $body = ['expected_version' => $expected_version, 'enabled' => $enabled, 'confirm' => $confirm];
+        foreach (['limit_amount' => $limit_amount, 'attestation' => $attestation] as $field => $value) {
             if ($value !== null) {
                 $body[$field] = $value;
             }

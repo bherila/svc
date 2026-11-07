@@ -93,6 +93,7 @@ export function ClientAutopayCard({
         const result = await apiRequest('PUT', autopay.update_href, {
             expected_version: autopay.version,
             enabled: false,
+            confirm: true,
         });
         setConfirmingOff(false);
 

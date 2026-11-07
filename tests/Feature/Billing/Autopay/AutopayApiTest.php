@@ -86,7 +86,7 @@ final class AutopayApiTest extends TestCase
         $this->assertSame(['limit_changed', 'enabled'], array_column($changed['data']['consents'], 'action'));
 
         $off = $this->success($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], [
-            'expected_version' => $changed['data']['version'], 'enabled' => false,
+            'expected_version' => $changed['data']['version'], 'enabled' => false, 'confirm' => true,
         ], 'synthetic-autopay-off');
         $this->assertFalse($off['data']['enabled']);
         $this->assertNull($off['data']['limit_amount']);
@@ -101,15 +101,16 @@ final class AutopayApiTest extends TestCase
         $version = AgentApiVersion::for($company);
         $full = ['expected_version' => $version, 'enabled' => true, 'limit_amount' => 400_000, 'attestation' => 'Signed on Aug 28.', 'confirm' => true];
 
-        foreach (['limit_amount', 'attestation', 'confirm'] as $missing) {
+        foreach (['limit_amount', 'attestation'] as $missing) {
             $body = $full;
             unset($body[$missing]);
             $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], $body, 'synthetic-missing-'.$missing, 422);
         }
         $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], [...$full, 'confirm' => false], 'synthetic-unconfirmed', 422);
+        $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], ['expected_version' => $version, 'enabled' => false], 'synthetic-off-unconfirmed', 422);
         $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], [...$full, 'limit_amount' => 0], 'synthetic-zero', 422);
         $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], [...$full, 'attestation' => 'short'], 'synthetic-short', 422);
-        $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], ['expected_version' => $version, 'enabled' => false, 'limit_amount' => 1], 'synthetic-off-limit', 422);
+        $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], ['expected_version' => $version, 'enabled' => false, 'confirm' => true, 'limit_amount' => 1], 'synthetic-off-limit', 422);
         $this->failure($transport, 'companies.autopay.set', $workspace, ['client_id' => $company->public_id], [...$full, 'expected_version' => str_repeat('0', 64)], 'synthetic-stale', 409);
 
         $this->assertNull($company->refresh()->autopay_enabled_at);
@@ -146,7 +147,7 @@ final class AutopayApiTest extends TestCase
         $invoice = $this->autopayInvoice($company);
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
-        $body = ['expected_version' => AgentApiVersion::for($company), 'enabled' => false];
+        $body = ['expected_version' => AgentApiVersion::for($company), 'enabled' => false, 'confirm' => true];
 
         $this->actingAsMcp($member, self::SCOPES);
         $this->rest('companies.autopay.get', $workspace, ['client_id' => $company->public_id])->assertNotFound();
@@ -177,7 +178,7 @@ final class AutopayApiTest extends TestCase
 
         $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str_repeat('a', 40))
             ->withHeader('Idempotency-Key', 'synthetic-website-off')
-            ->putJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}/autopay", ['expected_version' => AgentApiVersion::for($company->refresh()), 'enabled' => false])
+            ->putJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}/autopay", ['expected_version' => AgentApiVersion::for($company->refresh()), 'enabled' => false, 'confirm' => true])
             ->assertOk()
             ->assertJsonPath('data.enabled', false);
 

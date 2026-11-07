@@ -842,7 +842,7 @@ export interface paths {
         };
         /** @description Workspace managers only. Whether autopay is on for the client, since when, its per-invoice limit in minor units, the default saved Stripe method it charges, the append-only consent record, the invoices it will charge next and how each will be treated, and the client version companies.autopay.set requires. */
         get: operations['companies.autopay.get'];
-        /** @description Workspace owners and admins only. Turn the client's autopay on, change its limit, or turn it off. Turning it on, or changing the limit, needs limit_amount (minor units), an attestation of how the client agreed outside SVC, and confirm: true; it needs a default saved Stripe method and a connected Stripe account, and it emails the client's billing contacts a notice with a link to turn it off, after the change commits. SVC then charges the default method for each issued invoice on its due date, once and never retried, up to the limit; an invoice over the limit is left for the client to pay. Every change appends to the consent record. Requires the client's current expected_version. */
+        /** @description Workspace owners and admins only. Turn the client's autopay on, change its limit, or turn it off. Every call needs confirm: true. Turning it on, or changing the limit, also needs limit_amount (minor units) and an attestation of how the client agreed outside SVC; it needs a default saved Stripe method and a connected Stripe account, and it emails the client's billing contacts a notice with a link to turn it off, after the change commits. SVC then charges the default method for each issued invoice on its due date, once and never retried, up to the limit; an invoice over the limit is left for the client to pay. Every change appends to the consent record. Requires the client's current expected_version. */
         put: operations['companies.autopay.set'];
         post?: never;
         delete?: never;
@@ -3624,8 +3624,11 @@ export interface components {
             limit_amount?: number;
             /** @description How the client agreed to autopay outside SVC. Required to turn autopay on or change its limit. */
             attestation?: string;
-            /** @description Must be true to turn autopay on or change its limit, only after the user explicitly confirms. */
-            confirm?: boolean;
+            /**
+             * @description Must be true, only after the user explicitly confirms. Turning autopay on authorizes charges to the client's card; turning it off is confirmed the same way.
+             * @constant
+             */
+            confirm: true;
         };
         CompanyAutopayResponse: {
             data: components['schemas']['CompanyAutopay'];
@@ -4363,7 +4366,8 @@ export interface components {
         };
         InvoiceAutopaySkipRequest: {
             expected_version: components['schemas']['Version'];
-            confirm: boolean;
+            /** @constant */
+            confirm: true;
         };
         InvoiceCorrectionLine: {
             id: components['schemas']['Uuid'];

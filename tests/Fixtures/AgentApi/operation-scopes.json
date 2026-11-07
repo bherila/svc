@@ -740,6 +740,29 @@
             "mcp.switch:collaboration.topics.update"
         ]
     },
+    "companies.autopay.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:companies.autopay.get"
+        ]
+    },
+    "companies.autopay.set": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:companies.autopay.set"
+        ]
+    },
     "companies.payment_reminders.get": {
         "scopes": [
             "billing:read"
@@ -1107,6 +1130,29 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:invoices.add_time"
+        ]
+    },
+    "invoices.autopay.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.autopay.get"
+        ]
+    },
+    "invoices.autopay.skip": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.autopay.skip"
         ]
     },
     "invoices.correct": {

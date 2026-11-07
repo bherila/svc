@@ -6498,7 +6498,7 @@
             },
             "put": {
                 "operationId": "companies.autopay.set",
-                "description": "Workspace owners and admins only. Turn the client's autopay on, change its limit, or turn it off. Turning it on, or changing the limit, needs limit_amount (minor units), an attestation of how the client agreed outside SVC, and confirm: true; it needs a default saved Stripe method and a connected Stripe account, and it emails the client's billing contacts a notice with a link to turn it off, after the change commits. SVC then charges the default method for each issued invoice on its due date, once and never retried, up to the limit; an invoice over the limit is left for the client to pay. Every change appends to the consent record. Requires the client's current expected_version.",
+                "description": "Workspace owners and admins only. Turn the client's autopay on, change its limit, or turn it off. Every call needs confirm: true. Turning it on, or changing the limit, also needs limit_amount (minor units) and an attestation of how the client agreed outside SVC; it needs a default saved Stripe method and a connected Stripe account, and it emails the client's billing contacts a notice with a link to turn it off, after the change commits. SVC then charges the default method for each issued invoice on its due date, once and never retried, up to the limit; an invoice over the limit is left for the client to pay. Every change appends to the consent record. Requires the client's current expected_version.",
                 "security": [
                     {
                         "oauth2": [
@@ -22989,7 +22989,8 @@
                 "additionalProperties": false,
                 "required": [
                     "expected_version",
-                    "enabled"
+                    "enabled",
+                    "confirm"
                 ],
                 "properties": {
                     "expected_version": {
@@ -23011,7 +23012,8 @@
                     },
                     "confirm": {
                         "type": "boolean",
-                        "description": "Must be true to turn autopay on or change its limit, only after the user explicitly confirms."
+                        "const": true,
+                        "description": "Must be true, only after the user explicitly confirms. Turning autopay on authorizes charges to the client's card; turning it off is confirmed the same way."
                     }
                 }
             },
@@ -25725,7 +25727,8 @@
                         "$ref": "#/components/schemas/Version"
                     },
                     "confirm": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "const": true
                     }
                 }
             },

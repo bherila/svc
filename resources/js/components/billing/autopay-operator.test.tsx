@@ -252,6 +252,7 @@ describe('the client autopay settings', () => {
         expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
             expected_version: version,
             enabled: false,
+            confirm: true,
         });
     });
 

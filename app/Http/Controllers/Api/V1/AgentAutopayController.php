@@ -68,12 +68,12 @@ final class AgentAutopayController extends Controller
                 }],
                 'limit_amount' => ['sometimes', 'integer', 'min:1', 'max:'.AutopayConsentService::MAX_LIMIT],
                 'attestation' => ['sometimes', 'string', 'max:1000'],
-                'confirm' => ['sometimes', new ExplicitConfirmation],
+                'confirm' => ['required', new ExplicitConfirmation],
             ]);
 
             if ($data['enabled'] === true) {
                 // Authorizing charges is a decision for the person, never inferred.
-                foreach (['limit_amount', 'attestation', 'confirm'] as $required) {
+                foreach (['limit_amount', 'attestation'] as $required) {
                     if (! array_key_exists($required, $data)) {
                         throw ValidationException::withMessages([$required => 'This field is required to turn autopay on or change its limit.']);
                     }

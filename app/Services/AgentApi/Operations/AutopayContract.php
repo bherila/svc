@@ -71,13 +71,13 @@ final class AutopayContract
             'CompanyAutopayResponse' => self::object(['data' => ['$ref' => '#/components/schemas/CompanyAutopay']]),
             'CompanyAutopayRequest' => [
                 'type' => 'object', 'additionalProperties' => false,
-                'required' => ['expected_version', 'enabled'],
+                'required' => ['expected_version', 'enabled', 'confirm'],
                 'properties' => [
                     'expected_version' => $version,
                     'enabled' => ['type' => 'boolean'],
                     'limit_amount' => ['type' => 'integer', 'minimum' => 1, 'description' => 'The most one invoice may be charged, in minor units. Required to turn autopay on or change its limit.'],
                     'attestation' => ['type' => 'string', 'minLength' => 10, 'maxLength' => 1000, 'description' => 'How the client agreed to autopay outside SVC. Required to turn autopay on or change its limit.'],
-                    'confirm' => ['type' => 'boolean', 'description' => 'Must be true to turn autopay on or change its limit, only after the user explicitly confirms.'],
+                    'confirm' => ['type' => 'boolean', 'const' => true, 'description' => 'Must be true, only after the user explicitly confirms. Turning autopay on authorizes charges to the client\'s card; turning it off is confirmed the same way.'],
                 ],
             ],
             'InvoiceAutopay' => self::object([
@@ -112,7 +112,7 @@ final class AutopayContract
             'InvoiceAutopaySkipRequest' => [
                 'type' => 'object', 'additionalProperties' => false,
                 'required' => ['expected_version', 'confirm'],
-                'properties' => ['expected_version' => $version, 'confirm' => ['type' => 'boolean']],
+                'properties' => ['expected_version' => $version, 'confirm' => ['type' => 'boolean', 'const' => true]],
             ],
         ][$component] ?? throw new InvalidArgumentException("Unknown autopay component {$component}.");
     }

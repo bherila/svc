@@ -170,6 +170,7 @@ final class InvoiceDocumentNoticesTest extends TestCase
                 'blocks' => [['line_id' => 'a', 'description' => 'd', 'minutes' => 30, 'entries' => []]],
             ],
             'pay_url' => null,
+            'autopay_notice' => null,
         ], $document->toArray());
     }
 

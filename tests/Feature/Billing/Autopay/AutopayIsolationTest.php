@@ -14,6 +14,7 @@ use App\Support\Billing\Autopay\AutopayChargeResult;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use DomainException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsAutopay;
@@ -122,7 +123,7 @@ final class AutopayIsolationTest extends TestCase
         try {
             app(AutopaySkipService::class)->skip($workspaceA, $foreign, $ownerA);
             $this->fail('Another workspace\'s invoice was skipped.');
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+        } catch (ModelNotFoundException) {
             $this->assertSame(0, InvoiceAutopayAttempt::query()->count());
         }
     }

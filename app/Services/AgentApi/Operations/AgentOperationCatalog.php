@@ -1078,7 +1078,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'companies.autopay.set',
                 'Set client autopay',
-                'Workspace owners and admins only, and only after the user explicitly confirms. Turn autopay on or off for a client, or change its limit: with enabled true it needs limit_amount (minor units, the most one invoice is charged), the user\'s attestation of how the client agreed to autopay outside SVC, and confirm: true. SVC then charges the client\'s default saved Stripe method for each issued invoice on its due date, once, never retrying, and emails the client\'s billing contacts a notice with a link to turn it off. An invoice over the limit is not charged. Enabled false turns it off. Every change is appended to the consent record.',
+                'Workspace owners and admins only, and only after the user explicitly confirms. Turn autopay on or off for a client, or change its limit: every call needs confirm: true, and enabled true also needs limit_amount (minor units, the most one invoice is charged) and the user\'s attestation of how the client agreed to autopay outside SVC. SVC then charges the client\'s default saved Stripe method for each issued invoice on its due date, once, never retrying, and emails the client\'s billing contacts a notice with a link to turn it off. An invoice over the limit is not charged. Enabled false turns it off. Every change is appended to the consent record.',
                 [AgentMcpAutopayTools::class, 'setCompany'],
                 // Authorises future charges to the client\'s card and emails the client.
                 Effect::ExternalWrite,
