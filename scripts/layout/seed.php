@@ -847,6 +847,8 @@ if (getenv('SVC_LAYOUT_AUTOPAY') === '1') {
     app(WorkspacePaymentConnections::class)->connect($apWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
         'external_account_id' => 'acct_synthetic_autopay', 'display_name' => 'Synthetic', 'environment' => 'test',
         'secret' => 'sk_test_'.str_repeat('synthetic', 4).'0002', 'webhook_secret' => 'whsec_synthetic',
+        // The portal offers a client "Add payment method" only for a key it knows is this account's (#642).
+        'publishable_key' => 'pk_test_layout_synthetic',
     ]);
     $apToday = app(WorkspaceClock::class)->today($apWorkspace);
     $apMakeCompany = static function (string $name, string $slug, string $contactName, string $email) use ($apWorkspace): array {

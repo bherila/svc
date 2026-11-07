@@ -49,6 +49,8 @@ function props(
                 exp_month: 8,
                 exp_year: 2038,
                 is_default: true,
+                default_href: null,
+                remove_href: '/portal/company-1/payment-methods/m1',
             },
             {
                 id: 'm2',
@@ -57,8 +59,16 @@ function props(
                 exp_month: null,
                 exp_year: null,
                 is_default: false,
+                default_href: '/portal/company-1/payment-methods/m2/default',
+                remove_href: '/portal/company-1/payment-methods/m2',
             },
         ],
+        payment_method_setup: {
+            setup_href: '/portal/company-1/payment-methods/setup',
+            confirm_href: '/portal/company-1/payment-methods/confirm',
+            publishable_key: 'pk_test_fixture',
+        },
+        payment_methods_notice: null,
         ...overrides,
     };
 }

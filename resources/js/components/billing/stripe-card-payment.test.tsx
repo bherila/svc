@@ -18,6 +18,7 @@ function stripeStub(confirm: () => Promise<{ error?: { message?: string } }>) {
     const instance = {
         elements: vi.fn(() => elements),
         confirmPayment: vi.fn(confirm),
+        confirmSetup: vi.fn(),
     };
     window.Stripe = vi.fn(() => instance);
 
