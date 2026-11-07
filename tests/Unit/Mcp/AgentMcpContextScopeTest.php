@@ -4,11 +4,13 @@ namespace Tests\Unit\Mcp;
 
 use App\Models\AgentPrincipal;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpPrincipal;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Support\AgentApi\AgentApiContract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mcp\Exception\ToolCallException;
 use Tests\TestCase;
@@ -32,10 +34,24 @@ final class AgentMcpContextScopeTest extends TestCase
         $this->assertArrayHasKey('data', $this->tools(['mcp:use', 'identity:read'])->context());
     }
 
-    /** @param list<string> $scopes */
-    private function tools(array $scopes): AgentMcpReadTools
+    public function test_context_get_lists_the_member_workspace_with_its_timezone_and_dashboard_link(): void
     {
         $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic context workspace', 'slug' => 'synthetic-context-workspace', 'timezone' => 'America/Chicago']);
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
+
+        $data = $this->tools(['mcp:use', 'identity:read'], $user)->context()['data'];
+
+        $this->assertSame(AgentApiContract::VERSION, $data['contract_version']);
+        $this->assertCount(1, $data['workspaces']);
+        $this->assertSame('America/Chicago', $data['workspaces'][0]['timezone']);
+        $this->assertSame(route('workspaces.dashboard', $workspace), $data['workspaces'][0]['web_url']);
+    }
+
+    /** @param list<string> $scopes */
+    private function tools(array $scopes, ?User $user = null): AgentMcpReadTools
+    {
+        $user ??= User::factory()->create();
         $context = new McpRequestContext(new McpPrincipal(AgentPrincipal::query()->findOrFail($user->id), 'credential', 'client', $scopes), 'request-id');
 
         return new AgentMcpReadTools(app(AgentReadService::class), app(McpAccountContextResolver::class), $context);
