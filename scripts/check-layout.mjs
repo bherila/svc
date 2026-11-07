@@ -595,6 +595,7 @@ try {
             await expect(
                 page.locator('#appendix-b').getByRole('link'),
             ).toHaveCount(4);
+
             for (const link of await page
                 .locator('#appendix-b')
                 .getByRole('link')
@@ -603,6 +604,7 @@ try {
                     /^\/workspaces\/[0-9a-f-]{36}\/attachments\/[0-9a-f-]{36}$/,
                 );
             }
+
             await expect(
                 page
                     .locator('#appendix-b')
