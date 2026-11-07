@@ -1206,6 +1206,49 @@ Answers the owner gave in an interview on 2026-11-06.
     first and recorded after, as the portal path does, so the overpayment would be
     handled as an overpayment credit. The window is the length of one API call.
 
+- **2026-11-10, #641: autopay follow-ups.** Settled by the owner: a provider-side Stripe
+  refusal keeps the invoice's attempt. Decided while building, conservatively:
+  - **What counts as our connection.** `AuthenticationException` and `PermissionException`
+    always; `InvalidRequestException` only for the codes that name the key or account
+    (`api_key_expired`, `account_invalid`, `platform_account_required`,
+    `secret_key_required`, `livemode_mismatch`, `testmode_charges_only`). Other invalid
+    requests (a deleted customer, a bad parameter) say nothing reliable about the key and
+    stay failed attempts, as does every card error. A network failure or 5xx stays "held
+    for review", as before.
+  - **Release, not record.** The claim is deleted, as when the invoice changed after it,
+    so no `failed` payment, no attempt row and nothing in the client's portal. The
+    invoice's next run claims it afresh with a new idempotency key.
+  - **The marker is `workspaces.stripe_refused_at`.** There was no connection-health
+    field. It is on the workspace rather than the connection row because a workspace
+    still served by the deployment's environment key has no row. It is ended by a
+    `connected_at` later than it (re-saving or re-using a connection) or by the next
+    ordinary Stripe answer, never by the clock alone: the six-hour backoff only decides
+    when the command tries again. A save in the same second as a refusal does not end it.
+  - **Six hours, per workspace.** While paused the run reports each due invoice as
+    `connection_needs_attention` without calling Stripe and without spending `--limit`,
+    so one broken workspace cannot starve the others. A preview reports the pause too.
+  - **Told once, shown always.** One `invoice.autopay_connection_refused` activity per
+    breakage (not one per retry); the warning on the client's Autopay card and on the
+    invoice's Autopay card (invoices still waiting to be charged) stays until fixed. The
+    client's reads never carry it.
+  - **Close-out waits ten minutes.** The same age the command reports a held attempt at,
+    so a run that is still talking to Stripe cannot be contradicted. An invoice whose
+    command hangs past that and then charges would find its attempt already closed; the
+    command's 30 minute overlap guard makes that a near-impossibility, and the charge
+    would still reach the ledger through Stripe's webhook.
+  - **Charged is verified, not trusted.** The intent is read through the existing
+    adapter before the mutation's transaction opens (the mutation executor wraps its
+    callback in one), then the write is a conditional update. A mismatch on workspace,
+    invoice, attempt, amount, currency or a status other than `succeeded`/`processing`
+    is a 422 in words and changes nothing. The same idempotency key replays without
+    reading Stripe again.
+  - **One operation, `invoices.autopay.resolve`,** with `outcome` `charged` | `not_charged`
+    on the invoice's version, owner and admin only, `confirm: true`, and a sentence in the
+    MCP instructions. A new attempt state `not_charged` and invoice state
+    `resolved_not_charged` ("Not autopaid: left for manual collection"); the portal tells
+    the client to pay it by hand, as for a skip. Two new columns record who closed it out
+    and the note.
+
 - **2026-11-07, #642: clients manage saved payment methods in the portal.** Approved
   by the owner: add (card and US bank account), make default, remove, on the portal
   Billing page, so autopay is self-serve. Decided while building, conservatively:

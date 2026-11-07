@@ -54,4 +54,25 @@ final class AgentMcpAutopayTools
     ): array {
         return $this->rest->call('invoices.autopay.skip', ['workspace' => $workspace_id, 'invoice' => $invoice_id], compact('expected_version', 'confirm'), $idempotency_key);
     }
+
+    /** @return array<string, mixed> */
+    public function resolve(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(enum: ['charged', 'not_charged'])] string $outcome,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(pattern: '^pi_[A-Za-z0-9_]{1,252}$')] ?string $payment_intent_id = null,
+        #[Schema(minLength: 3, maxLength: 255)] ?string $note = null,
+    ): array {
+        $body = compact('expected_version', 'outcome', 'confirm');
+        foreach (['payment_intent_id' => $payment_intent_id, 'note' => $note] as $field => $value) {
+            if ($value !== null) {
+                $body[$field] = $value;
+            }
+        }
+
+        return $this->rest->call('invoices.autopay.resolve', ['workspace' => $workspace_id, 'invoice' => $invoice_id], $body, $idempotency_key);
+    }
 }

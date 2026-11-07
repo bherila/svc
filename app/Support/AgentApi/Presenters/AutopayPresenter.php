@@ -9,6 +9,8 @@ use App\Models\Workspace;
 use App\Services\Billing\Autopay\AutopayConsentService;
 use App\Services\Billing\Autopay\AutopayContext;
 use App\Services\Billing\Autopay\AutopayReader;
+use App\Services\Billing\Autopay\AutopayResolutionService;
+use App\Services\Payments\StripeConnectionHealth;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\Autopay\AutopayEligibility;
 use App\Support\Billing\Autopay\AutopayInvoiceState;
@@ -29,10 +31,15 @@ final class AutopayPresenter
     public function __construct(
         private readonly AutopayReader $reader,
         private readonly AutopayConsentService $consents,
+        private readonly AutopayResolutionService $resolutions,
+        private readonly StripeConnectionHealth $health,
     ) {}
 
-    /** @return array<string, mixed> */
-    public function company(Workspace $workspace, ClientCompany $company): array
+    /**
+     * @param  bool  $forProvider  the reader is the provider, who is told when Stripe refused the workspace's connection; the client never is
+     * @return array<string, mixed>
+     */
+    public function company(Workspace $workspace, ClientCompany $company, bool $forProvider = false): array
     {
         $method = $this->reader->defaultMethod($workspace->id, $company->id);
 
@@ -52,6 +59,24 @@ final class AutopayPresenter
             ],
             'consents' => array_map(fn (ClientAutopayConsent $consent): array => $this->consent($consent), $this->consents->history($workspace, $company)),
             'upcoming' => $this->upcoming($workspace, $company),
+            'connection_problem' => $forProvider && $company->autopay_enabled_at !== null ? $this->connectionProblem($workspace) : null,
+        ];
+    }
+
+    /**
+     * Stripe refused the workspace's own key or account while autopay was
+     * charging (#641): invoices are not charged until it is fixed. Null when
+     * nothing is wrong. The provider's page adds the link to the settings.
+     *
+     * @return array{since: string, message: string}|null
+     */
+    public function connectionProblem(Workspace $workspace): ?array
+    {
+        $since = $this->health->refusedAt($workspace);
+
+        return $since === null ? null : [
+            'since' => self::instant($since) ?? '',
+            'message' => 'Not charged yet: the Stripe connection needs attention. Autopay charges on the first run after it is fixed.',
         ];
     }
 
@@ -76,11 +101,16 @@ final class AutopayPresenter
     }
 
     /** @return array<string, mixed> */
-    public function invoice(Workspace $workspace, ClientInvoice $invoice, ?ClientCompany $company = null): array
+    public function invoice(Workspace $workspace, ClientInvoice $invoice, ?ClientCompany $company = null, bool $forProvider = false): array
     {
         $context = $this->reader->context($workspace, $invoice, $company);
+        // Only an invoice still waiting to be charged is held up by the connection.
+        $problem = $forProvider && $context->facts->autopayOn && $context->attempt === null && $this->reader->state($context) === AutopayInvoiceState::WillCharge
+            ? $this->connectionProblem($workspace)
+            : null;
 
         return $this->presentContext($context) + [
+            'connection_problem' => $problem,
             'invoice_id' => $invoice->public_id,
             'invoice_version' => AgentApiVersion::for($invoice),
         ];
@@ -110,6 +140,7 @@ final class AutopayPresenter
             'verdict' => AutopayEligibility::decide($facts->onDueDate())->value,
             'can_skip' => $facts->autopayOn && $attempt === null
                 && in_array($facts->invoiceStatus, InvoiceStatus::collectible(), true) && $facts->balance > 0,
+            'can_resolve' => $attempt !== null && $this->resolutions->resolvable($attempt),
             'attempt' => $attempt === null ? null : [
                 'id' => $attempt->public_id,
                 'state' => $attempt->state->value,
@@ -121,6 +152,8 @@ final class AutopayPresenter
                 'payment_status' => $payment === null ? null : (string) $payment->status,
                 'skipped_by_name' => $attempt->skippedBy?->name,
                 'skipped_at' => self::instant($attempt->skipped_at),
+                'resolved_by_name' => $attempt->resolvedBy?->name,
+                'resolution_note' => $attempt->resolution_note,
                 'claimed_at' => self::instant($attempt->claimed_at),
                 'resolved_at' => self::instant($attempt->resolved_at),
             ],

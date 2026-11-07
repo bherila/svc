@@ -20,7 +20,7 @@ final class AutopayContract
     {
         return [
             'CompanyAutopay', 'CompanyAutopayResponse', 'CompanyAutopayRequest',
-            'InvoiceAutopay', 'InvoiceAutopayResponse', 'InvoiceAutopaySkipRequest',
+            'InvoiceAutopay', 'InvoiceAutopayResponse', 'InvoiceAutopaySkipRequest', 'InvoiceAutopayResolveRequest',
         ];
     }
 
@@ -67,6 +67,7 @@ final class AutopayContract
                     'invoice_id' => $uuid, 'invoice_number' => $text, 'due_on' => $date, 'amount' => $int, 'currency' => $text,
                     'state' => self::states(), 'state_label' => $text,
                 ])],
+                'connection_problem' => self::connectionProblem(),
             ]),
             'CompanyAutopayResponse' => self::object(['data' => ['$ref' => '#/components/schemas/CompanyAutopay']]),
             'CompanyAutopayRequest' => [
@@ -93,6 +94,8 @@ final class AutopayContract
                 'will_charge_on' => $date,
                 'verdict' => ['type' => 'string', 'enum' => array_map(static fn (AutopayVerdict $verdict): string => $verdict->value, AutopayVerdict::cases())],
                 'can_skip' => ['type' => 'boolean'],
+                'connection_problem' => self::connectionProblem(),
+                'can_resolve' => ['type' => 'boolean'],
                 'attempt' => self::nullableObject([
                     'id' => $uuid,
                     'state' => ['type' => 'string', 'enum' => array_map(static fn (AutopayAttemptState $state): string => $state->value, AutopayAttemptState::cases())],
@@ -104,6 +107,8 @@ final class AutopayContract
                     'payment_status' => $nullableText,
                     'skipped_by_name' => $nullableText,
                     'skipped_at' => $instant,
+                    'resolved_by_name' => $nullableText,
+                    'resolution_note' => $nullableText,
                     'claimed_at' => $instant,
                     'resolved_at' => $instant,
                 ]),
@@ -114,7 +119,27 @@ final class AutopayContract
                 'required' => ['expected_version', 'confirm'],
                 'properties' => ['expected_version' => $version, 'confirm' => ['type' => 'boolean', 'const' => true]],
             ],
+            'InvoiceAutopayResolveRequest' => [
+                'type' => 'object', 'additionalProperties' => false,
+                'required' => ['expected_version', 'outcome', 'confirm'],
+                'properties' => [
+                    'expected_version' => $version,
+                    'outcome' => ['type' => 'string', 'enum' => ['charged', 'not_charged'], 'description' => 'charged: Stripe shows the client was charged; needs payment_intent_id. not_charged: nothing was charged; needs note.'],
+                    'payment_intent_id' => ['type' => 'string', 'pattern' => '^pi_[A-Za-z0-9_]{1,252}$', 'description' => 'The Stripe PaymentIntent id. Required when outcome is charged; refused when it is not this invoice\'s attempt.'],
+                    'note' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 255, 'description' => 'What was checked in Stripe. Required when outcome is not_charged.'],
+                    'confirm' => ['type' => 'boolean', 'const' => true, 'description' => 'Must be true, only after the user explicitly confirms the outcome they found in Stripe.'],
+                ],
+            ],
         ][$component] ?? throw new InvalidArgumentException("Unknown autopay component {$component}.");
+    }
+
+    /** @return array<string, mixed> */
+    private static function connectionProblem(): array
+    {
+        return self::nullableObject([
+            'since' => ['type' => 'string', 'format' => 'date-time'],
+            'message' => ['type' => 'string'],
+        ]);
     }
 
     /** @return array<string, mixed> */

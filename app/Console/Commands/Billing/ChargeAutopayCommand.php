@@ -6,6 +6,7 @@ use App\Console\Commands\MutationCommand;
 use App\Models\InvoiceAutopayAttempt;
 use App\Services\Billing\Autopay\AutopayChargeService;
 use App\Support\Billing\Autopay\AutopayChargeOutcome;
+use App\Support\Billing\Autopay\AutopayChargeResult;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -31,10 +32,17 @@ final class ChargeAutopayCommand extends MutationCommand
             Log::warning('An autopay attempt was claimed with no payment intent and needs review.', ['attempt' => $attempt->public_id]);
         }
 
+        // Workspaces whose Stripe connection was refused: their invoices were not charged and keep their attempt.
+        $connectionProblems = array_values(array_unique(array_map(
+            static fn (AutopayChargeOutcome $outcome): string => $outcome->workspaceId,
+            array_filter($outcomes, static fn (AutopayChargeOutcome $outcome): bool => $outcome->result === AutopayChargeResult::ConnectionNeedsAttention),
+        )));
+
         if ($this->option('format') === 'json') {
             $this->json([
                 'dry_run' => ! $apply,
                 'executed' => $apply,
+                'connection_needs_attention' => $connectionProblems,
                 'outcomes' => array_map(static fn (AutopayChargeOutcome $outcome): array => $outcome->toArray(), $outcomes),
                 'needs_review' => array_map(static fn (InvoiceAutopayAttempt $attempt): array => [
                     'attempt_id' => $attempt->public_id,
@@ -50,8 +58,11 @@ final class ChargeAutopayCommand extends MutationCommand
         foreach ($outcomes as $outcome) {
             $this->line(sprintf('  %s  %s  %s %s  %s', $outcome->invoiceNumber, $outcome->result->value, $outcome->currency, number_format(($outcome->amount ?? 0) / 100, 2), (string) $outcome->detail));
         }
+        foreach ($connectionProblems as $workspaceId) {
+            $this->components->warn('Stripe connection needs attention: workspace '.$workspaceId.' was refused by Stripe, so its due invoices were not charged and keep their attempt. Re-save the connection in the workspace payments settings; autopay charges on the first run after.');
+        }
         foreach ($review as $attempt) {
-            $this->components->warn('Needs review: autopay attempt '.$attempt->public_id.' for invoice '.($attempt->invoice->invoice_number).' was claimed at '.$attempt->claimed_at->utc()->format('Y-m-d H:i').' UTC and has no payment intent. Check Stripe before charging by hand.');
+            $this->components->warn('Needs review: autopay attempt '.$attempt->public_id.' for invoice '.($attempt->invoice->invoice_number).' was claimed at '.$attempt->claimed_at->utc()->format('Y-m-d H:i').' UTC and has no payment intent. Check Stripe, then record the outcome on the invoice (invoices.autopay.resolve) before charging by hand.');
         }
 
         return self::SUCCESS;

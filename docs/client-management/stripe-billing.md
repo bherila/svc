@@ -138,6 +138,48 @@ A declined card or an authentication request is one failed attempt: the reason i
 the attempt, a `failed` payment appears in the invoice's payments, and the invoice
 returns to the ordinary payment reminders. There are no retries.
 
+### When Stripe refuses our connection
+
+An `AuthenticationException`, a `PermissionException`, or an `InvalidRequestException`
+whose code names the key or account (`api_key_expired`, `account_invalid`,
+`platform_account_required`, `secret_key_required`, `livemode_mismatch`,
+`testmode_charges_only`; see `AutopayConnectionRefusal`) is about the provider's
+connection, not the client's card. Nothing was charged, so the claim is deleted and no
+attempt is recorded: the client sees nothing and the invoice is charged by the first run
+after the connection is fixed. Every other `InvalidRequestException` (a deleted customer,
+a bad parameter) stays a failed attempt.
+
+The workspace is marked in `workspaces.stripe_refused_at`. The provider is told by an
+`invoice.autopay_connection_refused` activity on the invoice (once per breakage), by
+`connection_problem` on `companies.autopay.get` / `invoices.autopay.get` (shown as "Not
+charged yet: the Stripe connection needs attention" with a link to the workspace payments
+settings on the client's Autopay card and the invoice's Autopay card), and by the command
+(`connection_needs_attention` in JSON, a warning in text). While the marker is under six
+hours old (`StripeConnectionHealth::BACKOFF_HOURS`) the command does not call Stripe for
+that workspace and the workspace's invoices do not use up the run's `--limit`. The marker
+ends when the connection is saved again (a `connected_at` after it) or when Stripe next
+answers an ordinary call (a charge, a decline, a different request error); the warning
+stays until then, past the six hours, when the next run tries once more.
+
+### Closing out a held attempt
+
+An attempt left `claimed` with no PaymentIntent (Stripe's answer was never read) is listed
+by every run. Ten minutes after the claim an owner or admin can close it out from the
+invoice's Autopay card, `invoices.autopay.resolve` over REST, or the MCP tool of the same
+name (explicit confirmation required), after checking the Stripe dashboard:
+
+- **Charged**, with the PaymentIntent id. SVC reads the intent from Stripe (outside any
+  transaction) and refuses it unless its metadata names this workspace and invoice (and
+  this attempt, when it names one), its amount and currency equal the attempt's, and
+  Stripe says `succeeded` or `processing`. It enters the ledger as the charge path does
+  (succeeded or pending), the attempt becomes `submitted`, and the webhook settles it.
+- **Not charged**, with a note. The attempt becomes `not_charged`; the invoice is left for
+  manual collection and no new attempt is made.
+
+Both are one conditional update on state `claimed` with no PaymentIntent, so of two people
+racing one wins and the other gets 409. Who, when and the note are on the attempt and in an
+`invoice.autopay_resolved` activity. The action creates and confirms nothing at Stripe.
+
 ### Where it shows
 
 The issued invoice (PDF, portal, email) says "Will be charged to Visa ending 4242 on

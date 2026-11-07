@@ -55,6 +55,8 @@ final class SquareCollectionSitesTest extends TestCase
         // reads it again with its claim in place before the one intent is created.
         'App\Services\Billing\Autopay\AutopayChargeService::submit' => '->paymentIntents, after AutopayReader::context() asked the guard twice (before the claim and with it)',
         'App\Services\Billing\Autopay\AutopayChargeService::cancelIntent' => '->paymentIntents cancel of an intent autopay itself just created',
+        // Closing out a held attempt (#641) only reads the intent a person names; it never creates or confirms one.
+        'App\Services\Billing\Autopay\AutopayResolutionService::verify' => '->paymentIntents retrieve of an existing intent, to check it belongs to this invoice; collects nothing',
         // A reminder chooses its pay link through the guard (#438): the facts
         // it is sent on are re-read just before it leaves.
         'App\Services\Billing\Reminders\PaymentReminderService::deliver' => 'new InvoicePaymentReminderMail, after PaymentReminderRepository::facts() and the policy\'s last word',

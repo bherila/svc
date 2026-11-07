@@ -1142,6 +1142,19 @@
             "mcp.switch:invoices.autopay.get"
         ]
     },
+    "invoices.autopay.resolve": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.autopay.resolve"
+        ]
+    },
     "invoices.autopay.skip": {
         "scopes": [
             "billing:write",

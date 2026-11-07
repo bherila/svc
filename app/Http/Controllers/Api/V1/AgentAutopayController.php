@@ -12,11 +12,14 @@ use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\Autopay\AutopayConsentService;
+use App\Services\Billing\Autopay\AutopayResolutionService;
 use App\Services\Billing\Autopay\AutopaySkipService;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\AgentApi\Presenters\AutopayPresenter;
 use App\Support\Billing\Autopay\AutopayActorRole;
 use App\Support\Billing\Autopay\AutopayConsentRequest;
+use App\Support\Billing\Autopay\AutopayIntentCheck;
+use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,6 +41,7 @@ final class AgentAutopayController extends Controller
     public function __construct(
         private readonly AutopayConsentService $consents,
         private readonly AutopaySkipService $skips,
+        private readonly AutopayResolutionService $resolutions,
         private readonly AutopayPresenter $presenter,
         private readonly AgentAccess $access,
         private readonly AgentMutationContextFactory $contexts,
@@ -50,7 +54,7 @@ final class AgentAutopayController extends Controller
         abort_unless($actor instanceof User || $actor instanceof AgentPrincipal, 401);
         $company = $this->clientCompany($workspace, $client, $actor);
 
-        return response()->json(['data' => $this->presenter->company($workspace, $company)]);
+        return response()->json(['data' => $this->presenter->company($workspace, $company, forProvider: true)]);
     }
 
     public function setCompany(Request $request, Workspace $workspace, string $client): JsonResponse
@@ -96,7 +100,7 @@ final class AgentAutopayController extends Controller
             return [$company->public_id];
         }, fn (array $ids) => $this->requireManager($context->user, $workspace));
 
-        return response()->json(['data' => $this->presenter->company($workspace, $this->clientCompany($workspace, $client, $context->user))]);
+        return response()->json(['data' => $this->presenter->company($workspace, $this->clientCompany($workspace, $client, $context->user), forProvider: true)]);
     }
 
     public function invoice(Request $request, Workspace $workspace, string $invoice): JsonResponse
@@ -104,7 +108,7 @@ final class AgentAutopayController extends Controller
         $actor = $request->user();
         abort_unless($actor instanceof User || $actor instanceof AgentPrincipal, 401);
 
-        return response()->json(['data' => $this->presenter->invoice($workspace, $this->clientInvoice($workspace, $invoice, $actor))]);
+        return response()->json(['data' => $this->presenter->invoice($workspace, $this->clientInvoice($workspace, $invoice, $actor), forProvider: true)]);
     }
 
     public function skip(Request $request, Workspace $workspace, string $invoice): JsonResponse
@@ -122,7 +126,60 @@ final class AgentAutopayController extends Controller
             return [$record->public_id];
         }, fn (array $ids) => $this->requireManager($context->user, $workspace));
 
-        return response()->json(['data' => $this->presenter->invoice($workspace, $this->clientInvoice($workspace, $invoice, $context->user))]);
+        return response()->json(['data' => $this->presenter->invoice($workspace, $this->clientInvoice($workspace, $invoice, $context->user), forProvider: true)]);
+    }
+
+    /**
+     * Close out an attempt held for review, after the person has looked in the
+     * Stripe dashboard: it did charge (with the PaymentIntent id), or it did
+     * not (with a note). Never sends a charge. The PaymentIntent is read from
+     * Stripe here, before the mutation's transaction opens, because the call
+     * must not be made inside one.
+     */
+    public function resolve(Request $request, Workspace $workspace, string $invoice): JsonResponse
+    {
+        $context = $this->contexts->from($request);
+        $this->requireManager($context->user, $workspace);
+        $record = $this->clientInvoice($workspace, $invoice, $context->user);
+        $data = $this->validated($request, [
+            'expected_version' => ['required', 'string', 'size:64'],
+            'outcome' => ['required', 'string', 'in:charged,not_charged'],
+            'payment_intent_id' => ['sometimes', 'string', 'regex:'.AutopayIntentCheck::ID_PATTERN],
+            'note' => ['sometimes', 'string', 'min:3', 'max:255'],
+            'confirm' => ['required', new ExplicitConfirmation],
+        ]);
+        $charged = $data['outcome'] === 'charged';
+        if ($charged && ! array_key_exists('payment_intent_id', $data)) {
+            throw ValidationException::withMessages(['payment_intent_id' => 'The PaymentIntent id is required to record that the attempt charged.']);
+        }
+        if (! $charged) {
+            if (array_key_exists('payment_intent_id', $data)) {
+                throw ValidationException::withMessages(['payment_intent_id' => 'This field applies only when the attempt charged.']);
+            }
+            if (! array_key_exists('note', $data)) {
+                throw ValidationException::withMessages(['note' => 'Say what you checked in Stripe: a note is required when nothing was charged.']);
+            }
+        }
+        $intentId = $charged ? $data['payment_intent_id'] : null;
+        $note = array_key_exists('note', $data) ? $data['note'] : null;
+        try {
+            $verified = $intentId === null ? null : $this->resolutions->verify($workspace, $record, $intentId);
+        } catch (DomainException $refusal) {
+            throw ValidationException::withMessages(['payment_intent_id' => $refusal->getMessage()]);
+        }
+
+        $this->mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.autopay.resolve', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($workspace, $record, $context, $data, $charged, $verified, $note): array {
+            $this->requireManager($context->user, $workspace);
+            if ($charged) {
+                $this->resolutions->recordCharged($workspace, $record, $context->user, $verified, $note, $data['expected_version']);
+            } else {
+                $this->resolutions->recordNotCharged($workspace, $record, $context->user, (string) $note, $data['expected_version']);
+            }
+
+            return [$record->public_id];
+        }, fn (array $ids) => $this->requireManager($context->user, $workspace));
+
+        return response()->json(['data' => $this->presenter->invoice($workspace, $this->clientInvoice($workspace, $invoice, $context->user), forProvider: true)]);
     }
 
     /**
