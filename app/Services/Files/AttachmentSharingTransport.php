@@ -33,7 +33,7 @@ final class AttachmentSharingTransport
     public function legacyReference(User|AgentPrincipal $actor, Workspace $workspace, string $id, ?AttachmentAudience $audience = null): AttachmentParentReference
     {
         $this->legacy->authorize($actor, $workspace);
-        $file = $this->reader->queryForTypes($actor, $workspace, $audience ?? $this->reader->agentAudience($actor, $workspace), AgentAttachmentService::uploadableTypes())
+        $file = $this->reader->queryForTypes($actor, $workspace, $audience ?? $this->reader->agentAudience($actor, $workspace), [...AgentAttachmentService::uploadableTypes(), 'expense'])
             ->where('public_id', $id)->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)->firstOrFail();
 
         return new AttachmentParentReference($file->record_type, $file->record_public_id);

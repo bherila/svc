@@ -67,7 +67,9 @@ in SQL before limits, counts or decrypted filenames. Its explicit audience is
 selected by the adapter. Native operator access preserves internal or authorized
 Portal access. Fixed Portal reads use exact current grants. Generic Agent files
 remain workspace-manager-only, then use Portal-first disclosure for dual
-identities. Expense receipts have no Portal parent and remain staff-manager-only.
+identities. Expense receipts reach the Portal only when shared and billed on an
+invoice the viewer can see (see the sharing contract); otherwise they remain
+staff-manager-only.
 This intentionally narrows dual Agent access to legacy files and denies dual
 Agent file/receipt writes; native operator permissions remain independent.
 
@@ -105,7 +107,7 @@ readers; it conveys no foreign ancestor names or identifiers.
 | Native file upload/download/delete            | Existing routes; latch-selected upload defaults, shared held-URL read authorization                                                                 |
 | Operator and Portal agreement file lists      | Shared bounded reader; exact Portal or verified native preview; no Portal management                                                     |
 | Operations overview file metadata             | Shared authorized query before its result bound                                                                                          |
-| Expense receipt screen                        | Existing manager policy plus the shared reader                                                                                           |
+| Expense receipt screen                        | Existing manager policy plus the shared reader; managers see and set "Visible to client" while sharing writers are enabled                |
 | Generic Agent list/get/download URL/content   | Same manager gate and canonical metadata; exact dual Portal disclosure                                                                   |
 | Generic Agent upload URL/multipart/delete     | Existing scopes/cutovers; reject unsupported intent before staging, deny dual writes, current locked publication/delete/replay authority |
 | Agent expense receipt URL/list/content/upload | Existing separate expense scope/cutover; no dual Portal access; same staging and current authority                                       |

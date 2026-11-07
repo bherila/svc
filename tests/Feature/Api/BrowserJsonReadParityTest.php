@@ -34,7 +34,7 @@ final class BrowserJsonReadParityTest extends TestCase
         }
         foreach (['tasks.organization.show', 'tasks.planning.labels.page', 'svc.files.parent.show',
             'svc.files.collaboration.show', 'portal.files.parent.show', 'portal.files.collaboration.show',
-            'svc.files.download', 'portal.files.parent.download', 'portal.files.collaboration.download', 'search'] as $name) {
+            'svc.files.download', 'portal.files.parent.download', 'portal.files.collaboration.download', 'portal.files.receipt.download', 'search'] as $name) {
             $this->assertTrue(Route::has($name), $name);
         }
     }

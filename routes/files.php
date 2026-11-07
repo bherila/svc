@@ -27,6 +27,11 @@ Route::middleware(['web', 'auth', ResolveWorkspaceNavigation::class])->group(fun
             Route::get('/files', [AttachmentSharingController::class, 'portalLegacyPage'])->name('portal.files.parent.show');
             Route::get('/{attachment}/content', [AttachmentSharingController::class, 'portalLegacyDownload'])->whereUuid('attachment')->name('portal.files.parent.download');
         });
+    // A receipt is the one expense file a client may open, and only through this
+    // route: the reader refuses it unless the file is shared with the client and
+    // the expense is billed on an invoice this viewer can see. No listing page.
+    Route::get('/portal/{clientCompany}/expenses/{recordPublicId}/receipts/{attachment}', [AttachmentSharingController::class, 'portalReceiptDownload'])
+        ->whereUuid(['recordPublicId', 'attachment'])->name('portal.files.receipt.download');
     Route::prefix('/portal/{clientCompany}/collaboration/attachments/{recordType}/{recordPublicId}')
         ->whereIn('recordType', ['topic', 'comment'])->whereUuid('recordPublicId')->group(function (): void {
             Route::get('/', [AttachmentSharingController::class, 'portalCollaborationPage'])->name('portal.files.collaboration.show');

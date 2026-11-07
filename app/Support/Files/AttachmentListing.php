@@ -39,7 +39,7 @@ final class AttachmentListing
     private static function sharing(User $actor, Workspace $workspace, string $type, string $id, bool $manages, AttachmentAudience $audience): ?AttachmentSharingView
     {
         return ! $manages || ! in_array($audience, [AttachmentAudience::Native, AttachmentAudience::Internal], true)
-            || $type === 'expense' || ! AttachmentSharingGate::available() ? null
+            || ! AttachmentSharingGate::available() ? null
             : app(AttachmentSharingPresenter::class)->view($actor, $workspace, new AttachmentParentReference($type, $id), $audience);
     }
 

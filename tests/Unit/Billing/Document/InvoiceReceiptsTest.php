@@ -21,39 +21,42 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(InvoiceReceiptEntry::class)]
 final class InvoiceReceiptsTest extends TestCase
 {
-    /** @return iterable<string, array{string, bool, bool, bool}> */
+    /** @return iterable<string, array{string, bool, bool}> */
     public static function visibility(): iterable
     {
-        yield 'operator, shared' => [InvoiceLineDetail::OPERATOR, true, true, true];
-        yield 'operator, private' => [InvoiceLineDetail::OPERATOR, false, false, true];
-        yield 'operator, portal closed' => [InvoiceLineDetail::OPERATOR, true, false, true];
-        yield 'client, shared and portal open' => [InvoiceLineDetail::CLIENT, true, true, true];
-        yield 'client, private' => [InvoiceLineDetail::CLIENT, false, true, false];
-        yield 'client, shared but the portal never serves expenses' => [InvoiceLineDetail::CLIENT, true, false, false];
-        yield 'client, private and closed' => [InvoiceLineDetail::CLIENT, false, false, false];
+        yield 'operator, shared' => [InvoiceLineDetail::OPERATOR, true, true];
+        yield 'operator, private' => [InvoiceLineDetail::OPERATOR, false, true];
+        yield 'client, shared' => [InvoiceLineDetail::CLIENT, true, true];
+        yield 'client, private' => [InvoiceLineDetail::CLIENT, false, false];
     }
 
     #[DataProvider('visibility')]
-    public function test_a_client_is_told_of_a_receipt_only_where_the_file_is_shared_and_the_portal_serves_expense_receipts(string $audience, bool $flagged, bool $portalReads, bool $expected): void
+    public function test_a_client_is_told_of_a_receipt_only_where_the_file_is_shared(string $audience, bool $flagged, bool $expected): void
     {
-        $this->assertSame($expected, InvoiceReceipts::visibleTo($audience, $flagged, $portalReads));
+        $this->assertSame($expected, InvoiceReceipts::visibleTo($audience, $flagged));
     }
 
-    public function test_the_attachment_policy_does_not_serve_expense_receipts_to_the_portal_today(): void
+    public function test_the_attachment_policy_serves_expense_receipts_to_the_portal_and_never_the_company(): void
     {
-        // The seam Appendix B follows. If this starts to hold, a client document
-        // begins to carry shared receipts and the golden tests say what changes.
-        $this->assertFalse(AttachmentReader::portalReadsParentType('expense'));
+        // Expense receipts are served through their own parent policy (shared file,
+        // billed on a visible invoice); the client company itself never is.
+        $this->assertTrue(AttachmentReader::portalReadsParentType('expense'));
         $this->assertFalse(AttachmentReader::portalReadsParentType('company'));
         foreach (['project', 'task', 'proposal', 'agreement', 'invoice'] as $type) {
             $this->assertTrue(AttachmentReader::portalReadsParentType($type), $type);
         }
     }
 
-    public function test_only_an_operator_is_given_an_address_to_open_a_receipt_at(): void
+    public function test_only_an_operator_is_told_of_an_expense_with_no_receipt_to_show(): void
     {
-        $this->assertSame('/workspaces/w/attachments/a', InvoiceReceipts::hrefFor(InvoiceLineDetail::OPERATOR, '/workspaces/w/attachments/a'));
-        $this->assertNull(InvoiceReceipts::hrefFor(InvoiceLineDetail::CLIENT, '/workspaces/w/attachments/a'));
+        $this->assertTrue(InvoiceReceipts::listsExpenseWithoutFiles(InvoiceLineDetail::OPERATOR));
+        $this->assertFalse(InvoiceReceipts::listsExpenseWithoutFiles(InvoiceLineDetail::CLIENT));
+    }
+
+    public function test_each_audience_is_given_its_own_address_to_open_a_receipt_at(): void
+    {
+        $this->assertSame('/workspaces/w/attachments/a', InvoiceReceipts::hrefFor(InvoiceLineDetail::OPERATOR, '/workspaces/w/attachments/a', '/portal/c/expenses/e/receipts/a'));
+        $this->assertSame('/portal/c/expenses/e/receipts/a', InvoiceReceipts::hrefFor(InvoiceLineDetail::CLIENT, '/workspaces/w/attachments/a', '/portal/c/expenses/e/receipts/a'));
     }
 
     public function test_only_jpeg_and_png_are_drawable_whatever_the_case_of_the_stored_type(): void

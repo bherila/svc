@@ -2,13 +2,16 @@
 
 namespace App\Services\Billing;
 
+use App\Models\AgentPrincipal;
 use App\Models\ClientAttachment;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\Autopay\AutopayReader;
+use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\Billing\Document\DocumentMode;
@@ -38,14 +41,16 @@ use Illuminate\Database\Eloquent\Collection;
  *
  * Appendix B (receipts) is the one part that depends on the viewer rather than
  * the audience alone, so the caller says how much it may draw with a
- * {@see ReceiptDetail}; the default is none.
+ * {@see ReceiptDetail}; the default is none. A client's receipts are also the
+ * viewer's own: the attachment reader decides which this viewer may open, so a
+ * client audience built without a viewer prints none.
  */
 final class InvoiceDocumentBuilder
 {
     public function __construct(private readonly AttachmentStorageService $storage) {}
 
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
-    public function build(ClientInvoice $invoice, string $audience, DocumentMode $mode = DocumentMode::Invoice, ReceiptDetail $receipts = ReceiptDetail::None): InvoiceDocument
+    public function build(ClientInvoice $invoice, string $audience, DocumentMode $mode = DocumentMode::Invoice, ReceiptDetail $receipts = ReceiptDetail::None, User|AgentPrincipal|null $viewer = null): InvoiceDocument
     {
         $lineModels = $invoice->lines()->where('workspace_id', $invoice->workspace_id)
             ->orderBy('sort_order')
@@ -111,8 +116,8 @@ final class InvoiceDocumentBuilder
             deferredWork: InvoiceDeferredWorkDisclosure::documentData($invoice, $audience),
             appendix: InvoiceDocumentNotices::appendix($lines, $detail),
             genericLabelUsed: InvoiceDocumentNotices::genericLabelUsed($audience, $detail),
-            receipts: $receipts->drawsAppendix() && $issuer instanceof Workspace
-                ? $this->receipts($invoice, $issuer, $lineModels, $audience, $receipts)
+            receipts: $receipts->drawsAppendix() && $issuer instanceof Workspace && $company instanceof ClientCompany
+                ? $this->receipts($invoice, $issuer, $company, $lineModels, $audience, $receipts, $viewer)
                 : [],
             payUrl: $payUrl,
             // Only a client copy of a real invoice says it will be charged, and
@@ -129,15 +134,17 @@ final class InvoiceDocumentBuilder
      * them that this reader may be told about.
      *
      * Two workspace-scoped queries however many expenses there are: the expenses
-     * claimed by this invoice's lines, then every available receipt on them.
-     * Empty when no receipt survives the audience policy, so a document with
-     * none prints no heading.
+     * claimed by this invoice's lines, then every available receipt on them. For
+     * a client the second query is the attachment reader's own, so the file flag,
+     * the invoice the viewer can see and a project-scoped contact's grants are
+     * decided in one place. Empty when no receipt survives the audience policy,
+     * so a document with none prints no heading.
      *
      * @param  Collection<int, ClientInvoiceLine>  $lines
      * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
      * @return list<InvoiceReceiptEntry>
      */
-    private function receipts(ClientInvoice $invoice, Workspace $workspace, Collection $lines, string $audience, ReceiptDetail $detail): array
+    private function receipts(ClientInvoice $invoice, Workspace $workspace, ClientCompany $company, Collection $lines, string $audience, ReceiptDetail $detail, User|AgentPrincipal|null $viewer): array
     {
         if ($lines->isEmpty()) {
             return [];
@@ -152,15 +159,8 @@ final class InvoiceDocumentBuilder
             return [];
         }
 
-        $portalReads = AttachmentReader::portalReadsParentType('expense');
-        $files = ClientAttachment::query()
-            ->where('workspace_id', $invoice->workspace_id)
-            ->where('record_type', 'expense')
-            ->whereIn('record_public_id', $expenses->pluck('public_id')->all())
-            ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
-            ->orderBy('id')
-            ->get()
-            ->filter(static fn (ClientAttachment $file): bool => InvoiceReceipts::visibleTo($audience, $file->is_visible_to_client, $portalReads))
+        $files = $this->receiptFiles($invoice, $workspace, $expenses, $audience, $viewer)
+            ->filter(static fn (ClientAttachment $file): bool => InvoiceReceipts::visibleTo($audience, $file->is_visible_to_client))
             ->groupBy('record_public_id');
         if ($files->isEmpty()) {
             return [];
@@ -176,7 +176,10 @@ final class InvoiceDocumentBuilder
             foreach ($claimed as $expense) {
                 $drawn = [];
                 foreach ($files->get($expense->public_id, []) as $file) {
-                    $drawn[] = $this->file($file, $workspace, $audience, $detail, $imagesRead, $bytesRead);
+                    $drawn[] = $this->file($file, $workspace, $company, $expense, $audience, $detail, $imagesRead, $bytesRead);
+                }
+                if ($drawn === [] && ! InvoiceReceipts::listsExpenseWithoutFiles($audience)) {
+                    continue;
                 }
                 $entries[] = new InvoiceReceiptEntry(
                     ref: InvoiceReceipts::ref(count($entries) + 1),
@@ -193,15 +196,48 @@ final class InvoiceDocumentBuilder
     }
 
     /**
+     * The available receipts on these expenses that this audience may be told of,
+     * oldest first. The operator reads every one (the caller has established
+     * they manage the workspace); a client reads what the attachment reader
+     * serves them, and a client with no identity reads nothing.
+     *
+     * @param  Collection<int, ClientExpense>  $expenses
+     * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
+     * @return Collection<int, ClientAttachment>
+     */
+    private function receiptFiles(ClientInvoice $invoice, Workspace $workspace, Collection $expenses, string $audience, User|AgentPrincipal|null $viewer): Collection
+    {
+        $reader = app(AttachmentReader::class);
+        $files = match ($audience) {
+            InvoiceLineDetail::OPERATOR => ClientAttachment::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('record_type', 'expense'),
+            InvoiceLineDetail::CLIENT => $viewer === null
+                ? ClientAttachment::query()->whereRaw('1 = 0')
+                : $reader->queryForTypes($viewer, $workspace, $viewer instanceof User ? $reader->nativePortalAudience($viewer, $workspace) : AttachmentAudience::Portal, ['expense']),
+        };
+
+        return $files
+            ->whereIn('record_public_id', $expenses->pluck('public_id')->all())
+            ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
      * One receipt file: its metadata, and, for the PDF, the image itself within
      * the document's budget. The counters are the budget spent so far.
      *
      * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
      */
-    private function file(ClientAttachment $file, Workspace $workspace, string $audience, ReceiptDetail $detail, int &$imagesRead, int &$bytesRead): InvoiceReceiptFile
+    private function file(ClientAttachment $file, Workspace $workspace, ClientCompany $company, ClientExpense $expense, string $audience, ReceiptDetail $detail, int &$imagesRead, int &$bytesRead): InvoiceReceiptFile
     {
         $filename = (string) $file->original_filename;
-        $href = InvoiceReceipts::hrefFor($audience, route('svc.files.download', ['workspace' => $workspace->public_id, 'clientAttachment' => $file->public_id], absolute: false));
+        $href = InvoiceReceipts::hrefFor(
+            $audience,
+            route('svc.files.download', ['workspace' => $workspace->public_id, 'clientAttachment' => $file->public_id], absolute: false),
+            route('portal.files.receipt.download', ['clientCompany' => $company->public_id, 'recordPublicId' => $expense->public_id, 'attachment' => $file->public_id], absolute: false),
+        );
         $placement = InvoiceReceipts::placementFromMetadata($file->media_type, $file->bytes);
         $plain = static fn (ReceiptPlacement $as): InvoiceReceiptFile => new InvoiceReceiptFile($file->public_id, $filename, $file->media_type, $file->bytes, $href, $as);
 

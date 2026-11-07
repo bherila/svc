@@ -216,14 +216,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. This read remains available when sharing writers are disabled and performs no durable mutation. */
+        /** @description Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Expense receipts are also accepted here, for sharing only: a receipt is private until shared, and a client opens it only when the expense is billed on an invoice they can see. This read remains available when sharing writers are disabled and performs no durable mutation. */
         get: operations['attachments.visibility.get'];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing. */
+        /** @description Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Expense receipts are also accepted here, for sharing only: a receipt is private until shared, and a client opens it only when the expense is billed on an invoice they can see. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing. */
         patch: operations['attachments.visibility.update'];
         trace?: never;
     };
