@@ -799,6 +799,37 @@ Settled by the product owner before a period away:
 
 (Appended as they happen: date, PR, question, decision, why.)
 
+- **2026-11-07, #624 item 9: Appendix B (receipts).**
+  - **Who is told of a receipt:** operator audience, workspace managers only
+    (a scoped member who may read the invoice gets none, because they cannot
+    open expense receipts). Client audience: only a receipt flagged visible to
+    the client AND only if `AttachmentReader::portalReadsParentType('expense')`
+    holds. It does not today, so client copies carry no Appendix B and no
+    receipt link; if that policy opens, the appendix follows with no other
+    change.
+  - **"Vendor":** expenses have no vendor column, so the appendix lists date,
+    description (the merchant text), amount and receipts. No schema was added.
+  - **Amount:** the expense's own amount, which is what the line bills (no
+    markup exists).
+  - **Images:** JPEG and PNG only, by what the bytes are, not the stored type;
+    at most 1.5 MiB each, 6 megapixels each, 24 per document and 6 MiB in
+    total, drawn at most 600 by 520 CSS px and never enlarged. Everything else
+    is listed by name with a sentence (not drawn, too large, could not be
+    drawn). No PDF merge dependency was added.
+  - **Reading files:** through `AttachmentStorageService::boundedContents()`,
+    which checks state, size and digest and never throws.
+  - **Where receipts are drawn:** the operator screen (links only, no bytes)
+    and the PDF download routes. Emailed, stored administrator copies and
+    reminder PDFs ask for none, so no image bytes are stored in a table or
+    mailed. Proforma asks for none.
+  - **Drafts and voids:** same as Appendix A (printed when expenses are
+    claimed by the invoice's lines).
+  - **Screen:** the rail card and appendix link only server-sent addresses
+    (`null` where the viewer may not open the file). At 390 px the appendix
+    table scrolls inside its own container, as Appendix A does.
+  - **Harness:** the `--invoice-document` seed now sets the connection's own
+    publishable key; the portal "Pay by card" assertion failed without it on
+    a clean `origin/main`.
 - **2026-11-06, #614: does "Still deferred" follow the agreement setting?**
   Decided by the owner: yes. Client copies show the itemised list only when
   `show_deferred_backlog_to_client` is on, read as it stands now. With no
@@ -882,7 +913,8 @@ Settled by the product owner before a period away:
     transaction, for the client's audience, with no number, for the current
     cadence period of each active recurring agreement. An already-invoiced
     period, or a billing rule that cannot price it, is said in one sentence
-    instead of a document. Appendix B (receipts) is not drawn yet.
+    instead of a document. A proforma draws no Appendix B (it asks for no
+    receipts, and a client is told of none).
   - **Portal rail:** approve or dispute hours is not offered, because
     client approval (slice 8) has not landed.
   - **Stripe:** the browser confirms the payment with Stripe.js, loaded when

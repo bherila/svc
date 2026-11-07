@@ -753,6 +753,37 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
             'sort_order' => $order + 1,
         ]);
     }
+    // Appendix B: three expenses billed on three expense lines. The first has a
+    // PNG, a PDF and a file whose name has no break; the second a JPEG; the
+    // third none. The names have no break either. Real bytes, stored through
+    // the application's own adapter on the harness's private disk.
+    $documentExpenseLines = [$documentLines['expense']];
+    foreach ([['SyntheticLabResultsApiUsageWithoutBreaks'.str_repeat('A', 40), 9_900, 8], ['SyntheticParkingWithoutBreaks'.str_repeat('P', 40), 1_500, 9]] as [$text, $amount, $order]) {
+        $documentExpenseLines[] = ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->id, 'client_invoice_id' => $documentInvoice->id, 'type' => 'expense', 'description' => $text,
+            'quantity' => '1', 'unit_amount' => $amount, 'tax_amount' => 0, 'total_amount' => $amount, 'sort_order' => $order,
+        ]);
+    }
+    $documentInvoice->forceFill(['subtotal_amount' => 240_100, 'total_amount' => 245_100, 'balance_amount' => 195_100])->save();
+    foreach ($documentExpenseLines as $position => $expenseLine) {
+        $documentExpense = ClientExpense::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'created_by_user_id' => $owner->id,
+            'spent_on' => sprintf('2026-10-%02d', 10 + $position), 'amount' => $expenseLine->unit_amount, 'currency' => 'USD',
+            'description' => $expenseLine->description, 'status' => 'invoiced', 'client_invoice_line_id' => $expenseLine->id,
+        ]);
+        $files = match ($position) {
+            0 => [
+                UploadedFile::fake()->image(str_repeat('SyntheticReceiptPhoto', 8).'.png', 640, 420),
+                UploadedFile::fake()->createWithContent('scan.pdf', '%PDF-1.4 synthetic layout receipt'),
+                UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptScanWithoutBreaks', 6).'.pdf', '%PDF-1.4 synthetic layout receipt'),
+            ],
+            1 => [UploadedFile::fake()->image('api-usage.jpg', 480, 640)],
+            default => [],
+        };
+        foreach ($files as $file) {
+            app(AttachmentStorageService::class)->store($workspace, $documentExpense, $file, $owner);
+        }
+    }
     foreach ([[3, 90, 'SyntheticInternalNoteWithoutBreaks'.str_repeat('N', 40), false, null], [4, 60, 'Internal only', true, 'Reconciled the purchase order '.str_repeat('SyntheticClientNote', 8)], [5, 45, 'Internal only', false, null]] as [$day, $minutes, $note, $visible, $written]) {
         $entry = ClientTimeEntry::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $owner->id,
@@ -765,6 +796,8 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
     $documentConnections->connect($workspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
         'external_account_id' => 'acct_synthetic_document', 'display_name' => 'Synthetic', 'environment' => 'test',
         'secret' => 'sk_test_'.str_repeat('synthetic', 4).'0001', 'webhook_secret' => 'whsec_synthetic',
+        // The workspace's own publishable key: the portal offers card payment only for a key it knows is this account's.
+        'publishable_key' => 'pk_test_layout_synthetic',
     ]);
     $documentPages = [
         'document_invoice' => route('clients.invoice', [$workspace, $company, $documentInvoice], absolute: false),

@@ -14,6 +14,7 @@ use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Billing\Document\ReceiptDetail;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use Illuminate\Http\JsonResponse;
@@ -115,7 +116,13 @@ class InvoiceController extends Controller
         // written for them to read. So the check that admits the reader also
         // says which appendix they get.
         $audience = $this->authorizeInvoiceView($request, $workspace, $clientInvoice);
-        $pdf = $documents->pdf($clientInvoice, $audience);
+        // Appendix B draws receipts, which only a workspace manager may open; a
+        // scoped member who may read the invoice still gets no receipts. The
+        // client audience asks too and is answered by the attachment policy.
+        $receipts = $audience === InvoiceLineDetail::CLIENT || Gate::forUser($request->user())->allows('manage', $workspace)
+            ? ReceiptDetail::Embedded
+            : ReceiptDetail::None;
+        $pdf = $documents->pdf($clientInvoice, $audience, receipts: $receipts);
 
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',

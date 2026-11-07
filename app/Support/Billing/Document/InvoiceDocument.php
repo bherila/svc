@@ -30,6 +30,7 @@ final readonly class InvoiceDocument
      * @param  list<StatementSection>  $statement
      * @param  DeferredWork|null  $deferredWork
      * @param  list<AppendixBlock>  $appendix
+     * @param  list<InvoiceReceiptEntry>  $receipts  Appendix B; empty when the reader may be told of no receipt.
      */
     public function __construct(
         public DocumentMode $mode,
@@ -57,6 +58,7 @@ final readonly class InvoiceDocument
         public ?array $deferredWork,
         public array $appendix,
         public bool $genericLabelUsed,
+        public array $receipts,
         public ?string $payUrl,
         /** "Will be charged to Visa ending 4242 on 2026-12-01." when autopay will apply (#636). */
         public ?string $autopayNotice = null,
@@ -80,6 +82,12 @@ final readonly class InvoiceDocument
     public function voidNotice(): ?string
     {
         return InvoiceDocumentNotices::voidNotice($this->voidedOn, $this->status);
+    }
+
+    /** How many receipt files Appendix B lists. */
+    public function receiptCount(): int
+    {
+        return array_sum(array_map(static fn (InvoiceReceiptEntry $entry): int => count($entry->files), $this->receipts));
     }
 
     /** The running header and the filename's number, with a stand-in for a draft with none. */
@@ -129,6 +137,11 @@ final readonly class InvoiceDocument
                 'generic_label_used' => $this->genericLabelUsed,
                 'generic_label' => InvoiceLineDetail::CLIENT_GENERIC_LABEL,
                 'blocks' => $this->appendix,
+            ],
+            'receipts' => $this->receipts === [] ? null : [
+                'intro' => InvoiceDocumentNotices::receiptsIntro(),
+                'receipt_count' => $this->receiptCount(),
+                'entries' => array_map(static fn (InvoiceReceiptEntry $entry): array => $entry->toArray(), $this->receipts),
             ],
             'pay_url' => $this->payUrl,
             'autopay_notice' => $this->autopayNotice,

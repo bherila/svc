@@ -4,7 +4,10 @@ import { InvoiceAutopayCard } from '@/components/billing/autopay-operator';
 import type { InvoiceAutopayState } from '@/components/billing/autopay-operator';
 import { InvoiceDocument } from '@/components/billing/invoice-document';
 import type { InvoiceDocumentData } from '@/components/billing/invoice-document';
-import { InvoicePaymentState } from '@/components/billing/invoice-rail';
+import {
+    InvoicePaymentState,
+    InvoiceReceiptsCard,
+} from '@/components/billing/invoice-rail';
 import { InvoiceReasonDialog } from '@/components/billing/invoice-reason-dialog';
 import { PaymentRemindersCard } from '@/components/billing/payment-reminders';
 import type { InvoiceRemindersState } from '@/components/billing/payment-reminders';
@@ -1248,6 +1251,7 @@ export default function ClientInvoiceDetail({
                         className="grid grid-cols-1 gap-4"
                     >
                         <InvoicePaymentState document={document} />
+                        <InvoiceReceiptsCard document={document} />
                     </aside>
                 </div>
 

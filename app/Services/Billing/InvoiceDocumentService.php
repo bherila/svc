@@ -7,6 +7,7 @@ use App\Services\Billing\Pdf\DompdfInvoicePdfRenderer;
 use App\Services\Billing\Pdf\InvoicePdfRenderer;
 use App\Support\Billing\Document\DocumentMode;
 use App\Support\Billing\Document\InvoiceDocument;
+use App\Support\Billing\Document\ReceiptDetail;
 use App\Support\Billing\InvoiceLineDetail;
 use Dompdf\Dompdf;
 use Dompdf\Frame;
@@ -50,21 +51,21 @@ final class InvoiceDocumentService
     }
 
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
-    public function document(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, DocumentMode $mode = DocumentMode::Invoice): InvoiceDocument
+    public function document(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, DocumentMode $mode = DocumentMode::Invoice, ReceiptDetail $receipts = ReceiptDetail::None): InvoiceDocument
     {
-        return $this->builder->build($invoice, $audience, $mode);
+        return $this->builder->build($invoice, $audience, $mode, $receipts);
     }
 
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
-    public function html(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, DocumentMode $mode = DocumentMode::Invoice): View
+    public function html(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, DocumentMode $mode = DocumentMode::Invoice, ReceiptDetail $receipts = ReceiptDetail::None): View
     {
-        return $this->dompdf->html($this->document($invoice, $audience, $mode));
+        return $this->dompdf->html($this->document($invoice, $audience, $mode, $receipts));
     }
 
     /** @param InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT $audience */
-    public function pdf(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, DocumentMode $mode = DocumentMode::Invoice): string
+    public function pdf(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, DocumentMode $mode = DocumentMode::Invoice, ReceiptDetail $receipts = ReceiptDetail::None): string
     {
-        return $this->renderer->render($this->document($invoice, $audience, $mode))->bytes;
+        return $this->renderer->render($this->document($invoice, $audience, $mode, $receipts))->bytes;
     }
 
     /**
@@ -73,8 +74,8 @@ final class InvoiceDocumentService
      * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
      * @param  (callable(Frame): void)|null  $onFrame
      */
-    public function rendered(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, ?callable $onFrame = null): Dompdf
+    public function rendered(ClientInvoice $invoice, string $audience = InvoiceLineDetail::CLIENT, ?callable $onFrame = null, ReceiptDetail $receipts = ReceiptDetail::None): Dompdf
     {
-        return $this->dompdf->laidOut($this->document($invoice, $audience), $onFrame);
+        return $this->dompdf->laidOut($this->document($invoice, $audience, receipts: $receipts), $onFrame);
     }
 }

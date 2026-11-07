@@ -78,6 +78,21 @@
         .appendix .date { width: 70px; white-space: nowrap; }
         .appendix .project { width: 120px; }
         .appendix .hours { width: 50px; text-align: right; white-space: nowrap; }
+        /* Appendix B. A fixed-layout table, so a long unbroken filename wraps
+           inside its own cell; each image sits in a block of its own under its
+           row and is sized by the width and height attributes the server worked
+           out, never by the file's own size. */
+        .receipts table.expenses { table-layout: fixed; margin-top: 8px; font-size: 10px; }
+        .receipts td, .receipts th { padding: 4px 8px; }
+        .receipts .ref { width: 7%; white-space: nowrap; }
+        .receipts .date { width: 13%; white-space: nowrap; }
+        .receipts .amount { width: 11%; text-align: right; white-space: nowrap; }
+        .receipts .files { width: 31%; }
+        .receipts .file { margin: 0 0 4px; }
+        .receipts .note { color: #6b7280; font-size: 9px; }
+        .receipts .picture { padding: 4px 8px 10px; border-bottom: 1px solid #d1d5db; }
+        .receipts .picture .caption { color: #6b7280; font-size: 9px; margin: 0 0 3px; }
+        .receipts .picture img { border: 1px solid #d1d5db; }
     </style>
 </head>
 <body>
@@ -199,7 +214,7 @@
      cycle is a charge, not a record of hours, and has nothing to itemise. --}}
 @if ($document->appendix !== [])
     <div class="appendix new-page">
-        <h2>Appendix: time entries on this invoice</h2>
+        <h2>Appendix A: time entries on this invoice</h2>
         <p class="muted">Grouped by the invoice line each entry was billed on.
             @if ($document->genericLabelUsed)
                 Entries shown as “{{ \App\Support\Billing\InvoiceLineDetail::CLIENT_GENERIC_LABEL }}” are billed work without a client-facing description.
@@ -222,6 +237,47 @@
                 </tbody>
             </table>
         @endforeach
+    </div>
+@endif
+
+{{-- Appendix B: the expenses billed here and their receipts. Present only when
+     the builder found a receipt this audience may be told about, so there is
+     never an empty heading. An image is drawn under its row at the size the
+     server worked out; everything else is named, with a sentence saying why. --}}
+@if ($document->receipts !== [])
+    <div class="receipts new-page">
+        <h2>Appendix B: receipts</h2>
+        <p class="muted">{{ \App\Support\Billing\Document\InvoiceDocumentNotices::receiptsIntro() }}</p>
+        <table class="expenses">
+            <thead><tr><th class="ref">Ref</th><th class="date">Date</th><th>Description</th><th class="amount">Amount</th><th class="files">Receipts</th></tr></thead>
+            @foreach ($document->receipts as $entry)
+            <tbody>
+                <tr>
+                    <td class="ref">{{ $entry->ref }}</td>
+                    <td class="date">{{ $entry->spentOn }}</td>
+                    <td class="wrap">{{ $entry->description }}</td>
+                    <td class="amount">{{ F::money($entry->amount) }}</td>
+                    <td class="files">
+                    @forelse ($entry->files as $file)
+                        <div class="file wrap">{{ $file->filename }}@if ($file->placement->note() !== null)<br><span class="note">{{ $file->placement->note() }}</span>@endif</div>
+                    @empty
+                        <span class="muted">No receipt on file</span>
+                    @endforelse
+                    </td>
+                </tr>
+                @foreach ($entry->files as $file)
+                    @if ($file->imageDataUri !== null)
+                <tr>
+                    <td colspan="5" class="picture">
+                        <p class="caption wrap">{{ $entry->ref }} · {{ $file->filename }}</p>
+                        <img src="{{ $file->imageDataUri }}" width="{{ $file->drawnWidth }}" height="{{ $file->drawnHeight }}" alt="">
+                    </td>
+                </tr>
+                    @endif
+                @endforeach
+            </tbody>
+            @endforeach
+        </table>
     </div>
 @endif
 </body>

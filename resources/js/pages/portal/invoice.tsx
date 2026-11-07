@@ -4,7 +4,10 @@ import { PortalInvoiceAutopayCard } from '@/components/billing/autopay-portal';
 import type { PortalInvoiceAutopay } from '@/components/billing/autopay-portal';
 import { InvoiceDocument } from '@/components/billing/invoice-document';
 import type { InvoiceDocumentData } from '@/components/billing/invoice-document';
-import { InvoicePaymentState } from '@/components/billing/invoice-rail';
+import {
+    InvoicePaymentState,
+    InvoiceReceiptsCard,
+} from '@/components/billing/invoice-rail';
 import { StripeCardPayment } from '@/components/billing/stripe-card-payment';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { Button } from '@/components/ui/button';
@@ -104,6 +107,7 @@ export default function PortalInvoice({
                                 Download PDF
                             </a>
                         </InvoicePaymentState>
+                        <InvoiceReceiptsCard document={document} />
                     </aside>
                 </div>
                 {attachment_panel && (

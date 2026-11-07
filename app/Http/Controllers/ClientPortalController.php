@@ -36,6 +36,7 @@ use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\AutopayPresenter;
 use App\Support\Billing\Autopay\AutopayInvoiceState;
+use App\Support\Billing\Document\ReceiptDetail;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Engagement\AgreementTermsPayload;
 use App\Support\Files\AttachmentListing;
@@ -135,7 +136,7 @@ class ClientPortalController extends Controller
             // only where the agreement allows it. Withheld rather than blanked,
             // so there is no row announcing work the client is not being told
             // about.
-            'document' => $documents->document($invoice, InvoiceLineDetail::CLIENT)->toArray(),
+            'document' => $documents->document($invoice, InvoiceLineDetail::CLIENT, receipts: ReceiptDetail::Listed)->toArray(),
             // What this workspace's connections can take payment with, as
             // finished values or null (Stripe's intent route, Square's hosted
             // page). A linked invoice is collected in Square (#438): its page

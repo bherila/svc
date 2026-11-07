@@ -41,6 +41,26 @@ export type InvoiceDocumentSection = {
     lines: InvoiceDocumentLine[];
 };
 
+export type InvoiceReceiptFile = {
+    id: string;
+    filename: string;
+    media_type: string;
+    bytes: number;
+    /** A finished address, or null where this viewer may not open the file. */
+    href: string | null;
+    /** Why the PDF does not draw this file, or null where it does. */
+    note: string | null;
+};
+
+export type InvoiceReceiptEntry = {
+    ref: string;
+    line_id: string;
+    spent_on: string;
+    description: string;
+    amount: number;
+    files: InvoiceReceiptFile[];
+};
+
 export type InvoiceDocumentData = {
     mode: 'invoice' | 'proforma';
     heading: string;
@@ -97,6 +117,11 @@ export type InvoiceDocumentData = {
                 minutes: number;
             }[];
         }[];
+    } | null;
+    receipts: {
+        intro: string;
+        receipt_count: number;
+        entries: InvoiceReceiptEntry[];
     } | null;
     pay_url: string | null;
     /** Present when autopay will charge this invoice on its due date. */
@@ -543,6 +568,92 @@ export function InvoiceDocument({
                                 </Table>
                             </div>
                         ))}
+                    </div>
+                )}
+
+                {document.receipts !== null && (
+                    <div
+                        id="appendix-b"
+                        className="grid grid-cols-1 gap-4 border-t border-border pt-6"
+                    >
+                        <div className="grid grid-cols-1 gap-1">
+                            <h3 className="text-lg font-semibold">
+                                Appendix B: receipts
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                                {document.receipts.intro}
+                            </p>
+                        </div>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Ref</TableHead>
+                                    <TableHead>Date</TableHead>
+                                    <TableHead className="min-w-48">
+                                        Description
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                        Amount
+                                    </TableHead>
+                                    <TableHead className="min-w-40">
+                                        Receipts
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {document.receipts.entries.map((entry) => (
+                                    <TableRow key={entry.ref}>
+                                        <TableCell>{entry.ref}</TableCell>
+                                        <TableCell>
+                                            {formatDay(entry.spent_on)}
+                                        </TableCell>
+                                        <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
+                                            {entry.description}
+                                        </TableCell>
+                                        <TableCell className="text-right tabular-nums">
+                                            {money(entry.amount)}
+                                        </TableCell>
+                                        <TableCell className="max-w-48 wrap-anywhere whitespace-normal">
+                                            {entry.files.length === 0 ? (
+                                                <span className="text-muted-foreground">
+                                                    No receipt on file
+                                                </span>
+                                            ) : (
+                                                <ul className="grid grid-cols-1 gap-1">
+                                                    {entry.files.map((file) => (
+                                                        <li key={file.id}>
+                                                            {file.href ===
+                                                            null ? (
+                                                                file.filename
+                                                            ) : (
+                                                                <a
+                                                                    href={
+                                                                        file.href
+                                                                    }
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="underline underline-offset-4"
+                                                                >
+                                                                    {
+                                                                        file.filename
+                                                                    }
+                                                                </a>
+                                                            )}
+                                                            {file.note !==
+                                                                null && (
+                                                                <span className="block text-xs text-muted-foreground">
+                                                                    {file.note}
+                                                                </span>
+                                                            )}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
                     </div>
                 )}
             </article>
