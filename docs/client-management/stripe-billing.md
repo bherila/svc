@@ -231,6 +231,39 @@ stripe trigger charge.refunded
 
 For invoice-specific tests, create the PaymentIntent through the portal so metadata includes `client_invoice_id` and `client_company_id`, then complete or refund it from the Stripe Dashboard or CLI.
 
+## Testing against Stripe test mode
+
+`tests/StripeLive/` drives SVC's real code against Stripe's real API in test mode, so
+payment changes can be iterated on without paying anything by hand. It is its own PHPUnit
+configuration and is not part of the default suites, the CI shards or Infection.
+
+```bash
+STRIPE_TEST_SECRET_KEY=rk_test_... php artisan test --configuration=phpunit.stripe-live.xml --testsuite=StripeLive
+```
+
+- The suite **skips** when `STRIPE_TEST_SECRET_KEY` is not set, so forks and local runs
+  pass. It **refuses to run** (fails, without printing the key) for any key that does not
+  start with `sk_test_` or `rk_test_`. A live key is never accepted.
+- Restricted key permissions (Write unless noted): **Customers**, **SetupIntents**,
+  **PaymentIntents**, **PaymentMethods**, and **Events: Read**. Nothing else is needed.
+- Scenarios, each with a fresh synthetic customer (`example.test` address, metadata
+  `svc_e2e=1` and a run id): saving a card through the portal SetupIntent path (confirmed
+  server-side with `pm_card_visa`), an autopay charge, a declined card (one failed attempt,
+  never retried), a card that needs authentication, and removing the default method (autopay
+  turns off). Customers are deleted afterwards, best effort.
+- **Webhooks need no public URL.** After each scenario the suite lists the resulting events
+  from Stripe's Events API (waiting up to 30 seconds for it to catch up), then POSTs each to
+  `/api/webhooks/stripe` signed with a secret generated for the run
+  (`Stripe-Signature: t=...,v1=HMAC-SHA256("t.payload")`), so the real `StripeWebhookService`
+  settles the invoice through the ordinary ledger.
+- The Stripe calls use the key through the deployment-environment connection, so no webhook
+  endpoint is registered at Stripe and nothing is saved in a real database (the suite uses the
+  disposable in-memory one).
+- In CI, `.github/workflows/stripe-test-mode.yml` runs it with the repository secret
+  `STRIPE_TEST_SECRET_KEY` on billing-path pull requests, pushes to `main` and nightly. It is
+  advisory (not part of the required `ci` check) and succeeds with a notice when the secret
+  is unavailable.
+
 ## Replay Guidance
 
 Webhook bodies are deliberately not stored. `client_stripe_events` retains the Stripe event ID, type, object ID, payload hash, status, and a bounded error summary. To replay an event safely:

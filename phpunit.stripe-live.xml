@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The Stripe test-mode end-to-end suite. It talks to the real Stripe API, so it is
+    deliberately NOT part of phpunit.xml: the sharded SQLite/MariaDB lanes list their
+    files from that config and Infection runs it. Run it with
+
+        STRIPE_TEST_SECRET_KEY=rk_test_... php artisan test (configuration option set to this file)
+
+    It skips when the key is absent and refuses any key that is not sk_test_/rk_test_.
+    See docs/client-management/stripe-billing.md ("Testing against Stripe test mode").
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="StripeLive">
+            <directory>tests/StripeLive</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <ini name="memory_limit" value="1G"/>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_DEBUG" value="false"/>
+        <env name="APP_KEY" value="base64:MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

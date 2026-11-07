@@ -1365,6 +1365,42 @@ Answers the owner gave in an interview on 2026-11-06.
     portal. They send `Idempotency-Key`, which becomes the SetupIntent's Stripe
     idempotency key so a retried request is handed the same intent.
 
+- **2026-11-07, Stripe test-mode end-to-end suite.**
+  - **Own PHPUnit configuration, not a suite in `phpunit.xml`.** The suite lives in
+    `tests/StripeLive/` and is configured by `phpunit.stripe-live.xml`
+    (`--configuration=phpunit.stripe-live.xml --testsuite=StripeLive`). PHPUnit has no
+    "default suite": every `<testsuite>` in `phpunit.xml` is collected by a bare run, by
+    `scripts/ci/phpunit-shard.php` (which lists files from that config) and by Infection. A
+    separate file keeps the network suite out of all three without touching them.
+  - **The workspace uses the key through the environment connection** (`services.stripe.*`,
+    the legacy webhook route), not a saved `WorkspacePaymentConnection`: saving one verifies
+    the key and registers a webhook endpoint at Stripe, which a test run must not leave
+    behind. The production adapters, the autopay command and `StripeWebhookService` run
+    unchanged.
+  - **Cards.** `pm_card_visa` saves through a SetupIntent (the portal path). A card that
+    declines on charge cannot be saved by a SetupIntent, so decline and authentication
+    scenarios attach `pm_card_chargeCustomerFail` / `pm_card_authenticationRequired` to the
+    customer and record them through `StripePaymentMethodService::attach` and
+    `PortalPaymentMethodService::makeDefault`. `pm_card_chargeDeclined` is refused at attach
+    time by Stripe, which is why it is not used.
+  - **Authentication required** asserts a failed attempt, no retry, nothing charged and the
+    intent not `succeeded`; it accepts `canceled`, `requires_payment_method` or
+    `requires_action`, because Stripe may refuse the off-session confirmation before an
+    intent is left to cancel (SVC cancels only an intent that stays open).
+  - **Webhook settlement without a public URL.** Events are read from the Events API
+    (created at or after run start, matched on the customer, intent, setup intent or method
+    id), then POSTed, oldest first, to the real route signed with a per-run `whsec_` secret.
+    The required-event list in the tests is local; it does not duplicate the public constant
+    the webhook-subscription health check will define.
+  - **Safety.** Only `sk_test_` / `rk_test_` keys run (unit-tested in `tests/Unit/StripeLive`);
+    an absent key skips; anything else fails; customers are checked to be `livemode: false`;
+    the key is never printed. Customers are tagged `svc_e2e=1` plus a run id with
+    `example.test` addresses and deleted afterwards on a best-effort basis.
+  - **CI.** `.github/workflows/stripe-test-mode.yml`, a separate workflow so it runs in
+    parallel and is not a need of the required `ci` aggregate (advisory for now). It runs on
+    billing-path pull requests, pushes to `main` and nightly, and succeeds with a notice when
+    the secret is unavailable (forks, Dependabot).
+
 ## Open questions
 
 None. Answered on 2026-11-06:
