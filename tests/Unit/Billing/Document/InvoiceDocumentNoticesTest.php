@@ -202,6 +202,12 @@ final class InvoiceDocumentNoticesTest extends TestCase
         ], $document->toArray()['receipts']);
     }
 
+    public function test_each_audience_reads_its_own_appendix_b_intro(): void
+    {
+        $this->assertSame('The expenses billed on this invoice, with the receipt filed for each. An expense with no receipt on file is listed without one.', InvoiceDocumentNotices::receiptsIntro(InvoiceLineDetail::OPERATOR));
+        $this->assertSame('The expenses billed on this invoice that have a receipt shared with you, with that receipt.', InvoiceDocumentNotices::receiptsIntro(InvoiceLineDetail::CLIENT));
+    }
+
     private function line(string $id, string $description): InvoiceDocumentLine
     {
         return new InvoiceDocumentLine($id, 'retainer', $description, '1.0000', null, null, 100, 0, 100);
