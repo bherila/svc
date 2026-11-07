@@ -22,7 +22,7 @@ final class AttachmentSharingAction
     public function setVisibility(User $actor, Workspace $workspace, string $attachmentId, AttachmentVisibilityChange $change,
         AttachmentMutationOrigin $origin, AttachmentParentReference $parentScope): ClientAttachment
     {
-        AttachmentSharingGate::assertEnabledFor($parentScope->type);
+        AttachmentSharingGate::assertEnabled();
 
         return DB::transaction(function () use ($actor, $workspace, $attachmentId, $change, $origin, $parentScope): ClientAttachment {
             BillingMaintenance::share($workspace->id);
@@ -101,7 +101,7 @@ final class AttachmentSharingAction
     public function assertReplayAllowed(User $actor, Workspace $workspace, AttachmentParentReference $parentScope,
         string $attachmentId, AttachmentMutationOrigin $origin, bool $deletion = false): ClientAttachment
     {
-        AttachmentSharingGate::assertEnabledFor($parentScope->type);
+        AttachmentSharingGate::assertEnabled();
 
         return DB::transaction(function () use ($actor, $workspace, $parentScope, $attachmentId, $origin, $deletion): ClientAttachment {
             BillingMaintenance::share($workspace->id);
@@ -116,7 +116,7 @@ final class AttachmentSharingAction
     public function mutationPreflight(User $actor, Workspace $workspace, AttachmentParentReference $parentScope,
         string $attachmentId, string $expectedVersion, string $expectedParentVersion): ClientAttachment
     {
-        AttachmentSharingGate::assertEnabledFor($parentScope->type);
+        AttachmentSharingGate::assertEnabled();
 
         return DB::transaction(function () use ($actor, $workspace, $parentScope, $attachmentId, $expectedVersion, $expectedParentVersion): ClientAttachment {
             BillingMaintenance::share($workspace->id);

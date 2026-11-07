@@ -12,7 +12,7 @@ The Balance card adds up your open invoices, says if any are overdue, shows the 
 
 ## An invoice
 
-An invoice opens as the document itself: what it covers, the totals, the hours statement for retainer work and, where your agreement allows it, the work still deferred. Appendix A lists the time behind each line. Beside it, the payment card shows what is owed and offers Pay by card or Pay in Square, whichever the business has set up. Download PDF gives you the same document on white paper.
+An invoice opens as the document itself: what it covers, the totals, the hours statement for retainer work and, where your agreement allows it, the work still deferred. Appendix A lists the time behind each line. Beside it, the payment card shows what is owed and offers Pay by card or Pay in Square, whichever the business has set up. Download PDF gives you the same document on white paper. If your provider shared receipts for the expenses on the invoice, Appendix B lists those expenses with their receipts, and you can open each one. Emailed copies of the invoice do not carry the receipts; open the invoice in the portal for them.
 
 ## This period and the next invoice
 
@@ -28,7 +28,7 @@ If a provider gave you reviewer access, or you are a billing contact of more tha
 
 You cannot approve your own work. If you also work for your provider, your own hours and expenses stay in the list for someone else to approve.
 
-Hours show as time only, with no rate. Receipts are not shown here.
+Hours show as time only, with no rate. Receipts are not shown here; the ones your provider shared are on the invoice they belong to.
 
 ## Your retainer
 

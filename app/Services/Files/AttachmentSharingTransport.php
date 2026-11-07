@@ -221,7 +221,7 @@ final class AttachmentSharingTransport
 
     private function writeGate(AttachmentParentReference $reference, AttachmentMutationOrigin $origin): void
     {
-        AttachmentSharingGate::assertEnabledFor($reference->type);
+        AttachmentSharingGate::assertEnabled();
         if ($origin === AttachmentMutationOrigin::Agent) {
             abort_unless(AgentWriteCutover::files() && (! $reference->collaboration() || AgentWriteCutover::collaboration()), 404);
         }

@@ -14,9 +14,9 @@ An invoice bills approved work for one period. A client's Invoices tab lists the
 
 ## The invoice document
 
-The invoice page, its PDF and the client's copy are one document: lines grouped under Time, Recurring services, Expenses, Deferred work and Adjustments and credits, then the totals, the hours statement, what is still deferred and Appendix A, the time entries behind each line. The hours statement is frozen when the invoice is issued, so it never changes afterwards. In dark mode, Show as printed switches the page to the white paper the PDF is always drawn on.
+The invoice page, its PDF and the client's copy are one document: lines grouped under Time, Recurring services, Expenses, Deferred work and Adjustments and credits, then the totals, the hours statement, what is still deferred and Appendix A, the time entries behind each line. Appendix B lists the expenses billed on the invoice with their receipts. The hours statement is frozen when the invoice is issued, so it never changes afterwards. In dark mode, Show as printed switches the page to the white paper the PDF is always drawn on.
 
-The administrator copy includes your internal descriptions. The client copy never does, and shows the still-deferred list only where the agreement allows it.
+The administrator copy includes your internal descriptions and every receipt. The client copy never does, and shows the still-deferred list only where the agreement allows it. In the client's portal and the PDF they download, Appendix B holds only the receipts you shared with them. The copy emailed to the client, and the one stored with the email, carries no Appendix B.
 
 ## View proforma invoice
 

@@ -27,7 +27,11 @@ final class InvoiceDocumentNotices
             : 'For the work this invoice reconciles and the retainer period that follows it. All figures are hours.';
     }
 
-    /** The sentence under Appendix B's heading. */
+    /**
+     * The sentence under Appendix B's heading.
+     *
+     * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
+     */
     public static function receiptsIntro(string $audience): string
     {
         return match ($audience) {

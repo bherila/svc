@@ -72,7 +72,7 @@ final class AttachmentSharingPresenter
      * @return array<string,mixed>|null */
     public function nativeControl(ClientAttachment $file, AttachmentSharingView $view, string $updateHref, AttachmentAudience $audience): ?array
     {
-        if (! in_array($audience, [AttachmentAudience::Internal, AttachmentAudience::Native], true) || ! $view->canPublish || ! AttachmentSharingGate::availableFor($view->reference->type)
+        if (! in_array($audience, [AttachmentAudience::Internal, AttachmentAudience::Native], true) || ! $view->canPublish || ! AttachmentSharingGate::available()
             || $file->lifecycle_state !== ClientAttachment::STATE_AVAILABLE) {
             return null;
         }
