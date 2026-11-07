@@ -63,6 +63,7 @@ use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
+use App\Support\Billing\Document\ReceiptDetail;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
@@ -520,7 +521,8 @@ class ClientDirectoryController extends Controller
             // The invoice as the one document the screen, the PDF and the proforma share:
             // sections, totals, the hours statement, what is still deferred and the work
             // behind each line, for the operator's audience.
-            'document' => $documents->document($clientInvoice, InvoiceLineDetail::OPERATOR)->toArray(),
+            // Receipts, with links, only for a manager: nobody else may open them.
+            'document' => $documents->document($clientInvoice, InvoiceLineDetail::OPERATOR, receipts: $manages ? ReceiptDetail::Listed : ReceiptDetail::None)->toArray(),
             // Each line and payment exactly as the API presents it (#454): the
             // same presenter, so the screen and invoices.get / payments.list
             // cannot drift. The screen only adds what is its own - the hours

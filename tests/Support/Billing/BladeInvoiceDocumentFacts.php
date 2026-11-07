@@ -3,6 +3,7 @@
 namespace Tests\Support\Billing;
 
 use App\Models\ClientInvoice;
+use App\Support\Billing\Document\ReceiptDetail;
 use DOMDocument;
 use DOMElement;
 use DOMNode;
@@ -19,12 +20,17 @@ use DOMXPath;
  */
 final class BladeInvoiceDocumentFacts implements InvoiceDocumentFacts
 {
-    /** @param object{html: callable} $documents Anything with `html(ClientInvoice, string): View`. */
-    public function __construct(private readonly object $documents) {}
+    /**
+     * @param  object{html: callable}  $documents  Anything with `html(ClientInvoice, string): View`.
+     * @param  bool  $withReceipts  Draw Appendix B as the PDF does; only the current document knows how.
+     */
+    public function __construct(private readonly object $documents, private readonly bool $withReceipts = false) {}
 
     public function extract(ClientInvoice $invoice, string $audience): array
     {
-        $html = $this->documents->html($invoice, $audience)->render();
+        $html = ($this->withReceipts
+            ? $this->documents->html($invoice, $audience, receipts: ReceiptDetail::Embedded)
+            : $this->documents->html($invoice, $audience))->render();
 
         $document = new DOMDocument;
         libxml_use_internal_errors(true);
@@ -54,6 +60,7 @@ final class BladeInvoiceDocumentFacts implements InvoiceDocumentFacts
             'hours_statement' => $this->hoursStatement($xpath),
             'still_deferred' => $this->stillDeferred($xpath),
             'appendix' => $this->appendix($xpath),
+            'receipts' => $this->receipts($xpath),
         ];
     }
 
@@ -176,6 +183,41 @@ final class BladeInvoiceDocumentFacts implements InvoiceDocumentFacts
         }
 
         return ['notice' => $this->text($xpath, './p', $block), 'lines' => $lines];
+    }
+
+    /** @return array{heading: string, intro: string, entries: list<array{ref: string, date: string, description: string, amount: string, files: list<array{name: string, note: string|null}>, images: int}>}|null */
+    private function receipts(DOMXPath $xpath): ?array
+    {
+        $block = $this->first($xpath, '//div[contains(@class,"receipts")]');
+        if (! $block instanceof DOMElement) {
+            return null;
+        }
+        $entries = [];
+        foreach ($xpath->query('.//table[contains(@class,"expenses")]/tbody', $block) ?: [] as $group) {
+            $row = $this->first($xpath, './tr[1]', $group);
+            if (! $row instanceof DOMNode) {
+                continue;
+            }
+            $cells = $this->cells($row);
+            $files = [];
+            foreach ($xpath->query('.//div[contains(@class,"file")]', $row) ?: [] as $file) {
+                $note = $this->text($xpath, './/span[contains(@class,"note")]', $file);
+                $files[] = [
+                    'name' => trim($this->normalise(str_replace($note, '', $file->textContent))),
+                    'note' => $note === '' ? null : $note,
+                ];
+            }
+            $entries[] = [
+                'ref' => $cells[0], 'date' => $cells[1], 'description' => $cells[2], 'amount' => $cells[3],
+                'files' => $files, 'images' => (int) ($xpath->query('.//img', $group)->length ?? 0),
+            ];
+        }
+
+        return [
+            'heading' => $this->text($xpath, './h2', $block),
+            'intro' => $this->text($xpath, './p', $block),
+            'entries' => $entries,
+        ];
     }
 
     /** @return list<string> */

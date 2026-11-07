@@ -213,6 +213,19 @@ final class AttachmentReader
         return $query->whereIn('client_project_id', $viewable);
     }
 
+    /**
+     * Parent types a portal reader is never served files of, whatever the file's
+     * flag says: the client company itself, and expenses, whose receipts have no
+     * client-facing surface. One list, read by the portal query below and by the
+     * invoice document deciding whether Appendix B may name a receipt to a client.
+     */
+    private const PORTAL_UNREADABLE_PARENTS = ['company', 'expense'];
+
+    public static function portalReadsParentType(string $type): bool
+    {
+        return ! in_array($type, self::PORTAL_UNREADABLE_PARENTS, true);
+    }
+
     /** @return Builder<covariant Model> */
     private function portalParents(User|AgentPrincipal $actor, Workspace $workspace, string $type, bool $preview): Builder
     {
@@ -223,7 +236,7 @@ final class AttachmentReader
             return $this->collaboration->visibleCommentsInWorkspace($actor, $workspace, CollaborationAudience::Portal);
         }
         $query = $this->base($workspace, $type);
-        if (in_array($type, ['company', 'expense'], true)) {
+        if (! self::portalReadsParentType($type)) {
             return $query->whereRaw('1 = 0');
         }
         if ($type === 'task') {

@@ -27,6 +27,12 @@ final class InvoiceDocumentNotices
             : 'For the work this invoice reconciles and the retainer period that follows it. All figures are hours.';
     }
 
+    /** The sentence under Appendix B's heading. */
+    public static function receiptsIntro(): string
+    {
+        return 'The expenses billed on this invoice, with the receipt filed for each. An expense with no receipt on file is listed without one.';
+    }
+
     public static function reissueNotice(?string $reissuedOn): ?string
     {
         return $reissuedOn === null

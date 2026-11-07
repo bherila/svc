@@ -34,11 +34,15 @@ use App\Models\ClientInvoice;
  *     hours_statement: array{intro: string, sections: list<Section>}|null,
  *     still_deferred: array{summary: string, entries: list<array{date: string, work: string, hours: string}>}|null,
  *     appendix: array{notice: string, lines: list<array{description: string, entries: list<array{date: string, project: string, work: string, hours: string}>, subtotal: array{label: string, hours: string}}>}|null,
+ *     receipts: array{heading: string, intro: string, entries: list<array{ref: string, date: string, description: string, amount: string, files: list<array{name: string, note: string|null}>, images: int}>}|null,
  * }
  */
 interface InvoiceDocumentFacts
 {
     /**
+     * Read as the PDF is drawn: Appendix B carries whatever receipts the
+     * audience may be told about, images included.
+     *
      * @param  'operator'|'client'  $audience
      * @return Facts
      */
