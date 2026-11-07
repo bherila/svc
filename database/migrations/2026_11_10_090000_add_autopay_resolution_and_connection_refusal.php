@@ -33,7 +33,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('invoice_autopay_attempts', function (Blueprint $table): void {
-            $table->dropForeign('iaa_resolved_by_fk');
+            // SQLite drops a foreign key by its columns, not its name.
+            $table->dropForeign(Schema::getConnection()->getDriverName() === 'sqlite' ? ['resolved_by_user_id'] : 'iaa_resolved_by_fk');
             $table->dropColumn(['resolved_by_user_id', 'resolution_note']);
         });
         Schema::table('workspaces', function (Blueprint $table): void {
