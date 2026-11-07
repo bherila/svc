@@ -15,6 +15,7 @@ use App\Support\Billing\Document\DocumentMode;
 use App\Support\Billing\Document\InvoiceReceipts;
 use App\Support\Billing\Document\ReceiptDetail;
 use App\Support\Billing\InvoiceLineDetail;
+use Dompdf\Frame;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -389,6 +390,32 @@ class InvoiceDocumentReceiptsGoldenTest extends TestCase
         }
         $this->assertStringContainsString('<img src="data:image/png;base64,', $html);
         $this->assertStringContainsString('width="60" height="40"', $html);
+    }
+
+    /**
+     * A vendor name and a filename with no break in them wrap inside their own
+     * cells; nothing is painted past the right margin of the page.
+     */
+    public function test_an_unbroken_vendor_name_and_filename_stay_inside_the_page_margin(): void
+    {
+        $invoice = $this->goldenInvoice();
+        [$expense] = $this->goldenExpense($invoice, str_repeat('Vendorname', 20), 41200, '2026-08-12');
+        $this->goldenReceipt($expense, str_repeat('receipt-file', 20).'.png', 'image/png', $this->pngBytes(2400, 800));
+        $this->goldenReceipt($expense, str_repeat('scan', 60).'.pdf', 'application/pdf', '%PDF-1.4 x');
+        $rightMargin = InvoiceDocumentService::US_LETTER_POINTS[2] - 0.75 * 72;
+
+        $painted = 0;
+        $overflowing = [];
+        app(InvoiceDocumentService::class)->rendered($invoice, InvoiceLineDetail::OPERATOR, function (Frame $frame) use (&$painted, &$overflowing, $rightMargin): void {
+            $painted++;
+            [$x, , $width] = $frame->get_border_box();
+            if ((float) $x + (float) $width > $rightMargin + 0.5) {
+                $overflowing[] = $frame->get_node()->nodeName.': '.mb_substr((string) $frame->get_node()->textContent, 0, 40);
+            }
+        }, ReceiptDetail::Embedded);
+
+        $this->assertGreaterThan(0, $painted, 'The inspector saw the document being painted');
+        $this->assertSame([], $overflowing);
     }
 
     private function uncompressedPngBytes(int $width, int $height): string

@@ -580,6 +580,42 @@ try {
             ).toHaveCount(0);
         }
 
+        if (screen === 'document_invoice') {
+            // Appendix B and the rail's receipts card: four receipt files on
+            // three expenses, each linked by an address the server chose.
+            await expect(
+                page.getByRole('heading', {
+                    name: 'Appendix B: receipts',
+                    exact: true,
+                }),
+            ).toBeVisible();
+            const card = page.getByLabel('Expense receipts');
+            await expect(card).toBeVisible();
+            await expect(card.getByRole('link')).toHaveCount(4);
+            await expect(
+                page.locator('#appendix-b').getByRole('link'),
+            ).toHaveCount(4);
+            for (const link of await page
+                .locator('#appendix-b')
+                .getByRole('link')
+                .all()) {
+                expect(await link.getAttribute('href')).toMatch(
+                    /^\/workspaces\/[0-9a-f-]{36}\/attachments\/[0-9a-f-]{36}$/,
+                );
+            }
+            await expect(
+                page
+                    .locator('#appendix-b')
+                    .getByText('No receipt on file', { exact: true }),
+            ).toBeVisible();
+        } else {
+            // The portal and the proforma read as the client, who is told of none.
+            await expect(
+                page.getByRole('heading', { name: /Appendix B/ }),
+            ).toHaveCount(0);
+            await expect(page.getByLabel('Expense receipts')).toHaveCount(0);
+        }
+
         await capture(screen, 'light', width);
         await page.emulateMedia({ colorScheme: 'dark' });
         await page.reload();

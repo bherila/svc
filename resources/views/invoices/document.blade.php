@@ -84,10 +84,10 @@
            out, never by the file's own size. */
         .receipts table.expenses { table-layout: fixed; margin-top: 8px; font-size: 10px; }
         .receipts td, .receipts th { padding: 4px 8px; }
-        .receipts .ref { width: 34px; white-space: nowrap; }
-        .receipts .date { width: 70px; white-space: nowrap; }
-        .receipts .amount { width: 70px; text-align: right; white-space: nowrap; }
-        .receipts .files { width: 150px; }
+        .receipts .ref { width: 7%; white-space: nowrap; }
+        .receipts .date { width: 13%; white-space: nowrap; }
+        .receipts .amount { width: 11%; text-align: right; white-space: nowrap; }
+        .receipts .files { width: 31%; }
         .receipts .file { margin: 0 0 4px; }
         .receipts .note { color: #6b7280; font-size: 9px; }
         .receipts .picture { padding: 4px 8px 10px; border-bottom: 1px solid #d1d5db; }

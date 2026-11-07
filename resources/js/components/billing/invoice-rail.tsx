@@ -80,6 +80,7 @@ export function InvoiceReceiptsCard({
     document: InvoiceDocumentData;
 }) {
     const receipts = document.receipts;
+
     if (receipts === null) {
         return null;
     }
