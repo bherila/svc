@@ -8,7 +8,9 @@ use App\Models\Workspace;
 use App\Support\Accounting\AccountingQuery;
 use App\Support\Accounting\YearlyIncome;
 use App\Support\Finance\FinanceCaller;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\LazyCollection;
 
 final readonly class AccountingReadService
 {
@@ -27,7 +29,8 @@ final readonly class AccountingReadService
     /** @return array<string, mixed> */
     public function income(FinanceCaller $caller, Workspace $workspace, AccountingQuery $query): array
     {
-        return AccountingPage::run($workspace, 'finance.cash_income.list', $this->cash->query($caller, $workspace, $query), $query, $this->cash->present(...));
+        return AccountingPage::run($workspace, 'finance.cash_income.list', $this->cash->query($caller, $workspace, $query), $query, $this->cash->present(...),
+            load: fn (Collection $rows) => $this->cash->hydrate($workspace, $rows));
     }
 
     public function yearly(FinanceCaller $caller, Workspace $workspace, int $year): YearlyIncome
@@ -36,7 +39,7 @@ final readonly class AccountingReadService
         $this->invoices->importExisting($workspace, $year);
         $query = AccountingQuery::from(['from' => $year.'-01-01', 'to' => $year.'-12-31']);
         $lines = $this->invoices->lines($workspace, $query)->lazyById(100)->map(static fn (AccountingInvoiceEntry $entry): array => $entry->payload);
-        $cash = $this->cash->query($caller, $workspace, $query)->lazyById(100)->map(static fn (AccountingCashRow $row): array => [
+        $cash = LazyCollection::make(fn () => $this->cash->hydrated($workspace, $this->cash->query($caller, $workspace, $query)))->map(static fn (AccountingCashRow $row): array => [
             'effective_on' => $row->effective_on, 'kind' => $row->kind, 'amount' => $row->amount,
             'fee_amount' => $row->fee_amount, 'unattributed_refund_amount' => $row->unattributed_refund_amount]);
 

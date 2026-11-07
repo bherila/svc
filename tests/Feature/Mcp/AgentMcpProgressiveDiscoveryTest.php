@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Mcp\AgentMcpToolsetTools;
 use App\Services\Mcp\Toolsets\McpToolsetSelection;
 use App\Services\Mcp\Toolsets\McpToolVisibility;
 use App\Support\AgentApi\AgentApiScopePresentation;
@@ -273,6 +274,32 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
         $this->assertCount(1, $refused);
         $this->assertTrue($refused[0]['result']['isError']);
         $this->assertStringContainsString('Unknown toolset: '.$other, $refused[0]['result']['content'][0]['text']);
+    }
+
+    public function test_a_connection_without_identity_read_is_told_to_ask_for_it(): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::FINANCE_READ]);
+        $response = $this->mcp($this->initializeMessage(), headers: [McpToolsetSelection::CONNECT_HEADER => 'progressive'])->assertOk();
+        $instructions = (string) $response->json('result.instructions');
+        $this->assertStringContainsString('Workspace IDs come from context.get, which needs the identity:read scope', $instructions);
+        $session = (string) $response->headers->get('Mcp-Session-Id');
+
+        $list = $this->messages($this->callToolRaw($session, 'toolsets.list', []));
+        $this->assertSame([AgentMcpToolsetTools::IDENTITY_NOTE], $list[0]['result']['structuredContent']['data']['notes']);
+        $this->assertStringContainsString('identity:read', AgentMcpToolsetTools::IDENTITY_NOTE);
+        $enable = $this->messages($this->callToolRaw($session, 'toolsets.enable', ['toolsets' => ['finance']]));
+        $this->assertSame([AgentMcpToolsetTools::IDENTITY_NOTE], $enable[array_key_last($enable)]['result']['structuredContent']['data']['notes']);
+    }
+
+    public function test_a_connection_with_identity_read_gets_no_identity_note(): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::FINANCE_READ]);
+        $response = $this->mcp($this->initializeMessage(), headers: [McpToolsetSelection::CONNECT_HEADER => 'progressive'])->assertOk();
+        $this->assertStringNotContainsString('Workspace IDs come from context.get', (string) $response->json('result.instructions'));
+        $session = (string) $response->headers->get('Mcp-Session-Id');
+
+        $list = $this->messages($this->callToolRaw($session, 'toolsets.list', []));
+        $this->assertArrayNotHasKey('notes', $list[0]['result']['structuredContent']['data']);
     }
 
     public function test_a_connection_with_two_unrelated_resource_scopes_sees_exactly_those_toolsets(): void
