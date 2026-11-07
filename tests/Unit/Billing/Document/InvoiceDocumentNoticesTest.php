@@ -196,7 +196,7 @@ final class InvoiceDocumentNoticesTest extends TestCase
 
         $this->assertSame(2, $document->receiptCount());
         $this->assertSame([
-            'intro' => InvoiceDocumentNotices::receiptsIntro(),
+            'intro' => InvoiceDocumentNotices::receiptsIntro(InvoiceLineDetail::OPERATOR),
             'receipt_count' => 2,
             'entries' => [$entries[0]->toArray(), $entries[1]->toArray()],
         ], $document->toArray()['receipts']);

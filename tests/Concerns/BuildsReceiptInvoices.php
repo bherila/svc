@@ -94,10 +94,11 @@ trait BuildsReceiptInvoices
             'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
             ...$attributes,
         ]);
-        // The flag is immutable once written and defaults to visible while no
-        // privacy latch is set, so a private receipt is set at the table.
-        if (! $visibleToClient) {
-            DB::table('client_attachments')->where('id', $attachment->id)->update(['is_visible_to_client' => false]);
+        // The flag is immutable through the model and an expense receipt is
+        // created private, so a shared one is set at the table, as the sharing
+        // action does.
+        if ($visibleToClient) {
+            DB::table('client_attachments')->where('id', $attachment->id)->update(['is_visible_to_client' => true]);
         }
 
         return $attachment->fresh() ?? $attachment;

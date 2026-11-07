@@ -94,7 +94,7 @@ class InvoiceReceiptsScreensTest extends TestCase
         }
     }
 
-    public function test_a_client_on_the_portal_is_given_no_receipts(): void
+    public function test_a_client_on_the_portal_is_given_the_shared_receipts_with_portal_links(): void
     {
         $invoice = $this->invoiceWithReceipts();
         $client = User::factory()->create(['email' => 'portal-client@example.test']);
@@ -105,13 +105,15 @@ class InvoiceReceiptsScreensTest extends TestCase
 
         $response = $this->actingAs($client)->get("/portal/{$this->company->public_id}/invoices/{$invoice->public_id}")->assertOk();
 
-        $response->assertInertia(fn (Assert $page) => $page->component('portal/invoice')->where('document.receipts', null));
-        foreach (['staging-august', 'api-usage', '/attachments/'] as $leak) {
-            $this->assertStringNotContainsString($leak, (string) $response->getContent());
-        }
+        $response->assertInertia(fn (Assert $page) => $page->component('portal/invoice')
+            ->where('document.receipts.receipt_count', 3)
+            ->where('document.receipts.entries.0.files.0.href', fn ($href): bool => is_string($href)
+                && str_starts_with($href, "/portal/{$this->company->public_id}/expenses/")
+                && ! str_contains($href, '/workspaces/')));
+        $this->assertStringNotContainsString('/attachments/', (string) $response->getContent());
     }
 
-    public function test_the_pdf_draws_receipt_images_for_a_manager_and_not_for_a_scoped_member_or_a_client(): void
+    public function test_the_pdf_draws_receipt_images_for_a_manager_and_a_client_but_not_for_a_scoped_member(): void
     {
         $invoice = $this->invoiceWithReceipts();
         $client = User::factory()->create(['email' => 'portal-client@example.test']);
@@ -126,7 +128,8 @@ class InvoiceReceiptsScreensTest extends TestCase
 
         $this->assertSame(2, substr_count((string) $manager->getContent(), '/Subtype /Image'));
         $this->assertSame(0, substr_count((string) $member->getContent(), '/Subtype /Image'));
-        $this->assertSame(0, substr_count((string) $portal->getContent(), '/Subtype /Image'));
+        // The client's copy draws the receipts shared with them.
+        $this->assertSame(2, substr_count((string) $portal->getContent(), '/Subtype /Image'));
         $this->assertSame('application/pdf', $manager->headers->get('Content-Type'));
     }
 }

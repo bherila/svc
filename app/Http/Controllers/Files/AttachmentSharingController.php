@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Files;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentPageQuery;
 use App\Services\Files\AttachmentParentReference;
+use App\Services\Files\AttachmentRecordResolver;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Files\AttachmentSharingTransport;
@@ -66,6 +68,18 @@ final class AttachmentSharingController extends Controller
 
         return $this->files->download($actor, $clientCompany->workspace, new AttachmentParentReference($recordType, $recordPublicId), $attachment,
             $this->reader->nativePortalAudience($actor, $clientCompany->workspace));
+    }
+
+    /** A shared expense receipt, for a client reading the invoice it is billed on. */
+    public function portalReceiptDownload(Request $request, ClientCompany $clientCompany, string $recordPublicId, string $attachment): StreamedResponse
+    {
+        $actor = $this->actor($request);
+        $workspace = $clientCompany->workspace;
+        $expense = app(AttachmentRecordResolver::class)->resolve($workspace, 'expense', $recordPublicId);
+        abort_unless($expense instanceof ClientExpense && $expense->client_company_id === $clientCompany->id, 404);
+
+        return $this->files->download($actor, $workspace, new AttachmentParentReference('expense', $recordPublicId), $attachment,
+            $this->reader->nativePortalAudience($actor, $workspace));
     }
 
     private function actor(Request $request): User

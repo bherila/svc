@@ -18,12 +18,13 @@ use App\Support\Billing\InvoiceLineDetail;
  * the caller has already established that the viewer may read expense receipts
  * (workspace managers), and asks for {@see ReceiptDetail::None} otherwise.
  *
- * The client audience reads a receipt only where the attachment policy would
- * let that same client open it: the file is flagged visible to the client AND
- * the attachment reader serves expense receipts to the portal at all
- * ({@see AttachmentReader::portalReadsParentType()}). Today it does not, so a
- * client document carries no Appendix B; if that policy opens, this follows it
- * and nothing else changes.
+ * The client audience reads a receipt only where the attachment policy lets
+ * that same client open it ({@see AttachmentReader}): the file is flagged
+ * shared with the client, the expense is billed on an invoice that client can
+ * see, and (for a project-scoped contact) on a project they were granted. The
+ * builder asks the reader itself, so the document and the download route cannot
+ * disagree. A receipt that is not shared is omitted entirely, and so is an
+ * expense with none shared: a client is never told that something is withheld.
  *
  * ## What the PDF draws
  *
@@ -54,28 +55,47 @@ final class InvoiceReceipts
     public const MAX_DRAWN_HEIGHT = 520;
 
     /**
-     * Whether a reader of this audience may be told about this receipt.
+     * Whether a reader of this audience may be told about this receipt, given
+     * only its own flag. The reader's per-viewer decision is applied by the
+     * query that selected the file; this is the last line before it is listed.
      *
      * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
      */
-    public static function visibleTo(string $audience, bool $flaggedVisibleToClient, bool $portalReadsExpenseReceipts): bool
+    public static function visibleTo(string $audience, bool $flaggedVisibleToClient): bool
     {
         return match ($audience) {
             InvoiceLineDetail::OPERATOR => true,
-            InvoiceLineDetail::CLIENT => $flaggedVisibleToClient && $portalReadsExpenseReceipts,
+            InvoiceLineDetail::CLIENT => $flaggedVisibleToClient,
         };
     }
 
     /**
-     * The address a reader opens a receipt at, or null where they may not.
+     * Whether an expense with no receipt this reader may be told of is still
+     * listed. An operator sees "No receipt on file"; a client is shown only the
+     * expenses that have a shared receipt, so an unshared one leaves no trace.
      *
      * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
      */
-    public static function hrefFor(string $audience, string $operatorUrl): ?string
+    public static function listsExpenseWithoutFiles(string $audience): bool
+    {
+        return match ($audience) {
+            InvoiceLineDetail::OPERATOR => true,
+            InvoiceLineDetail::CLIENT => false,
+        };
+    }
+
+    /**
+     * The address a reader opens a receipt at: the operator's own file route,
+     * or the portal's receipt route for the client. Both are finished
+     * server-chosen addresses; the browser assembles nothing.
+     *
+     * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
+     */
+    public static function hrefFor(string $audience, string $operatorUrl, string $portalUrl): string
     {
         return match ($audience) {
             InvoiceLineDetail::OPERATOR => $operatorUrl,
-            InvoiceLineDetail::CLIENT => null,
+            InvoiceLineDetail::CLIENT => $portalUrl,
         };
     }
 

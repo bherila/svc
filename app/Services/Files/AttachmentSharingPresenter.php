@@ -29,7 +29,7 @@ final class AttachmentSharingPresenter
         if (! $reference->collaboration()) {
             return new AttachmentSharingView($reference, $parent,
                 $this->reader->parentVisibleToClient($actor, $workspace, $reference->type, $reference->publicId, $audience),
-                $reference->type !== 'expense' && $this->agents->isWorkspaceManager($actor, $workspace));
+                $this->agents->isWorkspaceManager($actor, $workspace));
         }
         $company = $this->collaboration->company($workspace, $reference->companyId ?? '');
         abort_unless(($parent instanceof ClientComment || $parent instanceof ClientCollaborationTopic)
@@ -51,7 +51,9 @@ final class AttachmentSharingPresenter
         return ['id' => $file->public_id, 'is_visible_to_client' => $file->is_visible_to_client,
             'effective_visible_to_client' => $file->lifecycle_state === ClientAttachment::STATE_AVAILABLE
                 && $file->is_visible_to_client && $view->parentVisibleToClient,
-            'sharing_note' => $view->parentVisibleToClient ? null : 'The parent is not currently visible to clients.',
+            'sharing_note' => $view->parentVisibleToClient ? null : ($view->reference->type === 'expense'
+                ? 'Clients can open this receipt only once the expense is billed on an invoice they can see.'
+                : 'The parent is not currently visible to clients.'),
             'version' => AgentApiVersion::for($file), 'parent_version' => AgentApiVersion::for($view->parent)];
     }
 
@@ -70,8 +72,8 @@ final class AttachmentSharingPresenter
      * @return array<string,mixed>|null */
     public function nativeControl(ClientAttachment $file, AttachmentSharingView $view, string $updateHref, AttachmentAudience $audience): ?array
     {
-        if (! in_array($audience, [AttachmentAudience::Internal, AttachmentAudience::Native], true) || ! $view->canPublish || ! AttachmentSharingGate::available()
-            || $file->lifecycle_state !== ClientAttachment::STATE_AVAILABLE || $view->reference->type === 'expense') {
+        if (! in_array($audience, [AttachmentAudience::Internal, AttachmentAudience::Native], true) || ! $view->canPublish || ! AttachmentSharingGate::availableFor($view->reference->type)
+            || $file->lifecycle_state !== ClientAttachment::STATE_AVAILABLE) {
             return null;
         }
         $state = $this->state($file, $view);

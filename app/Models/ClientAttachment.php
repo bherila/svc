@@ -71,11 +71,18 @@ class ClientAttachment extends Model implements WorkspaceOwned
     {
         static::creating(function (self $attachment): void {
             $defaultVisibility = AttachmentUploadPolicy::defaultVisibility();
-            if (! $defaultVisibility || ! array_key_exists('is_visible_to_client', $attachment->getAttributes())) {
-                $attachment->is_visible_to_client = $defaultVisibility;
-            }
-            if (! $attachment->is_visible_to_client && $defaultVisibility) {
-                throw new LogicException('The private upload default has not been enabled.');
+            if ($attachment->record_type === 'expense') {
+                // A receipt is private to workspace managers until one shares it
+                // with the client, whether or not the privacy latch is set: the
+                // legacy default of "visible" must never reach a receipt.
+                $attachment->is_visible_to_client = false;
+            } else {
+                if (! $defaultVisibility || ! array_key_exists('is_visible_to_client', $attachment->getAttributes())) {
+                    $attachment->is_visible_to_client = $defaultVisibility;
+                }
+                if (! $attachment->is_visible_to_client && $defaultVisibility) {
+                    throw new LogicException('The private upload default has not been enabled.');
+                }
             }
             if (! in_array($attachment->record_type, AttachmentRecordResolver::uploadableTypes(), true)) {
                 if (! in_array($attachment->record_type, AttachmentRecordResolver::collaborationUploadTypes(), true)) {
