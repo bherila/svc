@@ -237,6 +237,43 @@ final class AttachmentStorageService
         ]);
     }
 
+    /**
+     * The file's bytes for a caller that must hold them in memory (a document
+     * drawing a receipt), or null when it cannot do so safely: the file is not
+     * available, is larger than `$maxBytes` by its record or by what the disk
+     * actually yields, cannot be opened, or does not match its recorded size and
+     * digest. Never reads more than `$maxBytes` plus one chunk.
+     */
+    public function boundedContents(ClientAttachment $attachment, int $maxBytes): ?string
+    {
+        if ($attachment->lifecycle_state !== ClientAttachment::STATE_AVAILABLE || $attachment->bytes > $maxBytes) {
+            return null;
+        }
+
+        // The disk is configured to throw, so a missing or unreadable object
+        // is an exception here; for a caller drawing a receipt it is "cannot".
+        try {
+            $stream = $this->disk()->readStream($attachment->object_key);
+        } catch (Throwable) {
+            return null;
+        }
+        if (! is_resource($stream)) {
+            return null;
+        }
+
+        try {
+            $contents = stream_get_contents($stream, $maxBytes + 1);
+        } finally {
+            fclose($stream);
+        }
+
+        if ($contents === false || strlen($contents) !== $attachment->bytes || ! hash_equals($attachment->sha256, hash('sha256', $contents))) {
+            return null;
+        }
+
+        return $contents;
+    }
+
     public function requestDeletion(ClientAttachment $attachment): ClientAttachment
     {
         if (in_array($attachment->lifecycle_state, [

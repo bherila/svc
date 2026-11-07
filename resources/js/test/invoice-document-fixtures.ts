@@ -1,4 +1,7 @@
-import type { InvoiceDocumentData } from '@/components/billing/invoice-document';
+import type {
+    InvoiceDocumentData,
+    InvoiceReceiptEntry,
+} from '@/components/billing/invoice-document';
 
 /**
  * A synthetic invoice document as the server builds it, with every optional
@@ -158,7 +161,77 @@ export function documentFixture(
                 },
             ],
         },
+        receipts: null,
         pay_url: null,
         ...overrides,
+    };
+}
+
+/**
+ * Appendix B as the server builds it: one expense with an image and a PDF the
+ * viewer may open, one whose file it may not (a null address), and one with no
+ * receipt. Pass `hostile` for unbroken names.
+ */
+export function receiptsFixture(
+    hostile = false,
+): NonNullable<InvoiceDocumentData['receipts']> {
+    const long = (word: string) => (hostile ? word.repeat(30) : word);
+    const entries: InvoiceReceiptEntry[] = [
+        {
+            ref: 'B1',
+            line_id: 'line-3',
+            spent_on: '2026-08-12',
+            description: long('Staging database'),
+            amount: 41_200,
+            files: [
+                {
+                    id: 'receipt-1',
+                    filename: long('staging-database-august.png'),
+                    media_type: 'image/png',
+                    bytes: 52_000,
+                    href: '/workspaces/ws/attachments/receipt-1',
+                    note: null,
+                },
+                {
+                    id: 'receipt-2',
+                    filename: long('staging-database-august.pdf'),
+                    media_type: 'application/pdf',
+                    bytes: 90_000,
+                    href: '/workspaces/ws/attachments/receipt-2',
+                    note: 'Not drawn in the PDF; open the file from the invoice online.',
+                },
+            ],
+        },
+        {
+            ref: 'B2',
+            line_id: 'line-3',
+            spent_on: '2026-08-20',
+            description: long('Lab-results API usage'),
+            amount: 9_900,
+            files: [
+                {
+                    id: 'receipt-3',
+                    filename: long('api-usage.jpg'),
+                    media_type: 'image/jpeg',
+                    bytes: 30_000,
+                    href: null,
+                    note: null,
+                },
+            ],
+        },
+        {
+            ref: 'B3',
+            line_id: 'line-3',
+            spent_on: '2026-08-25',
+            description: 'Parking',
+            amount: 1_500,
+            files: [],
+        },
+    ];
+
+    return {
+        intro: 'The expenses billed on this invoice, with the receipt filed for each. An expense with no receipt on file is listed without one.',
+        receipt_count: 3,
+        entries,
     };
 }

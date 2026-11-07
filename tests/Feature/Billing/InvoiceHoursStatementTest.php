@@ -522,7 +522,7 @@ final class InvoiceHoursStatementTest extends TestCase
         $html = app(InvoiceDocumentService::class)->html($invoice->fresh() ?? $invoice, InvoiceLineDetail::CLIENT)->render();
 
         $this->assertStringNotContainsString('Hours statement', $html);
-        $this->assertStringContainsString('Appendix: time entries on this invoice', $html);
+        $this->assertStringContainsString('Appendix A: time entries on this invoice', $html);
     }
 
     /**

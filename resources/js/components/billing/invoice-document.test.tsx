@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
-import { documentFixture } from '@/test/invoice-document-fixtures';
+import {
+    documentFixture,
+    receiptsFixture,
+} from '@/test/invoice-document-fixtures';
 import { InvoiceDocument } from './invoice-document';
 
 describe('the invoice document', () => {
@@ -125,6 +128,58 @@ describe('the invoice document', () => {
     it('contains oversized identifiers, descriptions and project names', () => {
         const { container } = render(
             <InvoiceDocument document={documentFixture({}, true)} />,
+        );
+
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+    it('prints Appendix B with each expense, its receipts and a link where the server gave one', () => {
+        render(
+            <InvoiceDocument
+                document={documentFixture({ receipts: receiptsFixture() })}
+            />,
+        );
+
+        expect(
+            screen.getByRole('heading', { name: 'Appendix B: receipts' }),
+        ).toBeVisible();
+        expect(
+            screen.getByText(/An expense with no receipt on file/),
+        ).toBeVisible();
+        expect(
+            screen.getByRole('link', { name: 'staging-database-august.png' }),
+        ).toHaveAttribute('href', '/workspaces/ws/attachments/receipt-1');
+        // A file the viewer may not open is named and not linked.
+        expect(screen.getByText('api-usage.jpg')).toBeVisible();
+        expect(
+            screen.queryByRole('link', { name: 'api-usage.jpg' }),
+        ).toBeNull();
+        expect(
+            screen.getByText(
+                'Not drawn in the PDF; open the file from the invoice online.',
+            ),
+        ).toBeVisible();
+        expect(screen.getByText('No receipt on file')).toBeVisible();
+        const appendix = screen
+            .getByRole('heading', { name: 'Appendix B: receipts' })
+            .closest('#appendix-b') as HTMLElement;
+        expect(within(appendix).getByText('$412.00')).toBeVisible();
+        expect(within(appendix).getByText('B3')).toBeVisible();
+    });
+
+    it('draws no Appendix B, and no empty heading, when there is none', () => {
+        render(<InvoiceDocument document={documentFixture()} />);
+
+        expect(screen.queryByText(/Appendix B/)).toBeNull();
+    });
+
+    it('contains oversized vendor names and filenames in Appendix B', () => {
+        const { container } = render(
+            <InvoiceDocument
+                document={documentFixture(
+                    { receipts: receiptsFixture(true) },
+                    true,
+                )}
+            />,
         );
 
         expect(horizontalOverflowRisks(container)).toEqual([]);

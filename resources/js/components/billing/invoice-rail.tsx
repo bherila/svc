@@ -3,6 +3,7 @@ import {
     CircleCheckIcon,
     ClockIcon,
     FileTextIcon,
+    ReceiptIcon,
     TriangleAlertIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -61,6 +62,91 @@ export function InvoicePaymentState({
                     </span>
                 </p>
                 {children}
+            </CardContent>
+        </Card>
+    );
+}
+
+/**
+ * The rail's receipts card: the expenses on this invoice and a link to each
+ * receipt filed on them, the way Appendix B of the PDF lists them. Every link
+ * is an address the server chose for this viewer; a receipt it did not give an
+ * address for is named and not linked. Drawn only when the document has an
+ * Appendix B, so a viewer who may be told of no receipt sees no card.
+ */
+export function InvoiceReceiptsCard({
+    document,
+}: {
+    document: InvoiceDocumentData;
+}) {
+    const receipts = document.receipts;
+    if (receipts === null) {
+        return null;
+    }
+
+    return (
+        <Card aria-label="Expense receipts">
+            <CardHeader>
+                <CardTitle>
+                    Expenses · {receipts.receipt_count}{' '}
+                    {receipts.receipt_count === 1 ? 'receipt' : 'receipts'}
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-2 text-sm">
+                {receipts.entries.map((entry) => (
+                    <div
+                        key={entry.ref}
+                        className="flex items-start justify-between gap-3"
+                    >
+                        <span className="flex min-w-0 items-start gap-2">
+                            <ReceiptIcon
+                                aria-hidden="true"
+                                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                            />
+                            <span className="min-w-0 wrap-anywhere">
+                                {entry.description}
+                            </span>
+                        </span>
+                        <span className="flex shrink-0 flex-wrap justify-end gap-x-2">
+                            {entry.files.length === 0 ? (
+                                <span className="text-muted-foreground">
+                                    None
+                                </span>
+                            ) : (
+                                entry.files.map((file, index) => {
+                                    const label =
+                                        entry.files.length === 1
+                                            ? entry.ref
+                                            : `${entry.ref}.${index + 1}`;
+
+                                    return file.href === null ? (
+                                        <span
+                                            key={file.id}
+                                            title={file.filename}
+                                        >
+                                            {label}
+                                        </span>
+                                    ) : (
+                                        <a
+                                            key={file.id}
+                                            href={file.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title={file.filename}
+                                            aria-label={`Open receipt ${label}: ${file.filename}`}
+                                            className="inline-flex min-h-6 items-center underline underline-offset-4"
+                                        >
+                                            {label}
+                                        </a>
+                                    );
+                                })
+                            )}
+                        </span>
+                    </div>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                    Appendix B of the PDF
+                </p>
             </CardContent>
         </Card>
     );

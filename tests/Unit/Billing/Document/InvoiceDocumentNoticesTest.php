@@ -144,7 +144,7 @@ final class InvoiceDocumentNoticesTest extends TestCase
             servicePeriodStart: '2026-08-01', servicePeriodEnd: '2026-08-31', reissuedOn: '2026-08-18', voidedOn: '2026-08-20',
             sections: InvoiceDocumentGrouper::group([$line]), lines: [$line], subtotal: 100, tax: 0, total: 100, paid: 0, balance: 0,
             statement: [], statementIntro: 'intro', deferredWork: null,
-            appendix: [['line_id' => 'a', 'description' => 'd', 'minutes' => 30, 'entries' => []]], genericLabelUsed: true, payUrl: null,
+            appendix: [['line_id' => 'a', 'description' => 'd', 'minutes' => 30, 'entries' => []]], genericLabelUsed: true, receipts: [], payUrl: null,
         );
 
         $this->assertSame('', $document->banner());
@@ -169,6 +169,7 @@ final class InvoiceDocumentNoticesTest extends TestCase
                 'generic_label_used' => true, 'generic_label' => 'Professional services',
                 'blocks' => [['line_id' => 'a', 'description' => 'd', 'minutes' => 30, 'entries' => []]],
             ],
+            'receipts' => null,
             'pay_url' => null,
         ], $document->toArray());
     }
@@ -191,7 +192,7 @@ final class InvoiceDocumentNoticesTest extends TestCase
             servicePeriodStart: '2026-08-01', servicePeriodEnd: '2026-08-31', reissuedOn: null, voidedOn: null,
             sections: [], lines: [], subtotal: 1000, tax: 80, total: 1080, paid: 80, balance: 1000,
             statement: $statement, statementIntro: InvoiceDocumentNotices::statementIntro(false),
-            deferredWork: $deferred, appendix: $appendix, genericLabelUsed: false, payUrl: $payUrl,
+            deferredWork: $deferred, appendix: $appendix, genericLabelUsed: false, receipts: [], payUrl: $payUrl,
         );
     }
 }
