@@ -11,11 +11,14 @@ use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Payments\PaymentConnectionService;
 use App\Services\Payments\PaymentCredentials;
 use App\Services\Payments\PaymentCredentialsRejected;
+use App\Services\Payments\StripeWebhookHealthService;
+use App\Services\Payments\WebhookHealthPresenter;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Square\SquareConfiguration;
 use App\Support\Payments\PaymentProcessor;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +38,8 @@ class WorkspacePaymentConnectionController extends Controller
         private readonly WorkspacePaymentConnections $connections,
         private readonly PaymentConnectionService $service,
         private readonly PaymentConnectionResolver $resolver,
+        private readonly StripeWebhookHealthService $health,
+        private readonly WebhookHealthPresenter $webhookHealth,
     ) {}
 
     public function show(Request $request, Workspace $workspace): InertiaResponse
@@ -53,7 +58,7 @@ class WorkspacePaymentConnectionController extends Controller
             $processors[] = [
                 'processor' => $processor->value,
                 'label' => $processor->label(),
-                'connection' => $row === null ? null : $this->present($row, $manages),
+                'connection' => $row === null ? null : $this->present($row, $manages, $workspace),
                 'environment_path_active' => $row === null && $this->environmentCredentialsServe($workspace, $processor),
                 'reusable' => $reusable->map(fn (WorkspacePaymentConnection $source): array => [
                     'id' => $source->public_id,
@@ -130,9 +135,61 @@ class WorkspacePaymentConnectionController extends Controller
         return response()->noContent();
     }
 
-    /** @return array<string, mixed> */
-    private function present(WorkspacePaymentConnection $row, bool $manages): array
+    /**
+     * Ask Stripe now whether the endpoint is subscribed to every event SVC
+     * needs, and store the answer. An owner or admin only: it uses the key.
+     */
+    public function checkWebhook(Request $request, Workspace $workspace, PaymentProcessor $processor): Response
     {
+        $row = $this->stripeRowManagedBy($this->user($request), $workspace, $processor);
+        $this->health->check($row);
+
+        return response()->noContent();
+    }
+
+    /**
+     * The explicit fix: `action` is what the person confirmed in the dialog
+     * (add the missing events, or create the endpoint) and is carried out only
+     * if a fresh read still calls for it.
+     */
+    public function fixWebhook(Request $request, Workspace $workspace, PaymentProcessor $processor): JsonResponse
+    {
+        $user = $this->user($request);
+        $this->stripeRowManagedBy($user, $workspace, $processor);
+        $input = $request->validate(['action' => ['required', 'string', 'in:'.StripeWebhookHealthService::ADD_EVENTS.','.StripeWebhookHealthService::CREATE]]);
+        try {
+            $result = $this->health->fix($workspace, $user, (string) $input['action']);
+        } catch (AuthorizationException) {
+            abort(403);
+        } catch (DomainException $refused) {
+            throw ValidationException::withMessages(['webhook' => $refused->getMessage()]);
+        }
+
+        return response()->json(['message' => $result['message']]);
+    }
+
+    private function stripeRowManagedBy(User $user, Workspace $workspace, PaymentProcessor $processor): WorkspacePaymentConnection
+    {
+        abort_unless($this->connections->manages($user, $workspace), 403);
+        abort_unless($processor === PaymentProcessor::Stripe, 404);
+        $row = $this->connections->activeRow($workspace, $processor);
+        abort_unless($row !== null && $this->health->checkable($row), 404);
+
+        return $row;
+    }
+
+    /** @return array<string, mixed> */
+    private function present(WorkspacePaymentConnection $row, bool $manages, Workspace $workspace): array
+    {
+        $webhook = $row->processorEnum() === PaymentProcessor::Stripe
+            ? $this->webhookHealth->present(
+                $row,
+                $manages,
+                route('workspaces.payments.webhook.check', [$workspace, $row->processor], absolute: false),
+                route('workspaces.payments.webhook.fix', [$workspace, $row->processor], absolute: false),
+            )
+            : null;
+
         $source = $this->connections->credentialSource($row);
         $sourceWorkspace = $row->isReused() && $source !== null
             ? Workspace::query()->whereKey($source->workspace_id)->value('name')
@@ -146,6 +203,7 @@ class WorkspacePaymentConnectionController extends Controller
             'publishable_key' => $source?->publishable_key,
             'reused_from' => $sourceWorkspace,
             'usable' => $source !== null,
+            'webhook' => $webhook,
             'webhook_url' => $manages && ! $row->isReused() ? $this->service->webhookUrl($row->processorEnum(), $row->endpoint_token) : null,
         ];
     }

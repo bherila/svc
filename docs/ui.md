@@ -211,7 +211,11 @@ For the workspace payment connections page (`/workspaces/{workspace}/payments`),
 connected (masked key only), Square connected, reused and validation-refusal
 states, plus the open reuse list, at 390, 820, 1440 and 1920 pixels with unbroken
 workspace, account and location names, and asserts the key never reaches the
-page. No processor is asked. Read every screenshot afterwards.
+page. It also covers the Stripe webhook health line in every result (healthy,
+missing events with a long list, no endpoint, key without permission, disabled,
+and a member's read-only view with no URL or button), with the endpoint URL's
+unbroken token, and the fix confirmation dialog. No processor is asked. Read
+every screenshot afterwards.
 
 For payment reminders, dispatch with `reminder_layout: true`: its
 `reminder-layout` artifact covers the operator invoice with a reminder log of
