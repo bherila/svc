@@ -1808,16 +1808,16 @@ final class AgentOperationCatalog
     {
         $operations = [];
         foreach ([
-            'finance.invoice_lines.list' => ['Read issued invoice line accounting', 'invoiceLines', Effect::Read, 'mcp.read'],
-            'finance.cash_income.list' => ['Read cash income by effective date', 'cashIncome', Effect::Read, 'mcp.read'],
-            'finance.income.yearly' => ['Export calendar-year income', 'yearlyIncome', Effect::Read, 'mcp.read'],
-            'finance.invoice_payments.list' => ['List payments for finance reconciliation', 'list', Effect::Read, 'mcp.read'],
-            'finance.payouts.list' => ['List processor payouts for finance reconciliation', 'payouts', Effect::Read, 'mcp.read'],
-            'finance.processor_movements.list' => ['Read signed processor movements', 'movements', Effect::Read, 'mcp.read'],
-            'finance.reconciliations.upsert' => ['Set a finance reconciliation allocation', 'upsert', Effect::LocalWrite, 'mcp.write'],
-            'finance.reconciliations.acknowledge' => ['Acknowledge the current finance allocation review', 'acknowledge', Effect::LocalWrite, 'mcp.write'],
-            'finance.reconciliations.deactivate' => ['Deactivate a finance reconciliation allocation', 'deactivate', Effect::LocalWrite, 'mcp.write'],
-        ] as $id => [$title, $method, $effect, $group]) {
+            'finance.invoice_lines.list' => ['Read issued invoice line accounting', 'invoiceLines', Effect::Read, 'mcp.read', new AccountingDeclaration(AccountingOperations::COMPONENTS['finance.invoice_lines.list'])],
+            'finance.cash_income.list' => ['Read cash income by effective date', 'cashIncome', Effect::Read, 'mcp.read', new AccountingDeclaration(AccountingOperations::COMPONENTS['finance.cash_income.list'])],
+            'finance.income.yearly' => ['Export calendar-year income', 'yearlyIncome', Effect::Read, 'mcp.read', new AccountingDeclaration(AccountingOperations::COMPONENTS['finance.income.yearly'], downloadMediaType: 'text/csv')],
+            'finance.invoice_payments.list' => ['List payments for finance reconciliation', 'list', Effect::Read, 'mcp.read', null],
+            'finance.payouts.list' => ['List processor payouts for finance reconciliation', 'payouts', Effect::Read, 'mcp.read', null],
+            'finance.processor_movements.list' => ['Read signed processor movements', 'movements', Effect::Read, 'mcp.read', null],
+            'finance.reconciliations.upsert' => ['Set a finance reconciliation allocation', 'upsert', Effect::LocalWrite, 'mcp.write', null],
+            'finance.reconciliations.acknowledge' => ['Acknowledge the current finance allocation review', 'acknowledge', Effect::LocalWrite, 'mcp.write', null],
+            'finance.reconciliations.deactivate' => ['Deactivate a finance reconciliation allocation', 'deactivate', Effect::LocalWrite, 'mcp.write', null],
+        ] as $id => [$title, $method, $effect, $group, $accounting]) {
             $this->managerOnly[$id] = true;
             $documented = AgentRestDocumentation::operations()[$id];
             $operations[] = new Operation(
@@ -1830,10 +1830,10 @@ final class AgentOperationCatalog
                 safety: $id === 'finance.reconciliations.acknowledge'
                     ? new WriteSafety(expectedVersion: true, confirm: true, note: 'Conditional acknowledgement of the exact payment revision, review reason and instant. No idempotency key: stale or already-cleared reviews return 409 and require a fresh read; repeated requests never clear a newer review.')
                     : new WriteSafety(note: $effect->readOnly() ? null : 'Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key.'),
-                rest: $this->rest($id),
+                rest: $this->rest($id, $accounting),
                 mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
                 input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
-                output: isset(AccountingOperations::ROUTES[$id]) ? SchemaRef::openApi(AccountingOperations::COMPONENTS[$id]) : SchemaRef::responseOf($id),
+                output: $accounting === null ? SchemaRef::responseOf($id) : SchemaRef::openApi($accounting->component),
                 extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
             );
         }
@@ -2148,7 +2148,7 @@ final class AgentOperationCatalog
         return [AgentDeploymentFlags::MCP, AgentDeploymentFlags::MCP_SWITCH.$group, AgentDeploymentFlags::MCP_SWITCH.$name];
     }
 
-    private function rest(string $id): RestBinding
+    private function rest(string $id, ?AccountingDeclaration $accounting = null): RestBinding
     {
         [$name, $path, $statuses] = self::ROUTES[$id];
         preg_match_all('/\{([^}]+)\}/', $path, $parameters);
@@ -2168,7 +2168,7 @@ final class AgentOperationCatalog
             responseSchema: isset($documented['response']) ? SchemaRef::openApi($documented['response']) : null,
             responseDescriptions: isset($documented['response_description']) ? [$status => $documented['response_description']] : [],
             // A download answers with the file itself.
-            responses: ($id === 'finance.income.yearly' ? [200 => ['description' => 'Calendar-year income in JSON or streamed CSV.', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/'.AccountingOperations::COMPONENTS[$id]]], 'text/csv' => ['schema' => ['type' => 'string', 'format' => 'binary']]]]] : []) + (isset($documented['binary']) ? [$status => [
+            responses: ($accounting?->downloadMediaType !== null ? [200 => ['description' => 'Calendar-year income in JSON or streamed CSV.', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/'.$accounting->component]], $accounting->downloadMediaType => ['schema' => ['type' => 'string', 'format' => 'binary']]]]] : []) + (isset($documented['binary']) ? [$status => [
                 'description' => $documented['binary'][1],
                 'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
             ]] : []) + array_map(

@@ -92,6 +92,7 @@ final class ToolsetOperationContractTest extends TestCase
                     'properties' => [
                         'mode' => ['type' => 'string', 'enum' => ['progressive', 'all']],
                         'changed' => ['type' => 'boolean'],
+                        'notes' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Present only when the connection lacks identity:read: context.get, which discovers workspace IDs, needs it.'],
                         'toolsets' => [
                             'type' => 'array',
                             'items' => [

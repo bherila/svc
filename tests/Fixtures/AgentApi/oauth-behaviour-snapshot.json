@@ -266,7 +266,7 @@
         ],
         "scope_descriptions": [
             "Connect to SVC through MCP",
-            "Read your SVC identity and available workspaces"
+            "Read your SVC identity and available workspaces; agents need it to find their workspace IDs"
         ]
     },
     "approval": {

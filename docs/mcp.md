@@ -143,7 +143,7 @@ session-selected workspace contract must use an explicit versioned
 selection/rotation protocol and migration window rather than silently
 changing v1.
 
-Current token scopes are `identity:read`, `projects:read`, `projects:write`, `tasks:read`,
+Agents need `identity:read` with `mcp:use`: it is the scope behind `context.get`, the only way to discover workspace ids. Current token scopes are `identity:read`, `projects:read`, `projects:write`, `tasks:read`,
 `tasks:write`, `time:read`, `time:write`, `time:approve`, `billing:read`,
 `billing:write`, `billing:deliver`, and `mcp:use`. Discovery filters tools by
 their declared scopes and omits manager-only capabilities when the principal
@@ -243,6 +243,9 @@ for one exact person without a browser consent flow:
 php artisan svc:auth:issue-agent-token USER_PUBLIC_UUID "Support session" --apply \
   mcp:use identity:read projects:read --ttl=60
 ```
+
+Keep `identity:read` in the list for an agent: without it the token cannot call
+`context.get` to discover its workspace ids.
 
 Each scope must be one of the agent scopes listed above; an unknown scope,
 a non-UUID or unknown user, a blank or over-long name or one with control characters, or a
@@ -406,6 +409,21 @@ three `toolsets.*` tools alone. Widening those two tools' scope would change the
 REST contract and what a narrowly scoped token can learn, so that is a separate
 decision; grant `identity:read` to a connection that needs to discover
 workspace ids through `context.get`.
+
+**`identity:read` is required for every agent setup.** Without it the agent can
+turn toolsets on but has no way to find its workspace ids, and `context.get`
+is not listed. No scope was added to close the gap (the decision above stands);
+the connection says what to ask for instead. The server instructions of a
+connection without `context.get` end with "Workspace IDs come from context.get,
+which needs the identity:read scope: if it is not listed, ask the user to grant
+identity:read or to supply the workspace ID." `toolsets.list`, `toolsets.enable`
+and `toolsets.disable` add `data.notes` to their result, naming `identity:read`,
+only for such a connection. A direct `context.get` call is refused with
+"This connection lacks the identity:read scope that context.get requires. Ask
+the user to grant identity:read, or to supply the workspace ID." When you issue
+a token or register an OAuth client for an agent, include `identity:read` with
+`mcp:use` and the resource scopes it needs; every preset in the table above
+already does.
 
 ### Toolsets
 

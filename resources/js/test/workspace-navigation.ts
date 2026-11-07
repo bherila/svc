@@ -72,7 +72,6 @@ export function workspaceNavigation(
             finance: '/workspaces/workspace-1/finance',
         },
         task_labels_href: '/workspaces/workspace-1/task-labels',
-        operations_href: '/workspaces/workspace-1/operations',
         payments_href: '/workspaces/workspace-1/payments',
         shared_projects_href: '/workspaces/workspace-1/shared-projects',
         reviewers_href: '/workspaces/workspace-1/reviewers',

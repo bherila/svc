@@ -103,14 +103,6 @@ export function AccountMenu({
                         History
                     </DropdownMenuItem>
                 )}
-                {navigation?.operations_href && (
-                    <DropdownMenuItem
-                        render={<Link href={navigation.operations_href} />}
-                        data-test="account-operations"
-                    >
-                        Operations (classic tools)
-                    </DropdownMenuItem>
-                )}
                 {navigation?.payments_href && (
                     <DropdownMenuItem
                         render={<Link href={navigation.payments_href} />}

@@ -551,13 +551,10 @@ Two results are not violations. `welcome.tsx` is unauthenticated, and
 `workspaces/index.tsx` is the workspace selector — the shell is per-workspace
 chrome and neither page has a workspace yet.
 
-One exception is genuinely documented at its own site, which is the only reason
-it is named here: `operations.tsx` sits outside the `ResolveWorkspaceNavigation`
-group deliberately, and the route comment in `routes/web.php` records why —
-every workflow the page holds is moving to the client module that owns it, so it
-is not gaining a switcher it is about to lose. Any other divergence the searches
-above turn up is unrecorded, and should be read as work outstanding rather than
-as a decision.
+The retired Operations page was once a documented exception here; it is gone
+(its address redirects to the dashboard), so there is no exception left. Any
+divergence the searches above turn up is unrecorded, and should be read as work
+outstanding rather than as a decision.
 
 One thing this page does state, because it is a fact about the payload rather
 than about compliance: there are no strict/relaxed hydration schema pairs. A

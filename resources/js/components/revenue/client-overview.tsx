@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { ChevronRightIcon, ClockIcon } from 'lucide-react';
+import { ActivityTimeline } from '@/components/activity-timeline';
 import { RetainerMeter } from '@/components/revenue/retainer-meter';
 import { RevenueSection } from '@/components/revenue/revenue-section';
 import { Badge } from '@/components/ui/badge';
@@ -406,6 +407,25 @@ function Proposals({ overview }: { overview: ClientOverview }) {
     );
 }
 
+/** What has happened on this client's record, newest first. */
+function Activity({ overview }: { overview: ClientOverview }) {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle id="activity" className="scroll-mt-20">
+                    Activity
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                    The latest 100 recorded events for this client.
+                </p>
+            </CardHeader>
+            <CardContent className="min-w-0 wrap-anywhere">
+                <ActivityTimeline activities={overview.activities} />
+            </CardContent>
+        </Card>
+    );
+}
+
 export function ClientOverviewSections({
     overview,
     thisPeriod,
@@ -434,6 +454,7 @@ export function ClientOverviewSections({
                 <Projects overview={overview} />
                 <Proposals overview={overview} />
             </div>
+            <Activity overview={overview} />
         </>
     );
 }

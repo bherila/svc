@@ -64,6 +64,7 @@ final class InvoiceLifecycleService
         private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
         private readonly PaymentRefundLedger $refunds = new PaymentRefundLedger,
         private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
+        private readonly InvoiceAccountingJournal $accounting = new InvoiceAccountingJournal,
     ) {}
 
     /**
@@ -628,7 +629,7 @@ final class InvoiceLifecycleService
                 ...($squareCollected ? ['automatic_delivery_note' => 'Square collects this invoice, so SVC does not email it to the client.'] : []),
             ])->save();
 
-            app(InvoiceAccountingJournal::class)->issued($locked);
+            $this->accounting->issued($locked);
 
             foreach ($locked->lines()->with('timeEntries')->get() as $line) {
                 // The workspace on the statement, not only on the invoice
@@ -920,9 +921,8 @@ final class InvoiceLifecycleService
 
             $this->releaseAllocations($locked);
             $previousStatus = $locked->status;
-            $accounting = app(InvoiceAccountingJournal::class);
-            $accounting->ensure($locked);
-            $accounting->reverse($locked, 'void', (string) $locked->document_revision);
+            $this->accounting->ensure($locked);
+            $this->accounting->reverse($locked, 'void', (string) $locked->document_revision);
             $locked->forceFill([
                 'status' => 'void',
                 'voided_at' => $this->clock->now($locked->workspace),
@@ -1043,9 +1043,8 @@ final class InvoiceLifecycleService
                 ->where('workspace_id', $locked->workspace_id)
                 ->where('type', InvoiceLineType::DeferredBuyDown->value)
                 ->get(['id', 'total_amount']);
-            $accounting = app(InvoiceAccountingJournal::class);
-            $accounting->ensure($locked);
-            $accounting->reverse($locked, 'reopen', (string) $locked->document_revision);
+            $this->accounting->ensure($locked);
+            $this->accounting->reverse($locked, 'reopen', (string) $locked->document_revision);
 
             $settlementLineIds = $settlementLines->modelKeys();
             $settlementHistory = null;

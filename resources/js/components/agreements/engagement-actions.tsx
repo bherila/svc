@@ -1,20 +1,35 @@
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { FormField } from '@/components/form-field';
 import {
     Dialog,
     DialogContent,
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
-import { statusLabel } from '@/lib/labels';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { todayIn } from '@/lib/time';
+import { cn } from '@/lib/utils';
 
-const inputClass =
-    'min-w-0 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm';
 const buttonClass =
     'rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50';
+
+/** The cadences a schedule can recur on, with the words a reader sees. */
+const SCHEDULE_CADENCES = [
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'quarterly', label: 'Quarterly' },
+    { value: 'semi_annual', label: 'Semi-annual' },
+    { value: 'annual', label: 'Annual' },
+] as const;
 
 /** Retain the same receipt and payload after an uncertain response. */
 function useEngagementMutation(href: string) {
@@ -170,46 +185,61 @@ export function ProposalDraftForm({
         );
     };
 
+    const locked = mutation.busy || mutation.retrying;
+
     return (
         <form
             onSubmit={submit}
-            className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-4"
+            aria-label="Draft proposal"
+            className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,10rem)_auto] lg:items-end"
         >
-            <input
-                className={inputClass}
-                aria-label="Proposal title"
-                placeholder="Proposal title"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                required
-                disabled={mutation.busy || mutation.retrying}
-            />
-            <input
-                className={inputClass}
-                aria-label="Proposal line description"
-                placeholder="Line description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                required
-                disabled={mutation.busy || mutation.retrying}
-            />
-            <input
-                className={inputClass}
-                aria-label="Proposal price"
-                placeholder="Price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={price}
-                onChange={(event) => setPrice(event.target.value)}
-                required
-                disabled={mutation.busy || mutation.retrying}
-            />
-            <button className={buttonClass} disabled={mutation.busy}>
+            <FormField label="Proposal title">
+                {(id) => (
+                    <Input
+                        id={id}
+                        value={title}
+                        onChange={(event) => setTitle(event.target.value)}
+                        required
+                        disabled={locked}
+                    />
+                )}
+            </FormField>
+            <FormField label="Line description">
+                {(id) => (
+                    <Input
+                        id={id}
+                        value={description}
+                        onChange={(event) => setDescription(event.target.value)}
+                        required
+                        disabled={locked}
+                    />
+                )}
+            </FormField>
+            <FormField label="Price (USD)">
+                {(id) => (
+                    <Input
+                        id={id}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={price}
+                        onChange={(event) => setPrice(event.target.value)}
+                        required
+                        disabled={locked}
+                    />
+                )}
+            </FormField>
+            <button
+                className={cn(buttonClass, 'justify-self-start')}
+                disabled={mutation.busy}
+            >
                 {mutation.retrying ? 'Retry draft proposal' : 'Draft proposal'}
             </button>
             {mutation.error && (
-                <p role="alert" className="md:col-span-4">
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere sm:col-span-2 lg:col-span-4"
+                >
                     {mutation.error}
                 </p>
             )}
@@ -227,15 +257,17 @@ export function ScheduleDraftForm({
     companyId: string;
     agreement: {
         id: string;
+        title?: string;
         version: string;
         billing_cadence: string;
         currency: string;
     };
     timezone: string;
 }) {
-    const cadences = ['monthly', 'quarterly', 'semi_annual', 'annual'];
-    const [cadence, setCadence] = useState(
-        cadences.includes(agreement.billing_cadence)
+    const [cadence, setCadence] = useState<string>(
+        SCHEDULE_CADENCES.some(
+            (option) => option.value === agreement.billing_cadence,
+        )
             ? agreement.billing_cadence
             : 'monthly',
     );
@@ -277,56 +309,89 @@ export function ScheduleDraftForm({
     return (
         <form
             onSubmit={submit}
-            className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-5"
+            aria-label={
+                agreement.title === undefined
+                    ? 'Add billing schedule'
+                    : `Add billing schedule for ${agreement.title}`
+            }
+            className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,9rem)_minmax(0,10rem)_minmax(0,1fr)_minmax(0,9rem)_auto] lg:items-end"
         >
-            <select
-                className={inputClass}
-                aria-label="Schedule cadence"
-                value={cadence}
-                onChange={(event) => setCadence(event.target.value)}
-                disabled={disabled}
+            <FormField label="Cadence">
+                {(id) => (
+                    <Select
+                        items={SCHEDULE_CADENCES}
+                        value={cadence}
+                        onValueChange={(next) => {
+                            if (typeof next === 'string') {
+                                setCadence(next);
+                            }
+                        }}
+                        disabled={disabled}
+                    >
+                        <SelectTrigger id={id} className="w-full">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {SCHEDULE_CADENCES.map((option) => (
+                                <SelectItem
+                                    key={option.value}
+                                    value={option.value}
+                                >
+                                    {option.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+            </FormField>
+            <FormField label="Next run">
+                {(id) => (
+                    <Input
+                        id={id}
+                        type="date"
+                        value={nextRun}
+                        onChange={(event) => setNextRun(event.target.value)}
+                        required
+                        disabled={disabled}
+                    />
+                )}
+            </FormField>
+            <FormField label="Line description">
+                {(id) => (
+                    <Input
+                        id={id}
+                        value={description}
+                        onChange={(event) => setDescription(event.target.value)}
+                        required
+                        disabled={disabled}
+                    />
+                )}
+            </FormField>
+            <FormField label={`Amount (${agreement.currency})`}>
+                {(id) => (
+                    <Input
+                        id={id}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={amount}
+                        onChange={(event) => setAmount(event.target.value)}
+                        required
+                        disabled={disabled}
+                    />
+                )}
+            </FormField>
+            <button
+                className={cn(buttonClass, 'justify-self-start')}
+                disabled={mutation.busy}
             >
-                {cadences.map((value) => (
-                    <option key={value} value={value}>
-                        {statusLabel(value)}
-                    </option>
-                ))}
-            </select>
-            <input
-                className={inputClass}
-                aria-label="Next schedule run"
-                type="date"
-                value={nextRun}
-                onChange={(event) => setNextRun(event.target.value)}
-                required
-                disabled={disabled}
-            />
-            <input
-                className={inputClass}
-                aria-label="Recurring line description"
-                placeholder="Recurring line"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                required
-                disabled={disabled}
-            />
-            <input
-                className={inputClass}
-                aria-label="Recurring amount"
-                placeholder="Amount"
-                type="number"
-                min="0"
-                step="0.01"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                required
-                disabled={disabled}
-            />
-            <button className={buttonClass} disabled={mutation.busy}>
                 {mutation.retrying ? 'Retry schedule' : 'Add schedule'}
             </button>
             {mutation.error && (
-                <p role="alert" className="md:col-span-5">
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere sm:col-span-2 lg:col-span-5"
+                >
                     {mutation.error}
                 </p>
             )}

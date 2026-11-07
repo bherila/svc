@@ -104,7 +104,7 @@ final class AgentApiScopes
     public static function descriptions(): array
     {
         return [
-            self::IDENTITY_READ => 'Read your SVC identity and available workspaces',
+            self::IDENTITY_READ => 'Read your SVC identity and available workspaces; agents need it to find their workspace IDs',
             self::PROJECTS_READ => 'Read authorized projects',
             self::PROJECTS_WRITE => 'Create, edit and archive projects and manage project member access as a workspace owner or admin',
             self::COLLABORATION_READ => 'Read authorized native notes, discussions and comments; portal identities receive only client-visible content',

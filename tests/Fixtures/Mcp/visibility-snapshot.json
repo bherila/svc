@@ -44051,6 +44051,13 @@
                                     "changed": {
                                         "type": "boolean"
                                     },
+                                    "notes": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "Present only when the connection lacks identity:read: context.get, which discovers workspace IDs, needs it."
+                                    },
                                     "toolsets": {
                                         "type": "array",
                                         "items": {
@@ -44140,6 +44147,13 @@
                                     "changed": {
                                         "type": "boolean"
                                     },
+                                    "notes": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "Present only when the connection lacks identity:read: context.get, which discovers workspace IDs, needs it."
+                                    },
                                     "toolsets": {
                                         "type": "array",
                                         "items": {
@@ -44212,6 +44226,13 @@
                                     },
                                     "changed": {
                                         "type": "boolean"
+                                    },
+                                    "notes": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "Present only when the connection lacks identity:read: context.get, which discovers workspace IDs, needs it."
                                     },
                                     "toolsets": {
                                         "type": "array",
@@ -44603,9 +44624,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -44876,9 +44897,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -45143,9 +45164,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -45410,9 +45431,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -45677,9 +45698,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -45945,9 +45966,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -45999,11 +46020,11 @@
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -46034,7 +46055,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client's saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client's agreement, the limit or the attestation. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client's saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client's agreement, the limit or the attestation. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
@@ -46100,9 +46121,9 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "square.sync": "107c06a20bae1b8a",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -46351,9 +46372,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -46399,11 +46420,11 @@
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -46434,7 +46455,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "invoices.create_draft": "63293ceba8567173",
                 "invoices.discard_draft": "42a0eb728d76bf78",
@@ -46444,9 +46465,9 @@
                 "invoices.reopen": "aaeecbf61addb4c2",
                 "invoices.update_details": "110f5516fa0858ce",
                 "invoices.update_draft": "86b5037fc0f233e7",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -46692,9 +46713,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -46740,11 +46761,11 @@
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -46775,7 +46796,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "invoices.create_draft": "63293ceba8567173",
                 "invoices.discard_draft": "42a0eb728d76bf78",
@@ -46785,9 +46806,9 @@
                 "invoices.reopen": "aaeecbf61addb4c2",
                 "invoices.update_details": "110f5516fa0858ce",
                 "invoices.update_draft": "86b5037fc0f233e7",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -47034,9 +47055,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -47307,9 +47328,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -47580,9 +47601,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -47847,9 +47868,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -48114,9 +48135,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -48381,9 +48402,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -48650,9 +48671,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -48923,9 +48944,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -49196,9 +49217,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -49463,9 +49484,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -49730,9 +49751,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -49997,9 +50018,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -50267,9 +50288,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -50538,9 +50559,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -50809,9 +50830,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -51074,9 +51095,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -51339,9 +51360,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -51604,9 +51625,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -51871,9 +51892,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -52138,9 +52159,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -52405,9 +52426,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -52666,9 +52687,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -52927,9 +52948,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -53188,9 +53209,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -53451,9 +53472,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -53722,9 +53743,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -53993,9 +54014,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -54258,9 +54279,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -54523,9 +54544,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -54788,9 +54809,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -55054,9 +55075,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -55326,9 +55347,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -55598,9 +55619,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -55864,9 +55885,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -56130,9 +56151,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -56396,9 +56417,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -56665,9 +56686,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -56932,9 +56953,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -57199,9 +57220,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -57460,9 +57481,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -57721,9 +57742,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -57982,9 +58003,9 @@
                 "tasks.list": "1733a67d221aaaa7",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47"
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86"
             },
             "progressive": {
                 "list_changed": true,
@@ -58244,9 +58265,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -58515,9 +58536,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -58786,9 +58807,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -59053,9 +59074,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -59320,9 +59341,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -59587,9 +59608,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -59648,7 +59669,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client's saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client's agreement, the limit or the attestation. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client's saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client's agreement, the limit or the attestation. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
             "tools": {
                 "agreements.activate": "48d5e35409381b8d",
                 "agreements.create": "2684d90a9e579b24",
@@ -59856,9 +59877,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -59915,7 +59936,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client's saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client's agreement, the limit or the attestation. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client's saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client's agreement, the limit or the attestation. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
             "tools": {
                 "agreements.activate": "48d5e35409381b8d",
                 "agreements.create": "2684d90a9e579b24",
@@ -60123,9 +60144,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -60320,7 +60341,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
@@ -60390,9 +60411,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -60581,7 +60602,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
@@ -60651,9 +60672,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -60842,7 +60863,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
@@ -60912,9 +60933,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -61103,7 +61124,7 @@
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Nobody approves their own time, so time_entries.log with approve: true is deprecated and does nothing; the response says so in meta.approval. With time:read and while time_entries.list remains enabled, the log returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "collaboration.attachments.delete": "dff58314a09211ca",
                 "collaboration.attachments.download_url": "69bb27821a45122c",
@@ -61173,9 +61194,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -62758,9 +62779,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -63031,9 +63052,9 @@
                 "time_entries.unapprove": "147eafb47a90392b",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -63304,9 +63325,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -63571,9 +63592,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -63838,9 +63859,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {
@@ -64105,9 +64126,9 @@
                 "time_entries.log": "3b72557c08a3b011",
                 "time_entries.update": "f668296662cfad04",
                 "timesheets.approved": "88cb56a98c604686",
-                "toolsets.disable": "7300eb1f102f5bab",
-                "toolsets.enable": "ff875ddf71f11d4f",
-                "toolsets.list": "e4dbfcd41caf4b47",
+                "toolsets.disable": "0694f810efa8db65",
+                "toolsets.enable": "7c978da4676ccf1c",
+                "toolsets.list": "88aa5ef5d959bf86",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "progressive": {

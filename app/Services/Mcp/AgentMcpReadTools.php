@@ -15,6 +15,7 @@ use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Services\Tasks\TaskAssigneeReadService;
+use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\InvoiceListFilters;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use LogicException;
@@ -76,7 +77,9 @@ final class AgentMcpReadTools
     public function context(): array
     {
         $context = $this->requestContext();
-        $this->requireScope($context, 'identity:read');
+        if (! $context->principal->hasScope(AgentApiScopes::IDENTITY_READ)) {
+            throw new ToolCallException('This connection lacks the identity:read scope that context.get requires. Ask the user to grant identity:read, or to supply the workspace ID.');
+        }
 
         return ['data' => $this->reads->context($context->principal->subject, fn (string $scope): bool => $context->principal->hasScope($scope))];
     }

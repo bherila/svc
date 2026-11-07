@@ -834,6 +834,11 @@ class ClientDirectoryController extends Controller
                 'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
             'tasks_next_href' => $moreTasks ? route('clients.tasks', [$workspace, $clientCompany, 'project' => $clientProject->public_id]) : null,
+            // The time sheet opens its log form on this project. Null for a
+            // viewer who may read the project but not log time on it, so the
+            // page never offers a link the sheet would refuse with a 404.
+            'log_time_href' => $access->canLogTime($user, $clientProject)
+                ? route('clients.time', [$workspace, $clientCompany, 'log_project' => $clientProject->public_id], absolute: false) : null,
             'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
                 'status' => (string) $row->status,
                 'minutes' => (int) $row->getAttribute('total_minutes'),

@@ -1685,3 +1685,115 @@ describe('retaining invoice writes until their outcome and refresh are known', (
         expect(request(1).key).not.toBe(request(0).key);
     });
 });
+
+/**
+ * Issuing a draft and the refusals of recording a payment, moved here from the
+ * retired Operations screen: its Issue button and payment form duplicated this
+ * page's, and what they were tested for is held by this page's.
+ */
+describe('issuing a draft invoice', () => {
+    const issueUrl = '/api/v1/workspaces/w-1/invoices/invoice-1/issue';
+    const draft = (): Partial<Props> => ({
+        actions: { ...props().actions, issue: issueUrl, payment: null },
+        invoice: { ...props().invoice, status: 'draft', issue_date: null },
+    });
+
+    function failure(status: number) {
+        return new Response(JSON.stringify({ message: 'Synthetic refusal' }), {
+            status,
+        });
+    }
+
+    function request(index: number) {
+        const [url, init] = requestFetch.mock.calls[index];
+
+        return {
+            url,
+            method: init.method,
+            body: init.body,
+            key: (init.headers as Record<string, string>)['Idempotency-Key'],
+        };
+    }
+
+    it('uses the server capability and retains the same attempt key after an uncertain response', async () => {
+        requestFetch.mockRejectedValueOnce(
+            new TypeError('Synthetic lost response'),
+        );
+        render(<ClientInvoiceDetail {...props(draft())} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Issue' }));
+        await vi.waitFor(() =>
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                'SVC could not be reached',
+            ),
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+
+        expect(request(0).url).toBe(issueUrl);
+        expect(jsonRequestBody(request(0).body)).toEqual({
+            expected_version: '0'.repeat(64),
+            confirm: true,
+        });
+        expect(request(0).key).toBeTruthy();
+        expect(request(1).key).toBe(request(0).key);
+    });
+
+    it('keeps an unknown issue request available when refreshed props remove its capability', async () => {
+        requestFetch.mockResolvedValueOnce(failure(408));
+        const initial = props(draft());
+        const { rerender } = render(<ClientInvoiceDetail {...initial} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Issue' }));
+        await screen.findByRole('button', { name: 'Check original request' });
+        rerender(
+            <ClientInvoiceDetail
+                {...initial}
+                version={'8'.repeat(64)}
+                actions={{ ...initial.actions, issue: null }}
+            />,
+        );
+        requestFetch.mockResolvedValueOnce(failure(409));
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Check original request' }),
+        );
+
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(2));
+        expect(request(1)).toEqual(request(0));
+    });
+
+    it('offers no Issue when the server sent no capability', () => {
+        render(<ClientInvoiceDetail {...props()} />);
+
+        expect(screen.queryByRole('button', { name: 'Issue' })).toBeNull();
+    });
+});
+
+describe('a refused payment', () => {
+    it('shows the service refusal and keeps the form open for correction', async () => {
+        requestFetch.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    message:
+                        'A payment cannot be dated before 2024-08-29. Nothing has been changed.',
+                }),
+                { status: 422 },
+            ),
+        );
+        render(<ClientInvoiceDetail {...props()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Record payment' }));
+        fireEvent.change(screen.getByLabelText('Received'), {
+            target: { value: '2020-01-01' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+
+        await vi.waitFor(() =>
+            expect(screen.getAllByRole('alert')[0]).toHaveTextContent(
+                'A payment cannot be dated before 2024-08-29.',
+            ),
+        );
+        expect(screen.getByLabelText('Received')).toHaveValue('2020-01-01');
+    });
+});

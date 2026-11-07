@@ -75,7 +75,7 @@ final class WorkspaceSelectionTest extends TestCase
         $first = $this->withHeader('Idempotency-Key', 'synthetic-owner-create')->postJson($path, $body)->assertCreated()->json('data');
         $this->postJson($path, $body)->assertCreated()->assertJsonPath('data.id', $first['id']);
         $workspace = Workspace::query()->sole();
-        $this->assertSame(route('workspaces.operations', $workspace), $first['web_url']);
+        $this->assertSame(route('workspaces.dashboard', $workspace), $first['web_url']);
         $this->assertDatabaseHas('workspace_memberships', ['workspace_id' => $workspace->id, 'user_id' => $owner->id, 'role' => 'owner']);
         $this->postJson($path, ['name' => 'Changed request'])->assertConflict();
         $this->assertDatabaseCount('workspaces', 1);

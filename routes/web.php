@@ -23,7 +23,6 @@ use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceFinanceController;
 use App\Http\Controllers\WorkspaceInvoiceListController;
 use App\Http\Controllers\WorkspaceMyWorkController;
-use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Controllers\WorkspaceTimeQueueController;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -126,13 +125,12 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/workspaces/{workspace}/finance', WorkspaceFinanceController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.finance');
-    // Operations: what remains of the classic tools (the per-project time form
-    // and per-client file panels) until they are re-homed; proposals,
-    // agreements, schedules and drafting an invoice now live on the client's
-    // Agreements and Invoices tabs. Reached from the settings menu as
-    // "Operations (classic tools)"; no tab is lit.
-    Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
-        ->middleware(ResolveWorkspaceNavigation::class)
+    // Operations (the classic tools page) is retired: its time form is on the
+    // project page and Client Home, its file panels are on the proposal,
+    // agreement and invoice pages, Issue and Record payment are on the invoice
+    // page, and its activity feed is on Client Home. The old address still
+    // answers, so a bookmark or an MCP link from before lands on the Dashboard.
+    Route::redirect('/workspaces/{workspace}/operations', '/workspaces/{workspace}/dashboard')
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {

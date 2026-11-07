@@ -229,7 +229,7 @@ final class AgentMcpServerFactory
             }
         }
         $visibility = new McpToolVisibility($toolsets, McpToolVisibility::core($requiresByPrompt[McpToolVisibility::TIME_LOGGING_PROMPT] ?? []));
-        $instances[AgentMcpToolsetTools::class] = new AgentMcpToolsetTools($toolsets);
+        $instances[AgentMcpToolsetTools::class] = new AgentMcpToolsetTools($toolsets, $context);
         $serverInfo = new Implementation(
             'SVC Agent API',
             'v1',
@@ -501,7 +501,7 @@ final class AgentMcpServerFactory
         } elseif (isset($available['context.get'])) {
             $base = 'First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection.';
         } else {
-            $base = 'Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID.';
+            $base = 'Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Workspace IDs come from context.get, which needs the identity:read scope: if it is not listed, ask the user to grant identity:read or to supply the workspace ID.';
         }
         $mode = $hasWriteTools
             ? 'Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required.'

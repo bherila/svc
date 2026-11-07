@@ -19988,7 +19988,7 @@
                         "authorizationUrl": "https://svc.example.test/oauth/authorize",
                         "tokenUrl": "https://svc.example.test/oauth/token",
                         "scopes": {
-                            "identity:read": "Read your SVC identity and available workspaces",
+                            "identity:read": "Read your SVC identity and available workspaces; agents need it to find their workspace IDs",
                             "projects:read": "Read authorized projects",
                             "projects:write": "Create, edit and archive projects and manage project member access as a workspace owner or admin",
                             "collaboration:read": "Read authorized native notes, discussions and comments; portal identities receive only client-visible content",

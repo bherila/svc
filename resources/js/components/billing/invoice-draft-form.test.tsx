@@ -83,18 +83,18 @@ describe('drafting an invoice on the client invoices page', () => {
                 clientId="synthetic-company"
             />,
         );
-        fireEvent.change(screen.getByPlaceholderText('Invoice number'), {
+        fireEvent.change(screen.getByLabelText('Invoice number'), {
             target: { value: 'SYNTHETIC-CREATED' },
         });
-        fireEvent.change(screen.getByPlaceholderText('Line description'), {
+        fireEvent.change(screen.getByLabelText('Line description'), {
             target: { value: 'Synthetic service' },
         });
-        fireEvent.change(screen.getByPlaceholderText('Unit price'), {
+        fireEvent.change(screen.getByLabelText('Unit price (USD)'), {
             target: { value: '123.45' },
         });
         fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
         await screen.findByRole('alert');
-        expect(screen.getByPlaceholderText('Invoice number')).toHaveValue(
+        expect(screen.getByLabelText('Invoice number')).toHaveValue(
             'SYNTHETIC-CREATED',
         );
         fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
@@ -158,13 +158,13 @@ describe('invoice draft recovery and edit baselines', () => {
         const { rerender } = render(
             <InvoiceForm href="/original-drafts" clientId="original-company" />,
         );
-        fireEvent.change(screen.getByPlaceholderText('Invoice number'), {
+        fireEvent.change(screen.getByLabelText('Invoice number'), {
             target: { value: 'SYN-ORIGINAL' },
         });
-        fireEvent.change(screen.getByPlaceholderText('Line description'), {
+        fireEvent.change(screen.getByLabelText('Line description'), {
             target: { value: 'Original work' },
         });
-        fireEvent.change(screen.getByPlaceholderText('Unit price'), {
+        fireEvent.change(screen.getByLabelText('Unit price (USD)'), {
             target: { value: '25.00' },
         });
         fireEvent.submit(screen.getByRole('form', { name: 'Draft invoice' }));
@@ -172,7 +172,7 @@ describe('invoice draft recovery and edit baselines', () => {
         expect(
             screen.getByRole('button', { name: 'Reset draft form' }),
         ).toBeDisabled();
-        expect(screen.getByPlaceholderText('Invoice number')).toBeDisabled();
+        expect(screen.getByLabelText('Invoice number')).toBeDisabled();
         rerender(<InvoiceForm href={null} clientId="different-company" />);
         form.data.invoice_number = 'Edited after unknown';
         requestFetch.mockResolvedValueOnce(failure(422));
@@ -209,5 +209,44 @@ describe('invoice draft recovery and edit baselines', () => {
             ).toBeNull(),
         );
         expect(requestFetch).toHaveBeenCalledTimes(3);
+    });
+});
+
+describe('the draft invoice form’s labels', () => {
+    beforeEach(() => {
+        form.data = {};
+        form.initial = null;
+        form.errors = {};
+    });
+
+    it('labels every field in view and keeps no placeholder doing a label’s job', () => {
+        const { container } = render(
+            <InvoiceForm
+                href="/synthetic/invoice-create"
+                clientId="synthetic-company"
+            />,
+        );
+        const labels = Array.from(container.querySelectorAll('label'));
+
+        expect(labels.map((label) => label.textContent)).toEqual([
+            'Invoice number',
+            'Due date',
+            'Line description',
+            'Unit price (USD)',
+        ]);
+
+        for (const label of labels) {
+            const control = container.querySelector(
+                `#${CSS.escape(label.htmlFor)}`,
+            );
+
+            expect(control).not.toBeNull();
+            expect(control).not.toHaveAttribute('placeholder');
+        }
+
+        expect(screen.getByLabelText('Due date')).toHaveAttribute(
+            'type',
+            'date',
+        );
     });
 });

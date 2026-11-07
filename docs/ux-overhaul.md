@@ -908,6 +908,54 @@ Settled by the product owner before a period away:
     panels, and the invoice list with its Issue and payment forms, which
     duplicate the invoice page and are retired with the page. Each moved tool
     is replaced there by a link.
+- **2026-11-06, #624 items 5 and 11: Operations retired; Agreements forms
+  labelled.**
+  - **Retired:** the Operations page, its controller and route handler, its
+    "Operations (classic tools)" menu entry and `operations_href` in the
+    navigation payload. `/workspaces/{workspace}/operations` stays as a
+    redirect to the Dashboard (named `workspaces.operations`, listed in
+    `BROWSER_ONLY` and the help-coverage exemptions like `clients.manage`), so a
+    bookmark lands somewhere sensible.
+  - **Where each tool went:**
+    - *Per-project time form:* it was only a "Log time" link to the time sheet.
+      That link now sits on the project page (`log_time_href`, sent by the
+      server, `null` unless the viewer may log time on that project, so the
+      sheet's 404 is never offered) and was already on Client Home. The last 25
+      entries per project that Operations listed are not repeated: the Time tab
+      has the entries, the project page has the totals.
+    - *File panels:* the proposal, agreement and invoice pages already carried
+      the same panel with the same upload, delete and sharing capabilities. The
+      Operations copies were duplicates and went.
+    - *Issue and Record payment:* the invoice page has both, with the same
+      routes, versions, idempotency and recovery. The Operations copies went;
+      their frontend tests moved onto the invoice page's tests.
+  - **Not on the list but live, so moved:** the per-client Activity feed (latest
+    100 events, with the invoice correction link) was only on Operations. It is
+    now the last card of Client Home's overview. Decision: that overview is for
+    owners and admins, so the feed is too. Operations showed every client's
+    feed to every workspace member whatever projects they held; narrowing it is
+    the same fix #624 item 5 already made for the lists, and a member's feed
+    carried payment and correction detail. The correction link is still only
+    sent to owners and admins.
+  - **API links:** `web_url` on a workspace is now the Dashboard, on a project
+    the project's own page, and on a time entry the Dashboard. The old value
+    named Operations and ignored the `?project=` and `?time_entry=` it carried.
+    A time entry has not loaded its client, so naming the time sheet would cost
+    a query per row; this is the cheap honest answer until it does.
+  - **Tests:** nothing was deleted before its assertion had a new home. The
+    isolation, mixed-tenant, record-scoped file, per-row-query and real-column
+    assertions are in `RehomedOperationsToolsTest` and `RevenuePagesTest`, the
+    file-authority and pagination ones in the attachment tests, and the Issue
+    and payment-refusal ones in `invoice.test.tsx`. No query-count bound was
+    raised.
+  - **Item 11:** every field in the proposal, billing-schedule and
+    invoice-draft forms has a visible label (`FormField`, ids from `useId`, so
+    a schedule form repeated under each agreement never shares one), no
+    placeholder stands in for a label, and the schedule cadence is the shared
+    `Select` with an `items` list instead of a native `<select>`. Each
+    schedule form is named after its agreement. The agreement page's deferred
+    buy-down target is still a native select; it is a different page and is
+    left for its own change.
 - **2026-11-06, #617: mutation gate.** The mutation job can show success
   while the score is under its 82% threshold. Before every merge, the actual
   counts in the log are read.
@@ -1022,6 +1070,33 @@ Answers the owner gave in an interview on 2026-11-06.
     the expense scope and the expense cutover. The edition switch is browser-only.
   - **No data command:** nothing needs moving, so none was written. The one-off move of
     Direct time (Migration, above) stays a separate, explicit, per-participant command.
+- **2026-11-06, #624 items 2 and 10: accounting reads design and agent
+  workspace discovery.**
+  - **Journal injection:** `InvoiceLifecycleService` takes `InvoiceAccountingJournal`
+    as a constructor dependency with a `new InvoiceAccountingJournal` default,
+    like its other collaborators, so the two existing tests that build the service
+    by hand keep working unedited. The journal is stateless; behaviour is unchanged.
+  - **Cash income load:** the SQL union now selects only the keys a change feed
+    needs (tagged id, public id, effective date, change stamp, version). The
+    page's facts are loaded afterwards by primary key and workspace in at most six
+    queries and classified by `CashIncomeClassifier`, which touches no database.
+    The union itself stays, because paging, `updated_since` and the cursor are
+    defined over one ordering of all three sources and must not change. The
+    yearly export hydrates in chunks of 100, so its queries grow with chunks, not
+    rows. Money stays integer minor units; no floats.
+  - **Missing facts fail loudly:** a key row whose payment, refund or movement
+    has vanished between the two reads throws rather than reporting zeros. These
+    rows are immutable and never deleted, so this is a corruption signal.
+  - **Operation catalog:** the accounting reads carry an `AccountingDeclaration`
+    (response component, optional download media type) on their declaration. The
+    catalog no longer recognises them by id.
+  - **No new scope for workspace discovery (item 10):** `identity:read` stays
+    the scope behind `context.get`; widening a narrow token's reach is a product
+    decision. Instead the connection says what to ask for: the server instructions
+    of a connection without `context.get`, `toolsets.*` results (`data.notes`,
+    only for a connection lacking `identity:read`), and the `context.get` refusal
+    all name `identity:read`. `docs/mcp.md`, the MCP help page and the scope's
+    consent text now say agents need it.
 
 - **2026-11-09, #636: autopay.** Settled by the owner: a per-company limit set by
   whoever turns it on (it replaces the $1,000 online cap for autopay only), no

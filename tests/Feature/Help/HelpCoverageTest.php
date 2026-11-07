@@ -24,6 +24,7 @@ class HelpCoverageTest extends TestCase
     private const array EXEMPT = [
         'workspaces.enter' => 'redirects to a client',
         'clients.manage' => 'redirect to client settings',
+        'workspaces.operations' => 'redirect to the dashboard, the retired Operations page',
         'portal.files.parent.download' => 'a file download',
         'portal.files.collaboration.download' => 'a file download',
         'collaboration.comments.index' => 'a fragment of a discussion page',
