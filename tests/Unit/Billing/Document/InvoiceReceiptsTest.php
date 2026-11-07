@@ -102,6 +102,14 @@ final class InvoiceReceiptsTest extends TestCase
         $this->assertNull(InvoiceReceipts::inspect(''));
     }
 
+    public function test_an_image_header_claiming_no_width_or_no_height_is_not_an_image(): void
+    {
+        $this->assertNull(InvoiceReceipts::inspect($this->pngHeader(0, 5)));
+        $this->assertNull(InvoiceReceipts::inspect($this->pngHeader(5, 0)));
+        $this->assertSame(['mime' => 'image/png', 'width' => 1, 'height' => 5], InvoiceReceipts::inspect($this->pngHeader(1, 5)));
+        $this->assertSame(['mime' => 'image/png', 'width' => 5, 'height' => 1], InvoiceReceipts::inspect($this->pngHeader(5, 1)));
+    }
+
     public function test_an_image_is_refused_above_six_megapixels(): void
     {
         $this->assertTrue(InvoiceReceipts::withinPixelBudget(3000, 2000));
@@ -116,6 +124,12 @@ final class InvoiceReceiptsTest extends TestCase
         $this->assertSame([600, 520], InvoiceReceipts::drawnSize(600, 520));
         $this->assertSame([1, 1], InvoiceReceipts::drawnSize(1, 1));
         $this->assertSame([600, 1], InvoiceReceipts::drawnSize(6000, 1), 'A sliver stays a pixel tall.');
+        $this->assertSame([1, 520], InvoiceReceipts::drawnSize(1, 5000), 'And a thin strip a pixel wide.');
+        // Rounded to the nearest pixel, not up or down.
+        $this->assertSame([402, 520], InvoiceReceipts::drawnSize(1006, 1300));
+        $this->assertSame([403, 520], InvoiceReceipts::drawnSize(1007, 1300));
+        $this->assertSame([600, 200], InvoiceReceipts::drawnSize(1000, 334));
+        $this->assertSame([600, 200], InvoiceReceipts::drawnSize(1000, 333));
     }
 
     public function test_references_count_from_one_with_a_b_prefix(): void
@@ -142,6 +156,15 @@ final class InvoiceReceiptsTest extends TestCase
         $this->assertTrue(ReceiptDetail::Embedded->readsFiles());
     }
 
+    public function test_a_file_that_is_not_drawn_carries_no_image_and_no_size(): void
+    {
+        $file = new InvoiceReceiptFile('f', 'a.pdf', 'application/pdf', 1, null, ReceiptPlacement::ListedOnly);
+
+        $this->assertNull($file->imageDataUri);
+        $this->assertSame(0, $file->drawnWidth);
+        $this->assertSame(0, $file->drawnHeight);
+    }
+
     public function test_the_screen_json_carries_the_address_and_the_note_but_never_the_image(): void
     {
         $drawn = new InvoiceReceiptFile('f1', 'receipt.png', 'image/png', 99, '/workspaces/w/attachments/f1', ReceiptPlacement::Embedded, 'data:image/png;base64,AAAA', 60, 40);
@@ -156,6 +179,13 @@ final class InvoiceReceiptsTest extends TestCase
             ],
         ], $entry->toArray());
         $this->assertStringNotContainsString('base64', json_encode($entry->toArray(), JSON_THROW_ON_ERROR));
+    }
+
+    private function pngHeader(int $width, int $height): string
+    {
+        $header = pack('NN', $width, $height)."\x08\x02\x00\x00\x00";
+
+        return "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.$header.pack('N', crc32('IHDR'.$header));
     }
 
     private function image(string $type, int $width, int $height): string

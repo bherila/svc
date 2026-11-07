@@ -7,6 +7,9 @@ use App\Support\Billing\Document\InvoiceDocument;
 use App\Support\Billing\Document\InvoiceDocumentGrouper;
 use App\Support\Billing\Document\InvoiceDocumentLine;
 use App\Support\Billing\Document\InvoiceDocumentNotices;
+use App\Support\Billing\Document\InvoiceReceiptEntry;
+use App\Support\Billing\Document\InvoiceReceiptFile;
+use App\Support\Billing\Document\ReceiptPlacement;
 use App\Support\Billing\InvoiceLineDetail;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -172,6 +175,30 @@ final class InvoiceDocumentNoticesTest extends TestCase
             'receipts' => null,
             'pay_url' => null,
         ], $document->toArray());
+    }
+
+    public function test_a_document_with_receipts_serialises_them_with_their_count_and_intro(): void
+    {
+        $file = new InvoiceReceiptFile('f1', 'a.png', 'image/png', 10, '/x/f1', ReceiptPlacement::Embedded);
+        $other = new InvoiceReceiptFile('f2', 'b.pdf', 'application/pdf', 20, null, ReceiptPlacement::ListedOnly);
+        $entries = [
+            new InvoiceReceiptEntry('B1', 'l1', '2026-08-01', 'One', 100, [$file, $other]),
+            new InvoiceReceiptEntry('B2', 'l2', '2026-08-02', 'Two', 200, []),
+        ];
+        $document = new InvoiceDocument(
+            mode: DocumentMode::Invoice, audience: InvoiceLineDetail::OPERATOR, issuerName: 'Synthetic workspace', invoiceNumber: 'INV-SYN-1',
+            status: 'issued', currency: 'USD', billTo: 'Synthetic Client', issueDate: null, dueDate: null,
+            servicePeriodStart: null, servicePeriodEnd: null, reissuedOn: null, voidedOn: null,
+            sections: [], lines: [], subtotal: 0, tax: 0, total: 0, paid: 0, balance: 0,
+            statement: [], statementIntro: '', deferredWork: null, appendix: [], genericLabelUsed: false, receipts: $entries, payUrl: null,
+        );
+
+        $this->assertSame(2, $document->receiptCount());
+        $this->assertSame([
+            'intro' => InvoiceDocumentNotices::receiptsIntro(),
+            'receipt_count' => 2,
+            'entries' => [$entries[0]->toArray(), $entries[1]->toArray()],
+        ], $document->toArray()['receipts']);
     }
 
     private function line(string $id, string $description): InvoiceDocumentLine
