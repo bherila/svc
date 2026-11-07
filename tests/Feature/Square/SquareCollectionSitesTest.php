@@ -51,6 +51,10 @@ final class SquareCollectionSitesTest extends TestCase
         'App\Services\Billing\StripePaymentIntentService::createLocked' => '->paymentIntents, after the guard',
         'App\Services\Billing\InvoiceLifecycleService::issue' => 'schedules automatic delivery unless the guard says Square collects',
         'App\Services\Billing\InvoiceCorrectionService::setHold' => 'puts a held delivery back on the schedule, after the guard',
+        // Autopay (#636) decides on AutopayReader::context(), which asks the guard, and
+        // reads it again with its claim in place before the one intent is created.
+        'App\Services\Billing\Autopay\AutopayChargeService::submit' => '->paymentIntents, after AutopayReader::context() asked the guard twice (before the claim and with it)',
+        'App\Services\Billing\Autopay\AutopayChargeService::cancelIntent' => '->paymentIntents cancel of an intent autopay itself just created',
         // A reminder chooses its pay link through the guard (#438): the facts
         // it is sent on are re-read just before it leaves.
         'App\Services\Billing\Reminders\PaymentReminderService::deliver' => 'new InvoicePaymentReminderMail, after PaymentReminderRepository::facts() and the policy\'s last word',

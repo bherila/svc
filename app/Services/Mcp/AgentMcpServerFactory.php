@@ -118,6 +118,7 @@ final class AgentMcpServerFactory
             AgentMcpSquareCoveredPaymentTools::class => new AgentMcpSquareCoveredPaymentTools(app(InternalAgentApiTransport::class)),
             AgentMcpSquareLinkTools::class => new AgentMcpSquareLinkTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpPaymentReminderTools::class => new AgentMcpPaymentReminderTools($rest),
+            AgentMcpAutopayTools::class => new AgentMcpAutopayTools($rest),
             AgentMcpDeferredBuyDownTools::class => new AgentMcpDeferredBuyDownTools($rest, $this->requestArguments),
             AgentMcpCollaborationTools::class => new AgentMcpCollaborationTools($rest, $this->requestArguments),
             AgentMcpFinanceTools::class => new AgentMcpFinanceTools($rest),
@@ -510,6 +511,9 @@ final class AgentMcpServerFactory
         }
         if (array_intersect(['invoices.issue', 'invoices.send', 'invoices.void', 'invoices.reopen', 'invoices.correct', 'agreements.activate', 'agreements.terminate', 'expense_schedules.generate', 'invoices.release_delivery', 'invoices.generate_period'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before issue, send, void, reopen, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft.';
+        }
+        if (array_intersect(['companies.autopay.set', 'invoices.autopay.skip'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client\'s saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client\'s agreement, the limit or the attestation.';
         }
         if (isset($available['billing_schedules.generate'])) {
             $mode .= ' Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery.';

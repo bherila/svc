@@ -48,6 +48,7 @@ final class SquareCollectionGuard
         'App\Services\Billing\InvoiceLifecycleService::issue' => 'scheduling automatic email delivery when an invoice is issued',
         'App\Services\Billing\InvoiceCorrectionService::setHold' => 'releasing a held automatic delivery back onto the schedule, on the website and invoices.release_delivery',
         'App\Services\Billing\StripePaymentIntentService::createLocked' => 'the Stripe payment intent behind the client\'s SVC payment link and charge',
+        'App\Services\Billing\Autopay\AutopayReader::context' => 'autopay (#636), svc:billing:charge-autopay: every charge is decided on facts this reads, and again with the claim in place just before Stripe is called, so an invoice Square collects is never charged',
         'App\Services\Billing\Reminders\PaymentReminderRepository::squareFacts' => 'payment reminders, by hand on the website, invoices.send_reminder over REST and MCP, and svc:billing:send-payment-reminders: an invoice Square collects carries only Square\'s own payment page, and gets no reminder without one',
     ];
 

@@ -32,6 +32,10 @@ Schedule::command('svc:billing:dispatch-invoice-emails --apply --limit=50')->eve
 // Payment reminder cadences (#438), off until enabled per client. Each step is
 // claimed once per invoice, so an overlapping or repeated run sends nothing twice.
 Schedule::command('svc:billing:send-payment-reminders --apply --limit=50')->everyFifteenMinutes()->withoutOverlapping(30);
+// Autopay (#636): one attempt per invoice, claimed before Stripe is called, so an
+// overlapping or repeated run charges nothing twice. Runs in the scheduler's own
+// process; there is no queue worker to hand it to.
+Schedule::command('svc:billing:charge-autopay --apply --limit=50')->everyFifteenMinutes()->withoutOverlapping(30);
 // Cadence-period drafts for recurring agreements whose current period has
 // started with no invoice, withheld until svc.billing.scheduled_cadence_drafts
 // is on. Hourly, so the first of the month is reached in every workspace's own

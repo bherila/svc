@@ -31,6 +31,8 @@ final class InvoiceMail extends Mailable
         public readonly ?string $note,
         private readonly string $invoicePdf,
         private readonly string $invoicePdfName,
+        /** "Will be charged to Visa ending 4242 on 2026-12-01." when autopay will apply (#636). */
+        public readonly ?string $autopayNotice = null,
     ) {}
 
     public function envelope(): Envelope
@@ -47,6 +49,7 @@ final class InvoiceMail extends Mailable
         return new Content(view: 'invoices.email', with: [
             'invoice' => $this->invoice->load('clientCompany'),
             'note' => $this->note,
+            'autopayNotice' => $this->autopayNotice,
         ]);
     }
 

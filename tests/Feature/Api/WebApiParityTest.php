@@ -46,6 +46,8 @@ final class WebApiParityTest extends TestCase
         'approvals.approve' => 'deliberate:a person approving the hours and expenses they pay for, or were given review access to, is an interactive decision in the browser; the reviewer holds no agent credential and nothing here is an agent operation',
         'approvals.dispute' => 'deliberate:a person disputing a row, with a note, is an interactive decision in the browser; the reviewer holds no agent credential and nothing here is an agent operation',
         'portal.approvals.approve' => 'deliberate:a client contact approving the hours and expenses they pay for is an interactive decision by the payer in the portal, which holds no agent credential',
+        'portal.autopay.enable' => 'deliberate:a client contact authorizing charges to their own saved payment method is their own explicit consent in the portal, with the exact wording stored; the provider\'s attested route is companies.autopay.set',
+        'portal.autopay.disable' => 'deliberate:a client contact withdrawing their authorization to charge their saved payment method is their own act in the portal; the provider side is companies.autopay.set',
         'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
         // Sharing a project crosses a workspace boundary, so only a signed-in
         // owner or admin of each side may open, accept, end or relink it (#631).

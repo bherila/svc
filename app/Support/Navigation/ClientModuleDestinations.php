@@ -20,7 +20,7 @@ namespace App\Support\Navigation;
  *
  * The client tier's tabs are Overview, Agreements, Invoices, Time, Tasks and
  * Files. `settings`, `expenses`, `notes` and `discussions` are not tabs: they
- * live in the menu on the client's name.
+ * live in the menu on the client's name, as does the portal's `billing`.
  */
 final class ClientModuleDestinations
 {
@@ -35,10 +35,12 @@ final class ClientModuleDestinations
         public readonly ?string $expenses,
         public readonly ?string $notes,
         public readonly ?string $discussions,
+        /** The client's own billing page in the portal (#636): saved methods and autopay. Null for the operator family. */
+        public readonly ?string $billing = null,
     ) {}
 
     /**
-     * @return array{home: string, agreements: string|null, invoices: string|null, time: string|null, tasks: string|null, files: string|null, settings: string|null, expenses: string|null, notes: string|null, discussions: string|null}
+     * @return array{home: string, agreements: string|null, invoices: string|null, time: string|null, tasks: string|null, files: string|null, settings: string|null, expenses: string|null, notes: string|null, discussions: string|null, billing: string|null}
      */
     public function toArray(): array
     {
@@ -53,6 +55,7 @@ final class ClientModuleDestinations
             'expenses' => $this->expenses,
             'notes' => $this->notes,
             'discussions' => $this->discussions,
+            'billing' => $this->billing,
         ];
     }
 }

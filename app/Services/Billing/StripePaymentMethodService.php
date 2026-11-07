@@ -7,11 +7,13 @@ use App\Models\ClientStripeCustomer;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Services\Billing\Autopay\AutopayConsentService;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 final class StripePaymentMethodService
@@ -136,6 +138,7 @@ final class StripePaymentMethodService
         if ($method instanceof ClientStripePaymentMethod) {
             if ($method->is_default) {
                 $method->forceFill(['is_default' => false])->save();
+                $this->autopayLosesItsMethod($workspace, $company);
             }
             $this->activities->record($workspace, $company, 'payment_method.removed', $method, [
                 'type' => $method->type,
@@ -205,6 +208,9 @@ final class StripePaymentMethodService
             $next->forceFill(['is_default' => true])->save();
         }
         $this->recordDefaultEvent($customer, $providerCreatedAt, $occurrence);
+        if ($next === null) {
+            $this->autopayLosesItsMethod($workspace, $company);
+        }
 
         $subject = $next ?? $current;
         if (! $subject instanceof ClientStripePaymentMethod) {
@@ -218,6 +224,25 @@ final class StripePaymentMethodService
         ], occurrence: $occurrence);
 
         return $workspace->id;
+    }
+
+    /**
+     * Autopay always charges the default method, so removing it turns autopay
+     * off (#636). Deferred to commit: this runs inside the webhook's
+     * transaction, and the consent write takes its own lock and records its own
+     * history, which must not become a new lock inside the payment transaction.
+     */
+    private function autopayLosesItsMethod(Workspace $workspace, ClientCompany $company): void
+    {
+        DB::afterCommit(static function () use ($workspace, $company): void {
+            try {
+                app(AutopayConsentService::class)->defaultMethodRemoved($workspace, $company);
+            } catch (\Throwable $failure) {
+                // The method is already gone, and eligibility refuses a charge
+                // with no default method whether or not this was written down.
+                Log::warning('Autopay could not record the removal of its default method.', ['company' => $company->public_id, 'error' => $failure->getMessage()]);
+            }
+        });
     }
 
     private function recordDefaultEvent(

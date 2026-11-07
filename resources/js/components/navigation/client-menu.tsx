@@ -10,10 +10,11 @@ import {
 import type { ClientModuleDestinations } from '@/types/navigation';
 
 const MORE: readonly {
-    key: 'settings' | 'expenses' | 'notes' | 'discussions';
+    key: 'settings' | 'billing' | 'expenses' | 'notes' | 'discussions';
     label: string;
 }[] = [
     { key: 'settings', label: 'Client settings' },
+    { key: 'billing', label: 'Billing and autopay' },
     { key: 'expenses', label: 'Expenses' },
     { key: 'notes', label: 'Notes' },
     { key: 'discussions', label: 'Discussions' },
@@ -36,7 +37,7 @@ export function ClientMenu({
     const items = MORE.flatMap((item) => {
         const href = destinations[item.key];
 
-        return href === null ? [] : [{ ...item, href }];
+        return href == null ? [] : [{ ...item, href }];
     });
 
     if (items.length === 0) {

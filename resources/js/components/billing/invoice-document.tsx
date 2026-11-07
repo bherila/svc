@@ -99,6 +99,8 @@ export type InvoiceDocumentData = {
         }[];
     } | null;
     pay_url: string | null;
+    /** Present when autopay will charge this invoice on its due date. */
+    autopay_notice?: string | null;
 };
 
 /** "1.5000" reads as 1.5: the stored scale is not something a reader typed. */
@@ -249,6 +251,15 @@ export function InvoiceDocument({
                             </p>
                         )}
                     </div>
+                )}
+
+                {document.autopay_notice != null && (
+                    <p
+                        role="note"
+                        className="rounded-md border border-border bg-muted px-3 py-2 text-sm wrap-anywhere"
+                    >
+                        {document.autopay_notice}
+                    </p>
                 )}
 
                 {document.sections.length === 0 ? (

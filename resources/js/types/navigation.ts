@@ -25,6 +25,7 @@ export type ClientModule =
     | 'tasks'
     | 'files'
     | 'settings'
+    | 'billing'
     | 'expenses'
     | 'notes'
     | 'discussions';
@@ -56,6 +57,8 @@ export type ClientModuleDestinations = {
     tasks: string | null;
     files: string | null;
     settings: string | null;
+    /** The client's own billing page in the portal (saved methods, autopay); null for operators. */
+    billing?: string | null;
     expenses: string | null;
     notes: string | null;
     discussions: string | null;

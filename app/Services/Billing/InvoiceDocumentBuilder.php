@@ -6,6 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\Workspace;
+use App\Services\Billing\Autopay\AutopayReader;
 use App\Support\Billing\Document\DocumentMode;
 use App\Support\Billing\Document\InvoiceDocument;
 use App\Support\Billing\Document\InvoiceDocumentGrouper;
@@ -94,6 +95,12 @@ final class InvoiceDocumentBuilder
             appendix: InvoiceDocumentNotices::appendix($lines, $detail),
             genericLabelUsed: InvoiceDocumentNotices::genericLabelUsed($audience, $detail),
             payUrl: $payUrl,
+            // Only a client copy of a real invoice says it will be charged, and
+            // only when autopay will apply; free of queries for a company
+            // with autopay off.
+            autopayNotice: $mode === DocumentMode::Invoice && $payUrl !== null
+                ? app(AutopayReader::class)->notice($invoice, $company)
+                : null,
         );
     }
 }

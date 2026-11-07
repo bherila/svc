@@ -11,6 +11,7 @@ use App\Models\ClientProposalItem;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Queries\Approval\PortalApprovalQueue;
 use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Queries\Portal\PortalOverviewQuery;
@@ -33,6 +34,8 @@ use App\Support\AgentApi\Presenters\AgentProposalPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\AgentApi\Presenters\AutopayPresenter;
+use App\Support\Billing\Autopay\AutopayInvoiceState;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Engagement\AgreementTermsPayload;
 use App\Support\Files\AttachmentListing;
@@ -138,7 +141,40 @@ class ClientPortalController extends Controller
             // page). A linked invoice is collected in Square (#438): its page
             // address comes only from Square's data.
             'payment' => $payments->for($workspace, $invoice),
+            // Autopay (#636), as the client reads it: what will happen, what
+            // did, and where to manage it. Null when autopay plays no part.
+            'autopay' => $this->autopayFor($workspace, $clientCompany, $invoice),
         ]);
+    }
+
+    /**
+     * The client's view of autopay on one invoice: nothing the provider keeps
+     * to itself (who skipped it, the internal code) and null when it plays no
+     * part in the invoice.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function autopayFor(Workspace $workspace, ClientCompany $company, ClientInvoice $invoice): ?array
+    {
+        $autopay = app(AutopayPresenter::class)->invoice($workspace, $invoice, $company);
+        if ($autopay['state'] === AutopayInvoiceState::NotApplicable->value) {
+            return null;
+        }
+        $attempt = $autopay['attempt'];
+
+        return [
+            'state' => $autopay['state'],
+            'state_label' => $autopay['state_label'],
+            'amount' => $autopay['amount'],
+            'currency' => $autopay['currency'],
+            'limit_amount' => $autopay['limit_amount'],
+            'method_label' => $autopay['method_label'],
+            'will_charge_on' => $autopay['will_charge_on'],
+            'due_on' => $invoice->due_date?->toDateString(),
+            'failure_reason' => $attempt['failure_reason'] ?? null,
+            'attempted_on' => $attempt['claimed_at'] ?? null,
+            'manage_href' => route('portal.billing', $company, absolute: false),
+        ];
     }
 
     /**
