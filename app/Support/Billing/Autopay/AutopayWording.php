@@ -38,15 +38,18 @@ final class AutopayWording
     /** "Visa ending 4242", or the type when nothing more is known. */
     public static function methodLabel(?string $brand, ?string $type, ?string $last4): string
     {
-        $name = trim((string) $brand) !== '' ? self::title((string) $brand) : match ((string) $type) {
+        $brand = trim($brand ?? '');
+        $type ??= '';
+        $last4 = trim($last4 ?? '');
+        $name = $brand !== '' ? self::title($brand) : match ($type) {
             'us_bank_account' => 'Bank account',
-            default => self::title(str_replace('_', ' ', (string) $type)),
+            default => self::title(str_replace('_', ' ', $type)),
         };
         if ($name === '') {
             $name = 'Saved payment method';
         }
 
-        return trim((string) $last4) !== '' ? $name.' ending '.$last4 : $name;
+        return $last4 !== '' ? $name.' ending '.$last4 : $name;
     }
 
     private static function title(string $value): string

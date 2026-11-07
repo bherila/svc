@@ -35,5 +35,10 @@ final class AutopayWordingTest extends TestCase
         $this->assertSame('Card', AutopayWording::methodLabel('', 'card', null));
         $this->assertSame('Saved payment method', AutopayWording::methodLabel(null, null, ''));
         $this->assertSame('Stripe ending 1', AutopayWording::methodLabel(' stripe ', 'card', '1'));
+        $this->assertSame('Card', AutopayWording::methodLabel('  ', 'card', null), 'A blank brand falls back to the type.');
+        $this->assertSame('Some type ending 4242', AutopayWording::methodLabel(null, 'some_type', ' 4242 '));
+        $this->assertSame('Saved payment method', AutopayWording::methodLabel(null, '_', null));
+        $this->assertSame('Élan ending 7', AutopayWording::methodLabel('élan', null, '7'), 'The first letter is capitalised whole, accents included.');
+        $this->assertSame('Élan ending 7', AutopayWording::methodLabel(null, 'élan', '7'));
     }
 }

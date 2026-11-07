@@ -140,6 +140,7 @@ final class AutopayEligibilityTest extends TestCase
     {
         $this->assertSame(AutopayVerdict::CurrencyMismatch, AutopayEligibility::decide(self::facts(['limitCurrency' => 'EUR'])));
         $this->assertSame(AutopayVerdict::Charge, AutopayEligibility::decide(self::facts(['invoiceCurrency' => 'usd'])));
+        $this->assertSame(AutopayVerdict::Charge, AutopayEligibility::decide(self::facts(['limitCurrency' => 'usd'])));
     }
 
     public function test_no_default_method_is_not_charged_and_outranks_the_limit(): void
