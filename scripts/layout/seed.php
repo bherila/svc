@@ -14,16 +14,20 @@ use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
+use App\Models\ClientStripeCustomer;
+use App\Models\ClientStripePaymentMethod;
 use App\Models\ClientTask;
 use App\Models\ClientTaskAssignment;
 use App\Models\ClientTaskLabel;
 use App\Models\ClientTimeEntry;
+use App\Models\InvoiceAutopayAttempt;
 use App\Models\InvoiceReminderLog;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Queries\Expenses\WorkspaceExpenseSchedules;
 use App\Services\Access\WorkspaceAccess;
+use App\Services\Billing\Autopay\AutopayConsentService;
 use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -45,6 +49,8 @@ use App\Services\WorkspaceTaskMutationAction;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\Autopay\AutopayActorRole;
+use App\Support\Billing\Autopay\AutopayConsentRequest;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\ReceivedPaymentData;
@@ -788,6 +794,84 @@ if (getenv('SVC_LAYOUT_CREDENTIALS') === '1') {
     app(McpCredentialSettings::class)->setForConnection($owner->id, $on, true);
 }
 
+// Autopay (--autopay, #636): a provider with unbroken names, one client with autopay
+// on (a consent record of four entries, upcoming charges either side of the limit,
+// a refused charge and a skipped invoice) and one with it off. Nothing here asks Stripe.
+$autopayPages = [];
+if (getenv('SVC_LAYOUT_AUTOPAY') === '1') {
+    $apWorkspace = Workspace::query()->create(['name' => str_repeat('SyntheticAutopayProvider', 4), 'slug' => 'layout-autopay', 'timezone' => 'America/Los_Angeles']);
+    $apWorkspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+    app(WorkspacePaymentConnections::class)->connect($apWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+        'external_account_id' => 'acct_synthetic_autopay', 'display_name' => 'Synthetic', 'environment' => 'test',
+        'secret' => 'sk_test_'.str_repeat('synthetic', 4).'0002', 'webhook_secret' => 'whsec_synthetic',
+    ]);
+    $apToday = app(WorkspaceClock::class)->today($apWorkspace);
+    $apMakeCompany = static function (string $name, string $slug, string $contactName, string $email) use ($apWorkspace): array {
+        $apCompany = ClientCompany::query()->create(['workspace_id' => $apWorkspace->id, 'name' => $name, 'slug' => $slug, 'billing_email' => $email, 'currency' => 'USD']);
+        $apContact = User::factory()->create(['name' => $contactName, 'email' => 'layout-'.$slug.'@example.test']);
+        $apCompany->portalUsers()->attach($apContact->id, ['workspace_id' => $apWorkspace->id]);
+        $apCustomer = ClientStripeCustomer::query()->create(['workspace_id' => $apWorkspace->id, 'client_company_id' => $apCompany->id, 'stripe_customer_id' => 'cus_layout_'.$slug]);
+        foreach ([['pm_layout_'.$slug.'_card', 'card', 'visa', '4242', true], ['pm_layout_'.$slug.'_bank', 'us_bank_account', null, '6789', false]] as [$providerId, $type, $brand, $last4, $default]) {
+            ClientStripePaymentMethod::query()->create([
+                'workspace_id' => $apWorkspace->id, 'client_company_id' => $apCompany->id, 'client_stripe_customer_id' => $apCustomer->id,
+                'stripe_payment_method_id' => $providerId, 'type' => $type, 'brand' => $brand, 'last4' => $last4,
+                'exp_month' => $type === 'card' ? 8 : null, 'exp_year' => $type === 'card' ? 2038 : null, 'is_default' => $default,
+            ]);
+        }
+
+        return [$apCompany, $apContact];
+    };
+    [$apOn, $apOnContact] = $apMakeCompany(str_repeat('SyntheticAutopayClientName', 4), 'autopay-on', str_repeat('SyntheticContactName', 4), 'billing@autopay-on.example.test');
+    [$apOff, $apOffContact] = $apMakeCompany(str_repeat('SyntheticAutopayOffClient', 4), 'autopay-off', 'Off Contact', 'billing@autopay-off.example.test');
+    $apInvoice = static function (ClientCompany $apCompany, string $number, int $amount, int $dueInDays) use ($apWorkspace, $apToday): ClientInvoice {
+        return ClientInvoice::query()->create([
+            'workspace_id' => $apWorkspace->id, 'client_company_id' => $apCompany->id, 'invoice_number' => $number, 'invoice_kind' => 'ad_hoc',
+            'status' => 'issued', 'currency' => 'USD', 'subtotal_amount' => $amount, 'tax_amount' => 0, 'total_amount' => $amount, 'paid_amount' => 0,
+            'balance_amount' => $amount, 'issue_date' => $apToday->subDays(20)->toDateString(), 'due_date' => $apToday->addDays($dueInDays)->toDateString(),
+            'issued_at' => $apToday->subDays(20)->toDateTimeString(), 'is_visible_to_client' => true,
+        ]);
+    };
+    $apService = app(AutopayConsentService::class);
+    $apClientAsks = static function (int $limit) use ($apService, $apWorkspace, $apOn, $apOnContact): AutopayConsentRequest {
+        return new AutopayConsentRequest(AutopayActorRole::Client, $apOnContact, $limit, wording: (string) $apService->authorizationWording($apWorkspace, $apOn->refresh(), $limit));
+    };
+    $apService->turnOn($apWorkspace, $apOn, $apClientAsks(400_000));
+    $apService->turnOff($apWorkspace, $apOn->refresh(), AutopayActorRole::Client, $apOnContact);
+    $apService->turnOn($apWorkspace, $apOn->refresh(), new AutopayConsentRequest(
+        AutopayActorRole::Provider, $owner, 500_000,
+        attestation: 'Agreed in the signed services agreement, clause 7: '.str_repeat('SyntheticAttestationWithoutBreaks', 6),
+    ));
+    $apWill = $apInvoice($apOn, 'INV-AP-WILL-'.str_repeat('X', 40), 375_000, 10);
+    $apOver = $apInvoice($apOn, 'INV-AP-OVER-'.str_repeat('X', 40), 720_000, 20);
+    $apFailed = $apInvoice($apOn, 'INV-AP-FAILED-'.str_repeat('X', 40), 250_000, 0);
+    $apSkipped = $apInvoice($apOn, 'INV-AP-SKIPPED', 125_000, 5);
+    $apOffInvoice = $apInvoice($apOff, 'INV-AP-OFF', 90_000, 10);
+    InvoiceAutopayAttempt::query()->create([
+        'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apFailed->id, 'client_company_id' => $apOn->id, 'state' => 'failed',
+        'amount' => 250_000, 'currency' => 'USD', 'limit_amount' => 500_000, 'payment_method_label' => 'Visa ending 4242',
+        'failure_code' => 'card_declined', 'failure_reason' => 'Your card was declined: '.str_repeat('SyntheticDeclineReasonWithoutBreaks', 5),
+        'claimed_at' => now(), 'resolved_at' => now(),
+    ]);
+    InvoiceAutopayAttempt::query()->create([
+        'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apSkipped->id, 'client_company_id' => $apOn->id, 'state' => 'skipped',
+        'skipped_by_user_id' => $owner->id, 'skipped_at' => now(), 'claimed_at' => now(), 'resolved_at' => now(),
+    ]);
+    $autopayPages = [
+        'autopay_billing' => route('portal.billing', $apOn, absolute: false),
+        'autopay_billing_off' => route('portal.billing', $apOff, absolute: false),
+        'autopay_portal_will' => route('portal.invoice', [$apOn, $apWill], absolute: false),
+        'autopay_portal_over' => route('portal.invoice', [$apOn, $apOver], absolute: false),
+        'autopay_portal_failed' => route('portal.invoice', [$apOn, $apFailed], absolute: false),
+        'autopay_settings' => route('clients.settings', [$apWorkspace, $apOn], absolute: false),
+        'autopay_invoice_will' => route('clients.invoice', [$apWorkspace, $apOn, $apWill], absolute: false),
+        'autopay_invoice_failed' => route('clients.invoice', [$apWorkspace, $apOn, $apFailed], absolute: false),
+        'autopay_invoice_skipped' => route('clients.invoice', [$apWorkspace, $apOn, $apSkipped], absolute: false),
+        'autopay_portal_user_id' => $apOnContact->id,
+        'autopay_portal_off_user_id' => $apOffContact->id,
+        'autopay_off_invoice' => route('portal.invoice', [$apOff, $apOffInvoice], absolute: false),
+    ];
+}
+
 $paymentPages = [];
 if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
     $connections = app(WorkspacePaymentConnections::class);
@@ -1002,6 +1086,7 @@ if (getenv('SVC_LAYOUT_LIGHT') === '1') {
 }
 
 file_put_contents($runtime.'/fixture.json', json_encode([
+    ...$autopayPages,
     ...$lightPages,
     ...$paymentPages,
     ...$reviewerPages,

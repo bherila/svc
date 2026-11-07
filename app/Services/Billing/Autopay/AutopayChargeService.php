@@ -109,14 +109,14 @@ final class AutopayChargeService
      */
     public function needingReview(int $limit = 100): array
     {
-        return InvoiceAutopayAttempt::query()
+        return array_values(InvoiceAutopayAttempt::query()
             ->where('state', AutopayAttemptState::Claimed->value)
             ->whereNull('payment_intent_id')
             ->where('claimed_at', '<=', $this->clock->now()->utc()->subMinutes(self::REVIEW_AFTER_MINUTES))
             ->orderBy('id')
             ->limit($limit)
             ->get()
-            ->all();
+            ->all());
     }
 
     /**
@@ -370,16 +370,15 @@ final class AutopayChargeService
     private function failureOf(ApiErrorException $refusal): array
     {
         $error = $refusal->getError();
-        $code = $refusal->getStripeCode() ?? $error?->code ?? 'charge_refused';
-        $message = trim((string) ($error?->message ?? $refusal->getMessage()));
+        $code = $refusal->getStripeCode() ?? $error->code ?? 'charge_refused';
+        $message = trim((string) ($error->message ?? $refusal->getMessage()));
 
         return ['code' => (string) $code, 'reason' => $message !== '' ? $message : 'Stripe refused the charge.'];
     }
 
     private function intentIdOf(CardException $refusal): ?string
     {
-        $intent = $refusal->getError()?->payment_intent ?? null;
-        $id = is_object($intent) ? ($intent->id ?? null) : (is_array($intent) ? ($intent['id'] ?? null) : null);
+        $id = $refusal->getError()->payment_intent->id ?? null;
 
         return is_string($id) && preg_match('/^pi_[A-Za-z0-9_]{1,252}$/D', $id) === 1 ? $id : null;
     }

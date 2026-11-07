@@ -245,6 +245,7 @@ describe('workspace shell', () => {
                         tasks: null,
                         notes: null,
                         discussions: null,
+                        billing: null,
                     },
                 },
             ],

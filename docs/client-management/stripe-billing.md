@@ -55,6 +55,75 @@ sequenceDiagram
 - Issued invoice detail includes a copy-to-clipboard pay-link button for resending payment links manually.
 - Invoice list filters include Stripe failures, using the latest failed or canceled Stripe payment for each invoice.
 
+## Autopay
+
+Autopay (#636) lets SVC charge a client company's default saved Stripe payment
+method for an issued invoice on its due date. It is not Stripe Billing: SVC owns
+the invoice, its cadence and its corrections, and the saved method is only the
+rail. Square is unchanged.
+
+### Turning it on and off
+
+- **The client**, in the portal Billing page (`/portal/{company}/billing`): a
+  contact with company-wide access chooses a per-invoice limit and ticks an
+  authorization whose exact wording (method, company, limit) is stored.
+- **The provider**: an owner or admin, in the client's settings or through
+  `companies.autopay.set`, enters the limit and a free-text attestation of how the
+  client agreed outside SVC. The client's billing contacts are emailed a notice
+  with a link to the portal Billing page to turn it off, after the change commits.
+- **Either side** can turn it off or change the limit. Every on, off and limit
+  change appends a row to `client_autopay_consents` (who, role, when, limit,
+  method, wording or attestation). Rows are never edited or deleted.
+- Removing the default payment method turns autopay off, recorded as SVC's.
+
+### What gets charged
+
+`svc:billing:charge-autopay --apply --limit=50` runs every fifteen minutes from the
+scheduler. There is no queue worker. Without `--apply` it prints what it would charge.
+An invoice is charged when `AutopayEligibility` says so, a pure, database-free
+decision: issued or partially paid with a balance, visible to the client, due on or
+before today in the workspace's time zone and not before autopay was turned on,
+autopay on, a default method, no payment already moving, not collected by Square,
+Stripe connected, the invoice's currency the limit's, no prior attempt (a skip is
+one), and the balance at or under the limit. A balance exactly at the limit is
+charged. Over the limit is not charged, and both sides see "Not autopaid: over
+limit" before the due date. The limit replaces the online-payment cap for autopay only.
+
+### One attempt, claimed first
+
+```mermaid
+sequenceDiagram
+    participant Cron as schedule:run
+    participant DB as invoice_autopay_attempts
+    participant Stripe
+    participant Ledger as client_invoice_payments
+    Cron->>DB: INSERT claim (unique per invoice)
+    Cron->>DB: read the facts again with the claim
+    Cron->>Stripe: PaymentIntent, off_session + confirm,<br/>idempotency key autopay-attempt-{id}
+    Stripe-->>Cron: succeeded / processing / card error
+    Cron->>DB: state submitted or failed
+    Cron->>Ledger: pending (or failed) payment with the intent id
+    Stripe->>Ledger: webhook settles it, as for any online payment
+```
+
+`(workspace_id, client_invoice_id)` is unique, so repeated or concurrent runs claim an
+invoice once. The claim is committed before Stripe is called and the call is outside
+every transaction. If the facts changed after the claim, the claim is deleted and
+nothing was sent. If Stripe's answer cannot be read, the attempt stays `claimed`
+with no PaymentIntent: it is listed by every run for review and never retried.
+A declined card or an authentication request is one failed attempt: the reason is on
+the attempt, a `failed` payment appears in the invoice's payments, and the invoice
+returns to the ordinary payment reminders. There are no retries.
+
+### Where it shows
+
+The issued invoice (PDF, portal, email) says "Will be charged to Visa ending 4242 on
+2030-12-01." when autopay will apply. The portal invoice shows scheduled, failed and
+over-limit states; the operator invoice shows the attempt and has **Skip autopay for
+this invoice** (who and when are recorded). The client's settings show the state, the
+consent record and the next charges. `companies.autopay.get` and `invoices.autopay.get`
+read the same over REST and MCP.
+
 ## Supported Events
 
 Subscribe the Stripe webhook endpoint to these event types:

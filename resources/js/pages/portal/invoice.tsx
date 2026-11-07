@@ -1,5 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { CreditCardIcon, DownloadIcon } from 'lucide-react';
+import { PortalInvoiceAutopayCard } from '@/components/billing/autopay-portal';
+import type { PortalInvoiceAutopay } from '@/components/billing/autopay-portal';
 import { InvoiceDocument } from '@/components/billing/invoice-document';
 import type { InvoiceDocumentData } from '@/components/billing/invoice-document';
 import { InvoicePaymentState } from '@/components/billing/invoice-rail';
@@ -33,11 +35,14 @@ export type PortalPaymentOptions = {
  */
 export default function PortalInvoice({
     attachment_panel = null,
+    autopay = null,
     document,
     payment,
     pdf_url: pdfUrl,
 }: {
     attachment_panel?: AttachmentPanel | null;
+    /** Autopay on this invoice as the client reads it (#636); null when it plays no part. */
+    autopay?: PortalInvoiceAutopay | null;
     company: { id: string; name: string };
     home_href: string;
     document: InvoiceDocumentData;
@@ -60,6 +65,9 @@ export default function PortalInvoice({
                         aria-label="Invoice actions"
                         className="order-first grid grid-cols-1 gap-4 lg:order-none"
                     >
+                        {autopay !== null && (
+                            <PortalInvoiceAutopayCard autopay={autopay} />
+                        )}
                         <InvoicePaymentState document={document}>
                             {stripe !== null && (
                                 <StripeCardPayment

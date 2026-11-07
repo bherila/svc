@@ -51,7 +51,7 @@ final class ChargeAutopayCommand extends MutationCommand
             $this->line(sprintf('  %s  %s  %s %s  %s', $outcome->invoiceNumber, $outcome->result->value, $outcome->currency, number_format(($outcome->amount ?? 0) / 100, 2), (string) $outcome->detail));
         }
         foreach ($review as $attempt) {
-            $this->components->warn('Needs review: autopay attempt '.$attempt->public_id.' for invoice '.($attempt->invoice?->invoice_number ?? '?').' was claimed at '.$attempt->claimed_at->utc()->format('Y-m-d H:i').' UTC and has no payment intent. Check Stripe before charging by hand.');
+            $this->components->warn('Needs review: autopay attempt '.$attempt->public_id.' for invoice '.($attempt->invoice->invoice_number).' was claimed at '.$attempt->claimed_at->utc()->format('Y-m-d H:i').' UTC and has no payment intent. Check Stripe before charging by hand.');
         }
 
         return self::SUCCESS;

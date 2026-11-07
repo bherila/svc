@@ -139,7 +139,7 @@ final class AutopayConsentService
                 'role' => $request->role->value,
             ], $request->actor, $consent->public_id);
 
-            if ($request->role === AutopayActorRole::Provider && $attestation !== null) {
+            if ($request->role === AutopayActorRole::Provider) {
                 $notice = [$locked, $consent, $label, $currency, $attestation];
             }
 
@@ -213,13 +213,13 @@ final class AutopayConsentService
      */
     public function history(Workspace $workspace, ClientCompany $company, int $limit = 50): array
     {
-        return ClientAutopayConsent::query()
+        return array_values(ClientAutopayConsent::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
             ->orderByDesc('id')
             ->limit($limit)
             ->get()
-            ->all();
+            ->all());
     }
 
     private function latest(Workspace $workspace, ClientCompany $company): ?ClientAutopayConsent

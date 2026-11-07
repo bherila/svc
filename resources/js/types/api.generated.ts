@@ -833,6 +833,24 @@ export interface paths {
         patch: operations['collaboration.topics.update'];
         trace?: never;
     };
+    '/workspaces/{workspace}/clients/{client}/autopay': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Whether autopay is on for the client, since when, its per-invoice limit in minor units, the default saved Stripe method it charges, the append-only consent record, the invoices it will charge next and how each will be treated, and the client version companies.autopay.set requires. */
+        get: operations['companies.autopay.get'];
+        /** @description Workspace owners and admins only. Turn the client's autopay on, change its limit, or turn it off. Turning it on, or changing the limit, needs limit_amount (minor units), an attestation of how the client agreed outside SVC, and confirm: true; it needs a default saved Stripe method and a connected Stripe account, and it emails the client's billing contacts a notice with a link to turn it off, after the change commits. SVC then charges the default method for each issued invoice on its due date, once and never retried, up to the limit; an invoice over the limit is left for the client to pay. Every change appends to the consent record. Requires the client's current expected_version. */
+        put: operations['companies.autopay.set'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/payment-reminders': {
         parameters: {
             query?: never;
@@ -1276,6 +1294,40 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations['invoices.add_time'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/autopay': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, or skipped; its one attempt; and the invoice version invoices.autopay.skip requires. */
+        get: operations['invoices.autopay.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/autopay/skip': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Skip autopay for one invoice, recording who and when, so it is never charged automatically. Requires the invoice's current expected_version and confirm: true. Refused with 422 once autopay has tried to charge the invoice or when autopay is off for the client. */
+        post: operations['invoices.autopay.skip'];
         delete?: never;
         options?: never;
         head?: never;
@@ -3506,6 +3558,78 @@ export interface components {
             body?: string;
             is_visible_to_client?: boolean;
         };
+        CompanyAutopay: {
+            client_id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+            enabled: boolean;
+            /** Format: date-time */
+            enabled_at: string | null;
+            limit_amount: number | null;
+            currency: string;
+            method: {
+                label: string;
+                brand: string | null;
+                last4: string | null;
+                exp_month: number | null;
+                exp_year: number | null;
+            } | null;
+            consents: {
+                id: components['schemas']['Uuid'];
+                /** @enum {string} */
+                action: 'enabled' | 'disabled' | 'limit_changed';
+                actor_name: string | null;
+                /** @enum {string} */
+                actor_role: 'client' | 'provider' | 'system';
+                /** @enum {string} */
+                method:
+                    | 'portal_checkbox'
+                    | 'provider_attestation'
+                    | 'withdrawal'
+                    | 'automatic';
+                limit_amount: number | null;
+                currency: string | null;
+                payment_method_label: string | null;
+                wording: string | null;
+                attestation: string | null;
+                reason: string | null;
+                notice_sent: boolean;
+                /** Format: date-time */
+                occurred_at: string | null;
+            }[];
+            upcoming: {
+                invoice_id: components['schemas']['Uuid'];
+                invoice_number: string;
+                /** Format: date */
+                due_on: string | null;
+                amount: number;
+                currency: string;
+                /** @enum {string} */
+                state:
+                    | 'not_applicable'
+                    | 'will_charge'
+                    | 'processing'
+                    | 'charged'
+                    | 'failed'
+                    | 'over_limit'
+                    | 'no_default_method'
+                    | 'skipped'
+                    | 'needs_review';
+                state_label: string;
+            }[];
+        };
+        CompanyAutopayRequest: {
+            expected_version: components['schemas']['Version'];
+            enabled: boolean;
+            /** @description The most one invoice may be charged, in minor units. Required to turn autopay on or change its limit. */
+            limit_amount?: number;
+            /** @description How the client agreed to autopay outside SVC. Required to turn autopay on or change its limit. */
+            attestation?: string;
+            /** @description Must be true to turn autopay on or change its limit, only after the user explicitly confirms. */
+            confirm?: boolean;
+        };
+        CompanyAutopayResponse: {
+            data: components['schemas']['CompanyAutopay'];
+        };
         CompanyPaymentReminders: {
             client_id: components['schemas']['Uuid'];
             version: components['schemas']['Version'];
@@ -4173,6 +4297,73 @@ export interface components {
         InvoiceAddTimeRequest: {
             expected_version: components['schemas']['Version'];
             time_entry_ids: components['schemas']['Uuid'][];
+        };
+        InvoiceAutopay: {
+            invoice_id: components['schemas']['Uuid'];
+            invoice_version: components['schemas']['Version'];
+            /** @enum {string} */
+            state:
+                | 'not_applicable'
+                | 'will_charge'
+                | 'processing'
+                | 'charged'
+                | 'failed'
+                | 'over_limit'
+                | 'no_default_method'
+                | 'skipped'
+                | 'needs_review';
+            state_label: string;
+            enabled: boolean;
+            limit_amount: number | null;
+            currency: string;
+            amount: number;
+            method_label: string | null;
+            /** Format: date */
+            will_charge_on: string | null;
+            /** @enum {string} */
+            verdict:
+                | 'charge'
+                | 'not_collectible'
+                | 'no_balance'
+                | 'hidden_from_client'
+                | 'autopay_off'
+                | 'skipped'
+                | 'already_attempted'
+                | 'no_due_date'
+                | 'due_before_autopay'
+                | 'not_yet_due'
+                | 'payment_in_flight'
+                | 'square_collects'
+                | 'connection_unavailable'
+                | 'currency_mismatch'
+                | 'no_default_method'
+                | 'over_limit';
+            can_skip: boolean;
+            attempt: {
+                id: components['schemas']['Uuid'];
+                /** @enum {string} */
+                state: 'claimed' | 'submitted' | 'failed' | 'skipped';
+                amount: number | null;
+                currency: string | null;
+                payment_method_label: string | null;
+                failure_code: string | null;
+                failure_reason: string | null;
+                payment_status: string | null;
+                skipped_by_name: string | null;
+                /** Format: date-time */
+                skipped_at: string | null;
+                /** Format: date-time */
+                claimed_at: string | null;
+                /** Format: date-time */
+                resolved_at: string | null;
+            } | null;
+        };
+        InvoiceAutopayResponse: {
+            data: components['schemas']['InvoiceAutopay'];
+        };
+        InvoiceAutopaySkipRequest: {
+            expected_version: components['schemas']['Version'];
+            confirm: boolean;
         };
         InvoiceCorrectionLine: {
             id: components['schemas']['Uuid'];
@@ -10871,6 +11062,60 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'companies.autopay.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CompanyAutopayResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'companies.autopay.set': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CompanyAutopayRequest'];
+            };
+        };
+        responses: {
+            /** @description Autopay updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CompanyAutopayResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'companies.payment_reminders.get': {
         parameters: {
             query?: never;
@@ -12456,6 +12701,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.autopay.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceAutopayResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.autopay.skip': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceAutopaySkipRequest'];
+            };
+        };
+        responses: {
+            /** @description Autopay skipped */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceAutopayResponse'];
                 };
             };
             default: components['responses']['Error'];
