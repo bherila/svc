@@ -630,6 +630,12 @@ export function PortalInvoiceAutopayCard({
                     body: `Autopay is skipped for this one. Pay it here${autopay.due_on === null ? '' : ` by ${formatDay(autopay.due_on)}`}.`,
                     tone: 'plain',
                 };
+            case 'resolved_not_charged':
+                return {
+                    title: 'This invoice won’t be charged automatically',
+                    body: `Your card was not charged for this one. Pay it here${autopay.due_on === null ? '' : ` by ${formatDay(autopay.due_on)}`}.`,
+                    tone: 'plain',
+                };
             default:
                 return {
                     title: statusLabel(autopay.state),
@@ -643,6 +649,7 @@ export function PortalInvoiceAutopayCard({
         'over_limit',
         'no_default_method',
         'skipped',
+        'resolved_not_charged',
     ].includes(autopay.state);
 
     return (

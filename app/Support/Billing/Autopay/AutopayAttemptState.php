@@ -17,4 +17,9 @@ enum AutopayAttemptState: string
     case Failed = 'failed';
     /** A provider owner or admin skipped autopay for this invoice. */
     case Skipped = 'skipped';
+    /**
+     * An owner or admin checked Stripe for an attempt held for review and found nothing
+     * was charged. The invoice is left for manual collection; no new attempt is made.
+     */
+    case NotCharged = 'not_charged';
 }

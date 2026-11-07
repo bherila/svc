@@ -44,6 +44,8 @@ export type ClientAutopayState = ApiSchema<'CompanyAutopay'> & {
     update_href: string;
     portal_href: string;
     stripe_connected: boolean;
+    /** The workspace's payments settings, where the Stripe connection is fixed. */
+    payments_href: string;
     attestation_min: number;
     attestation_max: number;
 };
@@ -51,8 +53,39 @@ export type ClientAutopayState = ApiSchema<'CompanyAutopay'> & {
 /** One invoice's autopay as `invoices.autopay.get` presents it, plus the skip URL (null unless it may be skipped). */
 export type InvoiceAutopayState = ApiSchema<'InvoiceAutopay'> & {
     skip_href: string | null;
+    /** Where an attempt held for review is closed out; null unless it can be. */
+    resolve_href: string | null;
     settings_href: string;
+    payments_href: string;
 };
+
+/**
+ * Stripe refused the workspace's connection while autopay was charging: the
+ * invoices wait, nothing is shown to the client, and the fix is in the
+ * workspace payments settings.
+ */
+function ConnectionProblem({
+    problem,
+    href,
+}: {
+    problem: { since: string; message: string };
+    href: string;
+}) {
+    return (
+        <p
+            role="alert"
+            className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 wrap-anywhere"
+        >
+            <span className="font-medium text-destructive">
+                {problem.message}
+            </span>{' '}
+            Stripe refused the connection on {formatTimestamp(problem.since)}.{' '}
+            <a href={href} className="underline underline-offset-4">
+                Open payments settings
+            </a>
+        </p>
+    );
+}
 
 const SUGGESTED_LIMIT = 100_000;
 
@@ -139,6 +172,13 @@ export function ClientAutopayCard({
                         >
                             {notice}
                         </p>
+                    )}
+
+                    {autopay.connection_problem !== null && (
+                        <ConnectionProblem
+                            problem={autopay.connection_problem}
+                            href={autopay.payments_href}
+                        />
                     )}
 
                     <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -545,6 +585,16 @@ function resultWords(
         );
     }
 
+    if (state === 'resolved_not_charged') {
+        return (
+            <>
+                <span className="font-medium">Left for manual collection</span>{' '}
+                · Nothing was charged. Collect it by hand; autopay will not try
+                again.
+            </>
+        );
+    }
+
     if (state === 'needs_review') {
         return (
             <>
@@ -552,7 +602,8 @@ function resultWords(
                     Needs review
                 </span>{' '}
                 · The charge was claimed but Stripe’s answer was not read. Check
-                Stripe before collecting by hand.
+                Stripe, then record what you found. Do not collect by hand
+                before then.
             </>
         );
     }
@@ -572,11 +623,52 @@ export function InvoiceAutopayCard({
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [closing, setClosing] = useState(false);
+    const [outcome, setOutcome] = useState<'charged' | 'not_charged'>(
+        'not_charged',
+    );
+    const [intentId, setIntentId] = useState('');
+    const [note, setNote] = useState('');
+    const [closeError, setCloseError] = useState<string | null>(null);
     const attempt = autopay.attempt;
 
     if (autopay.state === 'not_applicable') {
         return null;
     }
+
+    const intentValid = /^pi_[A-Za-z0-9_]{1,252}$/.test(intentId.trim());
+    const canRecord =
+        outcome === 'charged'
+            ? intentValid
+            : note.trim().length >= 3 && note.trim().length <= 255;
+
+    const closeOut = async () => {
+        if (autopay.resolve_href === null || !canRecord) {
+            return;
+        }
+
+        setBusy(true);
+        setCloseError(null);
+        const result = await apiRequest('POST', autopay.resolve_href, {
+            expected_version: autopay.invoice_version,
+            outcome,
+            ...(outcome === 'charged'
+                ? { payment_intent_id: intentId.trim() }
+                : {}),
+            ...(note.trim() === '' ? {} : { note: note.trim() }),
+            confirm: true,
+        });
+
+        if (result.ok) {
+            setClosing(false);
+            void refreshPageProps({ onFinish: () => setBusy(false) });
+
+            return;
+        }
+
+        setCloseError(result.message);
+        setBusy(false);
+    };
 
     const skip = async () => {
         if (autopay.skip_href === null) {
@@ -626,6 +718,12 @@ export function InvoiceAutopayCard({
                 </Badge>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-4 text-sm">
+                {autopay.connection_problem !== null && (
+                    <ConnectionProblem
+                        problem={autopay.connection_problem}
+                        href={autopay.payments_href}
+                    />
+                )}
                 <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div className="flex min-w-0 justify-between gap-3">
                         <dt className="text-muted-foreground">Method</dt>
@@ -691,6 +789,26 @@ export function InvoiceAutopayCard({
                                     </TableCell>
                                     <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                         {resultWords(attempt, autopay.state)}
+                                        {(attempt.resolved_by_name !== null ||
+                                            attempt.resolution_note !==
+                                                null) && (
+                                            <span className="mt-1 block text-muted-foreground">
+                                                Closed out
+                                                {attempt.resolved_by_name ===
+                                                null
+                                                    ? ''
+                                                    : ` by ${attempt.resolved_by_name}`}{' '}
+                                                on{' '}
+                                                {formatTimestamp(
+                                                    attempt.resolved_at,
+                                                )}{' '}
+                                                after checking Stripe
+                                                {attempt.resolution_note ===
+                                                null
+                                                    ? '.'
+                                                    : `: “${attempt.resolution_note}”`}
+                                            </span>
+                                        )}
                                     </TableCell>
                                 </TableRow>
                             </TableBody>
@@ -715,6 +833,19 @@ export function InvoiceAutopayCard({
                             Skip autopay for this invoice
                         </Button>
                     )}
+                    {autopay.resolve_href !== null && (
+                        <Button
+                            type="button"
+                            variant="default"
+                            disabled={busy}
+                            onClick={() => {
+                                setCloseError(null);
+                                setClosing(true);
+                            }}
+                        >
+                            Close out this attempt
+                        </Button>
+                    )}
                     <a
                         href={autopay.settings_href}
                         className="text-sm underline underline-offset-4"
@@ -723,6 +854,132 @@ export function InvoiceAutopayCard({
                     </a>
                 </div>
             </CardContent>
+
+            <Dialog
+                open={closing}
+                onOpenChange={(open: boolean) => {
+                    if (!busy) {
+                        setClosing(open);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            Close out this autopay attempt
+                        </DialogTitle>
+                        <DialogDescription>
+                            Stripe gave no readable answer, so nobody knows if
+                            the client was charged. Look the payment up in the
+                            Stripe dashboard first, then record what you found.
+                            This is recorded with your name and never sends a
+                            charge.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <fieldset className="grid grid-cols-1 gap-2">
+                        <legend className="mb-1 font-medium">
+                            What did Stripe show?
+                        </legend>
+                        <label className="flex items-start gap-2">
+                            <input
+                                type="radio"
+                                name="autopay-outcome"
+                                className="mt-1"
+                                checked={outcome === 'charged'}
+                                onChange={() => setOutcome('charged')}
+                            />
+                            <span>The client was charged</span>
+                        </label>
+                        <label className="flex items-start gap-2">
+                            <input
+                                type="radio"
+                                name="autopay-outcome"
+                                className="mt-1"
+                                checked={outcome === 'not_charged'}
+                                onChange={() => setOutcome('not_charged')}
+                            />
+                            <span>
+                                Nothing was charged. The invoice is left for
+                                manual collection and autopay will not try it a
+                                second time.
+                            </span>
+                        </label>
+                    </fieldset>
+                    {outcome === 'charged' && (
+                        <div className="grid grid-cols-1 gap-1.5">
+                            <Label htmlFor="autopay-intent-id">
+                                PaymentIntent id
+                            </Label>
+                            <Input
+                                id="autopay-intent-id"
+                                value={intentId}
+                                onChange={(event) =>
+                                    setIntentId(event.target.value)
+                                }
+                                placeholder="pi_..."
+                                autoComplete="off"
+                                spellCheck={false}
+                                aria-invalid={
+                                    intentId.trim() !== '' && !intentValid
+                                }
+                            />
+                            <span className="text-xs text-muted-foreground">
+                                SVC reads it from Stripe and records it only if
+                                it is this invoice’s payment for{' '}
+                                {attempt?.amount == null
+                                    ? 'the attempted amount'
+                                    : autopayMoney(
+                                          attempt.amount,
+                                          attempt.currency ?? autopay.currency,
+                                      )}
+                                .
+                            </span>
+                        </div>
+                    )}
+                    <div className="grid grid-cols-1 gap-1.5">
+                        <Label htmlFor="autopay-resolution-note">
+                            {outcome === 'charged'
+                                ? 'Note (optional)'
+                                : 'What did you check?'}
+                        </Label>
+                        <Textarea
+                            id="autopay-resolution-note"
+                            rows={3}
+                            maxLength={255}
+                            value={note}
+                            onChange={(event) => setNote(event.target.value)}
+                            placeholder="For example: no payment for this invoice in the Stripe dashboard on Dec 2."
+                        />
+                    </div>
+                    {closeError !== null && (
+                        <p
+                            role="alert"
+                            className="wrap-anywhere text-destructive"
+                        >
+                            {closeError}
+                        </p>
+                    )}
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => setClosing(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={busy || !canRecord}
+                            onClick={() => void closeOut()}
+                        >
+                            {outcome === 'charged'
+                                ? 'Record as charged'
+                                : 'Record as not charged'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <AlertDialog
                 open={confirming}

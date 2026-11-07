@@ -1215,7 +1215,7 @@ final class AgentRestDocumentation
             'invoices.autopay.get' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],
-                'description' => 'Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, or skipped; its one attempt; and the invoice version invoices.autopay.skip requires.',
+                'description' => 'Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, skipped, held for review, or left for manual collection; its one attempt, with who closed it out; a connection_problem when Stripe refused the workspace\'s connection and the invoice is not charged yet; and the invoice version invoices.autopay.skip and invoices.autopay.resolve require.',
                 'parameters' => ['WorkspaceId', 'InvoiceId'],
                 'response' => 'InvoiceAutopayResponse',
                 'response_description' => 'Authorized result',
@@ -1228,6 +1228,15 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceAutopaySkipRequest',
                 'response' => 'InvoiceAutopayResponse',
                 'response_description' => 'Autopay skipped',
+            ],
+            'invoices.autopay.resolve' => [
+                'method' => 'POST',
+                'scopes' => ['billing:write', 'billing:read'],
+                'description' => 'Workspace owners and admins only. Close out an autopay attempt held for review (state needs_review, can_resolve true), after checking the Stripe dashboard, and record who and when. outcome charged needs payment_intent_id: the PaymentIntent is read from Stripe and refused with 422 unless its metadata names this workspace and invoice and its amount and currency match the attempt; it then enters the payment ledger as pending or succeeded per its status, for Stripe\'s webhook to settle. outcome not_charged needs a note and leaves the invoice for manual collection; no new attempt is made. Requires the invoice\'s current expected_version and confirm: true. Never sends a charge. 409 when the attempt was closed out by someone else first.',
+                'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
+                'request' => 'InvoiceAutopayResolveRequest',
+                'response' => 'InvoiceAutopayResponse',
+                'response_description' => 'Attempt closed out',
             ],
             'invoices.reminders.list' => [
                 'method' => 'GET',

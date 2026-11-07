@@ -14,6 +14,8 @@ enum AutopayInvoiceState: string
     case OverLimit = 'over_limit';
     case NoDefaultMethod = 'no_default_method';
     case Skipped = 'skipped';
+    /** An operator checked Stripe for a held attempt and recorded that nothing was charged: collect by hand. */
+    case ResolvedNotCharged = 'resolved_not_charged';
     /** Claimed with no PaymentIntent: an operator has to look. */
     case NeedsReview = 'needs_review';
 
@@ -28,6 +30,7 @@ enum AutopayInvoiceState: string
             self::OverLimit => 'Not autopaid: over limit',
             self::NoDefaultMethod => 'Not autopaid: no default method',
             self::Skipped => 'Autopay skipped',
+            self::ResolvedNotCharged => 'Not autopaid: left for manual collection',
             self::NeedsReview => 'Autopay needs review',
         };
     }
