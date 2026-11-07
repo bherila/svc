@@ -49,6 +49,10 @@ final class WebApiParityTest extends TestCase
         'portal.approvals.approve' => 'deliberate:a client contact approving the hours and expenses they pay for is an interactive decision by the payer in the portal, which holds no agent credential',
         'portal.autopay.enable' => 'deliberate:a client contact authorizing charges to their own saved payment method is their own explicit consent in the portal, with the exact wording stored; the provider\'s attested route is companies.autopay.set',
         'portal.autopay.disable' => 'deliberate:a client contact withdrawing their authorization to charge their saved payment method is their own act in the portal; the provider side is companies.autopay.set',
+        'portal.payment-methods.setup' => 'deliberate:a client contact starting to save a card or bank account for their own company hands them to Stripe\'s own form in the portal; the browser receives only a client secret and the method is never entered through SVC',
+        'portal.payment-methods.confirm' => 'deliberate:reads back the setup the client contact just completed in Stripe\'s form, in the portal, so the saved method appears without waiting for the webhook',
+        'portal.payment-methods.default' => 'deliberate:a client contact choosing which of their own saved payment methods autopay charges is their own act in the portal; the provider side is companies.autopay.set',
+        'portal.payment-methods.destroy' => 'deliberate:a client contact removing their own saved payment method is their own act in the portal, and turns autopay off if it was the default',
         'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
         // Sharing a project crosses a workspace boundary, so only a signed-in
         // owner or admin of each side may open, accept, end or relink it (#631).

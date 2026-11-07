@@ -40,7 +40,15 @@ A proposal waits for your signature. Accepting it creates the agreement.
 
 ## Billing and autopay
 
-Billing lists the payment methods saved for your company and which one is the default. Autopay lets your provider charge that default method on each invoice's due date, so you do not have to pay by hand.
+Billing lists the payment methods saved for your company and which one is the default. A contact with access to the whole company can manage them:
+
+- **Add a payment method.** Choose **Add payment method**, tick that you want to save the method for future payments from your provider, then enter a card or US bank account in Stripe's secure form. Your provider never sees the number. A bank account can take a few days to verify; it appears here once Stripe confirms it. The first method you save becomes the default.
+- **Make default.** Autopay charges the default method. Choose **Make default** on another method to change it; autopay stays on.
+- **Remove.** Choose **Remove** and confirm. If the method is the default and autopay is on, autopay turns off, and you can turn it on again after choosing another default.
+
+If your provider is not set up to take payments, or you only have access to some projects, the page says so and offers no buttons.
+
+Autopay lets your provider charge that default method on each invoice's due date, so you do not have to pay by hand.
 
 - **Turning it on.** A contact of your company turns autopay on here. You choose a limit, the most one invoice may be charged, and tick an authorization that spells out the method, the company and the limit. SVC stores that exact wording with your name and the time.
 - **The limit.** An invoice over the limit is not charged. It says "Not autopaid: over limit" and stays yours to pay by hand.
