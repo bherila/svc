@@ -755,7 +755,7 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
     }
     // Appendix B: three expenses billed on three expense lines. The first has a
     // PNG, a PDF and a file whose name has no break; the second a JPEG; the
-    // third none. The names have no break either. Real bytes, stored through
+    // third none. Only the two images are shared with the client. The names have no break either. Real bytes, stored through
     // the application's own adapter on the harness's private disk.
     $documentExpenseLines = [$documentLines['expense']];
     foreach ([['SyntheticLabResultsApiUsageWithoutBreaks'.str_repeat('A', 40), 9_900, 8], ['SyntheticParkingWithoutBreaks'.str_repeat('P', 40), 1_500, 9]] as [$text, $amount, $order]) {
@@ -780,8 +780,14 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
             1 => [UploadedFile::fake()->image('api-usage.jpg', 480, 640)],
             default => [],
         };
-        foreach ($files as $file) {
-            app(AttachmentStorageService::class)->store($workspace, $documentExpense, $file, $owner);
+        foreach ($files as $index => $file) {
+            $stored = app(AttachmentStorageService::class)->store($workspace, $documentExpense, $file, $owner);
+            // A receipt is created private. The two images are shared with the
+            // client, as the sharing action does it; the two PDFs stay private,
+            // so the portal invoice and the client PDF show B1 (one image) and B2.
+            if (in_array($position.'.'.$index, ['0.0', '1.0'], true)) {
+                DB::table('client_attachments')->where('id', $stored->id)->update(['is_visible_to_client' => true]);
+            }
         }
     }
     foreach ([[3, 90, 'SyntheticInternalNoteWithoutBreaks'.str_repeat('N', 40), false, null], [4, 60, 'Internal only', true, 'Reconciled the purchase order '.str_repeat('SyntheticClientNote', 8)], [5, 45, 'Internal only', false, null]] as [$day, $minutes, $note, $visible, $written]) {

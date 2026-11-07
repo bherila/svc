@@ -22,7 +22,9 @@ final class AttachmentPublicationAuthority
         if ($reference->collaboration()) {
             return $this->collaborationParent($actor, $workspace, $reference, $origin);
         }
-        abort_if($reference->type === 'expense', 422, 'Expense receipts have no client-sharing audience.');
+        if ($reference->type === 'expense') {
+            return $this->expenseParent($actor, $workspace, $reference, $origin);
+        }
         $early = in_array($reference->type, ['proposal', 'agreement', 'invoice'], true);
         if (! $early) {
             $this->workspaceAccess->lockWorkspace($workspace);
@@ -39,6 +41,25 @@ final class AttachmentPublicationAuthority
         $facts = $this->collaboration->currentAccess($workspace, null, $actor);
         abort_unless($facts->canPublish(), 403);
         abort_if($origin === AttachmentMutationOrigin::Agent && $facts->portalMember, 403);
+
+        return $parent;
+    }
+
+    /**
+     * An expense: only a current workspace manager may change what a client is
+     * shown of its receipts. The lock order is the receipt service's own
+     * (workspace, expense, membership).
+     *
+     * @return Model&WorkspaceOwned
+     */
+    private function expenseParent(User $actor, Workspace $workspace, AttachmentParentReference $reference, AttachmentMutationOrigin $origin): Model
+    {
+        $this->workspaceAccess->lockWorkspace($workspace);
+        $initial = $this->records->resolve($workspace, 'expense', $reference->publicId);
+        /** @var Model&WorkspaceOwned $parent */
+        $parent = $initial->newQuery()->where('workspace_id', $workspace->id)->where('public_id', $reference->publicId)
+            ->tap(Locks::forUpdate())->firstOrFail();
+        $this->workspaceAccess->assertCurrentManager($actor, $workspace, $origin);
 
         return $parent;
     }

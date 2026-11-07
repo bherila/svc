@@ -109,7 +109,8 @@ final class AttachmentReaderTest extends TestCase
         $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, $type, $record->public_id,
             ['file' => UploadedFile::fake()->createWithContent('synthetic-legacy.txt', 'Synthetic legacy bytes')])->assertCreated();
         $file = ClientAttachment::query()->where('workspace_id', $this->workspace->id)->sole();
-        $this->assertSame(! $privateDefault, $file->is_visible_to_client);
+        // An expense receipt starts private whatever the latch says; every other parent follows it.
+        $this->assertSame($type !== 'expense' && ! $privateDefault, $file->is_visible_to_client);
         $this->assertSame($type, $file->record_type);
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $file->lifecycle_state);
     }
@@ -467,7 +468,8 @@ final class AttachmentReaderTest extends TestCase
             ['expected_version' => AgentApiVersion::for($this->project), 'file' => $file]);
         app(AgentExpenseReceiptService::class)->upload($this->owner, $this->workspace, 'synthetic-reader', 'synthetic-expense-valid', $expense->public_id,
             ['expected_version' => AgentApiVersion::for($expense)], $file);
-        $this->assertSame($privateDefault ? 2 : 0, ClientAttachment::query()->where('workspace_id', $this->workspace->id)->where('is_visible_to_client', false)->count());
+        // The project file follows the latch; the receipt is private either way.
+        $this->assertSame($privateDefault ? 2 : 1, ClientAttachment::query()->where('workspace_id', $this->workspace->id)->where('is_visible_to_client', false)->count());
         $this->assertDatabaseCount('client_attachments', 2);
     }
 

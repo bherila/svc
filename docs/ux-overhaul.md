@@ -830,6 +830,56 @@ Settled by the product owner before a period away:
   - **Harness:** the `--invoice-document` seed now sets the connection's own
     publishable key; the portal "Pay by card" assertion failed without it on
     a clean `origin/main`.
+- **2026-11-07, client-shared receipts (follows #624 item 9).** The owner
+  decided that a client sees a receipt only if it is marked shared with the
+  client, on the portal invoice and in the PDF they download. This supersedes
+  "client copies carry no Appendix B" above.
+  - **The one flag:** `client_attachments.is_visible_to_client`, the flag every
+    other shared file uses. No second flag.
+  - **Who may read:** `AttachmentReader` serves a portal viewer an expense
+    receipt only when the file is shared AND the expense is billed on a line of
+    an invoice that viewer can already see (`PortalInvoiceQuery`: issued,
+    partially paid, paid or disputed; client visible; same company; never a
+    draft or void) AND, for a project-scoped contact, the expense's own project
+    is one they hold. An expense with no project is refused to a project-scoped
+    contact (conservative: its attribution cannot be established). A workspace
+    manager previewing the portal gets the same shared-and-billed receipts, no
+    more. Everything else is 404. One correlated query, no query per receipt.
+  - **Existing receipts:** until the privacy latch is set every upload defaulted
+    to "visible", a value nobody chose and nothing read for an expense. Reading
+    it would publish them, so migration `2026_11_09_100000_make_expense_receipts_private`
+    makes every stored expense receipt private, and `ClientAttachment` now
+    creates an expense receipt private whatever the latch says. A manager shares
+    the ones to show. (Not reversible: the old value was never a decision.)
+  - **Appendix B for a client:** only the shared receipts, only for expenses that
+    have one, with a portal link per file; an unshared receipt, or an expense
+    with only unshared receipts, is omitted with no "n hidden" and no "No receipt
+    on file". The intro sentence is the client's own. The portal route is
+    `portal.files.receipt.download` (`/portal/{company}/expenses/{expense}/receipts/{file}`);
+    there is no portal listing page for receipts.
+  - **Emailed, stored and reminder PDFs:** unchanged, no Appendix B. One copy is
+    mailed to every recipient with no named viewer, and a project-scoped contact
+    must not be mailed another project's receipt. Listing shared receipts by name
+    with "available in the portal" was considered and left out; the help article
+    says to open the invoice in the portal.
+  - **Who sets the flag:** the existing "Visible to client" control on the
+    expense receipts page, now offered for expense receipts to a current owner or
+    admin, through the existing `attachments.visibility.update` operation (its
+    description now names expense receipts). It keeps that operation's
+    rollout switch (`SVC_ATTACHMENT_SHARING_WRITES_ENABLED`) and privacy latch:
+    with them off the page offers no control and every receipt stays private.
+    Staff who are not owners or admins, other workspaces and clients are
+    refused. The page says when a shared receipt is not yet reachable because
+    its expense is not on an invoice the client can see.
+  - **Activity:** sharing changes on other files are not recorded as client
+    activity (only the idempotency receipt of the mutation), so none is added
+    for receipts either.
+  - **Changed expectations:** `AttachmentReaderTest` (expense uploads are
+    private whatever the latch), `AttachmentSharingActionTest` (an owner may now
+    share a receipt), `InvoiceReceiptsTest` and the receipts golden and screen
+    tests (clients now receive shared receipts). `AttachmentSharingPolicyTest`
+    is unchanged.
+
 - **2026-11-06, #614: does "Still deferred" follow the agreement setting?**
   Decided by the owner: yes. Client copies show the itemised list only when
   `show_deferred_backlog_to_client` is on, read as it stands now. With no

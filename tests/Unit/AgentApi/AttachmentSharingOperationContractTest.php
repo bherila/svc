@@ -114,6 +114,12 @@ final class AttachmentSharingOperationContractTest extends TestCase
                     $this->assertArrayNotHasKey('request_types', $document);
                 }
                 $this->assertStringContainsString($scoped ? 'Current exact company, parent and file access is required.' : 'Workspace managers only, on the six existing generic upload parent types.', $document['description']);
+                $sentence = 'Expense receipts are also accepted here, for sharing only: a receipt is private until shared, and a client opens it only when the expense is billed on an invoice they can see. ';
+                if (str_starts_with($id, 'attachments.visibility.')) {
+                    $this->assertStringContainsString('Exact current parent and file access is required. '.$sentence, $document['description'], $id);
+                } else {
+                    $this->assertStringNotContainsString('Expense receipts are also accepted', $document['description'], $id);
+                }
                 $this->assertStringContainsString($write ? 'Uploads start private.' : 'This read remains available when sharing writers are disabled', $document['description']);
                 $flags = $write ? [AgentDeploymentFlags::FILES, ...($scoped ? [AgentDeploymentFlags::COLLABORATION] : []), AgentDeploymentFlags::ATTACHMENT_SHARING] : [];
                 if ($handler === null) {

@@ -638,8 +638,36 @@ try {
                     .locator('#appendix-b')
                     .getByText('No receipt on file', { exact: true }),
             ).toBeVisible();
+        } else if (screen === 'document_portal') {
+            // The portal reads as the client: only the two receipts shared with
+            // them (an image on the first expense, one on the second), each
+            // linked by a portal address; the unshared PDFs and the expense with
+            // no shared receipt are not mentioned at all.
+            await expect(
+                page.getByRole('heading', {
+                    name: 'Appendix B: receipts',
+                    exact: true,
+                }),
+            ).toBeVisible();
+            const card = page.getByLabel('Expense receipts');
+            await expect(card).toBeVisible();
+            await expect(card.getByRole('link')).toHaveCount(2);
+            const appendix = page.locator('#appendix-b');
+            await expect(appendix.getByRole('link')).toHaveCount(2);
+            await expect(appendix.getByRole('row')).toHaveCount(3);
+
+            for (const link of await appendix.getByRole('link').all()) {
+                expect(await link.getAttribute('href')).toMatch(
+                    /^\/portal\/[0-9a-f-]{36}\/expenses\/[0-9a-f-]{36}\/receipts\/[0-9a-f-]{36}$/,
+                );
+            }
+
+            await expect(appendix.getByText('scan.pdf')).toHaveCount(0);
+            await expect(appendix.getByText(/SyntheticReceiptScan/)).toHaveCount(0);
+            await expect(appendix.getByText('No receipt on file')).toHaveCount(0);
+            await expect(appendix.getByText(/hidden|withheld/i)).toHaveCount(0);
         } else {
-            // The portal and the proforma read as the client, who is told of none.
+            // The proforma reads as the client and carries no receipts.
             await expect(
                 page.getByRole('heading', { name: /Appendix B/ }),
             ).toHaveCount(0);
