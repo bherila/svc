@@ -249,7 +249,7 @@ final class AutopayChargeTest extends TestCase
         // The other run claims after this run's last read of the invoice (its payments) and before its own claim.
         $injected = false;
         DB::listen(function ($query) use (&$injected, $workspace, $invoice): void {
-            if (! $injected && str_contains($query->sql, 'from "client_invoice_payments"')) {
+            if (! $injected && preg_match('/from [`"]client_invoice_payments[`"]/', $query->sql) === 1) {
                 $injected = true;
                 InvoiceAutopayAttempt::query()->create([
                     'workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'client_company_id' => $invoice->client_company_id,
