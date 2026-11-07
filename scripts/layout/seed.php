@@ -34,6 +34,7 @@ use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
+use App\Services\Billing\StripeWebhookService;
 use App\Services\Files\AttachmentStorageService;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
@@ -961,7 +962,33 @@ if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
         'secret' => 'EAAA'.str_repeat('synthetic', 6).'wxyz', 'webhook_secret' => 'synthetic-signature', 'location_id' => str_repeat('L', 64),
     ]);
     $connections->reuse($reusedWorkspace, $stripeRow, $owner);
+    // The webhook health line (the check itself never runs here, no processor is
+    // asked): one workspace per result the card can show, written the way the
+    // check records it, and one a member (no buttons, no URL) reads.
+    $required = StripeWebhookService::REQUIRED_EVENTS;
+    $recordCheck = static function (string $name, string $slug, string $status, array $missing, string $role = 'owner') use ($connections, $owner): Workspace {
+        $healthWorkspace = Workspace::query()->create(['name' => $name, 'slug' => $slug, 'timezone' => 'America/Los_Angeles']);
+        $healthWorkspace->memberships()->create(['user_id' => $owner->id, 'role' => $role]);
+        $row = $connections->connect($healthWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+            'external_account_id' => 'acct_synthetic_'.$slug, 'display_name' => 'Synthetic webhook business', 'environment' => 'live',
+            'secret' => 'rk_live_'.str_repeat('synthetic', 6).'a1b2', 'webhook_secret' => 'whsec_synthetic',
+            'endpoint_token' => substr(hash('sha256', $slug), 0, 40),
+        ]);
+        $row->forceFill(['webhook_check_status' => $status, 'webhook_check_missing' => $missing, 'webhook_checked_at' => now()->subHours(3)])->save();
+
+        return $healthWorkspace;
+    };
+    $recordCheck('Webhook healthy workspace', 'layout-webhook-healthy', 'healthy', []);
+    $stripeRow->forceFill(['webhook_check_status' => 'healthy', 'webhook_check_missing' => [], 'webhook_checked_at' => now()->subHours(3)])->save();
+    $webhookPages = [
+        'payments_webhook_missing' => $recordCheck('Webhook missing workspace', 'layout-webhook-missing', 'missing_events', array_slice($required, 0, 14)),
+        'payments_webhook_notfound' => $recordCheck('Webhook not found workspace', 'layout-webhook-notfound', 'not_found', []),
+        'payments_webhook_denied' => $recordCheck('Webhook denied workspace', 'layout-webhook-denied', 'permission_denied', []),
+        'payments_webhook_disabled' => $recordCheck('Webhook disabled workspace', 'layout-webhook-disabled', 'disabled', []),
+        'payments_webhook_member' => $recordCheck('Webhook member workspace', 'layout-webhook-member', 'missing_events', ['payment_method.attached', 'customer.updated'], 'member'),
+    ];
     $paymentPages = [
+        ...array_map(static fn (Workspace $page): string => route('workspaces.payments', $page, absolute: false), $webhookPages),
         'payments' => route('workspaces.payments', $workspace, absolute: false),
         'payments_stripe' => route('workspaces.payments', $stripeWorkspace, absolute: false),
         'payments_square' => route('workspaces.payments', $squareWorkspace, absolute: false),

@@ -120,7 +120,13 @@ export function WebhookHealth({ health }: { health: WebhookHealthView }) {
             )}
             {health.endpoint_url !== null && (
                 <p>
-                    <span className="text-muted-foreground">Endpoint </span>
+                    <span
+                        className={
+                            warning ? undefined : 'text-muted-foreground'
+                        }
+                    >
+                        Endpoint{' '}
+                    </span>
                     <span
                         className="font-mono wrap-anywhere"
                         data-test="stripe-webhook-url"
@@ -129,7 +135,7 @@ export function WebhookHealth({ health }: { health: WebhookHealthView }) {
                     </span>
                 </p>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className={cn('text-xs', !warning && 'text-muted-foreground')}>
                 {health.checked_at === null
                     ? 'Not checked yet.'
                     : `Checked ${formatTimestamp(health.checked_at)}.`}
@@ -158,6 +164,7 @@ export function WebhookHealth({ health }: { health: WebhookHealthView }) {
                     )}
                     {health.fix !== null && (
                         <Button
+                            variant="outline"
                             size="sm"
                             disabled={busy}
                             onClick={() => setConfirming(true)}
