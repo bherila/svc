@@ -322,6 +322,7 @@ try {
             : route.abort();
     });
     const page = await context.newPage();
+
     // A stand-in for Stripe.js, which the sandbox cannot load: the saved
     // payment method form mounts a long unbroken placeholder, and confirming
     // it is refused with a long unbroken reason (#642).
@@ -346,6 +347,7 @@ try {
             });
         });
     }
+
     page.on('pageerror', (error) =>
         failures.push(`Browser error: ${error.message}`),
     );

@@ -182,7 +182,7 @@ export function PaymentMethodsCard({
                     >
                         Payment methods
                     </CardTitle>
-                    <p className="max-w-prose text-sm text-muted-foreground">
+                    <p className="max-w-prose text-sm wrap-anywhere text-muted-foreground">
                         Cards and US bank accounts saved for {companyName}.
                     </p>
                 </div>
@@ -519,6 +519,7 @@ function AddMethodDialog({
                                 <div
                                     ref={mount}
                                     aria-label="Payment method details"
+                                    className="min-w-0 wrap-anywhere"
                                 />
                             )}
                         </>
