@@ -47,7 +47,30 @@ sequenceDiagram
 - Saving a new method is explicit opt-in.
 - 3DS and other redirect confirmations return to the invoice page, which polls `pay-intent/{id}` until the payment leaves `requires_action`.
 - Failed online payment attempts are surfaced on the invoice payment panel.
-- Saved methods are scoped to a client company and can be removed or marked default.
+- Saved methods are scoped to a client company. A contact with company-wide portal access can add a card or US bank account on the Billing page (see below), mark one default, or remove one.
+
+### Managing saved methods in the portal
+
+`/portal/{company}/billing` is where a client keeps the methods autopay charges. Who may: the contacts who may consent to autopay (`PortalAutopayAuthority`); the server sends finished URLs or null. All Stripe calls use the workspace's own connection, are made outside database transactions, and are recorded locally afterwards through `StripePaymentMethodService`, the service the webhook uses, so the webhook for the same change is a no-op.
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant App
+    participant Stripe
+    Browser->>App: POST payment-methods/setup
+    App->>Stripe: create customer (first use, idempotent), SetupIntent usage=off_session
+    App-->>Browser: client_secret only
+    Browser->>Stripe: Payment Element confirmSetup
+    Browser->>App: POST payment-methods/confirm {setup_intent}
+    App->>Stripe: retrieve SetupIntent (customer must be this company's)
+    App->>App: attach (same path as the webhook)
+    Stripe->>App: setup_intent.succeeded / payment_method.attached (no-op)
+```
+
+- **Add**: only when the workspace's Stripe connection and publishable key are known (the portal pay path's check). The first saved method becomes the default.
+- **Make default**: `customers.update(invoice_settings.default_payment_method)`, then the local flag, exactly one per company; the `customer.updated` webhook converges on the same state.
+- **Remove**: `payment_methods.detach`, then the local soft delete. Removing the default turns autopay off after commit, as the webhook path does.
 
 ## Admin Surfaces
 

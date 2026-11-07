@@ -1249,6 +1249,72 @@ Answers the owner gave in an interview on 2026-11-06.
     the client to pay it by hand, as for a skip. Two new columns record who closed it out
     and the note.
 
+- **2026-11-07, #642: clients manage saved payment methods in the portal.** Approved
+  by the owner: add (card and US bank account), make default, remove, on the portal
+  Billing page, so autopay is self-serve. Decided while building, conservatively:
+  - **Who:** the contacts who may consent to autopay (`PortalAutopayAuthority`:
+    company-wide portal access). Staff previewing the portal and project-scoped
+    contacts see the list and no controls. The server sends finished URLs
+    (`payment_method_setup`, and `default_href` / `remove_href` on each method) or
+    null, plus a finished sentence (`payment_methods_notice`) saying why there are
+    none. One decision, `PaymentMethodManagement`, serves the page and the routes.
+  - **Gated on the workspace's Stripe connection, in two levels.** Changing a
+    method (default, remove) needs the connection's key; adding also needs the
+    publishable key the portal pay path uses (`stripePublishableKey`), because the
+    browser mounts Stripe's form with it. No connection: the section says methods
+    cannot be added or changed. Connection without a publishable key: the client
+    can still remove a method or change the default, and is told adding is
+    unavailable.
+  - **Stripe's own Payment Element, never SVC's fields.** The server creates a
+    SetupIntent (`usage: off_session`, `payment_method_types: card, us_bank_account`,
+    bank verification `automatic`) and returns only its client secret. Financial
+    Connections permissions are not requested (the flag in the docs is not
+    implemented in this checkout), so a bank account verifies by Stripe's
+    instant or micro-deposit flow, whichever it offers; a micro-deposit method
+    stays "pending" and the webhook records it when Stripe succeeds.
+  - **The company's Stripe customer is created on first use**, at Stripe with an
+    idempotency key derived from workspace and company, then locally; the row is
+    unique per company, so a race or repeat ends with one customer. Nothing else in
+    the codebase created that mapping before (it existed only in fixtures), so
+    this is the first path that can. Only the company name and public ids are sent
+    to Stripe, not an email address.
+  - **The browser asks the server to read the SetupIntent back.** After Stripe
+    confirms, the browser posts the SetupIntent id; the server retrieves it with
+    the workspace's key, refuses one whose customer is not this company's (another
+    company's in the same Stripe account is "not found"), and, if it succeeded,
+    records the method through the same `StripePaymentMethodService::attach` the
+    webhook uses. Idempotent both ways: a second confirm, or the webhook arriving
+    after, changes nothing and records one "added" activity. A redirect return
+    (bank or 3-D Secure) carries `setup_intent` in the address; the page reads it
+    back the same way and tidies the address.
+  - **The first method becomes the default.** Autopay needs a default and Stripe
+    sets none on its own, so when a company has no default method the one just
+    saved is made the default (Stripe, then locally). Later methods never take the
+    default.
+  - **Default: Stripe first, mirror second, without moving the event marker.**
+    `invoice_settings.default_payment_method` is set through the adapter outside any
+    transaction, then `adoptDefault` flips the local flag in a short transaction
+    (customer, then methods, the order the webhook uses). It deliberately does not
+    write `default_payment_method_event_*`: our clock is not Stripe's, and
+    advancing the marker could make a genuine later dashboard change look old. The
+    `customer.updated` for the same change then finds nothing to do. If the process
+    dies between the two writes the webhook brings the record in line.
+  - **Remove: detach at Stripe, then forget locally.** A method Stripe already
+    reports as gone is removed locally too. The local removal is the webhook's own
+    (`forget` shares `forgetLocked` with `detach`) and works for a method with no
+    routing-state row; it stamps the state row detached so an older attach event
+    cannot resurrect it. Removing the default turns autopay off with reason
+    "Default method removed", recorded as SVC's, deferred to after commit exactly
+    as the webhook path does it. The confirmation dialog says autopay will turn off
+    when it is on and the method is the default, and says it will not otherwise.
+  - **Failures are refusals, not detail.** A Stripe error is logged with its code and
+    the client sees "Stripe could not complete that. Try again in a moment."
+    Nothing local changes when the Stripe call fails.
+  - **Browser-only routes.** Four new web routes, classified in `WebApiParityTest`:
+    the client holds no agent credential and these are their own acts in the
+    portal. They send `Idempotency-Key`, which becomes the SetupIntent's Stripe
+    idempotency key so a retried request is handed the same intent.
+
 ## Open questions
 
 None. Answered on 2026-11-06:
