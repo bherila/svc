@@ -91,6 +91,52 @@ final class StripeWebhookHealthDecisionTest extends TestCase
         $this->assertSame(WebhookHealthStatus::Disabled, $this->decide($endpoints, 'we_off')->status);
     }
 
+    public function test_the_stored_endpoint_is_judged_even_when_another_enabled_twin_is_listed_first(): void
+    {
+        $endpoints = [self::endpoint('we_a', self::URL, ['a.one']), self::endpoint('we_b', self::URL, ['*'])];
+
+        $health = $this->decide($endpoints, 'we_b');
+
+        $this->assertSame('we_b', $health->endpointId);
+        $this->assertSame(WebhookHealthStatus::Healthy, $health->status);
+        $this->assertSame('we_a', $this->decide($endpoints, null)->endpointId);
+        $this->assertSame('we_a', $this->decide($endpoints, 'we_unknown')->endpointId);
+    }
+
+    public function test_the_first_listed_match_is_judged_when_none_is_enabled_and_another_endpoint_comes_first(): void
+    {
+        $endpoints = [self::endpoint('we_elsewhere', 'https://elsewhere.example.test/hook', ['*']), self::endpoint('we_off', self::URL, ['*'], 'disabled')];
+
+        $this->assertSame('we_off', $this->decide($endpoints)->endpointId);
+    }
+
+    public function test_an_expected_url_that_is_not_a_url_matches_nothing_not_even_another_that_is_not_one(): void
+    {
+        $health = StripeWebhookHealthDecision::decide(self::REQUIRED, self::STAND_INS, ['nonsense'], 'live', null, [
+            self::endpoint('we_1', 'also nonsense', ['*']),
+        ]);
+
+        $this->assertSame(WebhookHealthStatus::NotFound, $health->status);
+    }
+
+    public function test_expected_urls_are_normalised_too(): void
+    {
+        $health = StripeWebhookHealthDecision::decide(self::REQUIRED, self::STAND_INS, ['HTTPS://SVC.example.test:443/api/webhooks/stripe/token0/'], 'live', null, [
+            self::endpoint('we_1', self::URL, ['*']),
+        ]);
+
+        $this->assertSame(WebhookHealthStatus::Healthy, $health->status);
+    }
+
+    public function test_an_unknown_key_mode_is_never_a_mismatch(): void
+    {
+        foreach ([true, false] as $live) {
+            foreach ([null, 'sandbox', ''] as $environment) {
+                $this->assertSame(WebhookHealthStatus::Healthy, $this->decide([self::endpoint('we_1', self::URL, ['*'], 'enabled', $live)], null, $environment)->status);
+            }
+        }
+    }
+
     public function test_the_wrong_mode_is_its_own_result(): void
     {
         $endpoint = self::endpoint('we_1', self::URL, ['*'], 'enabled', false);
@@ -145,6 +191,11 @@ final class StripeWebhookHealthDecisionTest extends TestCase
         $this->assertSame('https://h.test:8080/', StripeWebhookHealthDecision::normalize('https://h.test:8080'));
         $this->assertNull(StripeWebhookHealthDecision::normalize('/relative/path'));
         $this->assertNull(StripeWebhookHealthDecision::normalize(''));
+        $this->assertNull(StripeWebhookHealthDecision::normalize('ftp://h.test/p'));
+        $this->assertNull(StripeWebhookHealthDecision::normalize('mailto:a@h.test'));
+        $this->assertSame('https://h.test/p', StripeWebhookHealthDecision::normalize("  https://h.test/p \n"));
+        $this->assertSame('http://h.test/p', StripeWebhookHealthDecision::normalize('http://h.test/p'));
+        $this->assertSame('https://h.test/p', StripeWebhookHealthDecision::normalize('https://h.test/p'));
     }
 
     public function test_either_expected_url_matches(): void

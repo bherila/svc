@@ -30,7 +30,7 @@ final class StripeWebhookHealthDecision
      */
     public static function decide(array $required, array $standIns, array $expectedUrls, ?string $environment, ?string $storedEndpointId, array $endpoints): WebhookHealth
     {
-        $expected = array_values(array_filter(array_map(self::normalize(...), $expectedUrls)));
+        $expected = array_filter(array_map(self::normalize(...), $expectedUrls));
         $matches = array_values(array_filter(
             $endpoints,
             static fn (array $endpoint): bool => in_array(self::normalize($endpoint['url']), $expected, true),
@@ -39,14 +39,10 @@ final class StripeWebhookHealthDecision
             return new WebhookHealth(WebhookHealthStatus::NotFound);
         }
 
-        $primary = null;
-        foreach ($matches as $endpoint) {
-            if ($storedEndpointId !== null && $endpoint['id'] === $storedEndpointId) {
-                $primary = $endpoint;
-                break;
-            }
-        }
-        $primary ??= self::firstEnabled($matches) ?? $matches[0];
+        // The endpoint SVC created holds the signing secret SVC knows, so it is judged first.
+        $primary = array_find($matches, static fn (array $endpoint): bool => $endpoint['id'] === $storedEndpointId)
+            ?? self::firstEnabled($matches)
+            ?? $matches[0];
 
         $missing = self::missing($required, $standIns, $primary['enabled_events']);
         $health = static fn (WebhookHealthStatus $status): WebhookHealth => new WebhookHealth($status, $missing, $primary['id'], $primary['enabled_events']);
