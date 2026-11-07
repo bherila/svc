@@ -41,6 +41,10 @@ Schedule::command('svc:billing:charge-autopay --apply --limit=50')->everyFifteen
 // is on. Hourly, so the first of the month is reached in every workspace's own
 // time zone; drafts only - issuing and sending stay an operator's.
 Schedule::command('svc:billing:generate-cadence-drafts --apply --limit=50')->hourly()->when(static fn (): bool => (bool) config('svc.billing.scheduled_cadence_drafts'))->withoutOverlapping(30);
+// Is each workspace's Stripe webhook endpoint subscribed to every event SVC needs?
+// One read of Stripe per connection, recorded for the Payments page; it changes
+// nothing at Stripe (the fix is a button an owner or admin presses). No queue.
+Schedule::command('svc:payments:check-stripe-webhooks --apply')->dailyAt('03:35')->withoutOverlapping(30);
 // The read-only Square mirror (#438): no more often than every 15 minutes.
 // The lock expires well before a day so a crashed run cannot stall the next.
 Schedule::command('svc:square:sync --apply')->everyFifteenMinutes()->withoutOverlapping(30);

@@ -191,7 +191,7 @@ read the same over REST and MCP.
 
 ## Supported Events
 
-Subscribe the Stripe webhook endpoint to these event types:
+SVC creates the workspace's webhook endpoint itself when a restricted key is saved, and then keeps an eye on it (see [Webhook health](#webhook-health)). The list below is the one in `StripeWebhookService::REQUIRED_EVENTS`; the code is the source of truth and a test fails if a handled event is not listed there. Subscribe a hand-made endpoint to these event types:
 
 - `payment_intent.succeeded`: creates or restores a `ClientInvoicePayment`, then marks the invoice paid when the ledger covers the total.
 - `payment_intent.processing`: records pending ACH/card state without marking the invoice paid.
@@ -211,6 +211,19 @@ Refunds and disputes are recorded whatever the payment's finance reconciliation 
 - `setup_intent.succeeded`: syncs the saved method and records `payment_method.added`.
 
 Duplicate events are ignored using the unique `client_stripe_events.stripe_event_id` record. Events for Stripe customers that have no SVC mapping are acknowledged as permanently irrelevant; there is no webhook path that can create that ownership mapping. A known customer whose referenced default method has not arrived yet remains transient and is retried. Deterministic domain mismatches are recorded as failed and acknowledged on exact replay.
+
+Three more dispute events are handled and required, though the list above names only two: `charge.dispute.updated`, `charge.dispute.funds_withdrawn` and `charge.dispute.funds_reinstated` are hints to re-read the dispute group. `charge.refund.updated` (the older name of `refund.updated`) is handled and subscribed by the endpoint SVC creates, but is not required: a subscription to it alone is accepted in place of `refund.updated`.
+
+## Webhook health
+
+The Payments page (`workspaces.payments`) tells an owner whether Stripe is actually sending SVC everything it needs, so nobody checks the Dashboard by hand.
+
+- **What is checked.** With the connection's own restricted key SVC lists the account's webhook endpoints, finds the one whose URL is this connection's (`/api/webhooks/stripe/{token}`; the environment-made connection also `/api/webhooks/stripe`; scheme, host, port and path compared, case, trailing slash and query ignored) and reports: not found, disabled, in the other mode (test or live) than the key, missing events (`*` covers everything), or healthy. A key that cannot read webhook endpoints is its own result naming the permission. If Stripe cannot be reached the result is "could not be checked", not a webhook problem.
+- **When.** After a key is saved (the save never waits on or fails because of it), when an owner or admin presses **Check again**, and daily at 03:35 UTC from the scheduler: `svc:payments:check-stripe-webhooks --apply` (a preview without `--apply` calls nothing; `--workspace=<public id>`, `--limit=`). There is no queue. The result is stored on the connection (`webhook_check_status`, `webhook_check_missing`, `webhook_checked_at`) and the page shows it without calling Stripe.
+- **Show.** The Stripe card says "Webhook: all N events subscribed" or "Missing: payment_method.attached, ..." with when it was checked; a warning banner appears for missing events, a disabled or absent endpoint, or the wrong mode. Owners and admins also see the endpoint URL.
+- **Fix** (owner or admin, after a confirmation dialog). **Add missing events** sets the endpoint's `enabled_events` to the union of what it has and what it lacks: nothing is removed and no other endpoint is touched. **Create endpoint** (offered only when no endpoint exists at SVC's URL) creates one with the events SVC handles; Stripe returns a new signing secret, which SVC stores encrypted on the connection in place of the old one (the same storage as every other secret) before saying "Created the Stripe webhook endpoint and stored its signing secret." If the secret cannot be stored the new endpoint is deleted again. A disabled endpoint is not re-enabled by SVC: enable it in the Dashboard.
+- **Reused connections** have no health of their own; the workspace that holds the key shows and fixes it.
+- **Restricted key permissions.** Read: *Webhook Endpoints: Read*. Fix, and creating the endpoint when the key is saved: *Webhook Endpoints: Write*. Verifying a publishable key: *SetupIntents: Write*.
 
 ## Stripe CLI Quickstart
 

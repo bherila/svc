@@ -17,6 +17,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { WebhookHealth } from '@/components/workspaces/webhook-health';
+import type { WebhookHealthView } from '@/components/workspaces/webhook-health';
 import { apiRequest } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 
@@ -29,6 +31,8 @@ export interface PaymentConnectionView {
     reused_from: string | null;
     usable: boolean;
     webhook_url: string | null;
+    /** Stripe only, and only for a connection with a key of its own. */
+    webhook?: WebhookHealthView | null;
 }
 
 export interface PaymentProcessorView {
@@ -213,6 +217,10 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                             </div>
                         )}
                     </dl>
+                )}
+
+                {connection?.webhook != null && !replacing && (
+                    <WebhookHealth health={connection.webhook} />
                 )}
 
                 {showForm && (

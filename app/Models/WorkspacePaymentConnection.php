@@ -35,6 +35,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $webhook_secret
  * @property string|null $secret_hint
  * @property string|null $webhook_endpoint_id
+ * @property string|null $webhook_check_status
+ * @property list<string>|null $webhook_check_missing
+ * @property Carbon|null $webhook_checked_at
  * @property string|null $location_id
  * @property string|null $publishable_key
  * @property int|null $connected_by_user_id
@@ -45,7 +48,8 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'workspace_id', 'processor', 'external_account_id', 'display_name', 'environment', 'origin',
     'reuses_connection_id', 'endpoint_token', 'secret', 'webhook_secret', 'secret_hint',
-    'webhook_endpoint_id', 'location_id', 'publishable_key', 'connected_by_user_id', 'connected_at', 'revoked_at',
+    'webhook_endpoint_id', 'webhook_check_status', 'webhook_check_missing', 'webhook_checked_at',
+    'location_id', 'publishable_key', 'connected_by_user_id', 'connected_at', 'revoked_at',
     'revoked_by_user_id', 'active_slot',
 ])]
 #[Hidden([
@@ -61,6 +65,8 @@ class WorkspacePaymentConnection extends Model implements WorkspaceOwned
         return [
             'secret' => 'encrypted',
             'webhook_secret' => 'encrypted',
+            'webhook_check_missing' => 'array',
+            'webhook_checked_at' => 'datetime',
             'connected_at' => 'datetime',
             'revoked_at' => 'datetime',
         ];
