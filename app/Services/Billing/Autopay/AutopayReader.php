@@ -49,7 +49,8 @@ final class AutopayReader
     /** The currency a company's limit is in: its billing currency, else the workspace's. */
     public function limitCurrency(Workspace $workspace, ClientCompany $company): string
     {
-        $currency = trim((string) $company->getAttribute('currency'));
+        $stored = $company->getAttribute('currency');
+        $currency = is_string($stored) ? trim($stored) : '';
 
         return strtoupper($currency !== '' ? $currency : (string) $workspace->default_currency);
     }
