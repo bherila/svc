@@ -46,6 +46,13 @@ final class AutopayIntentCheckTest extends TestCase
         $this->assertSame(['pi_synthetic_held', 375_000, 'USD', InvoicePaymentStatus::Succeeded], [$verified->id, $verified->amount, $verified->currency, $verified->status]);
     }
 
+    public function test_currency_is_compared_and_kept_in_upper_case_whatever_the_case_either_side_uses(): void
+    {
+        $verified = AutopayIntentCheck::verify(self::intent(['currency' => 'USD']), 'pi_synthetic_held', self::WORKSPACE, self::INVOICE, self::ATTEMPT, 375_000, 'usd');
+
+        $this->assertSame('USD', $verified->currency);
+    }
+
     public function test_a_processing_intent_is_recorded_as_pending(): void
     {
         $this->assertSame(InvoicePaymentStatus::Pending, self::verify(self::intent(['status' => 'processing']))->status);

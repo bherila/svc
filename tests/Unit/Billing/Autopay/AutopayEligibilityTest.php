@@ -120,7 +120,7 @@ final class AutopayEligibilityTest extends TestCase
     public function test_any_prior_attempt_blocks_a_second(): void
     {
         $this->assertSame(AutopayVerdict::Skipped, AutopayEligibility::decide(self::facts(['priorAttempt' => AutopayAttemptState::Skipped])));
-        foreach ([AutopayAttemptState::Claimed, AutopayAttemptState::Submitted, AutopayAttemptState::Failed] as $state) {
+        foreach ([AutopayAttemptState::Claimed, AutopayAttemptState::Submitted, AutopayAttemptState::Failed, AutopayAttemptState::NotCharged] as $state) {
             $this->assertSame(AutopayVerdict::AlreadyAttempted, AutopayEligibility::decide(self::facts(['priorAttempt' => $state])), $state->value);
         }
     }
