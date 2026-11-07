@@ -71,10 +71,20 @@ final class PortalPaymentMethodDecisionsTest extends TestCase
         $this->assertSame($decided === PaymentMethodManagement::Full, $decided->notice('Example Studio') === null);
     }
 
-    public function test_the_notice_names_the_provider_when_it_is_the_reason(): void
+    public function test_the_notice_is_the_exact_sentence_the_reader_sees(): void
     {
-        $this->assertStringContainsString('Example Studio', (string) PaymentMethodManagement::Unavailable->notice('Example Studio'));
-        $this->assertStringContainsString('Example Studio', (string) PaymentMethodManagement::ChangeOnly->notice('Example Studio'));
-        $this->assertStringContainsString('whole company', (string) PaymentMethodManagement::NotPermitted->notice('Example Studio'));
+        $this->assertNull(PaymentMethodManagement::Full->notice('Example Studio'));
+        $this->assertSame(
+            'Example Studio cannot take new payment methods right now. You can still remove one or choose another default.',
+            PaymentMethodManagement::ChangeOnly->notice('Example Studio'),
+        );
+        $this->assertSame(
+            'Only a contact with access to the whole company can add, remove or change payment methods.',
+            PaymentMethodManagement::NotPermitted->notice('Example Studio'),
+        );
+        $this->assertSame(
+            'Example Studio is not set up to take payments right now, so payment methods cannot be added or changed.',
+            PaymentMethodManagement::Unavailable->notice('Example Studio'),
+        );
     }
 }

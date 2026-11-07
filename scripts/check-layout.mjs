@@ -322,6 +322,30 @@ try {
             : route.abort();
     });
     const page = await context.newPage();
+    // A stand-in for Stripe.js, which the sandbox cannot load: the saved
+    // payment method form mounts a long unbroken placeholder, and confirming
+    // it is refused with a long unbroken reason (#642).
+    if (autopayOnly) {
+        await page.addInitScript(() => {
+            window.Stripe = () => ({
+                elements: () => ({
+                    create: () => ({
+                        mount: (target) => {
+                            target.textContent = `Stripe form placeholder ${'SyntheticStripeFieldWithoutBreaks'.repeat(6)}`;
+                        },
+                        destroy: () => {},
+                    }),
+                }),
+                confirmPayment: () => Promise.resolve({}),
+                confirmSetup: () =>
+                    Promise.resolve({
+                        error: {
+                            message: `Your card was declined: ${'SyntheticDeclineReasonWithoutBreaks'.repeat(5)}`,
+                        },
+                    }),
+            });
+        });
+    }
     page.on('pageerror', (error) =>
         failures.push(`Browser error: ${error.message}`),
     );
@@ -1231,6 +1255,67 @@ try {
                 .click();
             await expect(page.getByRole('alertdialog')).toBeVisible();
             await capture(screen, 'turn-off', width, true);
+            await page.keyboard.press('Escape');
+
+            // Saved payment methods (#642). Stripe.js cannot load here, so a
+            // stand-in mounts a placeholder in Stripe's place and the setup
+            // request is answered locally; the server is asked nothing else.
+            await page
+                .getByRole('button', {
+                    name: 'Remove Visa ending 4242',
+                    exact: true,
+                })
+                .click();
+            await expect(page.getByRole('alertdialog')).toContainText(
+                'autopay will turn off',
+            );
+            await capture(screen, 'remove-default', width, true);
+            await page.keyboard.press('Escape');
+            await page
+                .getByRole('button', {
+                    name: 'Remove Bank account ending 6789',
+                    exact: true,
+                })
+                .click();
+            await capture(screen, 'remove-other', width, true);
+            await page.keyboard.press('Escape');
+
+            await page.route('**/payment-methods/setup', (route) =>
+                route.fulfill({
+                    status: 201,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        client_secret: 'seti_layout_secret_synthetic',
+                    }),
+                }),
+            );
+            await page
+                .getByRole('button', {
+                    name: 'Add payment method',
+                    exact: true,
+                })
+                .click();
+            const adding = page.getByRole('dialog');
+            await expect(adding).toBeVisible();
+            await capture(screen, 'add-consent', width, true);
+            await adding.getByRole('checkbox').check();
+            await adding
+                .getByRole('button', { name: 'Continue', exact: true })
+                .click();
+            await expect(
+                adding.getByRole('button', { name: 'Save payment method' }),
+            ).toBeVisible();
+            await expect(
+                adding.getByLabel('Payment method details'),
+            ).toContainText('Stripe form placeholder');
+            await capture(screen, 'add-form', width, true);
+            await adding
+                .getByRole('button', { name: 'Save payment method' })
+                .click();
+            await expect(adding.getByRole('alert')).toContainText(
+                'Your card was declined',
+            );
+            await capture(screen, 'add-refused', width, true);
             await page.keyboard.press('Escape');
         }
 
@@ -4470,7 +4555,7 @@ try {
                                       : squareOnly
                                         ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
                                         : autopayOnly
-                                          ? 'Synthetic autopay (#636): the portal Billing page with autopay on and off, its change-limit, turn-off and consent dialogs, the portal invoice in its scheduled, over-limit and failed states, the operator client settings with the consent record and upcoming charges, and the operator invoice with a failed, a scheduled and a skipped attempt, with oversized names, wording and failure reasons, at every required width. No request writes anything.'
+                                          ? 'Synthetic autopay (#636, #642): the portal Billing page with autopay on and off, its change-limit, turn-off and consent dialogs, the remove-method and add-method dialogs (Stripe.js stood in for), the portal invoice in its scheduled, over-limit and failed states, the operator client settings with the consent record and upcoming charges, and the operator invoice with a failed, a scheduled and a skipped attempt, with oversized names, wording and failure reasons, at every required width. No request writes anything.'
                                           : remindersOnly
                                             ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
                                             : backlogOnly
