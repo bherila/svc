@@ -1022,6 +1022,33 @@ Answers the owner gave in an interview on 2026-11-06.
     the expense scope and the expense cutover. The edition switch is browser-only.
   - **No data command:** nothing needs moving, so none was written. The one-off move of
     Direct time (Migration, above) stays a separate, explicit, per-participant command.
+- **2026-11-06, #624 items 2 and 10: accounting reads design and agent
+  workspace discovery.**
+  - **Journal injection:** `InvoiceLifecycleService` takes `InvoiceAccountingJournal`
+    as a constructor dependency with a `new InvoiceAccountingJournal` default,
+    like its other collaborators, so the two existing tests that build the service
+    by hand keep working unedited. The journal is stateless; behaviour is unchanged.
+  - **Cash income load:** the SQL union now selects only the keys a change feed
+    needs (tagged id, public id, effective date, change stamp, version). The
+    page's facts are loaded afterwards by primary key and workspace in at most six
+    queries and classified by `CashIncomeClassifier`, which touches no database.
+    The union itself stays, because paging, `updated_since` and the cursor are
+    defined over one ordering of all three sources and must not change. The
+    yearly export hydrates in chunks of 100, so its queries grow with chunks, not
+    rows. Money stays integer minor units; no floats.
+  - **Missing facts fail loudly:** a key row whose payment, refund or movement
+    has vanished between the two reads throws rather than reporting zeros. These
+    rows are immutable and never deleted, so this is a corruption signal.
+  - **Operation catalog:** the accounting reads carry an `AccountingDeclaration`
+    (response component, optional download media type) on their declaration. The
+    catalog no longer recognises them by id.
+  - **No new scope for workspace discovery (item 10):** `identity:read` stays
+    the scope behind `context.get`; widening a narrow token's reach is a product
+    decision. Instead the connection says what to ask for: the server instructions
+    of a connection without `context.get`, `toolsets.*` results (`data.notes`,
+    only for a connection lacking `identity:read`), and the `context.get` refusal
+    all name `identity:read`. `docs/mcp.md`, the MCP help page and the scope's
+    consent text now say agents need it.
 
 ## Open questions
 

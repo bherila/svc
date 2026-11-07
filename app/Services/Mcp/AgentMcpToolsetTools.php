@@ -2,8 +2,10 @@
 
 namespace App\Services\Mcp;
 
+use App\Services\Mcp\Context\McpRequestContext;
 use App\Services\Mcp\Toolsets\McpToolsets;
 use App\Services\Mcp\Toolsets\McpToolsetSelection;
+use App\Support\AgentApi\AgentApiScopes;
 use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Notification\ToolListChangedNotification;
 use Mcp\Server\RequestContext;
@@ -19,7 +21,10 @@ use Mcp\Server\RequestContext;
  */
 final class AgentMcpToolsetTools
 {
-    public function __construct(private readonly McpToolsets $toolsets) {}
+    /** What an agent must ask for when its token cannot call context.get. */
+    public const string IDENTITY_NOTE = 'This connection lacks the identity:read scope, so context.get is not available and it cannot discover its workspace IDs. Ask the user to grant identity:read, or to supply the workspace ID; never guess one.';
+
+    public function __construct(private readonly McpToolsets $toolsets, private readonly ?McpRequestContext $request = null) {}
 
     /** @return array<string, mixed> */
     public function list(RequestContext $context): array
@@ -87,11 +92,18 @@ final class AgentMcpToolsetTools
     /** @return array<string, mixed> */
     private function result(McpToolsetSelection $selection, bool $changed): array
     {
-        return ['data' => [
+        $data = [
             'mode' => $selection->all ? 'all' : 'progressive',
             'changed' => $changed,
             'toolsets' => $this->toolsets->report($selection),
-        ]];
+        ];
+        // Toolsets are enabled with mcp:use alone, but workspace IDs come from
+        // context.get, which needs identity:read. Say so where an agent looks.
+        if ($this->request !== null && ! $this->request->principal->hasScope(AgentApiScopes::IDENTITY_READ)) {
+            $data['notes'] = [self::IDENTITY_NOTE];
+        }
+
+        return ['data' => $data];
     }
 
     /**
