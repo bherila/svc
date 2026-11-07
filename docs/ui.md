@@ -272,9 +272,9 @@ The initial coverage is deliberately bounded:
   list includes a claimed invoice link, an approved expense awaiting a matching
   currency invoice, a draft awaiting approval, and oversized project/description
   text.
-- **Measured only:** the legacy operations screen. Its existing narrow-screen
-  overflow/header wrapping is reported but does not fail the invoice/proposal
-  gate. A green exit does not certify operations or any unlisted page.
+- **Measured only:** nothing is measurement-only now that the legacy
+  Operations screen is retired. A green exit still does not certify any
+  unlisted page.
 - **Additional static coverage:** the proposal acceptance form and unbroken
   summary/terms text have hostile-fixture coverage in `layout-overflow.test.tsx`.
 

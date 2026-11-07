@@ -281,23 +281,26 @@ final class AttachmentReaderTest extends TestCase
         $this->assertTrue($reader->canView($this->owner, $this->workspace, $file, AttachmentAudience::Native));
     }
 
-    public function test_operations_file_metadata_reuses_specific_parent_authority(): void
+    public function test_agreement_page_file_metadata_reuses_specific_parent_authority(): void
     {
-        $other = $this->syntheticProject($this->company, 'operations-ungranted');
-        $member = $this->syntheticMember($this->workspace, 'operations-member', 'member');
+        $other = $this->syntheticProject($this->company, 'agreement-page-ungranted');
+        $member = $this->syntheticMember($this->workspace, 'agreement-page-member', 'member');
         ClientProjectMembership::query()->create(['workspace_id' => $this->workspace->id, 'client_project_id' => $this->project->id,
             'user_id' => $member->id, 'role' => 'viewer']);
+        $agreements = [];
         foreach ([$this->project, $other] as $index => $project) {
-            $agreement = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
-                'client_project_id' => $project->id, 'title' => 'Synthetic operations agreement '.$index, 'starts_on' => '2026-10-01', 'currency' => 'USD']);
-            app(AttachmentStorageService::class)->store($this->workspace, $agreement,
-                UploadedFile::fake()->createWithContent($index === 0 ? 'synthetic-allowed-operations.txt' : 'synthetic-denied-operations.txt', 'Synthetic operations bytes'), $this->owner);
+            $agreements[$index] = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+                'client_project_id' => $project->id, 'title' => 'Synthetic agreement page '.$index, 'starts_on' => '2026-10-01', 'currency' => 'USD']);
+            app(AttachmentStorageService::class)->store($this->workspace, $agreements[$index],
+                UploadedFile::fake()->createWithContent($index === 0 ? 'synthetic-allowed-agreement.txt' : 'synthetic-denied-agreement.txt', 'Synthetic agreement bytes'), $this->owner);
         }
-        $response = $this->actingAs($member, 'web')->get(route('workspaces.operations', $this->workspace))->assertOk();
-        $content = $response->getContent();
-        $this->assertIsString($content);
-        $this->assertStringContainsString('synthetic-allowed-operations.txt', $content);
-        $this->assertStringNotContainsString('synthetic-denied-operations.txt', $content);
+        $response = $this->actingAs($member, 'web')->get(route('clients.agreement', [$this->workspace, $this->company, $agreements[0]]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.filename', 'synthetic-allowed-agreement.txt'));
+        $this->assertStringNotContainsString('synthetic-denied-agreement.txt', (string) $response->getContent());
+        // The agreement on the project the member holds nothing on opens nothing,
+        // and so names no file of it.
+        $denied = $this->get(route('clients.agreement', [$this->workspace, $this->company, $agreements[1]]))->assertNotFound();
+        $this->assertStringNotContainsString('synthetic-denied-agreement.txt', (string) $denied->getContent());
     }
 
     public function test_generic_agent_remains_manager_only_and_dual_manager_uses_exact_portal_grants_for_legacy_files(): void

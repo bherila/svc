@@ -72,6 +72,8 @@ final class AgentProjectParityTest extends TestCase
         $this->withHeader('Idempotency-Key', 'create-stale')->postJson($path, $body)->assertConflict();
         $body['expected_version'] = AgentApiVersion::for($company->fresh());
         $created = $this->withHeader('Idempotency-Key', 'create-project')->postJson($path, $body)->assertCreated()->assertJsonPath('data.repository', 'github.com/synthetic/project')->assertJsonPath('data.company_id', $company->public_id)->assertJsonPath('data.is_visible_to_client', true)->json('data');
+        // The link opens the project's own page, not the retired Operations screen.
+        $this->assertSame(route('clients.project', [$workspace, $company, $created['id']]), $created['web_url']);
         $this->withHeader('Idempotency-Key', 'create-project')->postJson($path, $body)->assertCreated()->assertJsonPath('data.id', $created['id']);
         $this->assertDatabaseCount('client_projects', 2);
         $this->withHeader('Idempotency-Key', 'create-project')->postJson($path, [...$body, 'name' => 'Different project'])->assertConflict();

@@ -109,9 +109,12 @@ class TimeSheetTest extends TestCase
     {
         $project = $this->otherProject();
         $url = route('clients.time', [$this->workspace, $this->company, 'log_project' => $project->public_id], absolute: false);
-        $this->actingAs($this->manager, 'web')->get(route('workspaces.operations', $this->workspace))
+        // Client Home and the project's own page carry the same finished link.
+        $this->actingAs($this->manager, 'web')->get(route('clients.show', [$this->workspace, $this->company]))
             ->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->where('workspace.clients.0.projects', fn ($rows): bool => collect($rows)->firstWhere('id', $project->public_id)['time_url'] === $url));
+            ->where('overview.projects', fn ($rows): bool => collect($rows)->firstWhere('id', $project->public_id)['log_time_href'] === $url));
+        $this->get(route('clients.project', [$this->workspace, $this->company, $project]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('log_time_href', $url));
         $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->where('log_project_id', $project->public_id));
         $foreign = $this->foreignWorkspace();
         $this->get(route('clients.time', [$this->workspace, $this->company, 'log_project' => $foreign['project']->public_id]))->assertNotFound();
@@ -2822,10 +2825,15 @@ class TimeSheetTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
 
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'invoice_number' => 'SYN-TZ-1', 'status' => 'issued', 'currency' => 'USD',
+            'subtotal_amount' => 10000, 'tax_amount' => 0, 'total_amount' => 10000, 'paid_amount' => 0, 'balance_amount' => 10000,
+        ]);
         $this->actingAs($this->manager, 'web')
-            ->get("/workspaces/{$this->workspace->public_id}/operations")
+            ->get(route('clients.invoice', [$this->workspace, $this->company, $invoice]))
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
+            ->assertInertia(fn (Assert $page) => $page->where('timezone', 'America/Los_Angeles'));
 
         // And that default is a date the write accepts.
         $this->actingAs($this->manager, 'web')

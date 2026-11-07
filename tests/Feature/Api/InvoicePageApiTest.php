@@ -61,10 +61,8 @@ final class InvoicePageApiTest extends TestCase
         $issue = route('agent-api.v1.invoices.issue', [$workspace, $invoice->public_id], absolute: false);
         $this->actingAs($owner)->get($page)->assertOk()->assertInertia(fn (Assert $view) => $view
             ->where('actions.issue', $issue)->where('version', AgentApiVersion::for($invoice->fresh())));
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view
-            ->where('workspace.clients.0.invoices.0.issue_href', $issue)
-            ->where('workspace.clients.0.invoices.0.payment_href', null)
-            ->where('workspace.clients.0.invoices.0.version', AgentApiVersion::for($invoice->fresh())));
+        // A draft is issued, not paid: the page offers no payment yet.
+        $this->get($page)->assertOk()->assertInertia(fn (Assert $view) => $view->where('actions.payment', null));
         $this->signedIn($owner);
         $body = ['expected_version' => AgentApiVersion::for($invoice->fresh()), 'confirm' => true];
         $this->postJson($issue, $body)->assertUnprocessable();
@@ -96,8 +94,12 @@ final class InvoicePageApiTest extends TestCase
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
         $this->signedIn($member);
-        $this->get(route('workspaces.operations', $workspace))->assertOk()->assertInertia(fn (Assert $view) => $view
-            ->where('workspace.clients.0.invoices.0.issue_href', null)->where('workspace.clients.0.invoices.0.payment_href', null));
+        // A member holding no project of this client is offered nothing of it.
+        $this->get(route('clients.invoice', [$workspace, $company, $invoice]))->assertNotFound();
+        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic page member project', 'slug' => 'synthetic-page-member-project']);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $member->id, 'role' => 'contributor']);
+        // Reaching the client does not make the member its biller: no Issue, no Record payment.
+        $this->get(route('clients.invoices', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $view) => $view->where('invoice_create_href', null));
         $this->postJson(route('agent-api.v1.invoices.issue', [$workspace, $invoice->public_id], absolute: false), [
             'expected_version' => AgentApiVersion::for($invoice->fresh()), 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-member-issue'])->assertForbidden();

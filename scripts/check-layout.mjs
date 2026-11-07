@@ -1542,7 +1542,6 @@ try {
                           : invoiceRecoveryOnly
                             ? [
                                   'invoice',
-                                  'operations',
                                   'client_invoices',
                                   'draft_time',
                                   'time',
@@ -1569,7 +1568,12 @@ try {
                                                 'draft_time',
                                             ]
                                           : engagementOnly
-                                            ? ['client_agreements', 'agreement']
+                                            ? [
+                                                  'client_agreements',
+                                                  'agreement',
+                                                  'project_page',
+                                                  'client_overview',
+                                              ]
                                             : disputesOnly
                                               ? ['invoice', 'square_portal']
                                               : taskLookupsOnly
@@ -1627,7 +1631,6 @@ try {
                                                                         'draft_time',
                                                                         'proposal',
                                                                         'proposal_acceptance',
-                                                                        'operations',
                                                                         'client_agreements',
                                                                         'client_invoices',
                                                                         'dashboard',
@@ -1936,6 +1939,28 @@ try {
                 await capture(screen, 'created', width);
                 await page.unroute(createPattern, createHandler);
                 await page.unroute(readPattern, readHandler);
+            }
+
+            if (engagementOnly && screen === 'project_page') {
+                // The per-project time form from the retired Operations
+                // screen is this link, and it opens the sheet on the project.
+                const logTime = page.getByRole('link', {
+                    name: 'Log time',
+                    exact: true,
+                });
+                await expect(logTime).toBeVisible();
+                expect(await logTime.getAttribute('href')).toContain(
+                    '?log_project=',
+                );
+                await capture(screen, 'log-time-link', width);
+            }
+
+            if (engagementOnly && screen === 'client_overview') {
+                // The activity feed from the same screen is the last card.
+                await expect(
+                    page.getByText('Activity', { exact: true }),
+                ).toBeVisible();
+                await capture(screen, 'activity', width);
             }
 
             if (screen === 'task_project') {
@@ -2828,13 +2853,13 @@ try {
                         .getByRole('form', { name: 'Draft invoice' })
                         .first();
                     await draft
-                        .getByPlaceholder('Invoice number', { exact: true })
+                        .getByLabel('Invoice number', { exact: true })
                         .fill('SYNTHETIC-RECOVERY');
                     await draft
-                        .getByPlaceholder('Line description', { exact: true })
+                        .getByLabel('Line description', { exact: true })
                         .fill('SyntheticUnbrokenInvoiceDescription'.repeat(10));
                     await draft
-                        .getByPlaceholder('Unit price', { exact: true })
+                        .getByLabel('Unit price (USD)', { exact: true })
                         .fill('123.45');
                     await checkInvoiceRecovery(
                         screen,
@@ -2845,42 +2870,9 @@ try {
                             name: 'Draft invoice',
                             exact: true,
                         }),
-                        draft.getByPlaceholder('Invoice number', {
+                        draft.getByLabel('Invoice number', {
                             exact: true,
                         }),
-                    );
-                } else if (screen === 'operations') {
-                    const payment = page
-                        .locator('form')
-                        .filter({
-                            has: page.getByLabel('Payment amount', {
-                                exact: true,
-                            }),
-                        })
-                        .first();
-                    await payment
-                        .getByPlaceholder('Payment reference', { exact: true })
-                        .fill('SyntheticUnbrokenReference'.repeat(10));
-                    await checkInvoiceRecovery(
-                        screen,
-                        width,
-                        'payment',
-                        '**/api/v1/workspaces/*/payments',
-                        payment.getByRole('button', {
-                            name: 'Record payment',
-                            exact: true,
-                        }),
-                        payment.getByLabel('Payment amount', { exact: true }),
-                    );
-                    await checkInvoiceRecovery(
-                        screen,
-                        width,
-                        'issue',
-                        '**/api/v1/workspaces/*/invoices/*/issue',
-                        page
-                            .getByRole('button', { name: 'Issue', exact: true })
-                            .first(),
-                        null,
                     );
                 } else if (screen === 'draft_time' || screen === 'time') {
                     if (invoiceHistoryOnly) {
@@ -2964,6 +2956,19 @@ try {
                         }),
                         page.getByLabel('Due date', { exact: true }),
                     );
+                    // Issue lived on the retired Operations screen as well;
+                    // this page's own button is the one left to recover.
+                    await checkInvoiceRecovery(
+                        screen,
+                        width,
+                        'issue',
+                        '**/api/v1/workspaces/*/invoices/*/issue',
+                        page.getByRole('button', {
+                            name: 'Issue',
+                            exact: true,
+                        }),
+                        null,
+                    );
                 } else if (screen === 'invoice_review') {
                     await page
                         .getByRole('button', {
@@ -2993,18 +2998,36 @@ try {
             }
 
             if (engagementOnly && screen === 'client_agreements') {
-                await page
+                const proposalForm = page.getByRole('form', {
+                    name: 'Draft proposal',
+                });
+                await proposalForm
                     .getByLabel('Proposal title', { exact: true })
-                    .first()
                     .fill('SyntheticProposalTitle'.repeat(12));
-                await page
-                    .getByLabel('Proposal line description', { exact: true })
-                    .first()
+                await proposalForm
+                    .getByLabel('Line description', { exact: true })
                     .fill('SyntheticProposalLine'.repeat(12));
-                await page
-                    .getByLabel('Proposal price', { exact: true })
-                    .first()
+                await proposalForm
+                    .getByLabel('Price (USD)', { exact: true })
                     .fill('1234.50');
+                // Every field says what it is in a visible label, and the
+                // schedule's cadence is the shared select, reading words
+                // rather than the stored value.
+                const scheduleForm = page
+                    .getByRole('form', { name: /^Add billing schedule for / })
+                    .first();
+                await expect(
+                    scheduleForm.getByText('Cadence', { exact: true }),
+                ).toBeVisible();
+                await expect(
+                    scheduleForm.getByText('Next run', { exact: true }),
+                ).toBeVisible();
+                await expect(
+                    scheduleForm.getByRole('combobox', { name: 'Cadence' }),
+                ).not.toContainText('_');
+                await scheduleForm
+                    .getByLabel('Line description', { exact: true })
+                    .fill('SyntheticRecurringLine'.repeat(12));
                 await capture(screen, 'engagement-draft', width);
                 await page
                     .getByRole('button', { name: 'Activate', exact: true })
@@ -3182,7 +3205,7 @@ try {
                 };
                 page.on('request', recordCreation);
                 await page.route(
-                    '**/workspaces/*/operations',
+                    '**/workspaces/*/dashboard',
                     (route) => route.abort('failed'),
                     { times: 1 },
                 );
@@ -3220,7 +3243,7 @@ try {
                 await page.waitForURL(body.data.web_url);
                 await expect(
                     page.getByRole('heading', {
-                        name: createdName,
+                        name: 'Dashboard',
                         exact: true,
                     }),
                 ).toBeVisible();
@@ -4261,7 +4284,7 @@ try {
                                             ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
                                             : engagementOnly
                                               ? 'Synthetic proposal draft, agreement activation confirmation, agreement rename and terms at every required width. No provider requests or ledger mutations.'
-                                              : 'Synthetic local fixtures only. Invoice review/settings/proposal/operations/dashboard/time/expenses are asserted.',
+                                              : 'Synthetic local fixtures only. Invoice review/settings/proposal/dashboard/time/expenses are asserted.',
 
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | UI consistency / axe | Screenshot |',

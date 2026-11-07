@@ -45,7 +45,8 @@ final class AgentTimeParityTest extends TestCase
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/time-entries")->assertOk()
             ->assertJsonPath('data.0.invoice_id', $invoice->public_id)
             ->assertJsonPath('data.0.allocation_state', 'reserved')
-            ->assertJsonPath('data.0.version', $version);
+            ->assertJsonPath('data.0.version', $version)
+            ->assertJsonPath('data.0.web_url', route('workspaces.dashboard', $workspace));
     }
 
     public function test_selected_time_allocation_and_removal_change_the_read_and_mutation_version_together(): void

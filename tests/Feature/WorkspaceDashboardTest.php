@@ -326,11 +326,19 @@ class WorkspaceDashboardTest extends TestCase
         $this->assertNull($member['settings']);
     }
 
-    public function test_operations_still_renders_as_a_classic_tools_page_linked_from_the_menu(): void
+    public function test_the_retired_operations_address_redirects_to_the_dashboard_and_is_no_longer_in_the_menu(): void
     {
-        $this->actingAs($this->owner)->get($this->path('operations'))->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('operations')
-                ->where('workspaceNavigation.operations_href', "/workspaces/{$this->workspace->public_id}/operations"));
+        $this->actingAs($this->owner)->get($this->path('operations'))
+            ->assertRedirect("/workspaces/{$this->workspace->public_id}/dashboard");
+        $this->actingAs($this->owner)->get($this->path('dashboard'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->missing('workspaceNavigation.operations_href'));
+
+        // The old address opens nothing for a stranger: the redirect lands on a
+        // dashboard that refuses them, and a signed-out visitor is sent to log in.
+        $stranger = User::factory()->create();
+        $this->actingAs($stranger)->followingRedirects()->get($this->path('operations'))->assertForbidden();
+        auth()->logout();
+        $this->get($this->path('operations'))->assertRedirect(route('login'));
     }
 
     public function test_entering_a_workspace_with_no_client_to_go_to_lands_on_the_dashboard(): void

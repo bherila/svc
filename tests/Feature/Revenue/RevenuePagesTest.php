@@ -5,6 +5,7 @@ namespace Tests\Feature\Revenue;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
@@ -14,9 +15,12 @@ use App\Support\AgentApi\ProjectRole;
 use App\Support\Revenue\RevenueQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AssertsSurfaceIsolation;
 use Tests\Concerns\BuildsRevenueFixtures;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -30,6 +34,7 @@ final class RevenuePagesTest extends TestCase
     use AssertsSurfaceIsolation;
     use BuildsRevenueFixtures;
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     protected function setUp(): void
     {
@@ -326,6 +331,126 @@ final class RevenuePagesTest extends TestCase
             ->missing('overview.this_period'));
     }
 
+    /**
+     * The client's activity feed lived on the retired Operations screen. It is
+     * now the overview's, newest first and bounded at 100, with the actor's
+     * name and the event's own subject and payload.
+     */
+    public function test_the_overview_carries_the_latest_hundred_events_newest_first(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $workspace = $mine['workspace'];
+        $company = $mine['alpha'];
+        $owner = $mine['owner'];
+
+        foreach (range(1, 101) as $eventNumber) {
+            $activity = ClientCompanyActivity::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'actor_user_id' => $owner->id,
+                'action' => $eventNumber === 101 ? 'agreement.transitioned' : 'invoice.generated',
+                'subject_type' => $eventNumber === 101 ? 'client_agreement' : null,
+                'subject_public_id' => $eventNumber === 101 ? '11111111-1111-4111-8111-111111111111' : null,
+                'payload' => ['invoice_kind' => 'cadence_period'],
+            ]);
+            $activity->timestamps = false;
+            $activity->forceFill([
+                'created_at' => now()->subMinutes(101 - $eventNumber),
+                'updated_at' => now()->subMinutes(101 - $eventNumber),
+            ])->save();
+        }
+
+        // Another client's event in the same workspace is not this client's.
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $workspace->id,
+            'client_company_id' => $mine['beta']->id,
+            'action' => 'beta.only',
+            'payload' => ['note' => 'Synthetic beta only'],
+        ]);
+
+        $this->actingAs($owner)->get($this->overviewPath($mine))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('overview.activities', 100)
+            ->where('overview.activities.0.action', 'agreement.transitioned')
+            ->where('overview.activities.0.actor_name', $owner->name)
+            ->where('overview.activities.0.subject_type', 'client_agreement')
+            ->where('overview.activities.0.subject_id', '11111111-1111-4111-8111-111111111111')
+            ->where('overview.activities.0.payload.invoice_kind', 'cadence_period')
+            ->where('overview.activities', fn (Collection $activities): bool => $activities->pluck('action')->doesntContain('beta.only')));
+    }
+
+    /**
+     * A correction link is offered to whoever holds the owner or admin role in
+     * THIS workspace, and the overview is only built for them: a plain member
+     * gets no feed at all, and losing the membership loses the page.
+     */
+    public function test_the_correction_link_follows_the_acting_membership_in_this_workspace(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $person = User::factory()->create();
+        $membership = $mine['workspace']->memberships()->create(['user_id' => $person->id, 'role' => 'member']);
+        $project = ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => 'Synthetic Alpha project', 'status' => 'active']);
+        ClientProjectMembership::query()->create(['workspace_id' => $mine['workspace']->id, 'client_project_id' => $project->id, 'user_id' => $person->id, 'role' => ProjectRole::Contributor->value]);
+        $foreign = $this->revenueWorkspace('foreign-membership', 3);
+        $foreign['workspace']->memberships()->create(['user_id' => $person->id, 'role' => 'owner']);
+        $href = '/workspaces/'.$mine['workspace']->public_id.'/invoices/'.Str::uuid().'/corrections/'.Str::uuid();
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id,
+            'action' => 'invoice.corrected', 'payload' => ['correction_url' => $href],
+        ]);
+        $path = $this->overviewPath($mine);
+
+        $this->actingAs($person)->get($path)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->missing('overview'));
+        $this->assertStringNotContainsString($href, (string) $this->get($path)->getContent());
+        $membership->forceFill(['role' => 'admin'])->save();
+        $this->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page->where('overview.activities.0.correction_url', $href));
+        $membership->delete();
+        $this->get($path)->assertForbidden();
+    }
+
+    /**
+     * Nothing of another workspace reaches the feed, including a row written
+     * under the other workspace that names THIS company (the pre-#113 shape):
+     * only the workspace predicate keeps it out.
+     */
+    public function test_no_activity_of_another_workspace_reaches_the_overview(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        $theirs = $this->revenueWorkspace('theirs', 7);
+        $foreignWorker = User::factory()->create(['name' => 'Foreign Worker Name']);
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id,
+            'action' => 'invoice.generated', 'payload' => ['note' => 'Visible Activity Payload'],
+        ]);
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $theirs['workspace']->id, 'client_company_id' => $theirs['alpha']->id,
+            'actor_user_id' => $foreignWorker->id, 'action' => 'invoice.generated', 'payload' => ['note' => 'Foreign Activity Payload'],
+        ]);
+        $this->writingLegacyCrossTenantRows(function () use ($mine, $theirs, $foreignWorker): void {
+            ClientCompanyActivity::query()->create([
+                'workspace_id' => $theirs['workspace']->id, 'client_company_id' => $mine['alpha']->id,
+                'actor_user_id' => $foreignWorker->id, 'action' => 'invoice.generated', 'payload' => ['note' => 'Mixed Tenant Activity Payload'],
+            ]);
+        });
+
+        $response = $this->actingAs($mine['owner'])->get($this->overviewPath($mine))->assertOk();
+
+        $this->assertInertiaPayloadOmits($response, ['Foreign Activity Payload', 'Mixed Tenant Activity Payload', 'Foreign Worker Name'], 'Visible Activity Payload');
+    }
+
+    public function test_the_overview_names_only_columns_that_exist(): void
+    {
+        $mine = $this->revenueWorkspace('mine');
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id,
+            'actor_user_id' => $mine['owner']->id, 'action' => 'invoice.generated', 'payload' => ['invoice_kind' => 'cadence_period'],
+        ]);
+
+        $this->assertQueriesNameOnlyRealIdentifiers(
+            fn () => $this->actingAs($mine['owner'])->get($this->overviewPath($mine))->assertOk(),
+        );
+    }
+
     public function test_the_overview_figures_are_this_clients_alone(): void
     {
         $mine = $this->revenueWorkspace('mine');
@@ -384,6 +509,10 @@ final class RevenuePagesTest extends TestCase
         $mine = $this->revenueWorkspace('mine');
         // A client with no project skips the project reads altogether; start from one that has it.
         ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => 'Synthetic first project', 'status' => 'active']);
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id,
+            'actor_user_id' => $mine['owner']->id, 'action' => 'invoice.generated', 'payload' => ['invoice_kind' => 'cadence_period'],
+        ]);
         $n = 0;
 
         $this->assertQueryCountIndependentOfRows(
@@ -392,6 +521,10 @@ final class RevenuePagesTest extends TestCase
                 for ($i = 0; $i < 6; $i++) {
                     $n++;
                     ClientProject::query()->create(['workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'name' => "Bulk project {$n}", 'status' => 'active']);
+                    ClientCompanyActivity::query()->create([
+                        'workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id,
+                        'actor_user_id' => $mine['owner']->id, 'action' => 'invoice.generated', 'payload' => ['invoice_kind' => 'cadence_period'],
+                    ]);
                     ClientAgreement::query()->create([
                         'workspace_id' => $mine['workspace']->id, 'client_company_id' => $mine['alpha']->id, 'title' => "Bulk {$n}", 'status' => 'active', 'currency' => 'USD',
                         'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'retainer_amount' => 10000, 'retainer_minutes' => 600,

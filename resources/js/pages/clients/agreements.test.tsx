@@ -243,13 +243,16 @@ describe('client agreements page', () => {
     it('drafts a proposal and adds a schedule against the finished URLs', async () => {
         render(<ClientAgreements {...props()} />);
 
-        fireEvent.change(screen.getByLabelText('Proposal title'), {
+        const proposalForm = within(
+            screen.getByRole('form', { name: 'Draft proposal' }),
+        );
+        fireEvent.change(proposalForm.getByLabelText('Proposal title'), {
             target: { value: 'Synthetic new proposal' },
         });
-        fireEvent.change(screen.getByLabelText('Proposal line description'), {
+        fireEvent.change(proposalForm.getByLabelText('Line description'), {
             target: { value: 'Synthetic line' },
         });
-        fireEvent.change(screen.getByLabelText('Proposal price'), {
+        fireEvent.change(proposalForm.getByLabelText('Price (USD)'), {
             target: { value: '10.50' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Draft proposal' }));
@@ -265,10 +268,13 @@ describe('client agreements page', () => {
             }),
         );
 
-        fireEvent.change(screen.getByLabelText('Recurring line description'), {
+        const scheduleForm = within(
+            screen.getByRole('form', { name: /^Add billing schedule for / }),
+        );
+        fireEvent.change(scheduleForm.getByLabelText('Line description'), {
             target: { value: 'Synthetic hosting' },
         });
-        fireEvent.change(screen.getByLabelText('Recurring amount'), {
+        fireEvent.change(scheduleForm.getByLabelText(/^Amount \(/), {
             target: { value: '5' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Add schedule' }));

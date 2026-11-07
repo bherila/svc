@@ -119,7 +119,7 @@ final class AgentReadService
                     'default_currency' => $workspace->default_currency,
                     'workspace_role' => $this->projects->workspaceRole($user, $workspace),
                     ...$this->capabilities->forWorkspace($user, $workspace, $allowsScope),
-                    'web_url' => route('workspaces.operations', $workspace),
+                    'web_url' => route('workspaces.dashboard', $workspace),
                 ];
             })->values()->all(),
         ];

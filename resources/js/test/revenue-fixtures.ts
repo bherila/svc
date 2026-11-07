@@ -267,6 +267,18 @@ export function clientOverview(
                 href: '/workspaces/workspace-1/clients/company-1/proposals/proposal-1',
             },
         ],
+        activities: [
+            {
+                id: 'activity-1',
+                action: 'invoice.issued',
+                actor_name: `Actor${'Unbroken'.repeat(8)}`,
+                subject_type: null,
+                subject_id: null,
+                payload: {},
+                correction_url: null,
+                created_at: '2026-10-20T09:00:00.000Z',
+            },
+        ],
         ...overrides,
     };
 }

@@ -1,14 +1,20 @@
 ---
 title: History, MCP and Square
 audience: [operator]
-routes: [workspaces.operations, history.index, history.show, mcp.setup, square.explore]
+routes: [history.index, history.show, mcp.setup, square.explore]
 terms: []
 ---
 These live in the settings menu because they are about the workspace, not one client.
 
-## Operations (classic tools)
+## The old Operations page
 
-The older all-in-one page keeps the tools that have not moved yet: logging time by project and the per-client file panels. Proposals, agreements, billing schedules and drafting an invoice moved to the client's Agreements and Invoices tabs, and the page links to them.
+The Operations (classic tools) page is gone, and its address now opens the Dashboard. Each tool has a home with its client:
+
+- **Log time** is on the project's page and beside each project on the client's Overview. It opens the Time tab with the form ready on that project.
+- **Files** are on the proposal, agreement and invoice they belong to.
+- **Issue** and **Record payment** are on the invoice itself.
+- **Proposals, agreements and billing schedules** are on the client's Agreements tab, and **Draft invoice** is on its Invoices tab.
+- **Activity**, the latest 100 recorded events for a client, is at the bottom of the client's Overview, for owners and admins.
 
 ## History
 

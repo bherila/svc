@@ -5,6 +5,7 @@ use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientContact;
 use App\Models\ClientExpense;
@@ -264,6 +265,15 @@ if (getenv('SVC_LAYOUT_ENGAGEMENT') === '1') {
         'line_template' => [['type' => 'service', 'description' => str_repeat('SyntheticScheduleLine', 8), 'quantity' => '1', 'unit_amount' => 10000]],
     ]);
     $engagementAgreementPath = route('clients.agreement', [$workspace, $company, $draftAgreement], absolute: false);
+    // The activity feed that used to be on the retired Operations screen, with
+    // events whose words and subject have nowhere to break.
+    foreach (['invoice.issued', 'agreement.activated', 'invoice.payment_received'] as $action) {
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'actor_user_id' => $owner->id,
+            'action' => $action, 'subject_type' => 'client_agreement', 'subject_public_id' => $draftAgreement->public_id,
+            'payload' => ['invoice_number' => str_repeat('SyntheticActivityInvoiceNumber', 6), 'note' => str_repeat('SyntheticUnbrokenNote', 12)],
+        ]);
+    }
 }
 
 $project = ClientProject::query()->create([
@@ -1013,6 +1023,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),
     'task_list' => route('clients.tasks', [$workspace, $company], absolute: false),
     'task_project' => route('clients.project', [$workspace, $company, $project], absolute: false),
+    'project_page' => route('clients.project', [$workspace, $company, $project], absolute: false),
     'task_portal' => route('portal.tasks', $company, absolute: false),
     'task_create' => $planningTask === null ? null : route('agent-api.v1.tasks.store', [$workspace, $project->public_id], absolute: false),
     'task_update' => $planningTask === null ? null : route('agent-api.v1.tasks.update', [$workspace, $planningTask->public_id], absolute: false),
@@ -1062,7 +1073,6 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'proposal_acceptance' => route('portal.proposal', [$company, $proposal], absolute: false),
     'expenses' => route('clients.expenses', [$workspace, $company], absolute: false),
     'time' => route('clients.time', [$workspace, $company], absolute: false),
-    'operations' => route('workspaces.operations', $workspace, absolute: false),
     'client_agreements' => route('clients.agreements', [$workspace, $company], absolute: false),
     'client_invoices' => route('clients.invoices', [$workspace, $company], absolute: false),
     'dashboard' => route('workspaces.dashboard', $workspace, absolute: false),
