@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccountPreferencesController;
 use App\Http\Controllers\Billing\InvoiceProformaController;
 use App\Http\Controllers\Billing\PortalBillingController;
+use App\Http\Controllers\Billing\PortalPaymentMethodController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\Clients\ClientAgreementsController;
@@ -185,6 +186,14 @@ Route::middleware('auth')->group(function (): void {
             ->name('portal.autopay.enable');
         Route::delete('/portal/{clientCompany}/autopay', [PortalBillingController::class, 'disable'])
             ->name('portal.autopay.disable');
+        Route::post('/portal/{clientCompany}/payment-methods/setup', [PortalPaymentMethodController::class, 'setup'])
+            ->name('portal.payment-methods.setup');
+        Route::post('/portal/{clientCompany}/payment-methods/confirm', [PortalPaymentMethodController::class, 'confirm'])
+            ->name('portal.payment-methods.confirm');
+        Route::post('/portal/{clientCompany}/payment-methods/{paymentMethod}/default', [PortalPaymentMethodController::class, 'makeDefault'])
+            ->name('portal.payment-methods.default');
+        Route::delete('/portal/{clientCompany}/payment-methods/{paymentMethod}', [PortalPaymentMethodController::class, 'destroy'])
+            ->name('portal.payment-methods.destroy');
         Route::get('/portal/{clientCompany}/time', [ClientPortalController::class, 'time'])
             ->name('portal.time');
         Route::get('/portal/{clientCompany}/tasks', [ClientPortalController::class, 'tasks'])
