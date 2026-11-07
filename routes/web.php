@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountPreferencesController;
 use App\Http\Controllers\Billing\InvoiceProformaController;
+use App\Http\Controllers\Billing\PortalBillingController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\Clients\ClientAgreementsController;
@@ -178,6 +179,12 @@ Route::middleware('auth')->group(function (): void {
             ->name('portal.invoices');
         Route::get('/portal/{clientCompany}/invoices/{clientInvoice}', [ClientPortalController::class, 'invoice'])
             ->name('portal.invoice');
+        Route::get('/portal/{clientCompany}/billing', [PortalBillingController::class, 'show'])
+            ->name('portal.billing');
+        Route::post('/portal/{clientCompany}/autopay', [PortalBillingController::class, 'enable'])
+            ->name('portal.autopay.enable');
+        Route::delete('/portal/{clientCompany}/autopay', [PortalBillingController::class, 'disable'])
+            ->name('portal.autopay.disable');
         Route::get('/portal/{clientCompany}/time', [ClientPortalController::class, 'time'])
             ->name('portal.time');
         Route::get('/portal/{clientCompany}/tasks', [ClientPortalController::class, 'tasks'])

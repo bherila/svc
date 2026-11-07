@@ -162,6 +162,11 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('invoice_reminder_logs', 'client_invoice_id', 'client_invoices', 'irl_ws_invoice_fk'),
             TenantReference::enforcedBy('client_invoice_deferred_projects', 'client_invoice_id', 'client_invoices', 'cidp_ws_invoice_fk'),
 
+            // Autopay (#636).
+            TenantReference::enforcedBy('invoice_autopay_attempts', 'client_invoice_id', 'client_invoices', 'iaa_ws_invoice_fk'),
+            TenantReference::enforcedBy('invoice_autopay_attempts', 'client_company_id', 'client_companies', 'iaa_ws_company_fk'),
+            TenantReference::enforcedBy('client_autopay_consents', 'client_company_id', 'client_companies', 'aco_ws_company_fk'),
+
             // Stripe.
             TenantReference::enforcedBy('client_stripe_payment_methods', 'client_stripe_customer_id', 'client_stripe_customers', 'cspm_ws_customer_fk'),
 

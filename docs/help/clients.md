@@ -19,3 +19,10 @@ For each person you can choose **Can approve time and expenses**. By default the
 ## Projects
 
 A project groups time and tasks inside a client. Time is always logged to a project. See [time](help:time) for logging.
+
+## Autopay
+
+Client settings has an Autopay card. The client usually turns it on from their portal. For a client who agreed outside SVC, an owner or admin turns it on here: choose the limit per invoice, say how the client agreed (this is recorded with your name), and confirm. The client's billing contacts are emailed a notice with a link to turn it off.
+
+Autopay charges the client's default saved Stripe payment method for each issued invoice on its due date, once, up to the limit. It never reaches back to an invoice that fell due before it was turned on. Either side can turn it off or change the limit; each change, with who made it and the wording or attestation, is added to the consent record, which is never edited. Removing the default method turns autopay off and records why. Upcoming charges lists the invoices it will charge next, and marks any over the limit as not charged.
+

@@ -9,6 +9,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\Workspace;
 use App\Services\Authorization\PortalInvoiceQuery;
+use App\Services\Billing\Autopay\AutopayReader;
 use App\Services\Billing\Mail\InvoiceMailSender;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\WorkspaceAuthorization;
@@ -731,6 +732,8 @@ final class InvoiceEmailService
                 $draft->body,
                 $pdf,
                 $this->documents->filename($invoice),
+                // The same words the PDF prints, so the email and the document agree.
+                app(AutopayReader::class)->notice($invoice, $invoice->clientCompany),
             );
 
         } catch (Throwable $exception) {

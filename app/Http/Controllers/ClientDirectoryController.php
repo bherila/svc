@@ -38,6 +38,7 @@ use App\Services\Files\AttachmentFilePage;
 use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Finance\FinanceReconciliationBadges;
+use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Revenue\RevenuePagePresenter;
 use App\Services\Revenue\RevenueReadService;
 use App\Services\Square\Mirror\SquareInvoicePage;
@@ -61,8 +62,10 @@ use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentUserPresenter;
 use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\AgentApi\Presenters\AutopayPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
+use App\Support\Billing\Autopay\AutopayWording;
 use App\Support\Billing\Document\ReceiptDetail;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
@@ -508,6 +511,9 @@ class ClientDirectoryController extends Controller
             // Payment reminders (#438): whether one may be sent now and with
             // which link, the client's cadence, and every reminder sent.
             'payment_reminders' => $manages ? $this->paymentRemindersOf($workspace, $clientInvoice) : null,
+            // Autopay (#636): where it stands for this invoice, its one
+            // attempt, and the finished URL that skips it - null unless it may be.
+            'autopay' => $manages ? $this->autopayOf($workspace, $clientInvoice) : null,
             'square' => $square === null ? null : $square + [
                 // "View or pay in Square", from the mirror's copy of Square's own page address.
                 'hosted_page' => app(SquareInvoicePage::class)->forInvoice($workspace, $clientInvoice),
@@ -974,7 +980,29 @@ class ClientDirectoryController extends Controller
             'payment_reminders' => app(PaymentReminderPresenter::class)->company($clientCompany) + [
                 'update_href' => route('agent-api.v1.clients.payment-reminders.update', [$workspace, $clientCompany->public_id], absolute: false),
             ],
+            // Autopay (#636): the switch, its consent record and upcoming
+            // charges. Turning it on and off goes through the API, like the cadence.
+            'autopay' => app(AutopayPresenter::class)->company($workspace, $clientCompany) + [
+                'update_href' => route('agent-api.v1.clients.autopay.update', [$workspace, $clientCompany->public_id], absolute: false),
+                'portal_href' => route('portal.billing', $clientCompany, absolute: false),
+                'stripe_connected' => app(PaymentConnectionResolver::class)->stripe($workspace) !== null,
+                'attestation_min' => AutopayWording::ATTESTATION_MIN,
+                'attestation_max' => AutopayWording::ATTESTATION_MAX,
+            ],
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function autopayOf(Workspace $workspace, ClientInvoice $invoice): array
+    {
+        $autopay = app(AutopayPresenter::class)->invoice($workspace, $invoice);
+
+        return $autopay + [
+            'skip_href' => $autopay['can_skip'] === true
+                ? route('agent-api.v1.invoices.autopay.skip', [$workspace, $invoice->public_id], absolute: false)
+                : null,
+            'settings_href' => route('clients.settings', [$workspace, $invoice->clientCompany], absolute: false),
+        ];
     }
 
     /** @return array<string, mixed> */

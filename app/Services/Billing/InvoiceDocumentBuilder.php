@@ -8,6 +8,7 @@ use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\Workspace;
+use App\Services\Billing\Autopay\AutopayReader;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\Billing\Document\DocumentMode;
@@ -114,6 +115,12 @@ final class InvoiceDocumentBuilder
                 ? $this->receipts($invoice, $issuer, $lineModels, $audience, $receipts)
                 : [],
             payUrl: $payUrl,
+            // Only a client copy of a real invoice says it will be charged, and
+            // only when autopay will apply; free of queries for a company
+            // with autopay off.
+            autopayNotice: $mode === DocumentMode::Invoice && $payUrl !== null
+                ? app(AutopayReader::class)->notice($invoice, $company)
+                : null,
         );
     }
 

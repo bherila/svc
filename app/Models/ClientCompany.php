@@ -24,12 +24,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property bool $automatic_invoice_email_enabled
  * @property int|null $automatic_invoice_email_delay_days
  * @property CarbonImmutable|null $payment_reminders_enabled_at when the automatic payment reminder cadence was turned on (#438); null while it is off
+ * @property CarbonImmutable|null $autopay_enabled_at when autopay was turned on (#636); null while it is off
+ * @property int|null $autopay_limit_amount the most autopay charges for one invoice, in minor units; null while it is off
  * @property bool $is_active
  * @property int $credit_revision
  */
 #[Fillable([
     'workspace_id', 'name', 'slug', 'billing_email', 'automatic_invoice_email_enabled',
-    'automatic_invoice_email_delay_days', 'is_active', 'payment_reminders_enabled_at',
+    'automatic_invoice_email_delay_days', 'is_active', 'payment_reminders_enabled_at', 'autopay_enabled_at', 'autopay_limit_amount',
     'billing_address', 'phone', 'website_url', 'tax_id', 'currency', 'notes',
 ])]
 #[Hidden(['id', 'workspace_id', 'lock_version', 'credit_revision', 'billing_address', 'phone', 'website_url', 'tax_id', 'currency', 'notes'])]
@@ -45,6 +47,8 @@ class ClientCompany extends Model implements WorkspaceOwned
             'automatic_invoice_email_enabled' => 'boolean',
             'automatic_invoice_email_delay_days' => 'integer',
             'payment_reminders_enabled_at' => 'immutable_datetime',
+            'autopay_enabled_at' => 'immutable_datetime',
+            'autopay_limit_amount' => 'integer',
         ];
     }
 

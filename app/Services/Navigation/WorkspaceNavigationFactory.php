@@ -261,6 +261,7 @@ final class WorkspaceNavigationFactory
             tasks: route('portal.tasks', $company, absolute: false),
             notes: route('portal.collaboration.index', [$company, 'kind' => 'note'], absolute: false),
             discussions: route('portal.collaboration.index', [$company, 'kind' => 'discussion'], absolute: false),
+            billing: route('portal.billing', $company, absolute: false),
         );
     }
 

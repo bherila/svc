@@ -12,5 +12,8 @@
     @endforeach
 @endif
 <p>Your invoice total is {{ $invoice->currency }} {{ number_format($invoice->total_amount / 100, 2) }} and the remaining balance is {{ $invoice->currency }} {{ number_format($invoice->balance_amount / 100, 2) }}.</p>
+@if (filled($autopayNotice ?? null))
+<p>{{ $autopayNotice }}</p>
+@endif
 <p>Thank you.</p>
 </body></html>

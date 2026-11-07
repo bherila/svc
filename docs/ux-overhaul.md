@@ -1130,6 +1130,82 @@ Answers the owner gave in an interview on 2026-11-06.
     all name `identity:read`. `docs/mcp.md`, the MCP help page and the scope's
     consent text now say agents need it.
 
+- **2026-11-09, #636: autopay.** Settled by the owner: a per-company limit set by
+  whoever turns it on (it replaces the $1,000 online cap for autopay only), no
+  retries, client consent in the portal or a provider attestation, the notice on the
+  issued invoice, and company scope only. Decided while building, conservatively:
+  - **The premise was wider than the code.** `docs/client-management/stripe-billing.md`
+    describes a $1,000 cap in `config/client-management.php`, portal method
+    management, a stored `failure_reason` and a Stripe-failures filter. None of them
+    exists in this checkout: there is no such config file, the webhook stores no
+    failure reason, and the portal had no billing page. So the limit is the only
+    ceiling autopay has (and it has no default: no limit, no autopay); the failure
+    reason lives on the attempt row, and a refused charge also enters the ordinary
+    payment list as a `failed` payment; the portal Billing page is new, and shows
+    the saved methods read-only. Choosing or adding a method there is not built:
+    the mockup's method picker is a read-only line, because nothing in the app can
+    yet change a default (that arrives from Stripe's events).
+  - **Who consents.** A portal contact with company-wide access. Workspace staff
+    previewing the portal can read the page and cannot consent for the client, and
+    a contact limited to some projects does not speak for the company's money. The
+    provider side is an owner or admin only (the existing "workspace manager").
+  - **The wording is stored, not rebuilt.** The server composes the authorization
+    sentence from the provider, company, default method and limit; the page shows
+    the same sentence beside the checkbox and sends it back; a request whose
+    wording is not exactly the server's is refused. Both sides are pinned to one
+    literal in their tests.
+  - **A provider turn-on needs someone to tell.** It is refused when the client has
+    no billing address and no portal contact, and when the attestation is shorter
+    than 10 or longer than 1,000 characters. The notice goes to the billing address
+    and the portal contacts after the change commits, in the same request, with
+    `notice_sent` recorded on the consent row. A failed email does not undo the
+    change. A provider changing the limit sends the notice again.
+  - **Autopay never reaches back.** An invoice that fell due before autopay was
+    turned on, on the workspace's calendar, is not charged. Turning it off and on
+    again moves that day forward.
+  - **Currency.** The limit is in the client's billing currency (else the
+    workspace default). An invoice in another currency is left for the client.
+  - **A payment already moving is waited for.** A pending (or unreadable) payment
+    on the invoice means autopay claims nothing this run; it looks again next run.
+  - **Claimed with no PaymentIntent is a review item, not a retry.** If Stripe
+    cannot be read (a timeout, a 5xx) the attempt stays `claimed`; every run of the
+    command lists it after ten minutes and logs a warning. Nothing resolves it
+    automatically. A command to close one out is follow-up work.
+  - **The claim is given back only when nothing was sent.** After the claim the
+    facts are read again; if the invoice changed (a payment, a void, a different
+    balance or default method) the claim row is deleted and the invoice is looked at
+    again next run. After Stripe has been called the row is never deleted.
+  - **Over limit is not an attempt.** It is a state, shown to both sides before the
+    due date ("Not autopaid: over limit"); no row is written, so raising the limit
+    before the due date makes the invoice chargeable.
+  - **Skipping is the invoice's one attempt row** (`state = skipped`, who, when).
+    It needs autopay on and nothing attempted yet, cannot be undone, and is
+    idempotent.
+  - **The default can change; removing it turns autopay off.** Autopay charges
+    whichever method is the default on the due date, so choosing another default
+    keeps it on. Removing the default (a detach, or Stripe clearing it) turns it
+    off with reason "Default method removed", recorded by SVC, deferred to after the
+    webhook's transaction commits so it takes no new lock inside it.
+  - **The metadata is the portal pay path's:** `invoice_public_id` and
+    `workspace_public_id`, which is what the webhook resolves an invoice from, plus
+    the company and the attempt. The charge is entered as a `pending` payment with
+    the PaymentIntent id; Stripe's events settle it. Nothing else books money.
+  - **Scheduled, not flagged.** `svc:billing:charge-autopay --apply --limit=50`
+    runs every fifteen minutes. It is inert until a company opts in, so it has no
+    deployment flag like the cadence drafts; without `--apply` it lists what it
+    would charge and calls nothing.
+  - **Surfaces.** REST and MCP: `companies.autopay.get` / `.set` and
+    `invoices.autopay.get` / `.skip`, owner and admin only, with the confirmation
+    and attestation required to turn it on named in the MCP server's instructions.
+    The portal's consent and withdrawal are browser-only (the client holds no agent
+    credential), classified in `WebApiParityTest`. The "Will be charged to ... on
+    ..." line is part of the invoice document, so the PDF, the portal and the email
+    attachment carry it, and the email body repeats it.
+  - **Known limit.** Between the last-word read and Stripe's answer, a client paying
+    the same invoice by hand could also succeed; the PaymentIntent is created
+    first and recorded after, as the portal path does, so the overpayment would be
+    handled as an overpayment credit. The window is the length of one API call.
+
 ## Open questions
 
 None. Answered on 2026-11-06:

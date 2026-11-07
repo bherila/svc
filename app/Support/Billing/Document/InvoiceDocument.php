@@ -60,6 +60,8 @@ final readonly class InvoiceDocument
         public bool $genericLabelUsed,
         public array $receipts,
         public ?string $payUrl,
+        /** "Will be charged to Visa ending 4242 on 2026-12-01." when autopay will apply (#636). */
+        public ?string $autopayNotice = null,
     ) {}
 
     public function statusLabel(): string
@@ -142,6 +144,7 @@ final readonly class InvoiceDocument
                 'entries' => array_map(static fn (InvoiceReceiptEntry $entry): array => $entry->toArray(), $this->receipts),
             ],
             'pay_url' => $this->payUrl,
+            'autopay_notice' => $this->autopayNotice,
         ];
     }
 }

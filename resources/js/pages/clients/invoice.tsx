@@ -1,5 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { useRef, useState } from 'react';
+import { InvoiceAutopayCard } from '@/components/billing/autopay-operator';
+import type { InvoiceAutopayState } from '@/components/billing/autopay-operator';
 import { InvoiceDocument } from '@/components/billing/invoice-document';
 import type { InvoiceDocumentData } from '@/components/billing/invoice-document';
 import {
@@ -235,6 +237,7 @@ export default function ClientInvoiceDetail({
     timezone,
     square = null,
     payment_reminders: paymentReminders = null,
+    autopay = null,
     reopen = null,
 }: {
     attachment_panel?: AttachmentPanel | null;
@@ -266,6 +269,8 @@ export default function ClientInvoiceDetail({
     square?: InvoiceSquareState | null;
     /** Payment reminders for this invoice; null for a viewer who cannot manage it. */
     payment_reminders?: InvoiceRemindersState | null;
+    /** Autopay (#636): where it stands for this invoice and its one attempt. */
+    autopay?: InvoiceAutopayState | null;
     /** Set once the invoice has been reopened for reissue; null for a viewer who cannot manage it. */
     reopen?: InvoiceReopenHistory | null;
 }) {
@@ -1136,6 +1141,7 @@ export default function ClientInvoiceDetail({
 
                 {square !== null && <SquareInvoiceCard square={square} />}
 
+                {autopay !== null && <InvoiceAutopayCard autopay={autopay} />}
                 {paymentReminders !== null && (
                     <PaymentRemindersCard reminders={paymentReminders} />
                 )}

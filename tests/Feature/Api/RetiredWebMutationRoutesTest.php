@@ -113,8 +113,8 @@ final class RetiredWebMutationRoutesTest extends TestCase
             }
         }
         sort($writers);
-        $this->assertSame(['clients/proposal.tsx:form.post(', 'portal/to-approve.tsx:router.post('], $writers,
-            'Use the canonical session API for business writes. Only the recipient signing a proposal and a client contact approving or disputing what they pay for keep an Inertia mutation.');
+        $this->assertSame(['billing/autopay-portal.tsx:router.delete(', 'billing/autopay-portal.tsx:router.post(', 'clients/proposal.tsx:form.post(', 'portal/to-approve.tsx:router.post('], $writers,
+            'Use the canonical session API for business writes. Only the recipient signing a proposal, a client contact approving or disputing what they pay for, and a client contact authorizing or withdrawing charges to their own saved payment method keep an Inertia mutation.');
     }
 
     public function test_file_mutations_use_only_the_versioned_api(): void

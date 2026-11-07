@@ -158,6 +158,9 @@
 @if ($document->payUrl !== null)
 <p class="pay wrap">Pay online: {{ $document->payUrl }}</p>
 @endif
+@if ($document->autopayNotice !== null)
+<p class="pay wrap">{{ $document->autopayNotice }}</p>
+@endif
 {{-- Never print the invoice's internal notes here: they are internal-only
      (#[Hidden] on the model, suppressed on every JSON path) and this document
      is served to portal clients. --}}

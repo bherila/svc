@@ -174,6 +174,7 @@ final class InvoiceDocumentNoticesTest extends TestCase
             ],
             'receipts' => null,
             'pay_url' => null,
+            'autopay_notice' => null,
         ], $document->toArray());
     }
 

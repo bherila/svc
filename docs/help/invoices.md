@@ -33,3 +33,14 @@ An issued invoice is never edited in place. A correction creates a new, linked i
 ## Billing schedules
 
 A schedule generates the invoice for each period of an agreement. Review the next run before you generate it.
+
+## Autopay
+
+When a client has autopay on, an issued invoice says "Will be charged to Visa ending 4242 on" its due date, in the PDF, the email and the portal. The invoice page has an Autopay card:
+
+- **Where it stands.** Will autopay on the due date, paid by autopay, processing, failed, "Not autopaid: over limit", "Not autopaid: no default method", or skipped.
+- **The attempt.** When it ran, the amount and the result. A failed charge shows the reason and is not retried; the invoice stays collectible and payment reminders resume. An attempt marked needs review was claimed but Stripe's answer was never read: check Stripe before collecting by hand.
+- **Skip autopay for this invoice.** Owners and admins can skip one invoice; who and when are recorded. It is refused once autopay has tried to charge the invoice.
+
+The money arrives through the normal payment ledger and Stripe's events, like any online payment.
+

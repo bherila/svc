@@ -5,6 +5,7 @@ namespace App\Services\AgentApi\Operations;
 use App\Services\Mcp\AgentMcpAgreementResource;
 use App\Services\Mcp\AgentMcpAgreementTools;
 use App\Services\Mcp\AgentMcpAttachmentSharingTools;
+use App\Services\Mcp\AgentMcpAutopayTools;
 use App\Services\Mcp\AgentMcpBillingAuditTools;
 use App\Services\Mcp\AgentMcpBillingScheduleTools;
 use App\Services\Mcp\AgentMcpCapacityLedgerTools;
@@ -137,6 +138,8 @@ final class AgentOperationCatalog
         'clients.portal_invitations.revoke' => ['clients.portal-invitations.destroy', '/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}', [200]],
         'clients.restore' => ['clients.restore', '/workspaces/{workspace}/clients/{client}/restore', [200]],
         'clients.update' => ['clients.update', '/workspaces/{workspace}/clients/{client}', [200]],
+        'companies.autopay.get' => ['clients.autopay.show', '/workspaces/{workspace}/clients/{client}/autopay', [200]],
+        'companies.autopay.set' => ['clients.autopay.update', '/workspaces/{workspace}/clients/{client}/autopay', [200]],
         'companies.payment_reminders.get' => ['clients.payment-reminders.show', '/workspaces/{workspace}/clients/{client}/payment-reminders', [200]],
         'companies.payment_reminders.set' => ['clients.payment-reminders.update', '/workspaces/{workspace}/clients/{client}/payment-reminders', [200]],
         'companies.square_customer.clear' => ['clients.square-customer.destroy', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
@@ -180,6 +183,8 @@ final class AgentOperationCatalog
         'invoices.list' => ['invoices.index', '/workspaces/{workspace}/invoices', [200]],
         'invoices.pdf' => ['invoices.pdf', '/workspaces/{workspace}/invoices/{invoice}/pdf-link', [200]],
         'invoices.preview_period' => ['invoices.preview_period', '/workspaces/{workspace}/agreements/{agreement}/invoices/preview', [200]],
+        'invoices.autopay.get' => ['invoices.autopay.show', '/workspaces/{workspace}/invoices/{invoice}/autopay', [200]],
+        'invoices.autopay.skip' => ['invoices.autopay.skip', '/workspaces/{workspace}/invoices/{invoice}/autopay/skip', [200]],
         'invoices.reminders.list' => ['invoices.reminders.index', '/workspaces/{workspace}/invoices/{invoice}/reminders', [200]],
         'invoices.send_reminder' => ['invoices.reminders.store', '/workspaces/{workspace}/invoices/{invoice}/reminders', [200]],
         'invoices.reopen' => ['invoices.reopen', '/workspaces/{workspace}/invoices/{invoice}/reopen', [200]],
@@ -1058,6 +1063,49 @@ final class AgentOperationCatalog
                 true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+            ),
+            $this->tool(
+                'companies.autopay.get',
+                'Get client autopay',
+                'Workspace managers only. Whether autopay is on for a client, since when, its per-invoice limit, the default saved method it charges, the append-only consent record (who, role, when, limit, method, wording or attestation), the invoices it will charge next, and the client version companies.autopay.set requires.',
+                [AgentMcpAutopayTools::class, 'company'],
+                Effect::Read,
+                true,
+                'mcp.read.clients',
+                manager: true,
+            ),
+            $this->tool(
+                'companies.autopay.set',
+                'Set client autopay',
+                'Workspace owners and admins only, and only after the user explicitly confirms. Turn autopay on or off for a client, or change its limit: every call needs confirm: true, and enabled true also needs limit_amount (minor units, the most one invoice is charged) and the user\'s attestation of how the client agreed to autopay outside SVC. SVC then charges the client\'s default saved Stripe method for each issued invoice on its due date, once, never retrying, and emails the client\'s billing contacts a notice with a link to turn it off. An invoice over the limit is not charged. Enabled false turns it off. Every change is appended to the consent record.',
+                [AgentMcpAutopayTools::class, 'setCompany'],
+                // Authorises future charges to the client\'s card and emails the client.
+                Effect::ExternalWrite,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.autopay.get',
+                'Get invoice autopay',
+                'Workspace managers only. Where autopay stands for an invoice: will be charged on its due date, charged, failed (with the reason), over the limit, no default method, or skipped, its one attempt, and the invoice version invoices.autopay.skip requires.',
+                [AgentMcpAutopayTools::class, 'invoice'],
+                Effect::Read,
+                true,
+                'mcp.read',
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.autopay.skip',
+                'Skip invoice autopay',
+                'Workspace managers only, and only after the user explicitly confirms. Skip autopay for one invoice so it is not charged automatically, recording who and when. Refused once autopay has tried to charge the invoice.',
+                [AgentMcpAutopayTools::class, 'skip'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::INVOICES],
                 manager: true,
             ),
             $this->tool(

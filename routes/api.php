@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AccountingReadController;
 use App\Http\Controllers\Api\V1\AgentAttachmentSharingController;
+use App\Http\Controllers\Api\V1\AgentAutopayController;
 use App\Http\Controllers\Api\V1\AgentBillingAuditController;
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
 use App\Http\Controllers\Api\V1\AgentCapacityLedgerController;
@@ -377,6 +378,15 @@ Route::prefix('v1')
         $workspaceOperation('companies.square_customer.set', [AgentSquareLinkController::class, 'setCustomer'])->whereUuid('client');
         $workspaceOperation('companies.square_customer.clear', [AgentSquareLinkController::class, 'clearCustomer'])->whereUuid('client');
         $workspaceOperation('agreements.square_series.set', [AgentSquareLinkController::class, 'markAgreement'])->whereUuid('agreement');
+        // Autopay (#636): the provider's side; the client consents in the portal.
+        foreach ([
+            'companies.autopay.get' => ['company', 'client'],
+            'companies.autopay.set' => ['setCompany', 'client'],
+            'invoices.autopay.get' => ['invoice', 'invoice'],
+            'invoices.autopay.skip' => ['skip', 'invoice'],
+        ] as $operationId => [$action, $id]) {
+            $workspaceOperation($operationId, [AgentAutopayController::class, $action])->whereUuid($id);
+        }
         // Payment reminders (#438): sent by hand here, or by the per-client cadence.
         foreach ([
             'invoices.reminders.list' => ['index', 'invoice'],

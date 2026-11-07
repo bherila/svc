@@ -6447,6 +6447,126 @@
                 "x-mcp-tool": "collaboration.topics.update"
             }
         },
+        "/workspaces/{workspace}/clients/{client}/autopay": {
+            "get": {
+                "operationId": "companies.autopay.get",
+                "description": "Workspace managers only. Whether autopay is on for the client, since when, its per-invoice limit in minor units, the default saved Stripe method it charges, the append-only consent record, the invoices it will charge next and how each will be treated, and the client version companies.autopay.set requires.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompanyAutopayResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "companies.autopay.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "companies.autopay.get"
+            },
+            "put": {
+                "operationId": "companies.autopay.set",
+                "description": "Workspace owners and admins only. Turn the client's autopay on, change its limit, or turn it off. Every call needs confirm: true. Turning it on, or changing the limit, also needs limit_amount (minor units) and an attestation of how the client agreed outside SVC; it needs a default saved Stripe method and a connected Stripe account, and it emails the client's billing contacts a notice with a link to turn it off, after the change commits. SVC then charges the default method for each issued invoice on its due date, once and never retried, up to the limit; an invoice over the limit is left for the client to pay. Every change appends to the consent record. Requires the client's current expected_version.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CompanyAutopayRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Autopay updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompanyAutopayResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "external_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "companies.autopay.set",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "companies.autopay.set"
+            }
+        },
         "/workspaces/{workspace}/clients/{client}/payment-reminders": {
             "get": {
                 "operationId": "companies.payment_reminders.get",
@@ -9469,6 +9589,116 @@
                     "AGENT_API_INVOICE_WRITES_ENABLED"
                 ],
                 "x-mcp-tool": "invoices.add_time"
+            }
+        },
+        "/workspaces/{workspace}/invoices/{invoice}/autopay": {
+            "get": {
+                "operationId": "invoices.autopay.get",
+                "description": "Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, or skipped; its one attempt; and the invoice version invoices.autopay.skip requires.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceAutopayResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "invoices.autopay.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.autopay.get"
+            }
+        },
+        "/workspaces/{workspace}/invoices/{invoice}/autopay/skip": {
+            "post": {
+                "operationId": "invoices.autopay.skip",
+                "description": "Workspace managers only. Skip autopay for one invoice, recording who and when, so it is never charged automatically. Requires the invoice's current expected_version and confirm: true. Refused with 422 once autopay has tried to charge the invoice or when autopay is off for the client.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceAutopaySkipRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Autopay skipped",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceAutopayResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "invoices.autopay.skip",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.autopay.skip"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/correct": {
@@ -22509,6 +22739,296 @@
                 ],
                 "additionalProperties": false
             },
+            "CompanyAutopay": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "client_id",
+                    "version",
+                    "enabled",
+                    "enabled_at",
+                    "limit_amount",
+                    "currency",
+                    "method",
+                    "consents",
+                    "upcoming"
+                ],
+                "properties": {
+                    "client_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "enabled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "limit_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "method": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "label",
+                            "brand",
+                            "last4",
+                            "exp_month",
+                            "exp_year"
+                        ],
+                        "properties": {
+                            "label": {
+                                "type": "string"
+                            },
+                            "brand": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "last4": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "exp_month": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "exp_year": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "consents": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "action",
+                                "actor_name",
+                                "actor_role",
+                                "method",
+                                "limit_amount",
+                                "currency",
+                                "payment_method_label",
+                                "wording",
+                                "attestation",
+                                "reason",
+                                "notice_sent",
+                                "occurred_at"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "$ref": "#/components/schemas/Uuid"
+                                },
+                                "action": {
+                                    "type": "string",
+                                    "enum": [
+                                        "enabled",
+                                        "disabled",
+                                        "limit_changed"
+                                    ]
+                                },
+                                "actor_name": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "actor_role": {
+                                    "type": "string",
+                                    "enum": [
+                                        "client",
+                                        "provider",
+                                        "system"
+                                    ]
+                                },
+                                "method": {
+                                    "type": "string",
+                                    "enum": [
+                                        "portal_checkbox",
+                                        "provider_attestation",
+                                        "withdrawal",
+                                        "automatic"
+                                    ]
+                                },
+                                "limit_amount": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
+                                },
+                                "currency": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "payment_method_label": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "wording": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "attestation": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "reason": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "notice_sent": {
+                                    "type": "boolean"
+                                },
+                                "occurred_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time"
+                                }
+                            }
+                        }
+                    },
+                    "upcoming": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "invoice_id",
+                                "invoice_number",
+                                "due_on",
+                                "amount",
+                                "currency",
+                                "state",
+                                "state_label"
+                            ],
+                            "properties": {
+                                "invoice_id": {
+                                    "$ref": "#/components/schemas/Uuid"
+                                },
+                                "invoice_number": {
+                                    "type": "string"
+                                },
+                                "due_on": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "integer"
+                                },
+                                "currency": {
+                                    "type": "string"
+                                },
+                                "state": {
+                                    "type": "string",
+                                    "enum": [
+                                        "not_applicable",
+                                        "will_charge",
+                                        "processing",
+                                        "charged",
+                                        "failed",
+                                        "over_limit",
+                                        "no_default_method",
+                                        "skipped",
+                                        "needs_review"
+                                    ]
+                                },
+                                "state_label": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "CompanyAutopayRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "enabled",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "limit_amount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The most one invoice may be charged, in minor units. Required to turn autopay on or change its limit."
+                    },
+                    "attestation": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 1000,
+                        "description": "How the client agreed to autopay outside SVC. Required to turn autopay on or change its limit."
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Must be true, only after the user explicitly confirms. Turning autopay on authorizes charges to the client's card; turning it off is confirmed the same way."
+                    }
+                }
+            },
+            "CompanyAutopayResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CompanyAutopay"
+                    }
+                }
+            },
             "CompanyPaymentReminders": {
                 "type": "object",
                 "additionalProperties": false,
@@ -24986,6 +25506,229 @@
                         "items": {
                             "$ref": "#/components/schemas/Uuid"
                         }
+                    }
+                }
+            },
+            "InvoiceAutopay": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "invoice_id",
+                    "invoice_version",
+                    "state",
+                    "state_label",
+                    "enabled",
+                    "limit_amount",
+                    "currency",
+                    "amount",
+                    "method_label",
+                    "will_charge_on",
+                    "verdict",
+                    "can_skip",
+                    "attempt"
+                ],
+                "properties": {
+                    "invoice_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "invoice_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "not_applicable",
+                            "will_charge",
+                            "processing",
+                            "charged",
+                            "failed",
+                            "over_limit",
+                            "no_default_method",
+                            "skipped",
+                            "needs_review"
+                        ]
+                    },
+                    "state_label": {
+                        "type": "string"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "limit_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "integer"
+                    },
+                    "method_label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "will_charge_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "verdict": {
+                        "type": "string",
+                        "enum": [
+                            "charge",
+                            "not_collectible",
+                            "no_balance",
+                            "hidden_from_client",
+                            "autopay_off",
+                            "skipped",
+                            "already_attempted",
+                            "no_due_date",
+                            "due_before_autopay",
+                            "not_yet_due",
+                            "payment_in_flight",
+                            "square_collects",
+                            "connection_unavailable",
+                            "currency_mismatch",
+                            "no_default_method",
+                            "over_limit"
+                        ]
+                    },
+                    "can_skip": {
+                        "type": "boolean"
+                    },
+                    "attempt": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "state",
+                            "amount",
+                            "currency",
+                            "payment_method_label",
+                            "failure_code",
+                            "failure_reason",
+                            "payment_status",
+                            "skipped_by_name",
+                            "skipped_at",
+                            "claimed_at",
+                            "resolved_at"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "state": {
+                                "type": "string",
+                                "enum": [
+                                    "claimed",
+                                    "submitted",
+                                    "failed",
+                                    "skipped"
+                                ]
+                            },
+                            "amount": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "currency": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "payment_method_label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "failure_code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "failure_reason": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "payment_status": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "skipped_by_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "skipped_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time"
+                            },
+                            "claimed_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time"
+                            },
+                            "resolved_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time"
+                            }
+                        }
+                    }
+                }
+            },
+            "InvoiceAutopayResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/InvoiceAutopay"
+                    }
+                }
+            },
+            "InvoiceAutopaySkipRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
                     }
                 }
             },

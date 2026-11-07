@@ -83,6 +83,9 @@ $app = require __DIR__.'/bootstrap.php';
 Auth::onceUsingId(match (true) {
     // The member who is not a manager reads My work as themselves.
     isset($fixture['my_work']) && $requestPath === $fixture['my_work'] => $fixture['work_member_id'],
+    // Autopay's client contacts read their own billing page and invoices as the client.
+    isset($fixture['autopay_billing']) && in_array($requestPath, array_map(static fn (string $url): string => (string) parse_url($url, PHP_URL_PATH), [$fixture['autopay_billing'], $fixture['autopay_portal_will'], $fixture['autopay_portal_over'], $fixture['autopay_portal_failed']]), true) => $fixture['autopay_portal_user_id'],
+    isset($fixture['autopay_billing_off']) && in_array($requestPath, array_map(static fn (string $url): string => (string) parse_url($url, PHP_URL_PATH), [$fixture['autopay_billing_off'], $fixture['autopay_off_invoice']]), true) => $fixture['autopay_portal_off_user_id'],
     // The light partner reads their own workspace; a new invitee reads the invitation.
     isset($fixture['light_my_work']) && in_array($requestPath, array_map(static fn (string $url): string => (string) parse_url($url, PHP_URL_PATH), [$fixture['light_my_work'], $fixture['light_submissions'], $fixture['light_timesheet']]), true) => $fixture['light_user_id'],
     isset($fixture['light_invitation']) && $requestPath === $fixture['light_invitation'] => $fixture['light_invitee_user_id'],

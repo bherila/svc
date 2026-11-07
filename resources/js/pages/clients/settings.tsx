@@ -1,5 +1,7 @@
 import { Head, useForm } from '@inertiajs/react';
 import { useRef, useState } from 'react';
+import { ClientAutopayCard } from '@/components/billing/autopay-operator';
+import type { ClientAutopayState } from '@/components/billing/autopay-operator';
 import { PaymentReminderCadenceCard } from '@/components/billing/payment-reminders';
 import type { CompanyRemindersState } from '@/components/billing/payment-reminders';
 import { ClientContacts } from '@/components/clients/client-contacts';
@@ -784,6 +786,7 @@ export default function ClientManage({
     assignable,
     portal,
     payment_reminders: paymentReminders = null,
+    autopay = null,
     company_profile: companyProfile,
     profile_action: profileAction,
     contacts = [],
@@ -801,6 +804,8 @@ export default function ClientManage({
     portal: PortalAccessProps['portal'];
     /** The client's automatic payment reminder cadence (#438). */
     payment_reminders?: CompanyRemindersState | null;
+    /** Autopay (#636): the switch, its consent record and upcoming charges. */
+    autopay?: ClientAutopayState | null;
 }) {
     return (
         <WorkspaceShell activeModule="home">
@@ -879,6 +884,7 @@ export default function ClientManage({
                 {paymentReminders !== null && (
                     <PaymentReminderCadenceCard cadence={paymentReminders} />
                 )}
+                {autopay !== null && <ClientAutopayCard autopay={autopay} />}
 
                 {company.square_customer !== undefined && (
                     <Card>
