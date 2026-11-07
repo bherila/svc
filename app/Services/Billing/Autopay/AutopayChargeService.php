@@ -7,12 +7,13 @@ use App\Models\ClientInvoice;
 use App\Models\InvoiceAutopayAttempt;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
-use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripeGateway;
 use App\Services\Payments\StripeAccess;
+use App\Services\Payments\StripeConnectionHealth;
 use App\Support\Billing\Autopay\AutopayAttemptState;
 use App\Support\Billing\Autopay\AutopayChargeOutcome;
 use App\Support\Billing\Autopay\AutopayChargeResult;
+use App\Support\Billing\Autopay\AutopayConnectionRefusal;
 use App\Support\Billing\Autopay\AutopayVerdict;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
@@ -60,7 +61,8 @@ final class AutopayChargeService
     public function __construct(
         private readonly AutopayReader $reader,
         private readonly StripeGateway $gateway,
-        private readonly InvoiceLifecycleService $invoices,
+        private readonly AutopayLedger $ledger,
+        private readonly StripeConnectionHealth $health,
         private readonly ClientActivityRecorder $activities,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
@@ -90,6 +92,13 @@ final class AutopayChargeService
             $context = $this->reader->context($workspace, $invoice);
             $verdict = $this->reader->verdict($context);
             if (! $verdict->charges() || $context->method === null) {
+                continue;
+            }
+            // A connection Stripe refused lately is left alone, and does not
+            // use up the run's limit that other workspaces' invoices need.
+            if ($this->health->pauses($workspace)) {
+                $outcomes[] = $this->outcome($workspace, $invoice, AutopayChargeResult::ConnectionNeedsAttention, $verdict, $context->facts->balance, 'Not charged yet: Stripe refused this workspace\'s connection lately; autopay tries again after it is fixed or after '.StripeConnectionHealth::BACKOFF_HOURS.' hours.');
+
                 continue;
             }
             $attempted++;
@@ -256,8 +265,16 @@ final class AutopayChargeService
                 ],
             ], ['idempotency_key' => 'autopay-attempt-'.$attempt->public_id]);
         } catch (CardException $refusal) {
+            // The card was refused, so Stripe accepted the key.
+            $this->health->accepted($workspace);
+
             return $this->failed($workspace, $invoice, $company, $attempt, $amount, $this->failureOf($refusal), $this->intentIdOf($refusal));
         } catch (InvalidRequestException|AuthenticationException|PermissionException $refusal) {
+            if (AutopayConnectionRefusal::refuses($refusal)) {
+                return $this->connectionRefused($workspace, $invoice, $company, $attempt, $amount, $this->failureOf($refusal));
+            }
+            $this->health->accepted($workspace);
+
             return $this->failed($workspace, $invoice, $company, $attempt, $amount, $this->failureOf($refusal), null);
         } catch (Throwable $unknown) {
             // Whether Stripe charged is not known. The claim stays, with no
@@ -267,6 +284,7 @@ final class AutopayChargeService
             return $this->outcome($workspace, $invoice, AutopayChargeResult::NeedsReview, null, $amount, 'Stripe did not answer; check the Stripe dashboard before charging by hand.');
         }
 
+        $this->health->accepted($workspace);
         $intentId = (string) $intent->id;
         $status = (string) $intent->status;
         if ($intentId === '') {
@@ -283,7 +301,7 @@ final class AutopayChargeService
             'payment_intent_id' => $intentId,
             'resolved_at' => $this->clock->now($workspace)->utc(),
         ]);
-        $this->ledger($workspace, $invoice, $attempt, $intentId, $amount, InvoicePaymentStatus::Pending);
+        $this->ledger->record($workspace, $invoice, $attempt, $intentId, $amount, InvoicePaymentStatus::Pending);
         $this->activities->record($workspace, $company, 'invoice.autopay_submitted', $invoice, [
             'amount' => $amount,
             'currency' => $invoice->currency,
@@ -291,6 +309,30 @@ final class AutopayChargeService
         ], null, $attempt->public_id);
 
         return $this->outcome($workspace, $invoice, AutopayChargeResult::Submitted, AutopayVerdict::Charge, $amount, $intentId);
+    }
+
+    /**
+     * Stripe refused the provider's own key or account, so nobody was charged
+     * and the client's card was never tried: give the claim back, so the first
+     * run after the connection is fixed charges the invoice, and tell the
+     * provider (an activity, once per breakage; the billing cards read the
+     * workspace marker). Nothing is recorded on the invoice's attempt.
+     *
+     * @param  array{code: string, reason: string}  $failure
+     */
+    private function connectionRefused(Workspace $workspace, ClientInvoice $invoice, ClientCompany $company, InvoiceAutopayAttempt $attempt, int $amount, array $failure): AutopayChargeOutcome
+    {
+        $this->release($workspace, $attempt);
+        if ($this->health->refuse($workspace)) {
+            $this->activities->record($workspace, $company, 'invoice.autopay_connection_refused', $invoice, [
+                'code' => mb_substr($failure['code'], 0, 64),
+                'amount' => $amount,
+                'currency' => $invoice->currency,
+            ]);
+        }
+        Log::warning('Stripe refused a workspace connection while autopay was charging; nothing was charged.', ['workspace' => $workspace->public_id, 'code' => $failure['code']]);
+
+        return $this->outcome($workspace, $invoice, AutopayChargeResult::ConnectionNeedsAttention, AutopayVerdict::Charge, $amount, 'Not charged yet: the Stripe connection needs attention ('.$failure['code'].'). Fix it in the workspace payments settings; autopay charges on the first run after.');
     }
 
     /** @param array{code: string, reason: string} $failure */
@@ -306,7 +348,7 @@ final class AutopayChargeService
         if ($intentId !== null) {
             // The failed row is what the invoice's payment list and the
             // failure filters read; Stripe's own failure event then finds it.
-            $this->ledger($workspace, $invoice, $attempt, $intentId, $amount, InvoicePaymentStatus::Failed);
+            $this->ledger->record($workspace, $invoice, $attempt, $intentId, $amount, InvoicePaymentStatus::Failed);
         }
         $this->activities->record($workspace, $company, 'invoice.autopay_failed', $invoice, [
             'amount' => $amount,
@@ -325,36 +367,6 @@ final class AutopayChargeService
             ->whereKey($attempt->id)
             ->where('state', AutopayAttemptState::Claimed->value)
             ->update($values + ['updated_at' => $this->clock->now($workspace)->utc()]);
-    }
-
-    private function ledger(Workspace $workspace, ClientInvoice $invoice, InvoiceAutopayAttempt $attempt, string $intentId, int $amount, InvoicePaymentStatus $status): void
-    {
-        try {
-            // The webhook can win the race and create the payment from the
-            // intent's metadata; then there is already a row to leave alone.
-            $exists = $invoice->payments()
-                ->where('workspace_id', $workspace->id)
-                ->where('provider', 'stripe')
-                ->where('provider_payment_identifier', $intentId)
-                ->exists();
-            if ($exists) {
-                return;
-            }
-            $this->invoices->applyPayment($invoice, [
-                'amount' => $amount,
-                'currency' => $invoice->currency,
-                'received_on' => $this->clock->today($workspace)->toDateString(),
-                'method' => 'stripe',
-                'status' => $status->value,
-                'provider' => 'stripe',
-                'provider_payment_identifier' => $intentId,
-                'idempotency_key' => 'autopay:'.$attempt->public_id,
-            ], $workspace);
-        } catch (Throwable $failure) {
-            // The attempt already says what happened; Stripe's webhook records
-            // a success from the intent's metadata whether or not this did.
-            Log::warning('An autopay payment could not be entered in the ledger yet.', ['attempt' => $attempt->public_id, 'error' => $failure->getMessage()]);
-        }
     }
 
     private function cancelIntent(StripeAccess $access, string $intentId): void

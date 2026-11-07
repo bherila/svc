@@ -1307,10 +1307,27 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, or skipped; its one attempt; and the invoice version invoices.autopay.skip requires. */
+        /** @description Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, skipped, held for review, or left for manual collection; its one attempt, with who closed it out; a connection_problem when Stripe refused the workspace's connection and the invoice is not charged yet; and the invoice version invoices.autopay.skip and invoices.autopay.resolve require. */
         get: operations['invoices.autopay.get'];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/autopay/resolve': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace owners and admins only. Close out an autopay attempt held for review (state needs_review, can_resolve true), after checking the Stripe dashboard, and record who and when. outcome charged needs payment_intent_id: the PaymentIntent is read from Stripe and refused with 422 unless its metadata names this workspace and invoice and its amount and currency match the attempt; it then enters the payment ledger as pending or succeeded per its status, for Stripe's webhook to settle. outcome not_charged needs a note and leaves the invoice for manual collection; no new attempt is made. Requires the invoice's current expected_version and confirm: true. Never sends a charge. 409 when the attempt was closed out by someone else first. */
+        post: operations['invoices.autopay.resolve'];
         delete?: never;
         options?: never;
         head?: never;
@@ -3613,9 +3630,15 @@ export interface components {
                     | 'over_limit'
                     | 'no_default_method'
                     | 'skipped'
+                    | 'resolved_not_charged'
                     | 'needs_review';
                 state_label: string;
             }[];
+            connection_problem: {
+                /** Format: date-time */
+                since: string;
+                message: string;
+            } | null;
         };
         CompanyAutopayRequest: {
             expected_version: components['schemas']['Version'];
@@ -4314,6 +4337,7 @@ export interface components {
                 | 'over_limit'
                 | 'no_default_method'
                 | 'skipped'
+                | 'resolved_not_charged'
                 | 'needs_review';
             state_label: string;
             enabled: boolean;
@@ -4342,10 +4366,21 @@ export interface components {
                 | 'no_default_method'
                 | 'over_limit';
             can_skip: boolean;
+            connection_problem: {
+                /** Format: date-time */
+                since: string;
+                message: string;
+            } | null;
+            can_resolve: boolean;
             attempt: {
                 id: components['schemas']['Uuid'];
                 /** @enum {string} */
-                state: 'claimed' | 'submitted' | 'failed' | 'skipped';
+                state:
+                    | 'claimed'
+                    | 'submitted'
+                    | 'failed'
+                    | 'skipped'
+                    | 'not_charged';
                 amount: number | null;
                 currency: string | null;
                 payment_method_label: string | null;
@@ -4355,11 +4390,30 @@ export interface components {
                 skipped_by_name: string | null;
                 /** Format: date-time */
                 skipped_at: string | null;
+                resolved_by_name: string | null;
+                resolution_note: string | null;
                 /** Format: date-time */
                 claimed_at: string | null;
                 /** Format: date-time */
                 resolved_at: string | null;
             } | null;
+        };
+        InvoiceAutopayResolveRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description charged: Stripe shows the client was charged; needs payment_intent_id. not_charged: nothing was charged; needs note.
+             * @enum {string}
+             */
+            outcome: 'charged' | 'not_charged';
+            /** @description The Stripe PaymentIntent id. Required when outcome is charged; refused when it is not this invoice's attempt. */
+            payment_intent_id?: string;
+            /** @description What was checked in Stripe. Required when outcome is not_charged. */
+            note?: string;
+            /**
+             * @description Must be true, only after the user explicitly confirms the outcome they found in Stripe.
+             * @constant
+             */
+            confirm: true;
         };
         InvoiceAutopayResponse: {
             data: components['schemas']['InvoiceAutopay'];
@@ -12723,6 +12777,36 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceAutopayResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.autopay.resolve': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceAutopayResolveRequest'];
+            };
+        };
+        responses: {
+            /** @description Attempt closed out */
             200: {
                 headers: {
                     [name: string]: unknown;

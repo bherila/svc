@@ -1295,6 +1295,59 @@ try {
             await page.keyboard.press('Escape');
         }
 
+        if (screen === 'autopay_portal_closed') {
+            await expect(
+                page.getByText(/Your card was not charged for this one/),
+            ).toBeVisible();
+        }
+
+        if (screen === 'autopay_invoice_held') {
+            await page
+                .getByRole('button', {
+                    name: 'Close out this attempt',
+                    exact: true,
+                })
+                .click();
+            const dialog = page.getByRole('dialog');
+            await expect(dialog).toBeVisible();
+            await expect(
+                dialog.getByText(/never sends a charge/),
+            ).toBeVisible();
+            await dialog
+                .getByLabel('What did you check?')
+                .fill('SyntheticCheckedNote'.repeat(12));
+            await capture(screen, 'close-out-not-charged', width, true);
+            await dialog
+                .getByRole('radio', { name: 'The client was charged' })
+                .check();
+            await dialog
+                .getByLabel('PaymentIntent id')
+                .fill('pi_'.concat('SyntheticIntent'.repeat(12)));
+            await capture(screen, 'close-out-charged', width, true);
+            await page.keyboard.press('Escape');
+        }
+
+        if (screen === 'autopay_invoice_closed') {
+            await expect(
+                page.getByText(/Left for manual collection/),
+            ).toBeVisible();
+            await expect(
+                page.getByText(/Closed out by Synthetic Layout Owner/),
+            ).toBeVisible();
+        }
+
+        if (
+            screen === 'autopay_settings' ||
+            screen === 'autopay_invoice_will'
+        ) {
+            await expect(
+                page.getByText(/the Stripe connection needs attention/),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('link', { name: 'Open payments settings' }),
+            ).toBeVisible();
+        }
+
         if (screen === 'autopay_invoice_will') {
             await page
                 .getByRole('button', {
@@ -1693,6 +1746,9 @@ try {
                   'autopay_invoice_will',
                   'autopay_invoice_failed',
                   'autopay_invoice_skipped',
+                  'autopay_invoice_held',
+                  'autopay_invoice_closed',
+                  'autopay_portal_closed',
               ]
             : lightOnly
               ? [

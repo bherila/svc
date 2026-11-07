@@ -26,6 +26,7 @@ final class AutopayInvoiceView
             return match ($attempt) {
                 AutopayAttemptState::Skipped => AutopayInvoiceState::Skipped,
                 AutopayAttemptState::Failed => AutopayInvoiceState::Failed,
+                AutopayAttemptState::NotCharged => AutopayInvoiceState::ResolvedNotCharged,
                 AutopayAttemptState::Claimed => AutopayInvoiceState::NeedsReview,
                 AutopayAttemptState::Submitted => self::fromPayment($payment),
             };

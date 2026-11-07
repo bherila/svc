@@ -15,6 +15,8 @@ final class AutopayInvoiceViewTest extends TestCase
     {
         $this->assertSame(AutopayInvoiceState::Skipped, AutopayInvoiceView::classify(AutopayVerdict::Charge, AutopayAttemptState::Skipped, null));
         $this->assertSame(AutopayInvoiceState::Failed, AutopayInvoiceView::classify(AutopayVerdict::Charge, AutopayAttemptState::Failed, null));
+        $this->assertSame(AutopayInvoiceState::ResolvedNotCharged, AutopayInvoiceView::classify(AutopayVerdict::Charge, AutopayAttemptState::NotCharged, null));
+        $this->assertSame('Not autopaid: left for manual collection', AutopayInvoiceState::ResolvedNotCharged->label());
         $this->assertSame(AutopayInvoiceState::NeedsReview, AutopayInvoiceView::classify(AutopayVerdict::Charge, AutopayAttemptState::Claimed, null));
         $this->assertSame(AutopayInvoiceState::Processing, AutopayInvoiceView::classify(AutopayVerdict::AlreadyAttempted, AutopayAttemptState::Submitted, null));
     }

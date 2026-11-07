@@ -282,6 +282,7 @@ final class AgentMcpContractTest extends TestCase
             'finance.reconciliations.upsert' => ['finance:reconcile'],
             'invoices.add_time' => ['billing:write', 'billing:read'],
             'invoices.autopay.get' => ['billing:read'],
+            'invoices.autopay.resolve' => ['billing:write', 'billing:read'],
             'invoices.autopay.skip' => ['billing:write', 'billing:read'],
             'invoices.correct' => ['billing:deliver'],
             'invoices.corrections.get' => ['billing:read'],

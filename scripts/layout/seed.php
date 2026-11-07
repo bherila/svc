@@ -889,12 +889,28 @@ if (getenv('SVC_LAYOUT_AUTOPAY') === '1') {
     $apFailed = $apInvoice($apOn, 'INV-AP-FAILED-'.str_repeat('X', 40), 250_000, 0);
     $apSkipped = $apInvoice($apOn, 'INV-AP-SKIPPED', 125_000, 5);
     $apOffInvoice = $apInvoice($apOff, 'INV-AP-OFF', 90_000, 10);
+    $apHeld = $apInvoice($apOn, 'INV-AP-HELD-'.str_repeat('X', 40), 175_000, 0);
+    $apClosed = $apInvoice($apOn, 'INV-AP-CLOSED-'.str_repeat('X', 40), 160_000, 0);
     InvoiceAutopayAttempt::query()->create([
         'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apFailed->id, 'client_company_id' => $apOn->id, 'state' => 'failed',
         'amount' => 250_000, 'currency' => 'USD', 'limit_amount' => 500_000, 'payment_method_label' => 'Visa ending 4242',
         'failure_code' => 'card_declined', 'failure_reason' => 'Your card was declined: '.str_repeat('SyntheticDeclineReasonWithoutBreaks', 5),
         'claimed_at' => now(), 'resolved_at' => now(),
     ]);
+    // #641: a claim Stripe never answered (held for review), and one an admin closed out as not charged.
+    InvoiceAutopayAttempt::query()->create([
+        'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apHeld->id, 'client_company_id' => $apOn->id, 'state' => 'claimed',
+        'amount' => 175_000, 'currency' => 'USD', 'limit_amount' => 500_000, 'payment_method_label' => 'Visa ending 4242',
+        'claimed_at' => now()->subMinutes(45),
+    ]);
+    InvoiceAutopayAttempt::query()->create([
+        'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apClosed->id, 'client_company_id' => $apOn->id, 'state' => 'not_charged',
+        'amount' => 160_000, 'currency' => 'USD', 'limit_amount' => 500_000, 'payment_method_label' => 'Visa ending 4242',
+        'claimed_at' => now()->subMinutes(90), 'resolved_at' => now()->subMinutes(30), 'resolved_by_user_id' => $owner->id,
+        'resolution_note' => 'Checked the Stripe dashboard, no payment: '.str_repeat('SyntheticResolutionNoteWithoutBreaks', 5),
+    ]);
+    // #641: Stripe refused the workspace's connection after it was last saved: the provider's cards warn.
+    DB::table('workspaces')->where('id', $apWorkspace->id)->update(['stripe_refused_at' => now()->addMinute()]);
     InvoiceAutopayAttempt::query()->create([
         'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apSkipped->id, 'client_company_id' => $apOn->id, 'state' => 'skipped',
         'skipped_by_user_id' => $owner->id, 'skipped_at' => now(), 'claimed_at' => now(), 'resolved_at' => now(),
@@ -909,6 +925,9 @@ if (getenv('SVC_LAYOUT_AUTOPAY') === '1') {
         'autopay_invoice_will' => route('clients.invoice', [$apWorkspace, $apOn, $apWill], absolute: false),
         'autopay_invoice_failed' => route('clients.invoice', [$apWorkspace, $apOn, $apFailed], absolute: false),
         'autopay_invoice_skipped' => route('clients.invoice', [$apWorkspace, $apOn, $apSkipped], absolute: false),
+        'autopay_invoice_held' => route('clients.invoice', [$apWorkspace, $apOn, $apHeld], absolute: false),
+        'autopay_invoice_closed' => route('clients.invoice', [$apWorkspace, $apOn, $apClosed], absolute: false),
+        'autopay_portal_closed' => route('portal.invoice', [$apOn, $apClosed], absolute: false),
         'autopay_portal_user_id' => $apOnContact->id,
         'autopay_portal_off_user_id' => $apOffContact->id,
         'autopay_off_invoice' => route('portal.invoice', [$apOff, $apOffInvoice], absolute: false),
