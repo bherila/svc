@@ -661,7 +661,7 @@ final class MigrationImpactInventoryTest extends TestCase
         $link = new InvoiceSquareLink;
         $link->forceFill([
             'workspace_id' => $invoice->workspace_id, 'client_invoice_id' => $invoice->id, 'square_invoice_id' => $squareInvoiceId,
-            'square_invoice_number' => $invoice->invoice_number, 'series_key' => 'synthetic', 'currency' => 'USD', 'match_method' => 'manual', 'score' => 100,
+            'square_invoice_number' => $invoice->invoice_number, 'series_key' => '000001', 'currency' => 'USD', 'match_method' => 'manual', 'score' => 100,
             'reasons' => [], 'linked_at' => '2030-11-02 12:00:00', 'unlinked_at' => $unlinked ? '2030-11-03 12:00:00' : null,
             'active_invoice_slot' => $unlinked ? null : (string) $invoice->id, 'active_square_invoice_slot' => $unlinked ? null : $squareInvoiceId,
         ])->save();
