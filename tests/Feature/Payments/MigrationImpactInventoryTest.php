@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Tests\Concerns\FakesStripeKeys;
 use Tests\TestCase;
 
@@ -522,7 +523,9 @@ final class MigrationImpactInventoryTest extends TestCase
     /** @return array<string, int> */
     private function snapshot(): array
     {
-        $tables = array_map(static fn (object $row): string => (string) ($row->name ?? ''), DB::select("select name from sqlite_master where type = 'table' and name not like 'sqlite_%'"));
+        // Schema::getTables works on both SQLite and MariaDB, unlike a sqlite_master query.
+        $tables = Schema::getTableListing(schemaQualified: false);
+        $this->assertContains('workspace_payment_connections', $tables);
         $counts = [];
         foreach ($tables as $table) {
             $counts[$table] = DB::table($table)->count();
