@@ -4331,7 +4331,7 @@ try {
                             current,
                         );
                     });
-                    const filename = `synthetic-browser-receipt-${width}.txt`;
+                    const filename = `synthetic-browser-receipt-${width}.pdf`;
                     const uploads = [];
                     await page.route(
                         origin + fixture.receipt_upload + '*',
@@ -4367,9 +4367,9 @@ try {
                     );
                     await page.getByLabel('Upload a file').setInputFiles({
                         name: filename,
-                        mimeType: 'text/plain',
+                        mimeType: 'application/pdf',
                         buffer: Buffer.from(
-                            'Synthetic receipt browser acceptance bytes.',
+                            '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n% Synthetic receipt browser acceptance bytes.',
                         ),
                     });
                     await page.route(

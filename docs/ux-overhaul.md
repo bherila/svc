@@ -809,6 +809,15 @@ Every decision is recorded so a later change knows what it is undoing.
   `report-only` through a full billing cycle including a card payment and a
   setup-intent save, read `csp.violation` lines, then set `SVC_CSP_MODE=enforce`.
   Rolling back is the same variable.
+- **Layout harness runs the enforcing policy.** `scripts/check-layout.mjs` serves the
+  built assets (it refuses to run beside a Vite dev server, so there is no HMR
+  there) with `SVC_CSP_MODE=enforce`, and any Chromium "Content Security Policy"
+  console message fails the run. Against the dev server the nonce is applied the
+  same way: `Vite::useCspNonce()` covers the React Refresh preamble and the
+  module scripts, `public/hot`'s origin is allowed in `script-src`/`connect-src`
+  (`ws:`), and a test renders the page with the dev server on and checks every
+  executable script carries the nonce. The harness's receipt fixtures became real
+  PDFs, because the upload policy now refuses text receipts.
 - Square needs nothing in the policy; see the list above.
 
 ### Rate limits

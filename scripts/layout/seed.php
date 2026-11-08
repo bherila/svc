@@ -406,7 +406,7 @@ $receiptExpense = app(WorkspaceExpenses::class, ['workspace' => $workspace])->re
 );
 app(AttachmentStorageService::class)->store(
     $workspace, $receiptExpense,
-    UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptFilename', 8).'.txt', 'Synthetic layout receipt'), $owner,
+    UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptFilename', 8).'.pdf', 'Synthetic layout receipt'), $owner,
 );
 
 $logProject = ClientProject::query()->create([
