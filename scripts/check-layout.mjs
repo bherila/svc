@@ -1946,7 +1946,10 @@ try {
             (violation) =>
                 `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
                     .slice(0, 3)
-                    .map((node) => node.target.join(' '))
+                    .map(
+                        (node) =>
+                            `${node.target.join(' ')} [${node.html.slice(0, 140)}]`,
+                    )
                     .join(', ')})`,
         );
         const screenshot = `${screen}-${state}-${width}${suffix}.png`;
@@ -2603,16 +2606,21 @@ try {
                 ).toBeVisible();
             }
 
-            if (screen.startsWith('square_') && !disputesOnly) {
+            if (screen === 'square_portal' && !disputesOnly) {
+                // Paid in SVC while Square still has an open balance: there is
+                // nothing left for the client to pay, so no pay link is offered
+                // (InvoicePaymentOptions offers one only for a payable invoice).
+                await expect(
+                    page.getByRole('link', { name: /pay in square/i }),
+                ).toHaveCount(0);
+            } else if (screen.startsWith('square_') && !disputesOnly) {
                 await expect(
                     page
                         .getByRole('link', {
                             name:
                                 screen === 'square_explore'
                                     ? 'Open'
-                                    : screen === 'square_portal'
-                                      ? 'Pay in Square'
-                                      : 'View or pay in Square',
+                                    : 'View or pay in Square',
                         })
                         .first(),
                 ).toHaveAttribute(

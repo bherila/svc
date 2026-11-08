@@ -160,7 +160,11 @@ function AssigneePicker({
             <div
                 ref={attachScroll}
                 {...scrollProps}
-                className="grid max-h-48 min-w-0 grid-cols-1 gap-2 overflow-y-auto rounded-lg border p-3"
+                // A disabled fieldset (a save in flight, or one whose outcome is
+                // unknown) makes everything in it unfocusable, so a scroll box
+                // there could not be reached by keyboard: it grows to show the
+                // whole list instead of scrolling, until the form is live again.
+                className="grid max-h-48 min-w-0 grid-cols-1 gap-2 overflow-y-auto rounded-lg border p-3 in-disabled:max-h-none in-disabled:overflow-visible"
             >
                 {options.map((person) => {
                     const checked = selected.some(

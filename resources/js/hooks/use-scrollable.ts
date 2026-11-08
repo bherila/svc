@@ -35,7 +35,22 @@ export function useScrollable<T extends HTMLElement>() {
             observer.observe(child);
         }
 
-        return () => observer.disconnect();
+        // Content added later (options loaded after the dialog opened) changes
+        // the scroll height without resizing the box.
+        const mutations = new MutationObserver(() => {
+            measure();
+
+            for (const child of Array.from(box.children)) {
+                observer.observe(child);
+            }
+        });
+
+        mutations.observe(box, { childList: true, subtree: true });
+
+        return () => {
+            observer.disconnect();
+            mutations.disconnect();
+        };
     }, [box]);
 
     return [
