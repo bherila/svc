@@ -164,6 +164,24 @@ final class AttachmentTypePolicyTest extends TestCase
         }
     }
 
+    public function test_the_sniffed_type_is_read_without_parameters_padding_or_case_and_a_missing_one_is_not_an_error(): void
+    {
+        set_error_handler(static function (int $level, string $message): never {
+            throw new \ErrorException($message, 0, $level);
+        }, E_DEPRECATED | E_WARNING);
+        try {
+            $this->assertSame('application/pdf', AttachmentFamily::baseType(' APPLICATION/PDF; charset=binary '));
+            $this->assertSame('', AttachmentFamily::baseType(null));
+            $this->assertSame(AttachmentFamily::Pdf, AttachmentFamily::classify(' Application/PDF ', 'x'));
+            $this->assertSame(AttachmentFamily::Other, AttachmentFamily::classify(null, ''));
+            $this->assertNull(AttachmentTypePolicy::refusal(AttachmentUploadKind::Receipt, ' IMAGE/PNG; x=y ', 'png'));
+            $this->assertNull(AttachmentTypePolicy::refusal(AttachmentUploadKind::Receipt, "\timage/webp\n", 'WEBP'));
+            $this->assertNotNull(AttachmentTypePolicy::refusal(AttachmentUploadKind::Receipt, null, 'pdf'));
+        } finally {
+            restore_error_handler();
+        }
+    }
+
     public function test_the_decision_is_a_pure_function_of_the_sniffed_type_and_the_extension(): void
     {
         $this->assertNull(AttachmentTypePolicy::refusal(AttachmentUploadKind::Receipt, 'application/pdf', '.PDF'));

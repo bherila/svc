@@ -72,10 +72,16 @@ enum AttachmentFamily: string
 
     private const array TEXT_TYPES = ['text/plain', 'text/csv', 'text/tab-separated-values', 'text/markdown', 'text/calendar', 'text/vcard'];
 
+    /** The media type alone: no parameters, no padding, lower case; '' when there is none. */
+    public static function baseType(?string $mediaType): string
+    {
+        return strtolower(trim(explode(';', (string) $mediaType)[0]));
+    }
+
     /** Classify by the sniffed media type, then by the name's last extension (which can only make it Active). */
     public static function classify(?string $mediaType, string $extension): self
     {
-        $type = strtolower(trim(explode(';', (string) $mediaType)[0]));
+        $type = self::baseType($mediaType);
         $extension = strtolower(ltrim($extension, '.'));
 
         if (in_array($type, self::ACTIVE_TYPES, true) || in_array($extension, self::ACTIVE_EXTENSIONS, true)) {

@@ -51,7 +51,7 @@ final class AttachmentTypePolicy
             return null;
         }
 
-        $type = strtolower(trim(explode(';', (string) $sniffedType)[0]));
+        $type = AttachmentFamily::baseType($sniffedType);
         if (! isset($exact[$type])) {
             return self::RECEIPT_ACCEPTS.' This image format is not supported.';
         }
