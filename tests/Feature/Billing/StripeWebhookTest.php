@@ -39,6 +39,9 @@ class StripeWebhookTest extends TestCase
     /** @var list<array<string, mixed>> */
     private array $stripeDisputes = [];
 
+    /** @var array<string, string|null> Stripe's current default payment method for each customer */
+    private array $stripeCustomerDefaults = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -585,6 +588,8 @@ class StripeWebhookTest extends TestCase
         $this->assertSame(['type', 'brand', 'last4', 'exp_month', 'exp_year'], array_keys($added->payload));
         $this->assertStringNotContainsString('pm_synthetic_activity', json_encode($added->payload, JSON_THROW_ON_ERROR));
 
+        $this->stripeCustomerDefaults['cus_synthetic_activity'] = 'pm_synthetic_activity';
+        $this->fakeStripeLists();
         $defaultChanged = $this->eventPayload('evt_method_default', 'customer.updated', [
             'id' => 'cus_synthetic_activity',
             'invoice_settings' => ['default_payment_method' => 'pm_synthetic_activity'],
@@ -645,7 +650,7 @@ class StripeWebhookTest extends TestCase
         ]);
     }
 
-    public function test_older_customer_update_cannot_rewind_the_default_payment_method(): void
+    public function test_an_older_customer_snapshot_delivered_later_cannot_rewind_the_default_payment_method(): void
     {
         [, $workspace, $company] = $this->tenant('default-ordering');
         ClientStripeCustomer::query()->create([
@@ -662,6 +667,8 @@ class StripeWebhookTest extends TestCase
             ], 50);
             $this->webhookPost($attached, $this->signature($attached))->assertOk();
         }
+        $this->stripeCustomerDefaults['cus_default_ordering'] = 'pm_default_b';
+        $this->fakeStripeLists();
         $newer = $this->eventPayload('evt_default_b', 'customer.updated', [
             'id' => 'cus_default_ordering',
             'invoice_settings' => ['default_payment_method' => 'pm_default_b'],
@@ -676,7 +683,6 @@ class StripeWebhookTest extends TestCase
 
         $this->assertTrue(ClientStripePaymentMethod::query()->where('stripe_payment_method_id', 'pm_default_b')->sole()->is_default);
         $this->assertFalse(ClientStripePaymentMethod::query()->where('stripe_payment_method_id', 'pm_default_a')->sole()->is_default);
-        $this->assertSame(200, ClientStripeCustomer::query()->sole()->default_payment_method_event_created_at);
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'payment_method.default_changed')->count());
     }
 
@@ -936,6 +942,9 @@ class StripeWebhookTest extends TestCase
     {
         config(['services.stripe.secret_key' => 'sk_test_synthetic']);
         $answer = function (string $method, string $path, array $params) use ($whileReading): array {
+            if ($method === 'get' && preg_match('#^/v1/customers/([^/]+)$#', $path, $customer) === 1 && array_key_exists($customer[1], $this->stripeCustomerDefaults)) {
+                return [['id' => $customer[1], 'object' => 'customer', 'invoice_settings' => ['default_payment_method' => $this->stripeCustomerDefaults[$customer[1]]]], 200];
+            }
             if ($method !== 'get' || ! in_array($path, ['/v1/refunds', '/v1/disputes'], true)) {
                 return [['error' => ['message' => 'Unexpected synthetic Stripe request.']], 400];
             }

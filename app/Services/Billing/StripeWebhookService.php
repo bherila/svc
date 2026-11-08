@@ -9,6 +9,7 @@ use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Services\Payments\StripeEventRoute;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Billing\StripeDefaultBasis;
 use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Billing\StripeEventOutsideConnection;
 use App\Support\Billing\StripePayoutFacts;
@@ -300,7 +301,12 @@ final class StripeWebhookService
             }
         }
 
-        return DB::transaction(function () use ($event, $object, $ledger, $paymentWorkspaceId, $standingRefunds): bool {
+        // A customer event only says the customer changed. What its default is
+        // now is read from Stripe here, outside the transaction, through the
+        // connection the event arrived on.
+        $customerDefault = $type === 'customer.updated' ? $this->readCustomerDefault($object) : null;
+
+        return DB::transaction(function () use ($event, $object, $ledger, $paymentWorkspaceId, $standingRefunds, $customerDefault): bool {
             if ($paymentWorkspaceId !== null) {
                 BillingMaintenance::share($paymentWorkspaceId);
             }
@@ -328,21 +334,14 @@ final class StripeWebhookService
                 $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
                 $this->assertConnected($ledger->workspace_id);
             } elseif ($event->type === 'customer.updated') {
-                $customerId = is_string($object['id'] ?? null) ? $object['id'] : '';
-                $settings = is_array($object['invoice_settings'] ?? null) ? $object['invoice_settings'] : [];
-                $default = $settings['default_payment_method'] ?? null;
-                $defaultId = is_string($default) && $default !== ''
-                    ? $default
-                    : (is_array($default) && is_string($default['id'] ?? null) ? $default['id'] : null);
-                if ($customerId === '') {
-                    throw new \DomainException('The Stripe event does not identify an updated customer.');
-                }
-                $workspaceId = $this->paymentMethods->changeDefault(
-                    $customerId,
-                    $defaultId,
-                    (string) $event->id,
-                    $providerCreatedAt,
-                );
+                $workspaceId = $customerDefault === null
+                    ? null
+                    : $this->paymentMethods->reconcileDefault(
+                        $customerDefault['customer'],
+                        $customerDefault['default'],
+                        $customerDefault['basis'],
+                        (string) $event->id,
+                    );
                 $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
                 $this->assertConnected($ledger->workspace_id);
             } else {
@@ -353,6 +352,63 @@ final class StripeWebhookService
 
             return true;
         });
+    }
+
+    /**
+     * The customer a `customer.updated` event names and what Stripe says its
+     * default payment method is right now, or null for a customer SVC does not
+     * know (acknowledged as irrelevant, no Stripe call made).
+     *
+     * The event's own snapshot is never used: Stripe does not deliver events in
+     * order and its time has one-second precision, so a snapshot may be older
+     * than one already applied. The customer is retrieved instead, with the key
+     * of the account the event arrived on, and only for a customer of a workspace
+     * connected to that account. A customer that cannot be read leaves the event
+     * to be delivered again.
+     *
+     * @param  array<string, mixed>  $object
+     * @return array{customer: string, default: ?string, basis: StripeDefaultBasis}|null
+     *
+     * @throws StripeEventMustBeRetried
+     * @throws StripeEventOutsideConnection
+     */
+    private function readCustomerDefault(array $object): ?array
+    {
+        $customerId = is_string($object['id'] ?? null) ? $object['id'] : '';
+        if ($customerId === '') {
+            throw new \DomainException('The Stripe event does not identify an updated customer.');
+        }
+        $basis = $this->paymentMethods->defaultBasis($customerId);
+        if ($basis === null) {
+            return null;
+        }
+        $this->assertConnected($basis->workspaceId);
+
+        try {
+            $customer = $this->route()->access()->client()->customers->retrieve($customerId, [])->toArray();
+        } catch (ApiErrorException|\RuntimeException) {
+            throw new StripeEventMustBeRetried('The Stripe customer could not be read; retry the event.');
+        }
+        if (($customer['object'] ?? null) !== 'customer' || ($customer['id'] ?? null) !== $customerId) {
+            throw new StripeEventMustBeRetried('Stripe did not return the customer; retry the event.');
+        }
+        // A deleted customer is returned as a stub: it has no default.
+        if (($customer['deleted'] ?? null) === true) {
+            return ['customer' => $customerId, 'default' => null, 'basis' => $basis];
+        }
+        $settings = $customer['invoice_settings'] ?? null;
+        if (! is_array($settings) || ! array_key_exists('default_payment_method', $settings)) {
+            throw new StripeEventMustBeRetried('The Stripe customer has no readable default payment method; retry the event.');
+        }
+        $default = $settings['default_payment_method'];
+        $defaultId = match (true) {
+            $default === null => null,
+            is_string($default) && $default !== '' => $default,
+            is_array($default) && is_string($default['id'] ?? null) && $default['id'] !== '' => $default['id'],
+            default => throw new StripeEventMustBeRetried('The Stripe customer default payment method is unreadable; retry the event.'),
+        };
+
+        return ['customer' => $customerId, 'default' => $defaultId, 'basis' => $basis];
     }
 
     /**

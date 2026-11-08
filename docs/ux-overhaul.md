@@ -1512,12 +1512,12 @@ Answers the owner gave in an interview on 2026-11-06.
     sets none on its own, so when a company has no default method the one just
     saved is made the default (Stripe, then locally). Later methods never take the
     default.
-  - **Default: Stripe first, mirror second, without moving the event marker.**
+  - **Default: Stripe first, mirror second.** (The event marker described here was
+    replaced by a revision; see "Default payment method: reconcile, do not order".)
     `invoice_settings.default_payment_method` is set through the adapter outside any
     transaction, then `adoptDefault` flips the local flag in a short transaction
-    (customer, then methods, the order the webhook uses). It deliberately does not
-    write `default_payment_method_event_*`: our clock is not Stripe's, and
-    advancing the marker could make a genuine later dashboard change look old. The
+    (customer, then methods, the order the webhook uses), moving the customer's
+    default revision so an in-flight reconciliation read is retried. The
     `customer.updated` for the same change then finds nothing to do. If the process
     dies between the two writes the webhook brings the record in line.
   - **Remove: detach at Stripe, then forget locally.** A method Stripe already
@@ -1609,6 +1609,37 @@ subscription. Decisions, made unattended and conservatively:
   there is nothing to sit beside; the check and fix are browser-only routes in
   `WebApiParityTest` with reasons.
 - **No Stripe calls on page load.** The page prints the stored result.
+
+### Default payment method: reconcile, do not order (2026-11-11)
+
+- **Bug.** `changeDefault` ordered customer events by `created` (one-second
+  precision) plus the first event id seen at that second, and recorded the
+  marker even for an event that changed nothing. Stripe does not guarantee
+  delivery order, so a metadata `customer.updated` with no default, delivered
+  first in the same second as the event setting the default, made SVC ignore
+  the real change: no default locally while Stripe had one, and autopay
+  switched off for a method that had not gone. Two non-null defaults could
+  likewise keep the earlier one.
+- **Decision.** `customer.updated` is a signal to reconcile. The webhook
+  service retrieves the customer from Stripe, outside the transaction, through
+  the route's access (the arriving connection's key; the environment key on the
+  legacy endpoint), and `StripePaymentMethodService::reconcileDefault` makes
+  SVC's default Stripe's current one. The event's snapshot is not read. Event
+  time and event id no longer order anything, and event ids are not sorted
+  lexically; `default_payment_method_event_*` are dropped.
+- **Stale reads.** A read begun before another write could rewind it, so a
+  per-customer `default_payment_method_revision` is read before Stripe is asked
+  and compared under the customer row lock (the existing customer-then-methods
+  order, no new lock). Every write of the default moves it, including the
+  portal's `adoptDefault`; an overtaken read is `StripeEventMustBeRetried`
+  (503, event left `received`), the refund path's semantics. A read that cannot
+  be made or understood, and a default method not yet synchronized, are
+  retried the same way. Event-id deduplication is unchanged.
+- **Autopay** turns off only when Stripe's current state has no default (or the
+  customer is deleted) and SVC held one, never from a stale snapshot.
+- **Isolation.** A customer is read only when its workspace is permitted by the
+  route; another workspace's customer is acknowledged and ignored with no
+  Stripe call, so a connection is never used for a workspace it does not serve.
 
 ### Migration impact inventory and explicit ownership (2026-11-08)
 
