@@ -43,6 +43,7 @@ final class DependencyAccessWorkflowTest extends TestCase
         $commands = implode("\n", array_column($workflow['jobs']['dependency-audit']['steps'], 'run'));
         $this->assertStringContainsString('composer audit --locked', $commands);
         $this->assertStringContainsString('pnpm audit --prod', $commands);
+        $this->assertSame(2, substr_count($commands, '::warning title='), 'Each audit must surface its advisories as a warning.');
         foreach (['ci', 'mariadb', 'deploy'] as $gate) {
             $this->assertNotContains('dependency-audit', (array) $workflow['jobs'][$gate]['needs']);
         }
