@@ -16,8 +16,9 @@ final class ConsultantTimeReleaseTest extends TestCase
         string $workedOn = '2026-11-06',
         string $today = '2026-11-06',
         bool $linked = false,
+        bool $disputed = false,
     ): bool {
-        return ConsultantTimeRelease::releases($status, $billable, $mode, $cost, $workedOn, $today, $linked);
+        return ConsultantTimeRelease::releases($status, $billable, $mode, $cost, $workedOn, $today, $linked, $disputed);
     }
 
     public function test_unbilled_billable_consultant_time_worked_today_is_released(): void
@@ -64,6 +65,11 @@ final class ConsultantTimeReleaseTest extends TestCase
     public function test_time_already_on_an_invoice_line_is_not_released_again(): void
     {
         $this->assertFalse($this->releases(linked: true));
+    }
+
+    public function test_a_disputed_hour_waits_for_the_dispute_to_be_settled(): void
+    {
+        $this->assertFalse($this->releases(disputed: true));
     }
 
     public function test_the_client_approves_every_mode_except_direct(): void

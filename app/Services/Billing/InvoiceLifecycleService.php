@@ -2,8 +2,10 @@
 
 namespace App\Services\Billing;
 
+use App\Exceptions\DisputedRowsOnDraft;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceCorrection;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -458,6 +460,11 @@ final class InvoiceLifecycleService
                 throw new DomainException('Only draft invoices can be issued.');
             }
 
+            // A client's dispute holds a row out of billing (docs/ux-overhaul.md
+            // 7b″). The dispute rebuilds the draft without it; this refuses the
+            // draft whose rebuild could not, before anything is spent or moved.
+            $this->assertChargesNoDisputedRows($locked);
+
             // Before anything is spent, moved or recorded, and deliberately
             // after the charged-status return above: an invoice that already
             // took money keeps its idempotent `issue()`, because refusing it
@@ -834,6 +841,39 @@ final class InvoiceLifecycleService
         if ((string) $callerCopy->invoice_kind !== (string) $locked->invoice_kind
             || $agreementOf($callerCopy) !== $agreementOf($locked)) {
             throw new DomainException('This invoice changed after it was loaded. Reload it and try again.');
+        }
+    }
+
+    /**
+     * Refuse a draft that still charges a disputed hour or expense. Plain
+     * reads, after every lock the issue takes, of this workspace's own rows.
+     */
+    private function assertChargesNoDisputedRows(ClientInvoice $draft): void
+    {
+        $lineIds = ClientInvoiceLine::query()
+            ->where('workspace_id', $draft->workspace_id)
+            ->where('client_invoice_id', $draft->id)
+            ->pluck('id');
+        if ($lineIds->isEmpty()) {
+            return;
+        }
+
+        $hours = ClientTimeEntry::query()
+            ->where('workspace_id', $draft->workspace_id)
+            ->whereNotNull('client_disputed_at')
+            ->whereIn('id', DB::table('client_invoice_line_time_entries')
+                ->where('workspace_id', $draft->workspace_id)
+                ->whereIn('client_invoice_line_id', $lineIds)
+                ->select('client_time_entry_id'))
+            ->count();
+        $expenses = ClientExpense::query()
+            ->where('workspace_id', $draft->workspace_id)
+            ->whereNotNull('client_disputed_at')
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->count();
+
+        if ($hours > 0 || $expenses > 0) {
+            throw new DisputedRowsOnDraft($hours, $expenses);
         }
     }
 

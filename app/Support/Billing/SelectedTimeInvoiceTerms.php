@@ -21,6 +21,13 @@ final readonly class SelectedTimeInvoiceTerms
         if ($entry->status !== 'approved' || ! $entry->is_billable || $entry->is_deferred) {
             return null;
         }
+        // Only unbilled time is priced here, so a dispute always holds it
+        // (docs/ux-overhaul.md 7b″): it cannot be picked, and an ad-hoc draft
+        // rebuilt after the dispute drops it.
+        // Raw, so this stays free of the date cast and its connection.
+        if (($entry->getAttributes()['client_disputed_at'] ?? null) !== null) {
+            return null;
+        }
 
         $rawMode = $entry->getRawOriginal('subcontractor_billing_mode');
         if ($rawMode !== null && ! is_string($rawMode)) {

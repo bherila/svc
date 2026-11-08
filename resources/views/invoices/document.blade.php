@@ -199,7 +199,7 @@
             @foreach ($document->deferredWork['entries'] as $item)
                 <tr>
                     <td class="date">{{ $item['worked_on'] }}</td>
-                    <td class="wrap">{{ $item['description'] ?? '' }}</td>
+                    <td class="wrap">{{ $item['description'] ?? '' }}@if ($item['disputed'] ?? false) <strong>(Disputed: held until settled)</strong>@endif</td>
                     <td class="hours">{{ number_format($item['hours'], 4) }}</td>
                 </tr>
             @endforeach

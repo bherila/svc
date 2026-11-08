@@ -62,6 +62,7 @@ final class SelectedTimeInvoiceTermsTest extends TestCase
         yield 'draft' => [['status' => 'draft']];
         yield 'non-billable' => [['is_billable' => false]];
         yield 'deferred' => [['is_deferred' => true]];
+        yield 'disputed by the client' => [['client_disputed_at' => '2026-11-07 10:00:00']];
         yield 'direct billing' => [['subcontractor_billing_mode' => 'direct']];
         yield 'non-string mode' => [['subcontractor_billing_mode' => 17]];
         yield 'unknown mode' => [['subcontractor_billing_mode' => 'synthetic-unknown']];

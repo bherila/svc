@@ -29,6 +29,7 @@ use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\NextRetainerLending;
 use App\Support\Billing\PeriodLabel;
 use App\Support\Billing\RetainerLineDescription;
+use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
@@ -1737,8 +1738,29 @@ final class ClientInvoicingService
             ->orderBy('worked_on')
             ->orderBy('id')
             ->get();
+        // Work a client's dispute holds is listed beside it, tagged, so the
+        // draft shows what was left off and why (docs/ux-overhaul.md 7b″):
+        // whatever would otherwise have billed here - approved work, and the
+        // consultant's own drafts that generation would have released.
+        $disputed = ClientTimeEntry::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_company_id', $invoice->client_company_id)
+            ->heldForDispute()
+            ->where('is_billable', true)
+            ->where(fn ($wouldBill) => $wouldBill
+                ->where(fn ($approved) => $approved->where('status', 'approved')->where(fn ($mode) => $mode
+                    ->whereNull('subcontractor_billing_mode')
+                    ->orWhereIn('subcontractor_billing_mode', [SubcontractorBillingMode::FlatHourly->value, SubcontractorBillingMode::Retainer->value])))
+                ->orWhere(fn ($consultant) => $consultant->where('status', 'draft')
+                    ->whereNull('subcontractor_billing_mode')
+                    ->whereNull('subcontractor_cost_amount')))
+            ->forAgreementScope($agreement)
+            ->where('worked_on', '<=', $through->toDateString())
+            ->orderBy('worked_on')
+            ->orderBy('id')
+            ->get();
 
-        $this->deferredWorkStatements->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries($entries));
+        $this->deferredWorkStatements->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries($entries, $disputed));
     }
 
     /**

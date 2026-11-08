@@ -34,9 +34,9 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         self::assertSame([
             'entry_count' => 3, 'total_hours' => 0.1333, 'oldest_worked_on' => '2026-05-01',
             'entries' => [
-                ['worked_on' => '2026-05-01', 'hours' => 0.0167, 'description' => null],
-                ['worked_on' => '2026-05-01', 'hours' => 0.05, 'description' => null],
-                ['worked_on' => '2026-05-02', 'hours' => 0.0667, 'description' => 'Visible synthetic work'],
+                ['worked_on' => '2026-05-01', 'hours' => 0.0167, 'description' => null, 'disputed' => false],
+                ['worked_on' => '2026-05-01', 'hours' => 0.05, 'description' => null, 'disputed' => false],
+                ['worked_on' => '2026-05-02', 'hours' => 0.0667, 'description' => 'Visible synthetic work', 'disputed' => false],
             ],
         ], $snapshot->documentData());
     }
@@ -73,8 +73,8 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         self::assertTrue($snapshot->hasUnverifiableLineage());
         self::assertSame([], $snapshot->projectIds(), 'Unknown lineage is never read as no project.');
         self::assertSame(['entry_count' => 2, 'total_hours' => 2.0, 'oldest_worked_on' => '2026-05-01', 'entries' => [
-            ['worked_on' => '2026-05-01', 'hours' => 0.5, 'description' => null],
-            ['worked_on' => '2026-05-02', 'hours' => 1.5, 'description' => 'Legacy synthetic work'],
+            ['worked_on' => '2026-05-01', 'hours' => 0.5, 'description' => null, 'disputed' => false],
+            ['worked_on' => '2026-05-02', 'hours' => 1.5, 'description' => 'Legacy synthetic work', 'disputed' => false],
         ]], $snapshot->documentData());
         // Rewriting a legacy snapshot (a settlement removing entries) keeps it
         // legacy: it must not be laundered into version 2 with null projects.
@@ -116,6 +116,29 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         self::assertSame([3, 9], $snapshot->projectIds());
     }
 
+    public function test_disputed_work_is_listed_beside_deferred_work_with_its_tag_and_survives_storage(): void
+    {
+        $snapshot = InvoiceDeferredWorkSnapshot::fromEntries(
+            [$this->entry(2, '2026-05-02', 60, project: 7)],
+            [$this->entry(1, '2026-05-01', 30, true, 'Disputed synthetic work', 7)],
+        );
+        self::assertNotNull($snapshot);
+
+        $stored = $snapshot->toArray();
+        self::assertSame([
+            ['id' => 1, 'workedOn' => '2026-05-01', 'minutes' => 30, 'description' => 'Disputed synthetic work', 'projectId' => 7, 'disputed' => true],
+            ['id' => 2, 'workedOn' => '2026-05-02', 'minutes' => 60, 'description' => null, 'projectId' => 7],
+        ], $stored['entries'], 'Only a disputed entry carries the key, so older documents read unchanged.');
+        self::assertSame([true, false], array_column(InvoiceDeferredWorkSnapshot::fromArray($stored)?->documentData()['entries'] ?? [], 'disputed'));
+    }
+
+    public function test_only_disputed_work_still_makes_a_snapshot(): void
+    {
+        $snapshot = InvoiceDeferredWorkSnapshot::fromEntries([], [$this->entry(1, '2026-05-01', 30, project: 7)]);
+
+        self::assertSame([true], array_column($snapshot?->documentData()['entries'] ?? [], 'disputed'));
+    }
+
     public function test_missing_optional_description_reads_as_null_without_a_warning(): void
     {
         $snapshot = InvoiceDeferredWorkSnapshot::fromArray(['version' => 1, 'entries' => [
@@ -123,7 +146,7 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         ]]);
         self::assertNotNull($snapshot);
         self::assertSame(['entry_count' => 1, 'total_hours' => 0.0, 'oldest_worked_on' => '2026-05-01',
-            'entries' => [['worked_on' => '2026-05-01', 'hours' => 0.0, 'description' => null]]], $snapshot->documentData());
+            'entries' => [['worked_on' => '2026-05-01', 'hours' => 0.0, 'description' => null, 'disputed' => false]]], $snapshot->documentData());
     }
 
     #[DataProvider('invalidSnapshots')]
@@ -142,7 +165,7 @@ final class InvoiceDeferredWorkSnapshotTest extends TestCase
         yield [['version' => 1, 'entries' => 'invalid']];
         yield [['version' => 1, 'entries' => [null]]];
         $valid = ['id' => 1, 'workedOn' => '2026-05-01', 'minutes' => 60, 'description' => null];
-        foreach (['id' => '1', 'workedOn' => 1, 'minutes' => -1, 'description' => []] as $key => $invalid) {
+        foreach (['id' => '1', 'workedOn' => 1, 'minutes' => -1, 'description' => [], 'disputed' => 'yes'] as $key => $invalid) {
             yield [['version' => 1, 'entries' => [array_replace($valid, [$key => $invalid])]]];
             yield [['version' => 2, 'entries' => [array_replace($valid, ['projectId' => 1, $key => $invalid])]]];
         }

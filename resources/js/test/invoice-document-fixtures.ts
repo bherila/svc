@@ -132,8 +132,14 @@ export function documentFixture(
                     worked_on: '2026-06-01',
                     hours: 1.5,
                     description: long('Reviewed the roadmap'),
+                    disputed: false,
                 },
-                { worked_on: '2026-06-15', hours: 2, description: null },
+                {
+                    worked_on: '2026-06-15',
+                    hours: 2,
+                    description: null,
+                    disputed: true,
+                },
             ],
         },
         appendix: {

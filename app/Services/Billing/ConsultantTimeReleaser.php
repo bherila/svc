@@ -69,6 +69,7 @@ final class ConsultantTimeReleaser
                 $entry->worked_on->toDateString(),
                 $today,
                 (bool) $entry->getAttribute('on_an_invoice_line'),
+                $entry->client_disputed_at !== null,
             )) {
                 continue;
             }
@@ -82,6 +83,7 @@ final class ConsultantTimeReleaser
                 ->where('workspace_id', $company->workspace_id)
                 ->whereKey($entry->id)
                 ->where('status', 'draft')
+                ->whereNull('client_disputed_at')
                 ->update(['status' => 'approved', 'lock_version' => DB::raw('lock_version + 1')] + $this->rateFor($entry));
         }
 

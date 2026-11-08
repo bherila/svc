@@ -39,8 +39,10 @@ use Illuminate\Support\Facades\DB;
  * count of those left is returned so the screen can say so.
  *
  * A dispute is a statement and an approval is a statement; each clears the
- * other, so a row is never both. Disputing does not touch the invoice: the
- * operator's way to act on an issued one is the correction flow.
+ * other, so a row is never both. A dispute holds a row nobody has charged yet
+ * out of billing, and the draft carrying it is rebuilt without it once the
+ * dispute commits ({@see DisputedDraftRebuilder}). It never touches an issued
+ * invoice: the operator's way to act on one is the correction flow.
  */
 final class ClientApprovals
 {
@@ -50,6 +52,7 @@ final class ClientApprovals
         private readonly PortalAccess $access,
         private readonly ReviewerGrants $grants,
         private readonly AccessAuditLog $audit,
+        private readonly DisputedDraftRebuilder $drafts,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -207,6 +210,14 @@ final class ClientApprovals
             $this->write(ClientTimeEntry::query(), $company, $time, $stamp);
             $this->write(ClientExpense::query(), $company, $expenses, $stamp);
             $this->record($grant, $viewer, $company, AccessAuditAction::ReviewerDisputed, ['kind' => $kind]);
+
+            // The dispute holds the row out of billing (docs/ux-overhaul.md
+            // 7b″). Once it has committed, the draft carrying it is rebuilt
+            // without it; an issued invoice is left to the correction flow.
+            $timeIds = array_values($time->map(fn (ClientTimeEntry $row): int => (int) $row->id)->all());
+            $expenseIds = array_values($expenses->map(fn (ClientExpense $row): int => (int) $row->id)->all());
+            $workspaceId = (int) $company->workspace_id;
+            DB::afterCommit(fn () => $this->drafts->withdraw($workspaceId, $timeIds, $expenseIds));
         });
     }
 

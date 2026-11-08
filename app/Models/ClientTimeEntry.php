@@ -7,8 +7,10 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Approval\DisputeHold;
 use App\Support\Billing\DeferredWorkDisposition;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Submission\SubmissionRules;
 use Carbon\CarbonImmutable;
@@ -165,7 +167,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeRetainerBillable(Builder $query): Builder
     {
-        return $query->approved()->where(
+        return $query->approved()->notHeldForDispute()->where(
             fn (Builder $mode): Builder => $mode
                 ->where('subcontractor_billing_mode', SubcontractorBillingMode::Retainer->value)
                 ->orWhere(
@@ -461,6 +463,45 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /**
+     * Work no client dispute holds out of billing (docs/ux-overhaul.md 7b″).
+     *
+     * Every billing read derives from this through {@see scopeRetainerBillable()},
+     * {@see scopeBillableForInvoicing()} and {@see scopeFlatHourlySubcontractor()}:
+     * release, cadence generation, regeneration, the deferred backlog and the
+     * retainer ledger. A disputed row an issued invoice already charges is
+     * kept - that charge stands until a correction changes it, and the ledger
+     * of billed work must not forget it. A draft's link does not count, so a
+     * draft rebuilt after a dispute leaves the row off. The pure rule is
+     * {@see DisputeHold::holds()}.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeNotHeldForDispute(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $open): Builder => $open
+            ->whereNull('client_disputed_at')
+            ->orWhereHas('invoiceLines', fn (Builder $lines): Builder => self::ownWorkspaceAllocation($lines)
+                ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                    ->whereIn('client_invoices.status', InvoiceStatus::charged()))));
+    }
+
+    /**
+     * Rows a client dispute holds out of billing: the complement of
+     * {@see scopeNotHeldForDispute()}.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeHeldForDispute(Builder $query): Builder
+    {
+        return $query->whereNotNull('client_disputed_at')
+            ->whereDoesntHave('invoiceLines', fn (Builder $lines): Builder => self::ownWorkspaceAllocation($lines)
+                ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                    ->whereIn('client_invoices.status', InvoiceStatus::charged())));
+    }
+
+    /**
      * Work that may appear on an invoice at all.
      *
      * Direct-mode subcontractor work is visible time but never ours to invoice.
@@ -472,7 +513,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeBillableForInvoicing(Builder $query): Builder
     {
-        return $query->approved()->where(
+        return $query->approved()->notHeldForDispute()->where(
             fn (Builder $mode): Builder => $mode
                 ->whereNull('subcontractor_billing_mode')
                 ->orWhereIn('subcontractor_billing_mode', [
@@ -523,7 +564,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeFlatHourlySubcontractor(Builder $query): Builder
     {
-        return $query->approved()
+        return $query->approved()->notHeldForDispute()
             ->where('subcontractor_billing_mode', SubcontractorBillingMode::FlatHourly->value);
     }
 

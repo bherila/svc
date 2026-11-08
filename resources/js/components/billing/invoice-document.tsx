@@ -1,5 +1,6 @@
 import { MoonIcon, SunIcon } from 'lucide-react';
 import { useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Table,
@@ -101,6 +102,8 @@ export type InvoiceDocumentData = {
             worked_on: string;
             hours: number;
             description: string | null;
+            /** Held out of billing by a client's dispute (docs/ux-overhaul.md 7b″). */
+            disputed: boolean;
         }[];
     } | null;
     appendix: {
@@ -488,6 +491,15 @@ export function InvoiceDocument({
                                             </TableCell>
                                             <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                                 {entry.description ?? '—'}
+                                                {entry.disputed && (
+                                                    <Badge
+                                                        variant="destructive"
+                                                        className="ml-2"
+                                                        title="Held out of billing until the dispute is settled"
+                                                    >
+                                                        Disputed
+                                                    </Badge>
+                                                )}
                                             </TableCell>
                                             <TableCell className="text-right tabular-nums">
                                                 {entry.hours.toFixed(4)}

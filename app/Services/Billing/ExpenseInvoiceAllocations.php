@@ -31,6 +31,10 @@ final class ExpenseInvoiceAllocations
 
         return ClientExpense::query()->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)->where('status', 'approved')
+            // A client's dispute holds the expense until the provider settles
+            // it (docs/ux-overhaul.md 7b″). Regeneration re-reads this after
+            // releasing its claims, so a disputed expense leaves the draft.
+            ->whereNull('client_disputed_at')
             ->whereNull('client_invoice_line_id')->where('currency', $currency)
             ->whereDate('spent_on', '<=', $through)
             ->when($projectId !== null, fn (Builder $query): Builder => $query->where('client_project_id', $projectId))
