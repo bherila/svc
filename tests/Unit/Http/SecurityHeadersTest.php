@@ -16,11 +16,11 @@ final class SecurityHeadersTest extends TestCase
     {
         parent::setUp();
 
-        // A null reaching a string function is a deprecation in PHP; make it fail the test so a
+        // A null reaching a string function is a deprecation, and reading a missing file a warning; make both fail the test so a
         // missing setting is proven handled, not merely tolerated.
         set_error_handler(static function (int $level, string $message): never {
             throw new \ErrorException($message, 0, $level);
-        }, E_DEPRECATED);
+        }, E_DEPRECATED | E_WARNING);
     }
 
     protected function tearDown(): void
