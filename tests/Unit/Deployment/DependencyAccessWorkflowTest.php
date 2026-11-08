@@ -3,6 +3,7 @@
 namespace Tests\Unit\Deployment;
 
 use PHPUnit\Framework\TestCase;
+use Svc\Ci\DependencyAudit;
 use Symfony\Component\Yaml\Yaml;
 
 final class DependencyAccessWorkflowTest extends TestCase
@@ -37,16 +38,36 @@ final class DependencyAccessWorkflowTest extends TestCase
         $this->assertContains('clean-install', $workflow['jobs']['ci']['needs']);
     }
 
-    public function test_dependency_audit_is_advisory(): void
+    public function test_dependency_audit_enforces_and_gates_ci(): void
     {
         $workflow = Yaml::parseFile($this->root().'/.github/workflows/tests.yml');
-        $commands = implode("\n", array_column($workflow['jobs']['dependency-audit']['steps'], 'run'));
-        $this->assertStringContainsString('composer audit --locked', $commands);
-        $this->assertStringContainsString('pnpm audit --prod', $commands);
-        $this->assertSame(2, substr_count($commands, '::warning title='), 'Each audit must surface its advisories as a warning.');
-        foreach (['ci', 'mariadb', 'deploy'] as $gate) {
-            $this->assertNotContains('dependency-audit', (array) $workflow['jobs'][$gate]['needs']);
+        $job = $workflow['jobs']['dependency-audit'];
+        $commands = implode("\n", array_column($job['steps'], 'run'));
+
+        // One script runs both audits and decides; the workflow no longer swallows a failure into a warning.
+        $this->assertStringContainsString('php scripts/ci/dependency-audit.php', $commands);
+        $this->assertStringNotContainsString('::warning', $commands);
+        $this->assertStringNotContainsString('|| true', $commands);
+        $this->assertArrayNotHasKey('continue-on-error', $job);
+        foreach ($job['steps'] as $step) {
+            $this->assertArrayNotHasKey('continue-on-error', $step);
         }
+        $this->assertStringNotContainsString('(advisory)', $job['name']);
+        $this->assertStringNotContainsString('secrets.', Yaml::dump($job, 10));
+        $this->assertContains('dependency-audit', $workflow['jobs']['ci']['needs']);
+        // The lane needs nothing but the lock files, so a slow install cannot delay or hide it.
+        $this->assertArrayNotHasKey('needs', $job);
+    }
+
+    public function test_the_script_runs_the_two_audits_it_decides_on_and_the_exceptions_file_is_valid(): void
+    {
+        $script = (string) file_get_contents($this->root().'/scripts/ci/dependency-audit.php');
+        $this->assertStringContainsString('composer audit --locked --format=json', $script);
+        $this->assertStringContainsString('pnpm audit --prod --json', $script);
+
+        require_once $this->root().'/scripts/ci/DependencyAudit.php';
+        $exceptions = DependencyAudit::parseExceptions((string) file_get_contents($this->root().'/.github/audit-exceptions.json'));
+        $this->assertTrue(array_is_list($exceptions));
     }
 
     private function root(): string

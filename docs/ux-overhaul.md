@@ -908,12 +908,31 @@ Audit of every attachment path (they all end in `AttachmentStorageService`):
 
 ### CI
 
-- `composer audit --locked` and `pnpm audit --prod` run in a `dependency-audit`
-  job that is **not** a need of `ci`, so a newly published advisory cannot block
-  unrelated work. State when added: `pnpm audit --prod` clean; `composer audit`
-  reports 13 advisories in seven Symfony 8.1.x components (`http-foundation`,
-  `http-kernel`, `routing`, `serializer`, `yaml`, `http-client`, `filesystem`), all
-  fixed by 8.1.11. Not bumped here: a lock-file change is its own PR.
+- **The dependency audit now enforces (follow-up).** `dependency-audit` is a need
+  of `ci` (so it gates `deploy`) and runs `php scripts/ci/dependency-audit.php`,
+  which runs `composer audit --locked --format=json --abandoned=ignore` and
+  `pnpm audit --prod --json` and decides in `scripts/ci/DependencyAudit.php`
+  (unit-tested on fixture reports: clean, advisory, excepted, expired, tool
+  failure). Main was clean (Symfony 8.1.11 landed in #656), so there are no
+  exceptions to start with. Decisions:
+  - Exit status says who must act: `1` advisories found (or an expired exception),
+    `2` the audit could not run (no usable report from a tool: network, a crashed
+    or missing tool, an error document), `3` the exceptions file is invalid. An
+    audit that could not run is never read as "clean", and it is reported even
+    when the other tool found advisories.
+  - `.github/audit-exceptions.json` lists `{id, package, reason, expires}`. An
+    exception matches an advisory only when **both** the id (Composer advisory id,
+    GHSA or CVE; pnpm GHSA, numeric id or CVE) and the package match, and is valid
+    **through** its expiry day. After that the advisory blocks again with its own
+    "EXPIRED EXCEPTIONS" message. An exception that matches nothing is reported
+    as a note to remove it, not as a failure (a fixed advisory must not block).
+    Every field is required and the date must be a real `YYYY-MM-DD`.
+  - Abandoned Composer packages are not judged here (`--abandoned=ignore`): that is
+    a maintenance signal, not an advisory, and Composer's default for it changed
+    between versions.
+  - Cost: a newly published advisory can now turn `ci` red on an unrelated PR.
+    That is the intent; the remedy is to update the package or add a time-boxed,
+    reasoned exception, never to loosen the script.
 - `MCP_BRIDGE_DEPLOY_KEY` and every `webfactory/ssh-agent` step are removed from
   `tests.yml`, `pilot-deploy.yml`, `mcp-visibility-candidate.yml` and
   `cloudflare-ranges.yml`. `bherila/mcp-laravel-bridge` is public and
