@@ -200,6 +200,23 @@ and nothing is called.
   workspaces with a connection, so the target workspace's Square mirror continues
   under the connection.
 
+- **A connection entered while it runs:** the write re-checks, inside its own
+  transaction, that the workspace still has no active connection. If someone
+  saved one on the Payments page after the command read its inventory (or
+  verified the credential), the command writes nothing for that processor,
+  prints `workspace_already_connected`, exits non-zero, and the entered
+  connection is untouched.
+- **Reconnecting the Stripe webhook afterwards:** a reconnect (Payments page,
+  "Reconnect") creates a new endpoint and replaces the stored signing secret on
+  the same connection; the URL token does not change. The old secret is not
+  kept, so an event Stripe retries from the endpoint it replaced, including the
+  environment's legacy endpoint, fails signature verification with a 400 and is
+  not applied; new events from the replacement endpoint are. Before reconnecting
+  a migrated connection, check the Stripe Dashboard for deliveries still being
+  retried at the old endpoint and replay them from the new one if needed. Two
+  reconnects at once cannot both win: the one that finds the endpoint changed
+  deletes the endpoint it just made and reports that nothing changed.
+
 It does **not** change anything at Stripe or Square: no webhook endpoint is
 created, changed or deleted. It does not edit `.env`, does not write audit
 events, and stores no publishable key (the deployment's `STRIPE_PUBLISHABLE_KEY`
