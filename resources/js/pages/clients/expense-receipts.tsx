@@ -39,7 +39,9 @@ export default function ExpenseReceipts({
             >
                 <Card>
                     <CardHeader>
-                        <CardTitle id="files">Expense receipts</CardTitle>
+                        <CardTitle id="files" aria-level={1}>
+                            Expense receipts
+                        </CardTitle>
                     </CardHeader>
                     <CardContent className="grid min-w-0 grid-cols-1 gap-4">
                         <p className="wrap-anywhere">{expense.description}</p>

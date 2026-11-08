@@ -1,9 +1,11 @@
 import { Head, useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import { FormField } from '@/components/form-field';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { OptionSelect } from '@/components/ui/option-select';
 import { useExpenseMutation } from '@/hooks/use-expense-mutation';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatScheduleAmount } from '@/lib/expense-schedule-amount';
@@ -131,29 +133,21 @@ function ScheduleForm({
                             {field('amount', 'Amount in minor units')}
                             {field('currency', 'Currency')}
                         </div>
-                        <label className="grid min-w-0 grid-cols-1 gap-1">
-                            Project
-                            <select
-                                className="w-full min-w-0 rounded border bg-background p-2"
-                                value={form.data.project_id}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'project_id',
-                                        event.target.value,
-                                    )
-                                }
-                            >
-                                <option value="">Company expense</option>
-                                {page.projects.map((project) => (
-                                    <option
-                                        key={project.value}
-                                        value={project.value}
-                                    >
-                                        {project.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
+                        <FormField label="Project">
+                            {(id) => (
+                                <OptionSelect
+                                    id={id}
+                                    value={form.data.project_id}
+                                    options={[
+                                        { value: '', label: 'Company expense' },
+                                        ...page.projects,
+                                    ]}
+                                    onValueChange={(next) =>
+                                        form.setData('project_id', next)
+                                    }
+                                />
+                            )}
+                        </FormField>
                         {schedule ? (
                             <label className="flex items-center gap-2">
                                 <input
@@ -184,28 +178,18 @@ function ScheduleForm({
                                         }
                                     />
                                 </label>
-                                <label className="grid min-w-0 grid-cols-1 gap-1">
-                                    Repeats
-                                    <select
-                                        className="w-full min-w-0 rounded border bg-background p-2"
-                                        value={form.data.cadence}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'cadence',
-                                                event.target.value,
-                                            )
-                                        }
-                                    >
-                                        {page.cadences.map((cadence) => (
-                                            <option
-                                                key={cadence.value}
-                                                value={cadence.value}
-                                            >
-                                                {cadence.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
+                                <FormField label="Repeats">
+                                    {(id) => (
+                                        <OptionSelect
+                                            id={id}
+                                            value={form.data.cadence}
+                                            options={page.cadences}
+                                            onValueChange={(next) =>
+                                                form.setData('cadence', next)
+                                            }
+                                        />
+                                    )}
+                                </FormField>
                             </div>
                         )}
                         <p className="text-sm text-muted-foreground">
@@ -275,6 +259,7 @@ function ScheduleGeneration({
     return (
         <div className="min-w-0 space-y-2">
             <Button
+                variant="outline"
                 disabled={mutation.busy || (pageLocked && !mutation.locked)}
                 onClick={() => {
                     if (schedule.generate_url !== null || mutation.locked) {
@@ -331,7 +316,11 @@ export default function ExpenseSchedules(page: Props) {
                     resuming.
                 </p>
                 <div className="flex flex-wrap gap-3">
-                    <Button disabled={locked} onClick={() => setEditing('new')}>
+                    <Button
+                        variant="outline"
+                        disabled={locked}
+                        onClick={() => setEditing('new')}
+                    >
                         New schedule
                     </Button>
                 </div>

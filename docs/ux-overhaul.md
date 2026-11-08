@@ -1529,6 +1529,71 @@ runbook overstated rollback. Decisions, made unattended and conservatively:
   messages already sent, webhook events already applied or refused, and the
   deleted rows' contents.
 
+### Accessibility to zero (#624 item 4, 2026-11-08)
+
+- **Every screen gates, in both themes.** The `uiGated` list and the
+  measurement-only exemption for axe and UI-consistency are gone: any axe
+  violation at any impact, and any UI-consistency error, fails the harness on
+  every capture, light and dark. Overflow and navbar assertions keep their
+  existing `measuredOnly` exemptions (only the autopay and consent states use
+  it); axe and the token checks do not honour it.
+- **Advisory stays advisory: a text button with no icon.** `action-button-icon`
+  still reports without failing. About a hundred buttons are legitimately
+  text-only (Cancel, Dismiss, Void, recovery buttons), and putting an icon on
+  each would be a visual redesign, not an accessibility fix. Revisit if the
+  list is ever worth gating.
+- **A modal dialog counts alone for "one filled button".** While a modal is
+  open the page behind it is inert, so only the dialog's own buttons are
+  counted; the page is counted whole again when it closes. This is a change to
+  what the check counts, made because the dialog's confirm button and the
+  page's one primary button are never both actionable. Pages with several
+  independent forms (client settings, task planning, payment connections) went
+  to outlined buttons rather than choosing one form's Save as the primary.
+- **Tokens, not overrides.** Light `--destructive` darkened (0.577 to 0.48
+  lightness) and dark lightened (0.704 to 0.78) so destructive text is 4.5:1 on
+  its own tint and hover tint; light `--muted-foreground` darkened (0.556 to
+  0.5) for text on `--muted`; `--ring` darkened/lightened to 3:1 against the
+  background and card. The operations "bridge" palette gained dark mappings for
+  `text-slate-700` and `text-cyan-700`.
+- **Card titles are level-2 headings by default** (`CardTitle` has
+  `role="heading" aria-level={2}`); a page whose title is a card passes
+  `aria-level={1}`. A page with no visible title (portal billing, portal
+  invoice) has a screen-reader-only `h1`.
+- **Scroll regions** become keyboard-focusable only while they overflow
+  (`useScrollable`), instead of a tab stop on every table.
+- **Native `<select>` is banned, all of them.** The task named the buy-down
+  picker; the grep found nine more (appearance, portal scope, project access,
+  history, three on collaboration, two on expense schedules). All use
+  `OptionSelect`; `native-select.test.ts` guards it. An option whose stored
+  value is the empty string is carried under a stand-in value, because Base UI
+  reads `''` as "nothing chosen".
+- **Skip link finds `<main>`.** Pages draw their own `<main>`, so the link
+  gives the first one an id and `tabindex="-1"` on mount instead of every page
+  naming a target.
+- **Toasts.** The application renders none (the Sonner `Toaster` is unused), so
+  announcements stay `role="status"`/`role="alert"` in the page; nothing was
+  added.
+- **Harness upkeep.** Four groups already failed on a clean `origin/main`
+  (clients, disputes, square, tasks) because the UI had moved on: the client
+  switcher is named "Current client: ...", a disputed invoice offers no "Send to
+  client", a client sees "Still deferred" only when the agreement opts in (the
+  Square fixture's invoice had no agreement), and the section tabs collapse
+  below `xl`. The harness and seed follow the product; no product behaviour
+  changed. The harness now runs with reduced motion and waits for styles to
+  settle after a theme switch, because axe otherwise measured half-faded
+  popups and mid-transition colours as contrast failures.
+- **CI.** Every harness group runs on every push and pull request in eight
+  concurrent shards (`layout`), required by `ci` through `layout-gate`;
+  `LayoutWorkflowTest` fails when a group has no shard. The collaboration,
+  task-organization and attachment-sharing scripts run in `layout-scripts` with
+  the same gate (`scripts/layout/a11y.mjs`). The four `workflow_dispatch` layout
+  jobs stay as they were.
+- **Found by the wider gate.** A task list was a `ul` of `Card`s each holding an
+  `li` (invalid list structure) - now `ul > li > Card`; two "Files" landmarks per
+  comment became a labelled group; an open menu's popup is not counted by axe's
+  `region` rule in the focused scripts (it is a transient widget, not page
+  content).
+
 ## Open questions
 
 None. Answered on 2026-11-06:

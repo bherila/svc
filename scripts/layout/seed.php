@@ -438,8 +438,16 @@ $squareInvoice = $service->issue($service->createDraft($workspace, $company, [
     'type' => 'adjustment', 'description' => $description,
     'quantity' => '1', 'unit_amount' => 12_345, 'tax_amount' => 0, 'sort_order' => 1,
 ]]), $workspace);
+// A client sees an invoice's "Still deferred" list only when its agreement opts in.
+$squareAgreement = ClientAgreement::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic Square agreement',
+    'status' => 'expired', 'currency' => 'USD', 'starts_on' => '2022-01-01', 'ends_on' => '2022-12-31',
+    'billing_cadence' => 'monthly', 'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000,
+    'show_deferred_backlog_to_client' => true, 'is_visible_to_client' => false,
+]);
 $squareInvoice->forceFill([
     'is_visible_to_client' => true,
+    'client_agreement_id' => $squareAgreement->id,
     'deferred_work_statement' => ['version' => 1, 'entries' => [
         ['id' => 1, 'workedOn' => '2026-04-01', 'minutes' => 1, 'description' => null],
         ['id' => 2, 'workedOn' => '2026-04-02', 'minutes' => 61, 'description' => str_repeat('SyntheticDeferredWork', 40)],

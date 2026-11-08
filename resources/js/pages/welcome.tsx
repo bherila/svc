@@ -1,4 +1,5 @@
 import { Head, usePage } from '@inertiajs/react';
+import { SkipLink } from '@/components/skip-link';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -9,6 +10,7 @@ export default function Welcome() {
     return (
         <>
             <Head title="Client-service operations" />
+            <SkipLink />
             <main className="relative isolate min-h-screen overflow-hidden bg-slate-950 text-white">
                 <svg
                     aria-hidden="true"

@@ -102,12 +102,12 @@ describe('the portal payment methods card', () => {
         ).toBeVisible();
         expect(
             screen.queryByRole('button', {
-                name: 'Make Visa ending 4242 the default',
+                name: 'Make default: Visa ending 4242',
             }),
         ).toBeNull();
         expect(
             screen.getByRole('button', {
-                name: `Make ${OTHER_METHOD.label} the default`,
+                name: `Make default: ${OTHER_METHOD.label}`,
             }),
         ).toBeVisible();
         expect(
@@ -137,7 +137,7 @@ describe('the portal payment methods card', () => {
 
         await user.click(
             screen.getByRole('button', {
-                name: `Make ${OTHER_METHOD.label} the default`,
+                name: `Make default: ${OTHER_METHOD.label}`,
             }),
         );
 
@@ -159,7 +159,7 @@ describe('the portal payment methods card', () => {
 
         await user.click(
             screen.getByRole('button', {
-                name: `Make ${OTHER_METHOD.label} the default`,
+                name: `Make default: ${OTHER_METHOD.label}`,
             }),
         );
 

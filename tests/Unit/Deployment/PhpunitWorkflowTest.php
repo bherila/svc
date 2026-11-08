@@ -34,7 +34,7 @@ final class PhpunitWorkflowTest extends TestCase
     public function test_existing_required_check_names_gate_all_their_dependencies(): void
     {
         $jobs = $this->jobs();
-        $this->assertSame(['checks', 'sqlite', 'mariadb', 'mcp-smoke'], $jobs['ci']['needs']);
+        $this->assertSame(['checks', 'sqlite', 'mariadb', 'mcp-smoke', 'layout-gate'], $jobs['ci']['needs']);
         $this->assertSame('Tests on MariaDB', $jobs['mariadb']['name']);
         $this->assertSame(['mariadb-tests'], $jobs['mariadb']['needs']);
         foreach (['ci', 'mariadb'] as $gate) {

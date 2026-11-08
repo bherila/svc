@@ -13,6 +13,7 @@ import { refreshPageProps } from '@/lib/refresh-page-props';
 import CollaborationIndex from '@/pages/collaboration/index';
 import CollaborationShow from '@/pages/collaboration/show';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
+import { chooseOption } from '@/test/select';
 import type {
     CollaborationContent,
     CollaborationThread,
@@ -227,7 +228,7 @@ describe('native collaboration pages', () => {
         expect(screen.queryByText(/literal comment/)).toBeNull();
     });
 
-    it('creates either topic kind with an explicit safe scope and default internal visibility', () => {
+    it('creates either topic kind with an explicit safe scope and default internal visibility', async () => {
         render(
             <CollaborationIndex
                 company={{ id: 'synthetic-company', name: 'Synthetic Company' }}
@@ -241,9 +242,7 @@ describe('native collaboration pages', () => {
                 previous_href={null}
             />,
         );
-        fireEvent.change(screen.getByRole('combobox', { name: 'Type' }), {
-            target: { value: 'discussion' },
-        });
+        await chooseOption(userEvent.setup(), 'Type', 'Discussion');
         fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
             target: { value: 'Synthetic discussion' },
         });

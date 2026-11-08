@@ -140,7 +140,6 @@ export function PortalAutopayCard({
                         id="autopay-heading"
                         role="heading"
                         aria-level={2}
-                        className="text-lg"
                     >
                         Autopay
                     </CardTitle>
@@ -246,6 +245,7 @@ export function PortalAutopayCard({
                         autopay.wording !== null ? (
                             <div>
                                 <Button
+                                    variant="outline"
                                     type="button"
                                     onClick={() => setDialog('on')}
                                 >
@@ -679,13 +679,12 @@ export function PortalInvoiceAutopayCard({
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
                     {payable && (
-                        <Button
-                            render={<a href={payHref} />}
-                            variant="default"
-                            size="sm"
+                        <a
+                            href={payHref}
+                            className="text-sm font-medium underline underline-offset-4"
                         >
                             Pay {amount}
-                        </Button>
+                        </a>
                     )}
                     <a
                         href={autopay.manage_href}

@@ -1,9 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import HistoryIndex from '@/pages/history/index';
 import HistoryShow from '@/pages/history/show';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
+import { chooseOption } from '@/test/select';
 import type { HistoryDetail } from '@/types/history';
 
 const search = vi.hoisted(() => ({ get: vi.fn() }));
@@ -93,7 +95,7 @@ describe('historical library', () => {
         expect(horizontalOverflowRisks(view.container)).toEqual([]);
     });
 
-    it('searches through the supplied URL while retaining company and parent filters', () => {
+    it('searches through the supplied URL while retaining company and parent filters', async () => {
         const view = render(
             <HistoryIndex
                 entries={[entry]}
@@ -112,9 +114,7 @@ describe('historical library', () => {
         fireEvent.change(screen.getByLabelText('Search history'), {
             target: { value: 'PO/50%' },
         });
-        fireEvent.change(screen.getByLabelText('Record type'), {
-            target: { value: 'discussion' },
-        });
+        await chooseOption(userEvent.setup(), 'Record type', 'Discussion');
         fireEvent.click(screen.getByRole('button', { name: 'Search' }));
         expect(search.get).toHaveBeenLastCalledWith(
             '/synthetic/history-search',
