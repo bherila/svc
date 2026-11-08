@@ -871,10 +871,40 @@ Audit of every attachment path (they all end in `AttachmentStorageService`):
   so a client that ignores `attachment` cannot execute an upload; the served
   filename drops control characters and bidirectional overrides
   (`evil\u202Efdp.exe`) and is capped at 255 characters.
-- Not changed, a product decision: there is no type allowlist. Any file type up to
-  50 MB is accepted. Restricting it would reject files people attach today.
-- Not changed: an SVG receipt is now served as opaque bytes, so it no longer
-  previews as an image from the download URL; it still downloads.
+- **Type policy, server-enforced (follow-up).** `AttachmentTypePolicy` runs inside
+  `AttachmentStorageService::stage()`, before a byte is read or staged, so every
+  upload path (browser, native API, agent API, CLI, collaboration) is covered. It
+  judges the **sniffed** type (`getMimeType()`, the same value stored as the
+  attachment's media type; the client's declared type is never read) and uses the
+  file name only to refuse more. The vocabulary is one enum, `AttachmentFamily`
+  (pdf, image, office, text, archive, media, other, **active**), and
+  `AttachmentUploadKind` says what each kind accepts:
+  - **Receipt** (any file on an expense): a PDF or JPEG, PNG or WebP image, and
+    its extension must be one that type owns (`.pdf`; `.jpg`/`.jpeg`; `.png`;
+    `.webp`), so a script renamed `receipt.pdf` or a PDF named `receipt.png` is
+    refused, as is a file with no extension. HEIC and GIF are **not** accepted:
+    nothing in SVC previews either (the invoice PDF draws JPEG and PNG only and
+    lists a PDF or WebP receipt by name), so a client could not open them.
+    **SVG receipts are no longer accepted** (they were accepted before; those
+    already stored still download as opaque bytes, per the line above).
+  - **General** (every other record): unchanged breadth - every family except
+    *active*, so documents, spreadsheets, text, archives, images (including GIF
+    and HEIC) and media still upload, as do unrecognised binaries.
+  - **Refused for every upload:** HTML/XHTML, SVG, XML, JavaScript, PHP and other
+    scripts, and programs and installers, by sniffed type **or** by last
+    extension (`.js` text, `.exe`, `.html`, ...). Only the *last* extension is
+    checked, so `amazon.com.invoice.pdf` is fine. No existing test or fixture
+    uploaded SVG, HTML or XML as a business attachment (the only ones were the
+    download-hardening tests, which now seed a legacy row instead), and no
+    documented need exists, so there is no exception. Extend the lists in
+    `AttachmentFamily` deliberately if one appears.
+  - Errors are `422` with `errors.file[0]` set to a sentence such as "A receipt
+    must be a PDF or a JPEG, PNG or WebP image." or "The file name ends in .png
+    but the file is a PDF. Rename it to end in .pdf, or upload the original file."
+  - Not retroactive: nothing already stored is deleted or re-typed.
+- Test fixtures: receipt tests that uploaded `.txt` fakes now upload `.pdf`
+  fakes (Laravel's fake file reports the type from its name, so the policy sees a
+  PDF); the policy's own tests use real bytes on disk so the type is truly sniffed.
 
 ### CI
 

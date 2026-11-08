@@ -8,7 +8,7 @@ An expense is a cost passed through to the client.
 
 ## Receipts
 
-Attach the receipt to the expense. Approved expenses with receipts go on the next invoice.
+Attach the receipt to the expense. A receipt must be a PDF or a JPEG, PNG or WebP image, and its file name must end the way the file really is (a PDF ends in `.pdf`, a PNG in `.png`). Other types, including HEIC photos, GIFs, SVG images and web pages, are refused with a message saying why; export a phone photo as JPEG or PNG first. Approved expenses with receipts go on the next invoice.
 
 ## Sharing a receipt with the client
 

@@ -107,7 +107,7 @@ final class AttachmentReaderTest extends TestCase
             'expense' => $this->recordSyntheticExpense($this->workspace, $this->company),
         };
         $this->actingAs($this->owner, 'web')->uploadNativeFile($this->workspace, $type, $record->public_id,
-            ['file' => UploadedFile::fake()->createWithContent('synthetic-legacy.txt', 'Synthetic legacy bytes')])->assertCreated();
+            ['file' => UploadedFile::fake()->createWithContent('synthetic-legacy.pdf', 'Synthetic legacy bytes')])->assertCreated();
         $file = ClientAttachment::query()->where('workspace_id', $this->workspace->id)->sole();
         // An expense receipt starts private whatever the latch says; every other parent follows it.
         $this->assertSame($type !== 'expense' && ! $privateDefault, $file->is_visible_to_client);

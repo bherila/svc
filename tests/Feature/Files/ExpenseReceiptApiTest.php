@@ -38,7 +38,7 @@ final class ExpenseReceiptApiTest extends TestCase
         $this->sessionActor($actor);
         $url = $this->base($workspace, $expense->public_id);
         $uploaded = $this->withHeader('Idempotency-Key', 'synthetic-native-upload')->post($url, ['expected_version' => AgentApiVersion::for($expense),
-            'file' => UploadedFile::fake()->createWithContent('synthetic-native.txt', 'Synthetic native receipt bytes')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertCreated();
+            'file' => UploadedFile::fake()->createWithContent('synthetic-native.pdf', 'Synthetic native receipt bytes')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertCreated();
         $file = ClientAttachment::query()->sole();
         $this->getJson($url)->assertOk()->assertJsonPath('data.0.id', $file->public_id)->assertJsonPath('data.0.version', AgentApiVersion::for($file));
         $download = $this->getJson($url.'/'.$file->public_id)->assertOk()->json('data.download_url');
@@ -104,7 +104,7 @@ final class ExpenseReceiptApiTest extends TestCase
         $this->getJson($url.'/'.$receipt->public_id)->assertForbidden();
         $this->getJson($url.'/upload-url')->assertForbidden();
         $this->withHeader('Idempotency-Key', 'synthetic-agent-upload')->post($url, ['expected_version' => AgentApiVersion::for($expense->fresh()),
-            'file' => UploadedFile::fake()->createWithContent('synthetic-forbidden.txt', 'Synthetic forbidden bytes')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertForbidden();
+            'file' => UploadedFile::fake()->createWithContent('synthetic-forbidden.pdf', 'Synthetic forbidden bytes')], ['Accept' => 'application/json', 'Content-Type' => 'multipart/form-data'])->assertForbidden();
         $this->withHeader('Idempotency-Key', 'synthetic-agent-delete')->deleteJson($url.'/'.$receipt->public_id, $this->deleteBody($expense, $receipt))->assertForbidden();
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $receipt->fresh()->lifecycle_state);
         $this->assertDatabaseCount('client_attachments', 1);
@@ -167,7 +167,7 @@ final class ExpenseReceiptApiTest extends TestCase
     private function uploaded(User $actor, Workspace $workspace, ClientExpense $expense): ClientAttachment
     {
         app(AgentExpenseReceiptService::class)->upload($actor, $workspace, 'synthetic-setup', 'synthetic-upload', $expense->public_id,
-            ['expected_version' => AgentApiVersion::for($expense)], UploadedFile::fake()->createWithContent('synthetic-receipt.txt', 'Synthetic receipt bytes'), AttachmentMutationOrigin::Native);
+            ['expected_version' => AgentApiVersion::for($expense)], UploadedFile::fake()->createWithContent('synthetic-receipt.pdf', 'Synthetic receipt bytes'), AttachmentMutationOrigin::Native);
 
         return ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
     }
