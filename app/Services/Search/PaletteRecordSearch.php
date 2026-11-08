@@ -257,6 +257,10 @@ final class PaletteRecordSearch
     private function contacts(Workspace $workspace, SearchLookup $lookup, Builder $companies): Collection
     {
         $query = ClientContact::query()->where('workspace_id', $workspace->id)->where('is_archived', false)->whereIn('client_company_id', $companies);
+        if ($lookup->term === null) {
+            // A recent asks for these contacts by id; never "the first contact".
+            $lookup->constrain($query, SearchColumn::FirstName, SearchResultKind::Contact);
+        }
         foreach ($this->words((string) $lookup->term) as $word) {
             $needle = '%'.WorkspaceSearch::escapeForLike($word).'%';
             $query->where(fn (Builder $match) => $match->whereRaw(SearchColumn::FirstName->likeSql(), [$needle])
@@ -282,9 +286,15 @@ final class PaletteRecordSearch
                 ->orWhereRaw(SearchColumn::Email->likeSql(), [$needle]));
         }
 
+        $query = ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->whereIn('client_company_id', $companies)
+            ->whereIn('user_id', $users->select('id'));
+        if ($lookup->term === null) {
+            // A recent asks for these memberships by id; never "the newest membership".
+            $lookup->constrain($query, SearchColumn::Name, SearchResultKind::PortalUser);
+        }
+
         /** @var Collection<int, ClientCompanyMembership> $rows */
-        $rows = ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->whereIn('client_company_id', $companies)
-            ->whereIn('user_id', $users->select('id'))->orderByDesc('id')->limit($lookup->limit(SearchResultKind::PortalUser))->get();
+        $rows = $query->orderByDesc('id')->limit($lookup->limit(SearchResultKind::PortalUser))->get();
 
         $names = $rows->isEmpty() ? collect() : User::query()->whereIn('id', $rows->pluck('user_id')->all())->pluck('name', 'id');
         foreach ($rows as $row) {

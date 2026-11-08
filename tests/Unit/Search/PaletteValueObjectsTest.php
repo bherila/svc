@@ -47,7 +47,7 @@ final class PaletteValueObjectsTest extends TestCase
     public function test_only_records_with_a_page_of_their_own_can_be_recents(): void
     {
         $this->assertSame(
-            ['client', 'project', 'invoice', 'task', 'expense', 'agreement', 'proposal', 'file'],
+            ['client', 'project', 'invoice', 'task', 'expense', 'agreement', 'proposal', 'file', 'contact', 'portal_user'],
             array_map(fn (SearchResultKind $kind): string => $kind->value, SearchResultKind::recentable()),
         );
     }
