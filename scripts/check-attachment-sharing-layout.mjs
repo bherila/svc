@@ -595,7 +595,16 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
     server?.kill();
 
     if (vite?.pid) {
-        process.kill(-vite.pid, 'SIGTERM');
+        try {
+            process.kill(-vite.pid, 'SIGTERM');
+        } catch (error) {
+            // ESRCH: Vite already exited (for example it refused to start), so
+            // there is nothing to stop; never mask the original failure.
+            if (error?.code !== 'ESRCH') {
+                console.error(error);
+                process.exitCode = 1;
+            }
+        }
     }
 
     rmSync(path.join(root, 'public/hot'), { force: true });

@@ -337,6 +337,9 @@ jobs:
       - name: Check browser layout and accessibility
         env:
           LAYOUT_SCRIPT: ${{ matrix.script }}
+          # check-attachment-sharing-layout.mjs runs its own Vite dev server, which
+          # laravel-vite-plugin refuses to start under CI=true without this.
+          LARAVEL_BYPASS_ENV_CHECK: '1'
         run: node "$LAYOUT_SCRIPT"
       - name: Upload synthetic screenshots and measurements
         if: ${{ always() }}
