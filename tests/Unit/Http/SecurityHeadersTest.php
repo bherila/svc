@@ -147,9 +147,9 @@ final class SecurityHeadersTest extends TestCase
         $this->assertSame(
             "default-src 'self'; "
             ."script-src 'self' 'unsafe-inline' https://js.stripe.com; "
-            ."style-src 'self' 'unsafe-inline' https://fonts.bunny.net; "
+            ."style-src 'self' 'unsafe-inline'; "
             ."img-src 'self' data: blob: https://*.stripe.com; "
-            ."font-src 'self' data: https://fonts.bunny.net; "
+            ."font-src 'self' data:; "
             ."connect-src 'self' https://api.stripe.com; "
             .'frame-src https://js.stripe.com https://hooks.stripe.com; '
             ."object-src 'none'; "
@@ -175,9 +175,9 @@ final class SecurityHeadersTest extends TestCase
         file_put_contents(public_path('hot'), "http://[::1]:5173\n");
         $policy = (new SecurityHeaders)->contentSecurityPolicy();
         $this->assertStringContainsString("script-src 'self' 'unsafe-inline' https://js.stripe.com http://[::1]:5173;", $policy);
-        $this->assertStringContainsString("style-src 'self' 'unsafe-inline' https://fonts.bunny.net http://[::1]:5173;", $policy);
+        $this->assertStringContainsString("style-src 'self' 'unsafe-inline' http://[::1]:5173;", $policy);
         $this->assertStringContainsString("img-src 'self' data: blob: https://*.stripe.com http://[::1]:5173;", $policy);
-        $this->assertStringContainsString("font-src 'self' data: https://fonts.bunny.net http://[::1]:5173;", $policy);
+        $this->assertStringContainsString("font-src 'self' data: http://[::1]:5173;", $policy);
         $this->assertStringContainsString("connect-src 'self' https://api.stripe.com http://[::1]:5173 ws://[::1]:5173;", $policy);
 
         file_put_contents(public_path('hot'), 'https://dev.example.test');
