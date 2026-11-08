@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
+import { chooseOption } from '@/test/select';
 
 const inertia = vi.hoisted(() => ({
     reload: vi.fn((options?: { onFinish?: () => void }) =>
@@ -107,7 +108,7 @@ describe('portal access', () => {
         const select = screen.getByRole('combobox', {
             name: `Portal access for ${'SyntheticContactName'.repeat(20)}`,
         });
-        expect(select).toHaveValue('projects');
+        expect(select).toHaveTextContent('Selected projects');
         const item = select.closest('li') as HTMLElement;
         expect(
             within(item).getByRole('checkbox', { name: 'Alpha' }),
@@ -185,11 +186,10 @@ describe('portal access', () => {
         const user = userEvent.setup();
         render(<PortalAccess {...props()} />);
 
-        await user.selectOptions(
-            screen.getByRole('combobox', {
-                name: `Portal access for ${'SyntheticContactName'.repeat(20)}`,
-            }),
-            'company',
+        await chooseOption(
+            user,
+            `Portal access for ${'SyntheticContactName'.repeat(20)}`,
+            'The whole client',
         );
         await user.click(screen.getByRole('button', { name: 'Save access' }));
 
@@ -424,7 +424,9 @@ describe('portal access', () => {
         const page = props();
         const { rerender } = render(<PortalAccess {...page} />);
         const name = `Portal access for ${'SyntheticContactName'.repeat(20)}`;
-        expect(screen.getByRole('combobox', { name })).toHaveValue('projects');
+        expect(screen.getByRole('combobox', { name })).toHaveTextContent(
+            'Selected projects',
+        );
 
         rerender(
             <PortalAccess
@@ -443,10 +445,12 @@ describe('portal access', () => {
             />,
         );
 
-        expect(screen.getByRole('combobox', { name })).toHaveValue('company');
+        expect(screen.getByRole('combobox', { name })).toHaveTextContent(
+            'The whole client',
+        );
     });
 
-    it('offers selected projects only when the client has some', () => {
+    it('offers selected projects only when the client has some', async () => {
         render(
             <PortalAccess
                 {...props({
@@ -456,9 +460,12 @@ describe('portal access', () => {
             />,
         );
 
+        await userEvent.click(
+            screen.getAllByRole('combobox', { name: /^Portal access for/ })[0],
+        );
         expect(
-            screen.getByRole('option', { name: 'Selected projects' }),
-        ).toBeDisabled();
+            await screen.findByRole('option', { name: 'Selected projects' }),
+        ).toHaveAttribute('aria-disabled', 'true');
     });
 
     describe('invitations', () => {

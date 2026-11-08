@@ -61,6 +61,9 @@ export default function PortalInvoice({
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
+                <h1 className="sr-only">
+                    Invoice {document.invoice_number ?? ''}
+                </h1>
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
                     <InvoiceDocument document={document} />
                     <aside

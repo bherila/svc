@@ -16,11 +16,12 @@ You can also paste the account's publishable key, which is what lets clients pay
 
 SVC needs Stripe to tell it about payments, refunds, disputes, payouts and saved cards. Under the Stripe card, **Webhook** says either "all N events subscribed" (N being the count of events SVC handles) or which events are missing, and when SVC last looked. SVC looks when you save a key, when you press **Check again**, and once a day.
 
-A warning appears when events are missing, the endpoint is disabled in Stripe, there is no endpoint at SVC's address (the address is shown to owners and admins), or the endpoint is in the other mode (test or live) than the key.
+A warning appears when events are missing, the endpoint is disabled in Stripe, there is no endpoint at SVC's address (the address is shown to owners and admins), the endpoint is in the other mode (test or live) than the key, the endpoint SVC set up has been deleted in Stripe, or SVC cannot confirm which endpoint is its own (a connection with no record of its endpoint). Another endpoint at the same address is never taken as SVC's own: it signs events with a different secret.
 
 An owner or admin can press the fix button, then confirm:
 
 - **Add missing events** subscribes SVC's endpoint to the events it lacks. Events it already has are kept, and no other endpoint in your Stripe account is touched.
+- **Reconnect webhook** appears when the endpoint SVC set up no longer exists or SVC cannot confirm which endpoint is its own. SVC creates a new endpoint and stores its id and signing secret together, encrypted, and never shows them. No other endpoint in your Stripe account is touched; delete any old one yourself in the Stripe Dashboard.
 - **Create endpoint** appears when Stripe has no endpoint at SVC's address. Stripe gives the new endpoint its own signing secret; SVC stores it encrypted, in place of the old one, and never shows it.
 
 A disabled endpoint is not switched on for you. Enable it in the Stripe Dashboard, then press **Check again**. A connection that borrows another workspace's account has no webhook of its own; look at the workspace that holds the key.

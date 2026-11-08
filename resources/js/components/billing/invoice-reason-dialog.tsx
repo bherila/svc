@@ -118,20 +118,12 @@ export function InvoiceReasonDialog({
                         }
                     />
                     <AlertDialogAction
-                        render={
-                            <Button
-                                variant={
-                                    destructive ? 'destructive' : 'default'
-                                }
-                                disabled={
-                                    mutation.locked || reason.trim() === ''
-                                }
-                                onClick={() => onConfirm(reason.trim())}
-                            >
-                                {confirmLabel}
-                            </Button>
-                        }
-                    />
+                        variant={destructive ? 'destructive' : 'default'}
+                        disabled={mutation.locked || reason.trim() === ''}
+                        onClick={() => onConfirm(reason.trim())}
+                    >
+                        {confirmLabel}
+                    </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>

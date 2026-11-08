@@ -4,6 +4,7 @@ import type {
     AuthComponentInput,
     AuthContainerComponentProps,
 } from 'bwh-auth';
+import type { ComponentProps } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,10 +34,28 @@ function Alert({ className, ...props }: AuthContainerComponentProps) {
     );
 }
 
+/**
+ * The library draws its buttons in the default (filled) variant. A page has at
+ * most one filled button, and this section sits among many controls, so its
+ * actions are outlined unless the library asks for another variant.
+ */
+function AuthButton({ variant, ...props }: ComponentProps<typeof Button>) {
+    return (
+        <Button
+            variant={
+                variant === undefined || variant === 'default'
+                    ? 'outline'
+                    : variant
+            }
+            {...props}
+        />
+    );
+}
+
 const components = {
     Alert,
     Badge,
-    Button,
+    Button: AuthButton,
     Card,
     CardContent,
     CardDescription,

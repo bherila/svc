@@ -44,9 +44,9 @@ final class StripeWebhookService
     private const array REFUND_REQUIRED = ['refund.updated', 'refund.failed'];
 
     /**
-     * The older name of `refund.updated`. It is handled, and subscribed when
-     * SVC creates an endpoint, but a subscription to it alone stands in for
-     * `refund.updated` (see {@see STAND_INS}).
+     * The older name of `refund.updated`. It is handled if it arrives, and
+     * subscribed when SVC creates an endpoint, but it is not required and does
+     * not stand in for `refund.updated` in the health check.
      */
     private const array REFUND_LEGACY = ['charge.refund.updated'];
 
@@ -79,9 +79,6 @@ final class StripeWebhookService
 
     /** Every type this class handles: the required ones and the legacy refund name. The endpoint SVC creates subscribes to all of them. */
     public const array EVENTS = [...self::REQUIRED_EVENTS, ...self::REFUND_LEGACY];
-
-    /** A required event that a subscription to another handled event satisfies. */
-    public const array STAND_INS = ['refund.updated' => 'charge.refund.updated'];
 
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,

@@ -172,7 +172,7 @@ function errorMessage(status: number, payload: unknown): string {
     }
 }
 
-function xsrfHeader(): Record<string, string> {
+export function xsrfHeader(): Record<string, string> {
     const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
 
     return match ? { 'X-XSRF-TOKEN': decodeURIComponent(match[1]) } : {};

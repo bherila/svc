@@ -15,6 +15,22 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
+import { accessibilityFindingsBothThemes } from './layout/a11y.mjs';
+
+const accessibilityFailures = [];
+
+// Every screenshot is also an accessibility check, in both themes: any axe
+// violation at any impact and any UI-consistency error fails the run.
+async function shoot(page, options) {
+    accessibilityFailures.push(
+        ...(await accessibilityFindingsBothThemes(
+            page,
+            path.basename(options.path ?? 'screenshot'),
+        )),
+    );
+
+    return page.screenshot(options);
+}
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const contentOnly = process.argv.includes('--content-only');
@@ -153,6 +169,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         const context = await browser.newContext({
             viewport: { width, height: 1080 },
             extraHTTPHeaders: headers,
+            reducedMotion: 'reduce',
         });
         const page = await context.newPage();
 
@@ -233,7 +250,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     await expect(
                         page.locator('[role="menuitem"][aria-current="page"]'),
                     ).toContainText(activeSection);
-                    await page.screenshot({
+                    await shoot(page, {
                         animations: 'disabled',
                         path: path.join(
                             artifacts,
@@ -355,7 +372,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 await page
                     .getByRole('navigation', { name: 'File pages' })
                     .scrollIntoViewIfNeeded();
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(
                         artifacts,
@@ -379,7 +396,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
 
             expect(layout.nav, `${screen} navbar at ${width}`).toBe(49);
 
-            await page.screenshot({
+            await shoot(page, {
                 animations: 'disabled',
                 path: path.join(artifacts, `${screen}-${width}.png`),
                 fullPage: false,
@@ -392,7 +409,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 const editor = page.getByRole('textbox', { name: 'Content' });
                 await expect(editor).toHaveValue(/Literal synthetic text/);
                 await editor.scrollIntoViewIfNeeded();
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(artifacts, `editor-${width}.png`),
                 });
@@ -402,7 +419,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 await page
                     .getByRole('textbox', { name: 'New comment' })
                     .scrollIntoViewIfNeeded();
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(artifacts, `new-comment-${width}.png`),
                 });
@@ -427,7 +444,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 await expect(
                     page.getByRole('heading', { name: title, exact: true }),
                 ).toBeVisible();
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(artifacts, 'created-topic-1440.png'),
                 });
@@ -445,7 +462,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     page.getByText(body, { exact: true }),
                 ).toBeVisible();
                 await expect(page).toHaveURL(/comment=.*#comment-/);
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(artifacts, 'created-comment-1440.png'),
                 });
@@ -459,6 +476,12 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         }
 
         await context.close();
+    }
+
+    if (accessibilityFailures.length > 0) {
+        throw new Error(
+            `Accessibility findings:\n${accessibilityFailures.join('\n')}`,
+        );
     }
 
     writeFileSync(

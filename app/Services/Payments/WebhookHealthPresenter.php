@@ -61,6 +61,14 @@ final class WebhookHealthPresenter
                 'No webhook endpoint found for this connection',
                 'Stripe has no enabled endpoint at the URL below, so payments, refunds and payouts are not reaching SVC.',
             ],
+            WebhookHealthStatus::EndpointMissing => [
+                'The webhook endpoint SVC was set up with no longer exists',
+                'Stripe no longer has the endpoint SVC created for this connection. Another endpoint at the same address is not a substitute: it signs events with a different secret, so SVC would refuse them. Reconnect to create a new endpoint and store its signing secret.',
+            ],
+            WebhookHealthStatus::EndpointUnverified => [
+                'SVC cannot confirm which webhook endpoint is its own',
+                'This connection has no record of the endpoint it was set up with, so SVC cannot tell whether the signing secret it holds belongs to the endpoint at the address below. Reconnect to create a new endpoint and store its signing secret, so the check can be sure.',
+            ],
             WebhookHealthStatus::ModeMismatch => [
                 'Webhook endpoint is in the other mode than this key',
                 'The endpoint at the URL below is a test-mode endpoint for a live key, or the reverse. Events from the key\'s mode are not reaching SVC.',
@@ -99,6 +107,13 @@ final class WebhookHealthPresenter
                 'label' => 'Create endpoint',
                 'confirm_title' => 'Create the Stripe webhook endpoint?',
                 'confirm_body' => 'SVC will create an endpoint at the URL shown, subscribed to all events it needs. Stripe gives a new signing secret for it, which SVC stores encrypted in place of the old one. No other endpoint is touched. The restricted key needs Webhook Endpoints: Write.',
+                'url' => $url,
+            ],
+            WebhookHealthStatus::EndpointMissing, WebhookHealthStatus::EndpointUnverified => [
+                'action' => StripeWebhookHealthService::RECONNECT,
+                'label' => 'Reconnect webhook',
+                'confirm_title' => 'Create a new Stripe webhook endpoint?',
+                'confirm_body' => 'SVC will create a new endpoint at the URL shown, subscribed to all events it needs, and store its id and its new signing secret (encrypted) together in place of the old ones. No other endpoint is touched: an old endpoint at the same address stays in Stripe, and you can delete it in the Stripe Dashboard. The restricted key needs Webhook Endpoints: Write.',
                 'url' => $url,
             ],
             WebhookHealthStatus::Healthy, WebhookHealthStatus::Disabled, WebhookHealthStatus::ModeMismatch, WebhookHealthStatus::PermissionDenied, WebhookHealthStatus::KeyRejected, WebhookHealthStatus::Unreachable, null => null,

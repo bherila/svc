@@ -51,6 +51,9 @@ final class AgentWorkspaceMiscController extends Controller
             SearchResultKind::Task => $scopes->allows($request, 'tasks:read'),
             SearchResultKind::Note, SearchResultKind::Discussion, SearchResultKind::Comment => $scopes->allows($request, 'collaboration:read'),
             SearchResultKind::History => false,
+            // Palette-only kinds: the tool's contract is deliberately unchanged.
+            SearchResultKind::Expense, SearchResultKind::Agreement, SearchResultKind::Proposal, SearchResultKind::File,
+            SearchResultKind::Time, SearchResultKind::Contact, SearchResultKind::PortalUser => false,
         }));
         $results = $search->forWorkspace(User::query()->findOrFail($principal->id), $workspace, $data['q'], $kinds, $access->isWorkspaceClient($principal, $workspace) ? CollaborationAudience::Portal : CollaborationAudience::Internal);
 

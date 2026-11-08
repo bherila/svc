@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ClientSettings from '@/pages/clients/settings';
+import { chooseOption } from '@/test/select';
 
 const inertia = vi.hoisted(() => ({
     reload: vi.fn(
@@ -202,15 +204,19 @@ describe('project settings API mutations', () => {
     it('confirms a member grant and leaves the recorded role visible on failure', async () => {
         respond(422, { message: 'Synthetic grant refused.' });
         render(<ClientSettings {...props} />);
-        fireEvent.change(screen.getByLabelText('Access for Synthetic Member'), {
-            target: { value: 'viewer' },
-        });
+        await chooseOption(
+            userEvent.setup(),
+            'Access for Synthetic Member',
+            'Viewer',
+        );
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'Synthetic grant refused',
         );
         expect(
-            screen.getByLabelText('Access for Synthetic Member'),
-        ).toHaveValue('none');
+            screen.getByRole('combobox', {
+                name: 'Access for Synthetic Member',
+            }),
+        ).toHaveTextContent('No access');
         expect(request()).toMatchObject({
             url: '/synthetic/project-members',
             method: 'PUT',

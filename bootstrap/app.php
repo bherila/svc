@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureOperationDeployed;
 use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\LogRejectedBearer;
+use App\Http\Middleware\SecurityHeaders;
 use App\Support\Billing\RetryableConflict;
 use Bherila\McpLaravelBridge\Http\GateOperation;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
@@ -40,6 +41,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // First on every API route, ahead of anything that can refuse a
         // bearer: one log line per refusal, with a safe fingerprint (#441).
         $middleware->api(prepend: [LogRejectedBearer::class]);
+        // Browser hardening headers on every response, webhooks and the API included.
+        $middleware->append(SecurityHeaders::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, McpHttpSecurityMiddleware::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectSelfRevokingOAuthResource::class);
