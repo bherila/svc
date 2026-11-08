@@ -1,4 +1,3 @@
-import { useScrollable } from '@/hooks/use-scrollable';
 import { useForm } from '@inertiajs/react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -14,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useScrollable } from '@/hooks/use-scrollable';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';

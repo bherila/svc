@@ -4451,6 +4451,7 @@ try {
                         }),
                     ).toBeVisible();
                 }
+
                 await page
                     .getByRole('button', {
                         name: 'Record payment',
