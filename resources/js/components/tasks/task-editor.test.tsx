@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
 import { TaskEditor } from '@/components/tasks/task-editor';
 import type { EditableTask } from '@/components/tasks/task-editor';
-import { refreshPageProps } from '@/lib/refresh-page-props';
+import { reloadPageProps } from '@/lib/refresh-page-props';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 
 const { submit } = vi.hoisted(() => ({ submit: vi.fn() }));
@@ -13,7 +13,7 @@ vi.mock('@/lib/api', () => ({
     newIdempotencyKey: () => crypto.randomUUID(),
 }));
 vi.mock('@/lib/refresh-page-props', () => ({
-    refreshPageProps: vi.fn(async () => {}),
+    reloadPageProps: vi.fn(),
 }));
 vi.mock('@inertiajs/react', async () => {
     const React = await import('react');
@@ -61,10 +61,10 @@ const task: EditableTask = {
 beforeEach(() => {
     vi.useFakeTimers();
     submit.mockReset();
-    vi.mocked(refreshPageProps).mockReset();
-    vi.mocked(refreshPageProps).mockImplementation(async (options) => {
-        options?.onSuccess?.({ props: { task } } as unknown as Page);
-    });
+    vi.mocked(reloadPageProps).mockReset();
+    vi.mocked(reloadPageProps).mockImplementation(
+        async () => ({ props: { task } }) as unknown as Page,
+    );
     submit.mockResolvedValue({
         ok: true,
         status: 200,
@@ -496,6 +496,25 @@ describe('task editor', () => {
         expect(submit).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps the save unresolved when the refresh returns a different task', async () => {
+        vi.mocked(reloadPageProps).mockResolvedValueOnce({
+            props: { task: { ...task, id: 'synthetic-other-task' } },
+        } as unknown as Page);
+        render(<TaskEditor task={task} />);
+        fireEvent.change(screen.getByLabelText('Title'), {
+            target: { value: 'Edited synthetic title' },
+        });
+        await act(async () =>
+            fireEvent.click(screen.getByRole('button', { name: 'Save task' })),
+        );
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'saved, but current tasks could not be refreshed',
+        );
+        expect(screen.getByLabelText('Title')).toHaveValue(
+            'Edited synthetic title',
+        );
+    });
+
     it('keeps a task creation draft and receipt key after an uncertain failure', async () => {
         submit.mockResolvedValueOnce({
             ok: false,
@@ -538,7 +557,7 @@ describe('task editor', () => {
     });
 
     it('retries only the authoritative refresh after a confirmed creation', async () => {
-        vi.mocked(refreshPageProps).mockRejectedValueOnce(
+        vi.mocked(reloadPageProps).mockRejectedValueOnce(
             new Error('Synthetic refresh failure'),
         );
         render(
@@ -570,7 +589,7 @@ describe('task editor', () => {
             );
         });
         expect(submit).toHaveBeenCalledTimes(1);
-        expect(refreshPageProps).toHaveBeenCalledTimes(2);
+        expect(reloadPageProps).toHaveBeenCalledTimes(2);
         expect(screen.getByLabelText('Title')).toHaveValue('');
     });
 
@@ -594,7 +613,7 @@ describe('task editor', () => {
                 screen.getByRole('button', { name: 'Create task' }),
             );
         });
-        expect(refreshPageProps).toHaveBeenCalledWith(
+        expect(reloadPageProps).toHaveBeenCalledWith(
             expect.objectContaining({
                 only: expect.arrayContaining([
                     'tasks',
@@ -749,9 +768,9 @@ it('pairs an authoritative version with all refreshed fields after a replay race
         fireEvent.click(screen.getByRole('button', { name: 'Save task' })),
     );
     const original = submit.mock.calls[0];
-    vi.mocked(refreshPageProps).mockImplementationOnce(async (options) => {
-        options?.onSuccess?.({ props: { task: fresh } } as unknown as Page);
-    });
+    vi.mocked(reloadPageProps).mockImplementationOnce(
+        async () => ({ props: { task: fresh } }) as unknown as Page,
+    );
     await act(async () =>
         fireEvent.click(
             screen.getByRole('button', {

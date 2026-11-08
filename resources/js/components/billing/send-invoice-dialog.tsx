@@ -17,7 +17,7 @@ import { useScrollable } from '@/hooks/use-scrollable';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
-import { refreshPageProps } from '@/lib/refresh-page-props';
+import { reloadPageProps } from '@/lib/refresh-page-props';
 import type { InvoiceEmailContext } from '@/types/invoice-email';
 
 /**
@@ -278,37 +278,27 @@ function InvoiceCompose({
                 }
             }
 
-            let observed: ComposeContext | null = null;
-            await refreshPageProps({
-                requireSuccess: true,
-                onSuccess: (page) => {
-                    const values = page.props;
-                    const invoice = values.invoice as
-                        { id?: string } | undefined;
-
-                    if (
-                        invoice?.id !== current.invoiceId ||
-                        typeof values.version !== 'string'
-                    ) {
-                        return;
-                    }
-
-                    const actions = values.actions as
-                        { send?: string | null } | undefined;
-                    observed = {
-                        invoiceId: current.invoiceId,
-                        version: values.version,
-                        href:
-                            typeof actions?.send === 'string'
-                                ? actions.send
-                                : null,
-                        email:
-                            (values.email as
-                                InvoiceEmailContext | null | undefined) ??
-                            baseline.email,
-                    };
-                },
-            });
+            const page = await reloadPageProps();
+            const values = page.props;
+            const invoice = values.invoice as { id?: string } | undefined;
+            const actions = values.actions as
+                { send?: string | null } | undefined;
+            const observed: ComposeContext | null =
+                invoice?.id === current.invoiceId &&
+                typeof values.version === 'string'
+                    ? {
+                          invoiceId: current.invoiceId,
+                          version: values.version,
+                          href:
+                              typeof actions?.send === 'string'
+                                  ? actions.send
+                                  : null,
+                          email:
+                              (values.email as
+                                  InvoiceEmailContext | null | undefined) ??
+                              baseline.email,
+                      }
+                    : null;
 
             if (observed === null) {
                 throw new Error('The current invoice could not be verified.');
