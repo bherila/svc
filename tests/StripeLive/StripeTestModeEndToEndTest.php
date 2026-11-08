@@ -30,7 +30,7 @@ final class StripeTestModeEndToEndTest extends StripeLiveTestCase
         $this->assertSame($saved->stripe_payment_method_id, $customer->invoice_settings->default_payment_method);
         $this->assertSame('1', $customer->metadata['svc_e2e']);
 
-        $this->replayStripeEvents([$customerId, $saved->stripe_payment_method_id], ['setup_intent.succeeded', 'payment_method.attached']);
+        $this->replayStripeEvents([$customerId, $saved->stripe_payment_method_id], ['setup_intent.succeeded', 'payment_method.attached', 'customer.updated']);
 
         // Stripe's own events are the second delivery of what the portal already recorded.
         $this->assertSame(1, ClientStripePaymentMethod::query()->where('workspace_id', $workspace->id)->count());

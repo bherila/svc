@@ -59,8 +59,17 @@ jobs:
         # The secret is exposed to this step and the test step only, never to third-party actions.
         env:
           STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          # Set the repository variable STRIPE_TEST_SUITE_ENABLED=true once the secret is configured.
+          # From then on a trusted run (push to main, nightly, manual) without the key fails instead of
+          # silently skipping, so the suite cannot quietly stop running. Pull requests still skip.
+          SUITE_ENABLED: ${{ vars.STRIPE_TEST_SUITE_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ -z "$STRIPE_TEST_SECRET_KEY" ]; then
+            if [ "$SUITE_ENABLED" = "true" ] && [ "$EVENT_NAME" != "pull_request" ]; then
+              echo "::error title=Stripe test mode cannot run::STRIPE_TEST_SUITE_ENABLED is true but STRIPE_TEST_SECRET_KEY is not available to this $EVENT_NAME run. Restore the secret or unset the variable."
+              exit 1
+            fi
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Stripe test mode skipped::STRIPE_TEST_SECRET_KEY is not available to this run (fork pull request, Dependabot, or the secret is not configured)."
             {
@@ -92,12 +101,6 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Authorize private MCP bridge dependency
-        if: ${{ steps.key.outputs.present == 'true' }}
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
-
       # Cache downloaded archives only, never Composer auth or private VCS clones.
       - name: Cache Composer downloads
         if: ${{ steps.key.outputs.present == 'true' }}
@@ -106,7 +109,8 @@ jobs:
           path: ~/.cache/composer/files
           key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
 
-      # No --prefer-dist: the private bridge dependency is authorised by the SSH agent above.
+      # bherila/mcp-laravel-bridge is public and installs from source over HTTPS: no SSH key is
+      # needed, so a fork with only its own Stripe test key can run this workflow.
       - name: Install Composer dependencies
         if: ${{ steps.key.outputs.present == 'true' }}
         run: |

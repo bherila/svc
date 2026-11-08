@@ -20,6 +20,7 @@ use RuntimeException;
 use Stripe\Stripe;
 use Stripe\StripeClient;
 use Tests\Concerns\BuildsAutopay;
+use Tests\StripeLive\Support\DisposableDatabase;
 use Tests\StripeLive\Support\RecordedEvent;
 use Tests\StripeLive\Support\StripeEventFeed;
 use Tests\StripeLive\Support\StripeTestKeyGate;
@@ -54,6 +55,8 @@ abstract class StripeLiveTestCase extends TestCase
         'setup_intent.succeeded',
         'payment_method.attached',
         'payment_method.detached',
+        // The default method changes on customer.updated (invoice_settings).
+        'customer.updated',
     ];
 
     protected string $runId;
@@ -87,6 +90,17 @@ abstract class StripeLiveTestCase extends TestCase
         if (! Route::has('svc.billing.stripe.webhook')) {
             require base_path('routes/billing.php');
         }
+    }
+
+    /**
+     * RefreshDatabase runs migrate:fresh right after this. Refuse anything but
+     * SQLite in memory, judged on the configuration actually resolved.
+     */
+    protected function beforeRefreshingDatabase(): void
+    {
+        $name = (string) config('database.default');
+        $connection = config('database.connections.'.$name);
+        DisposableDatabase::assertDisposable($name, is_array($connection) ? $connection : null, $this->app->configurationIsCached());
     }
 
     protected function tearDown(): void
@@ -248,14 +262,25 @@ abstract class StripeLiveTestCase extends TestCase
     {
         $events = (new StripeEventFeed($this->stripe))->await($this->runStart, $ids, $expected, self::REPLAYABLE);
         foreach ($events as $event) {
-            $signature = StripeWebhookSignature::header($event->json, $this->webhookSecret, time());
-            $response = $this->call('POST', '/api/webhooks/stripe', [], [], [], [
-                'CONTENT_TYPE' => 'application/json',
-                'HTTP_STRIPE_SIGNATURE' => $signature,
-            ], $event->json);
-            $this->assertSame(200, $response->getStatusCode(), 'SVC refused '.$event->type.' '.$event->id.': '.$response->getContent());
+            $this->deliver($event, 'in order');
+        }
+        // Stripe retries and does not promise order: deliver everything again,
+        // newest first. Each must be accepted, and the caller's assertions about
+        // the final state then cover duplicate and reordered delivery as well.
+        foreach (array_reverse($events) as $event) {
+            $this->deliver($event, 'again, newest first');
         }
 
         return $events;
+    }
+
+    private function deliver(RecordedEvent $event, string $pass): void
+    {
+        $signature = StripeWebhookSignature::header($event->json, $this->webhookSecret, time());
+        $response = $this->call('POST', '/api/webhooks/stripe', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_STRIPE_SIGNATURE' => $signature,
+        ], $event->json);
+        $this->assertSame(200, $response->getStatusCode(), 'SVC refused '.$event->type.' '.$event->id.' ('.$pass.'): '.$response->getContent());
     }
 }

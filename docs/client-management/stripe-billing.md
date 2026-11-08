@@ -264,6 +264,12 @@ STRIPE_TEST_SECRET_KEY=rk_test_... php artisan test --configuration=phpunit.stri
   advisory (not part of the required `ci` check) and succeeds with a notice when the secret
   is unavailable.
 
+**Database safety.** The suite refreshes its database (`migrate:fresh`), so it only runs on SQLite in memory: `phpunit.stripe-live.xml` forces every environment value it sets, and the suite refuses to start if the connection it actually resolved is anything else, or if configuration is cached (`php artisan config:clear` first). Nothing is dropped when it refuses.
+
+**Webhook replay.** Each scenario's events, including `customer.updated`, are delivered in order and then all again newest first, because Stripe retries and does not guarantee order; the assertions about the final state hold after both passes. This is local handler integration: delivery from Stripe to a deployed endpoint is not covered here.
+
+**CI.** Add the repository secret `STRIPE_TEST_SECRET_KEY` (a restricted key from a dedicated Stripe sandbox for CI), then set the repository variable `STRIPE_TEST_SUITE_ENABLED=true`. After that, a push to main, the nightly run or a manual run without the key fails instead of skipping; pull requests from forks still skip. No SSH key is needed: the MCP bridge dependency is public.
+
 ## Replay Guidance
 
 Webhook bodies are deliberately not stored. `client_stripe_events` retains the Stripe event ID, type, object ID, payload hash, status, and a bounded error summary. To replay an event safely:
