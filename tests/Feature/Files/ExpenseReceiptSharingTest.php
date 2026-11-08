@@ -58,7 +58,7 @@ final class ExpenseReceiptSharingTest extends TestCase
         $manager = $this->syntheticMember($workspace, 'manager', 'owner');
         $company = $this->syntheticCompany($workspace, 'receipt sharing');
         $expense = $this->recordSyntheticExpense($workspace, $company);
-        $receipt = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('synthetic-receipt.txt', 'Synthetic receipt content'), $manager);
+        $receipt = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('synthetic-receipt.pdf', 'Synthetic receipt content'), $manager);
 
         return [$workspace, $company, $expense, $manager, $receipt];
     }

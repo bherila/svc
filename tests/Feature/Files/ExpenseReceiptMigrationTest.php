@@ -55,7 +55,7 @@ class ExpenseReceiptMigrationTest extends TestCase
         $this->assertSame('existing.txt', $attachment->fresh()->original_filename);
         Storage::disk('svc_files')->assertExists($attachment->object_key);
         $expense = $this->recordSyntheticExpense($workspace, $company);
-        $receipt = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('retained.txt', 'retained'), $manager);
+        $receipt = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('retained.pdf', 'retained'), $manager);
         try {
             $migration->down();
             $this->fail('Rollback must refuse to remove a retained receipt type.');

@@ -447,7 +447,7 @@ final class AttachmentReaderTest extends TestCase
             $this->enablePrivateDefault();
         }
         config(['svc.attachments.private_uploads_enabled' => $cachedPrivateCheck]);
-        $file = UploadedFile::fake()->createWithContent('synthetic-agent.txt', 'Synthetic agent bytes');
+        $file = UploadedFile::fake()->createWithContent('synthetic-agent.pdf', 'Synthetic agent bytes');
         $expense = $this->recordSyntheticExpense($this->workspace, $this->company);
         foreach (['generic', 'expense'] as $kind) {
             try {
@@ -477,7 +477,7 @@ final class AttachmentReaderTest extends TestCase
     {
         $expense = $this->recordSyntheticExpense($this->workspace, $this->company);
         $this->grant($this->owner, $this->project);
-        $file = UploadedFile::fake()->createWithContent('synthetic-dual.txt', 'Synthetic dual bytes');
+        $file = UploadedFile::fake()->createWithContent('synthetic-dual.pdf', 'Synthetic dual bytes');
         foreach (['generic', 'expense'] as $kind) {
             try {
                 if ($kind === 'generic') {
@@ -501,7 +501,7 @@ final class AttachmentReaderTest extends TestCase
     public function test_prepared_publication_and_repair_preserve_the_stored_choice_across_default_changes(): void
     {
         $storage = app(AttachmentStorageService::class);
-        $file = UploadedFile::fake()->createWithContent('synthetic-fallback.txt', 'Synthetic fallback bytes');
+        $file = UploadedFile::fake()->createWithContent('synthetic-fallback.pdf', 'Synthetic fallback bytes');
         $legacy = $storage->store($this->workspace, $this->project, $file, $this->owner);
         $this->enablePrivateDefault();
         $prepared = $storage->prepareForPublication($this->workspace, $this->project, $file, $this->owner);
