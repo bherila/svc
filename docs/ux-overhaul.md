@@ -728,6 +728,130 @@ three can't disagree.
   the in-app glossary (section 8). Parity tests check that REST, MCP and the
   dashboard return the same figures for the same fixture.
 
+## 14. Security hardening
+
+A conservative pass over transport headers, rate limits, cookies, uploads and
+CI. Nothing here changes how sign-in, billing or the payment processors behave.
+Every decision is recorded so a later change knows what it is undoing.
+
+### Headers (`App\Http\Middleware\SecurityHeaders`)
+
+- One global middleware, so web pages, the portal, the REST and MCP API, the
+  processor webhooks and error pages all carry the same headers. A header a
+  controller already set is never overwritten.
+- Enforced: `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, `X-Frame-Options: DENY` and a minimal
+  `Permissions-Policy` (camera, microphone, geolocation, USB and FLoC off).
+  Nothing in SVC is framed by another site, and SVC frames only Stripe's own
+  payment frames, so `DENY` has no exception. `frame-ancestors` is not put in the
+  CSP: a report-only policy cannot enforce it, so `X-Frame-Options` carries it.
+- `Strict-Transport-Security: max-age=31536000` only when the request is HTTPS.
+  Decided: no `preload` (a preload listing is close to irreversible) and no
+  `includeSubDomains` (other subdomains of the host are not this application's
+  to commit). `SVC_HSTS_MAX_AGE=0` turns it off.
+- **CSP is report-only and nothing enforces it.** There is deliberately no setting
+  that enforces it; enforcing is a later, separate decision once reports are
+  clean. Sent on HTML responses only. The allowlist was built from the code:
+  Stripe.js (`js.stripe.com`, `resources/js/lib/stripe-js.ts`), Stripe frames
+  (`js.stripe.com`, `hooks.stripe.com`), `api.stripe.com`, Stripe images, Bunny
+  Fonts (named in `vite.config.ts`), the identity provider's origin in
+  `form-action` (sign-out is a form post that redirects there), and the Vite dev
+  server (script, style, font, image, `ws:`) only while `public/hot` exists.
+  Square needs nothing: it is reached by redirect to its hosted page and by
+  server-side calls, never by a Square script, frame or browser connection. If a
+  Square web payments SDK is ever added, its origins join this list first.
+- `script-src` and `style-src` keep `'unsafe-inline'`: the appearance bootstrap in
+  `app.blade.php` is an inline script and component libraries write style
+  attributes. Enforcing needs a nonce pass first; that is why it stays report-only.
+- No `report-uri` unless `SVC_CSP_REPORT_URI` is set (an https URL or an absolute
+  path, validated). There is no collector endpoint in SVC, and adding one that
+  stores browser-supplied JSON is a product decision, so reports go to the
+  browser console until one is chosen.
+
+### Rate limits
+
+Inventory of unauthenticated and portal routes, and what was done:
+
+| Route(s) | Before | Now |
+| --- | --- | --- |
+| `/login`, `/oauth/redirect`, `/oauth/callback`, `POST /logout` | none | `sign-in`, 60/min per address |
+| every `portal/*` route (including portal file downloads) | none | `portal`, 300/min per person |
+| every `portal/*` write (POST, DELETE) | none | plus `portal-writes`, 60/min per person |
+| `POST .../invoices/{id}/stripe-payment-intent` | none | `payment-intents`, 30/min per person |
+| shared project invitation invite/accept/decline | none | `invitations`, 30/min per person |
+| `/oauth/token`, `/oauth/register`, `/oauth/authorize` | package/Passport throttle; register 10 per 60 min | unchanged |
+| REST (`api/v1/*`) and MCP (`api/v1/mcp`) | `throttle:60,1` | unchanged |
+| `api/webhooks/brevo` | `brevo-webhooks`, 600/min | unchanged |
+| `api/webhooks/stripe*`, `api/webhooks/square*` | none | **none, on purpose** |
+| `/search`, `/palette*`, MCP credential settings | already throttled | unchanged |
+| `POST /application-access`, `/.well-known/*`, `/up`, `/sanctum/csrf-cookie` | none | none (see below) |
+
+- Every ceiling is several times what a person doing ordinary work reaches, and
+  is tunable with `SVC_RATE_LIMIT_*` (`config/svc.php` `rate_limits`); a value
+  that is not a positive number falls back to the default.
+- Authenticated limiters key on the person, not the address, so an office behind
+  one address is not one bucket. Sign-in keys on the address because there is no
+  person yet. Behind the CDN the address is the real client's, resolved by the
+  auth package's trusted-proxy handling.
+- Stripe and Square webhooks are signature-verified and retried by the
+  processor; a 429 would delay or drop a genuine delivery, so they are never
+  throttled by the application. A test pins that.
+- There is no public pay link and no magic-link endpoint in this codebase: every
+  payment and portal route sits behind `auth`. Portal invitations are applied at
+  sign-in, which the `sign-in` limiter covers.
+- Left alone: `/application-access` is the identity provider's signed (JWT,
+  nonce) call, package-owned, and answers 404 until enabled; wrapping it risks
+  dropping provider calls. The `.well-known` documents are static and cheap.
+
+### Cookies
+
+`config/session.php` `secure` was unset, so the cookie was Secure only when the
+request itself looked HTTPS. It now defaults to true when `APP_URL` is https and
+can still be set explicitly (`SESSION_SECURE_COOKIE=false` for a plain-http
+checkout). `http_only` already defaulted to true and `same_site` to `lax`; both
+are pinned by tests. The session is stored in the database and is not encrypted
+at rest in the cookie (the cookie holds only an id).
+
+### Uploads
+
+Audit of every attachment path (they all end in `AttachmentStorageService`):
+
+- Fine already: 50 MB ceiling checked twice (validator `max:51200` and again
+  while streaming into staging); the stored type is sniffed from the bytes
+  (`getMimeType()`), never taken from the extension or the client; the object
+  key is a UUID path, so a hostile filename never reaches the disk; filenames are
+  encrypted at rest; downloads are authorised per audience and served as
+  `attachment`.
+- Fixed: downloads now send `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: default-src 'none'; sandbox`; a type a browser would
+  run (HTML, XHTML, SVG, XML, JavaScript) is served as `application/octet-stream`
+  so a client that ignores `attachment` cannot execute an upload; the served
+  filename drops control characters and bidirectional overrides
+  (`evil\u202Efdp.exe`) and is capped at 255 characters.
+- Not changed, a product decision: there is no type allowlist. Any file type up to
+  50 MB is accepted. Restricting it would reject files people attach today.
+- Not changed: an SVG receipt is now served as opaque bytes, so it no longer
+  previews as an image from the download URL; it still downloads.
+
+### CI
+
+- `composer audit --locked` and `pnpm audit --prod` run in a `dependency-audit`
+  job that is **not** a need of `ci`, so a newly published advisory cannot block
+  unrelated work. State when added: `pnpm audit --prod` clean; `composer audit`
+  reports 13 advisories in seven Symfony 8.1.x components (`http-foundation`,
+  `http-kernel`, `routing`, `serializer`, `yaml`, `http-client`, `filesystem`), all
+  fixed by 8.1.11. Not bumped here: a lock-file change is its own PR.
+- `MCP_BRIDGE_DEPLOY_KEY` and every `webfactory/ssh-agent` step are removed from
+  `tests.yml`, `pilot-deploy.yml`, `mcp-visibility-candidate.yml` and
+  `cloudflare-ranges.yml`. `bherila/mcp-laravel-bridge` is public and
+  `composer.lock` already references it by https. The SSH used to deploy to web1
+  is untouched, and `stripe-test-mode.yml` is left to its own PR.
+- `clean-install` installs Composer and pnpm dependencies with no secrets,
+  runs `php artisan about`, the workflow unit tests and `tsc`, and is a need of
+  `ci`: it is the proof that an outside contributor can work on SVC.
+  `DependencyAccessWorkflowTest` fails if a bridge key, an ssh-agent step or a
+  `secrets.` reference comes back.
+
 ## Delivery slices (stacked commits, one PR)
 
 0. **Help scaffolding** (section 8): the `docs/help` loader, glossary,

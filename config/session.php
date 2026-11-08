@@ -169,7 +169,10 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    // Unset follows the application's own address: an https APP_URL (every deployment) makes
+    // the session and XSRF cookies Secure, so a downgraded request can never carry them. Set
+    // SESSION_SECURE_COOKIE=false to opt a plain-http local checkout out explicitly.
+    'secure' => env('SESSION_SECURE_COOKIE', str_starts_with((string) env('APP_URL', ''), 'https://')),
 
     /*
     |--------------------------------------------------------------------------
