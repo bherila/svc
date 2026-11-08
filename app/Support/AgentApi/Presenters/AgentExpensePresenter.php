@@ -38,14 +38,18 @@ final class AgentExpensePresenter
 
     /**
      * The client's decision on the expense and any dispute's settlement
-     * (docs/ux-overhaul.md 7b″).
+     * (docs/ux-overhaul.md 7b″), from the invoice {@see invoiceRelations()}
+     * loaded, when it was.
      *
      * @return array<string, mixed>
      */
     public static function clientReview(ClientExpense $expense): array
     {
-        $expense->loadMissing(self::invoiceRelations((int) $expense->workspace_id));
-        $invoice = $expense->invoiceLine?->invoice;
+        // Read only what the caller loaded: the agent read service loads the
+        // invoice for everyone it serves, the web page for managers only, and
+        // a reader without it sees no charge and no payment rather than a
+        // query it was not allowed.
+        $invoice = $expense->relationLoaded('invoiceLine') && $expense->invoiceLine?->relationLoaded('invoice') ? $expense->invoiceLine->invoice : null;
         $status = $invoice instanceof ClientInvoice && (int) $invoice->workspace_id === (int) $expense->workspace_id ? (string) $invoice->status : null;
         $settlement = DisputeSettlement::tryFrom((string) $expense->client_dispute_settlement);
 

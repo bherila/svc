@@ -11,6 +11,7 @@ use Tests\Feature\AgentApi\AgentInvoiceOperationsParityTest;
 use Tests\Feature\AgentApi\AgentReadApiTest;
 use Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest;
 use Tests\Feature\Approval\ClientApprovalTest;
+use Tests\Feature\Approval\DisputeSettlementTest;
 use Tests\Feature\Billing\AgreementBillingRateResolverTest;
 use Tests\Feature\Billing\AllocationServiceTest;
 use Tests\Feature\Billing\BillingWorkflowTest;
@@ -250,6 +251,10 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_time_entries.client_disputed_by_user_id => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
         'client_time_entries.client_dispute_note => covered_by:Tests\Feature\Billing\AllocationServiceTest::test_fragments_with_divergent_preserved_fields_do_not_recombine',
         'client_time_entries.client_dispute_note => covered_by:Tests\Feature\Approval\ClientApprovalTest::test_a_dispute_without_a_note_is_recorded_too',
+        'client_time_entries.client_dispute_reply => covered_by:Tests\Feature\Approval\DisputeSettlementTest::test_a_new_dispute_clears_the_previous_reply',
+        'client_time_entries.client_dispute_settled_at => covered_by:Tests\Feature\Approval\DisputeSettlementTest::test_a_written_off_hour_is_never_billed_and_stays_read_only_before_the_client',
+        'client_time_entries.client_dispute_settled_by_user_id => covered_by:Tests\Feature\Approval\DisputeSettlementTest::test_a_new_dispute_clears_the_previous_reply',
+        'client_time_entries.client_dispute_settlement => covered_by:Tests\Feature\Approval\DisputeSettlementTest::test_a_new_dispute_clears_the_previous_reply',
         'client_time_entries.submitted_at => covered_by:Tests\Feature\Submission\SubmissionTest::test_an_unsubmitted_draft_does_not_reach_the_reviewer',
         'client_time_entries.submitted_by_user_id => covered_by:Tests\Feature\Submission\SubmissionTest::test_withdrawing_a_submission_removes_the_row_from_the_queue',
         'client_time_entries.billing_rate_amount => covered_by:Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest::test_flat_hourly_and_direct_entries_approve_without_an_ordinary_agreement_rate',
@@ -1161,6 +1166,26 @@ final class NullSemanticsRegistryTest extends TestCase
                     'covered_by' => ClientApprovalTest::class,
                     'method' => 'test_a_dispute_without_a_note_is_recorded_too',
                 ],
+            ],
+            // A dispute's settlement (docs/ux-overhaul.md 7b″): null until the
+            // provider settles one, and cleared again by the next dispute. The
+            // portal and `client_review` print no reply and no settlement for
+            // a null; the 30-day write-off window reads the settled time.
+            'client_dispute_settlement' => [
+                'covered_by' => DisputeSettlementTest::class,
+                'method' => 'test_a_new_dispute_clears_the_previous_reply',
+            ],
+            'client_dispute_reply' => [
+                'covered_by' => DisputeSettlementTest::class,
+                'method' => 'test_a_new_dispute_clears_the_previous_reply',
+            ],
+            'client_dispute_settled_at' => [
+                'covered_by' => DisputeSettlementTest::class,
+                'method' => 'test_a_written_off_hour_is_never_billed_and_stays_read_only_before_the_client',
+            ],
+            'client_dispute_settled_by_user_id' => [
+                'covered_by' => DisputeSettlementTest::class,
+                'method' => 'test_a_new_dispute_clears_the_previous_reply',
             ],
             // Both once cited a fixture that nulls the pair, while production
             // refuses on `amount === null || currency === ''`. Because that is

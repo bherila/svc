@@ -181,6 +181,8 @@ final class DisputeSettlementTest extends TestCase
         $this->assertNotNull($fresh->client_disputed_at);
         $this->assertNull($fresh->client_dispute_settlement);
         $this->assertNull($fresh->client_dispute_reply);
+        $this->assertNull($fresh->client_dispute_settled_at);
+        $this->assertNull($fresh->client_dispute_settled_by_user_id);
     }
 
     // --- writing off ----------------------------------------------------
