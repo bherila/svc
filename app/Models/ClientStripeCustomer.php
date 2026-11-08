@@ -13,11 +13,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata',
-    'default_payment_method_event_created_at', 'default_payment_method_event_id',
+    'default_payment_method_revision',
 ])]
 #[Hidden([
     'id', 'workspace_id', 'client_company_id', 'stripe_customer_id', 'metadata',
-    'default_payment_method_event_created_at', 'default_payment_method_event_id',
+    'default_payment_method_revision',
 ])]
 class ClientStripeCustomer extends Model implements WorkspaceOwned
 {
@@ -27,7 +27,7 @@ class ClientStripeCustomer extends Model implements WorkspaceOwned
     {
         return [
             'metadata' => 'array',
-            'default_payment_method_event_created_at' => 'integer',
+            'default_payment_method_revision' => 'integer',
         ];
     }
 

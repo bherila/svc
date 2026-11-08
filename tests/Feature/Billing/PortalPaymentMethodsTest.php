@@ -238,7 +238,7 @@ final class PortalPaymentMethodsTest extends TestCase
         $this->actingAs($contact)->postJson(route('portal.payment-methods.confirm', $company), ['setup_intent' => 'seti_synthetic_ok'])->assertOk();
         // Stripe's own events for the same change arrive afterwards.
         app(StripePaymentMethodService::class)->attach($this->stripeMethods['pm_synthetic_new'], 'evt_synthetic_attached', 1_900_000_005);
-        app(StripePaymentMethodService::class)->changeDefault('cus_synthetic_autopay', 'pm_synthetic_new', 'evt_synthetic_customer', 1_900_000_006);
+        app(StripePaymentMethodService::class)->reconcileDefault('cus_synthetic_autopay', 'pm_synthetic_new', app(StripePaymentMethodService::class)->defaultBasis('cus_synthetic_autopay') ?? throw new \LogicException('Unknown customer.'), 'evt_synthetic_customer');
 
         $this->assertSame(1, ClientStripePaymentMethod::query()->count());
         $this->assertSame(1, ClientStripePaymentMethod::query()->where('is_default', true)->count());
@@ -308,7 +308,7 @@ final class PortalPaymentMethodsTest extends TestCase
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'payment_method.default_changed')->where('actor_user_id', $contact->id)->count());
 
         // Stripe's own event for it, and a repeat of the click, change nothing more.
-        app(StripePaymentMethodService::class)->changeDefault('cus_synthetic_autopay', 'pm_synthetic_second', 'evt_synthetic_default', 1_900_000_001);
+        app(StripePaymentMethodService::class)->reconcileDefault('cus_synthetic_autopay', 'pm_synthetic_second', app(StripePaymentMethodService::class)->defaultBasis('cus_synthetic_autopay') ?? throw new \LogicException('Unknown customer.'), 'evt_synthetic_default');
         $this->actingAs($contact)->post(route('portal.payment-methods.default', [$company, $second->public_id]))->assertRedirect();
         $this->assertSame(1, ClientStripePaymentMethod::query()->where('is_default', true)->count());
         $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'payment_method.default_changed')->count());
