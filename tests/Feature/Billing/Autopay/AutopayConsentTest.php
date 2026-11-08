@@ -276,7 +276,7 @@ final class AutopayConsentTest extends TestCase
         [$workspace, , $company, $contact] = $this->autopayFixture();
         $this->turnAutopayOn($workspace, $company, $contact);
 
-        DB::transaction(fn () => app(StripePaymentMethodService::class)->changeDefault('cus_synthetic_autopay', null, 'evt_synthetic_cleared', 300));
+        DB::transaction(fn () => app(StripePaymentMethodService::class)->reconcileDefault('cus_synthetic_autopay', null, app(StripePaymentMethodService::class)->defaultBasis('cus_synthetic_autopay') ?? throw new \LogicException('Unknown customer.'), 'evt_synthetic_cleared'));
 
         $this->assertOff($company);
     }
@@ -288,7 +288,7 @@ final class AutopayConsentTest extends TestCase
         $customer = ClientStripeCustomer::query()->sole();
         $this->autopayMethod($workspace, $company, $customer, 'pm_synthetic_second', false, '1111');
 
-        DB::transaction(fn () => app(StripePaymentMethodService::class)->changeDefault('cus_synthetic_autopay', 'pm_synthetic_second', 'evt_synthetic_second', 300));
+        DB::transaction(fn () => app(StripePaymentMethodService::class)->reconcileDefault('cus_synthetic_autopay', 'pm_synthetic_second', app(StripePaymentMethodService::class)->defaultBasis('cus_synthetic_autopay') ?? throw new \LogicException('Unknown customer.'), 'evt_synthetic_second'));
 
         $this->assertNotNull($company->fresh()->autopay_enabled_at);
         $this->assertSame('pm_synthetic_second', app(AutopayReader::class)->defaultMethod($workspace->id, $company->id)?->stripe_payment_method_id);

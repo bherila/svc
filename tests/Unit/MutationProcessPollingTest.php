@@ -8,6 +8,10 @@ use Infection\Process\Runner\ParallelProcessRunner;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
+/**
+ * Guards upstream Infection's polling order (status refresh before the deadline
+ * check). There is no local patch: a regression in a future release fails here.
+ */
 final class MutationProcessPollingTest extends TestCase
 {
     public function test_slow_generation_does_not_turn_an_exited_child_into_a_timeout(): void

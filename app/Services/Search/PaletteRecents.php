@@ -40,7 +40,11 @@ final class PaletteRecents
 
         $resolved = $this->search->forRecents($user, [$workspacePublicId => [$kind->value => [$recordPublicId]]]);
 
-        if ($resolved === []) {
+        // The very record asked for, not merely some result of its kind.
+        $exact = array_filter($resolved, fn (SearchResult $result): bool => $result->kind === $kind
+            && $result->workspaceId === $workspacePublicId && $result->id === $recordPublicId);
+
+        if ($exact === []) {
             return false;
         }
 

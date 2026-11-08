@@ -94,15 +94,13 @@ that a test killed a behavioral change.
 
 ## Advisory policy
 
-The Composer post-autoload hook applies a narrow process-polling compatibility
-fix to the development mutation runner. A child can finish while the runner
-generates the next mutations; checking its deadline before refreshing its
-cached status incorrectly reports that completed child as timed out. The fix
-refreshes status first and preserves the deadlines of children still running.
-`MutationProcessPollingTest` reproduces slow generation and checks both cases.
-The hook is idempotent, skips production installs without the runner, and fails
-if the dependency's polling code changes. Remove it when that correction is
-available in the dependency.
+Infection 0.35.9 refreshes a child's status before checking its deadline, so a
+child that exits while the runner generates the next mutations is no longer
+reported as timed out. The former Composer post-autoload compatibility patch is
+retired. `MutationProcessPollingTest` now runs against the upstream
+`ParallelProcessRunner` and fails if a future release regresses: an exited child
+must be reaped without a timeout, and a child still running beyond its deadline
+must be marked as timed out.
 
 A **measurement gate** (`scripts/mutation-gate.php`, run by both the Composer
 script and the hosted job) fails when more than half of the generated mutants

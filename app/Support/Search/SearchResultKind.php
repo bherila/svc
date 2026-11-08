@@ -100,13 +100,12 @@ enum SearchResultKind: string
      *
      * A recent is resolved again through the same authorized query that search
      * uses, so a kind belongs here only if that query can be asked for a set of
-     * public ids. Time entries, contacts and portal users have no page of their
-     * own, and notes, comments and history are resolved by a different service.
+     * public ids. Time entries have no page of their own, and notes, comments and history are resolved by a different service.
      *
      * @return list<self>
      */
     public static function recentable(): array
     {
-        return [self::Client, self::Project, self::Invoice, self::Task, self::Expense, self::Agreement, self::Proposal, self::File];
+        return [self::Client, self::Project, self::Invoice, self::Task, self::Expense, self::Agreement, self::Proposal, self::File, self::Contact, self::PortalUser];
     }
 }
