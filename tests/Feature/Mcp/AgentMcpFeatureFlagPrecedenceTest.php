@@ -35,7 +35,7 @@ final class AgentMcpFeatureFlagPrecedenceTest extends TestCase
         foreach ($uploads as $name) {
             $this->assertNotContains($name, $names);
             $result = $this->callTool($session, $name, ['workspace_id' => $workspace->public_id]);
-            $this->assertSame(-32601, $result['error']['code']);
+            $this->assertSame(-32602, $result['error']['code']);
         }
     }
 
@@ -67,8 +67,13 @@ final class AgentMcpFeatureFlagPrecedenceTest extends TestCase
         } else {
             $this->assertSame(['name' => 'projects.list', 'reason' => 'deployment_disabled'], $withheld['projects.list']);
             $refused = $this->callTool($session, 'projects.list', ['workspace_id' => '00000000-0000-4000-8000-000000000001']);
-            $this->assertSame(-32601, $refused['error']['code']);
+            $this->assertSame(-32602, $refused['error']['code']);
             $this->assertArrayNotHasKey('result', $refused);
+            // A withheld tool is answered exactly like a name nobody ever registered.
+            $unknown = $this->callTool($session, 'no.such.tool', ['workspace_id' => '00000000-0000-4000-8000-000000000001']);
+            $this->assertSame($unknown['error']['code'], $refused['error']['code']);
+            $this->assertSame($unknown['error']['message'], str_replace('projects.list', 'no.such.tool', $refused['error']['message']));
+            $this->assertSame(array_keys($unknown), array_keys($refused));
         }
         // context.get remains callable when its own read group is enabled.
         if (($flags['mcp.read'] ?? true) === true) {

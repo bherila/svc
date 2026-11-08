@@ -4,6 +4,7 @@ namespace Tests\Feature\Search;
 
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
+use App\Models\ClientContact;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\PaletteRecent;
@@ -12,6 +13,8 @@ use App\Models\Workspace;
 use App\Services\Search\PaletteRecents;
 use App\Support\AgentApi\ProjectRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
@@ -361,6 +364,153 @@ final class PaletteTest extends TestCase
         $recents = $this->recents($this->client, "/portal/{$this->acme->public_id}");
         $this->assertSame(['PAL-RECENT'], array_column($recents, 'title'));
         $this->assertSame("/portal/{$this->acme->public_id}/invoices/{$invoice->public_id}", $recents[0]['href']);
+    }
+
+    private function contact(string $first, string $last, ?ClientCompany $company = null, ?Workspace $workspace = null): ClientContact
+    {
+        $workspace ??= $this->workspace;
+
+        return ClientContact::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => ($company ?? $this->acme)->id,
+            'first_name' => $first, 'last_name' => $last, 'email' => strtolower($first.'.'.$last).'@recents.example.test',
+        ]);
+    }
+
+    private function portalMember(string $name, ?ClientCompany $company = null, ?Workspace $workspace = null): ClientCompanyMembership
+    {
+        $user = User::factory()->create(['name' => $name]);
+
+        return ClientCompanyMembership::query()->create([
+            'workspace_id' => ($workspace ?? $this->workspace)->id, 'client_company_id' => ($company ?? $this->acme)->id,
+            'user_id' => $user->id, 'role' => 'client', 'access_scope' => 'company',
+        ]);
+    }
+
+    public function test_a_later_contact_is_recorded_and_shown_as_itself_not_the_first(): void
+    {
+        $first = $this->contact('Aaron', 'Alpha');
+        $second = $this->contact('Zed', 'Zulu');
+
+        $this->open($this->owner, 'contact', $second->public_id);
+
+        $recents = $this->recents($this->owner);
+        $this->assertSame([$second->public_id], array_column($recents, 'id'));
+        $this->assertSame(['contact'], array_column($recents, 'kind'));
+        $this->assertSame('Zed Zulu', $recents[0]['title']);
+
+        $this->open($this->owner, 'contact', $first->public_id);
+        $this->assertSame([$first->public_id, $second->public_id], array_column($this->recents($this->owner), 'id'));
+    }
+
+    public function test_an_older_portal_membership_is_recorded_and_shown_as_itself_when_a_newer_exists(): void
+    {
+        $older = $this->portalMember('Older Portal Person');
+        $newer = $this->portalMember('Newer Portal Person');
+
+        $this->open($this->owner, 'portal_user', $older->public_id);
+
+        $recents = $this->recents($this->owner);
+        $this->assertSame([$older->public_id], array_column($recents, 'id'));
+        $this->assertSame('Older Portal Person', $recents[0]['title']);
+        $this->assertNotSame($newer->public_id, $recents[0]['id']);
+    }
+
+    public function test_an_unknown_contact_or_membership_id_is_ignored_even_when_others_exist(): void
+    {
+        $this->contact('Real', 'Contact');
+        $this->portalMember('Real Portal Person');
+
+        $this->postRecent($this->owner, 'contact', (string) Str::uuid(), $this->workspace->public_id)->assertOk()->assertExactJson(['recorded' => false]);
+        $this->postRecent($this->owner, 'portal_user', (string) Str::uuid(), $this->workspace->public_id)->assertOk()->assertExactJson(['recorded' => false]);
+
+        $this->assertSame(0, PaletteRecent::query()->count());
+    }
+
+    public function test_a_contact_or_membership_of_another_workspace_is_never_recorded(): void
+    {
+        $elsewhere = Workspace::query()->create(['name' => 'Elsewhere Contacts', 'slug' => 'elsewhere-contacts']);
+        $elsewhere->memberships()->create(['user_id' => $this->owner->id, 'role' => 'owner']);
+        $foreignCompany = ClientCompany::query()->create(['workspace_id' => $elsewhere->id, 'name' => 'Foreign Co', 'slug' => 'foreign-co']);
+        $foreignContact = $this->contact('Foreign', 'Contact', $foreignCompany, $elsewhere);
+        $foreignMember = $this->portalMember('Foreign Portal Person', $foreignCompany, $elsewhere);
+        // Local rows exist, so "some result" would exist if the id were ignored.
+        $this->contact('Local', 'Contact');
+        $this->portalMember('Local Portal Person');
+
+        // Real rows, filed under a workspace they do not belong to.
+        $this->postRecent($this->owner, 'contact', $foreignContact->public_id, $this->workspace->public_id)->assertExactJson(['recorded' => false]);
+        $this->postRecent($this->owner, 'portal_user', $foreignMember->public_id, $this->workspace->public_id)->assertExactJson(['recorded' => false]);
+        $this->assertSame(0, PaletteRecent::query()->count());
+
+        // Control: the same rows are recordable under their own workspace.
+        $this->postRecent($this->owner, 'contact', $foreignContact->public_id, $elsewhere->public_id)->assertExactJson(['recorded' => true]);
+        $this->postRecent($this->owner, 'portal_user', $foreignMember->public_id, $elsewhere->public_id)->assertExactJson(['recorded' => true]);
+    }
+
+    public function test_an_archived_or_deleted_contact_and_a_revoked_membership_drop_out_of_recents(): void
+    {
+        $keptContact = $this->contact('Kept', 'Contact');
+        $archived = $this->contact('Archived', 'Contact');
+        $deleted = $this->contact('Deleted', 'Contact');
+        $keptMember = $this->portalMember('Kept Portal Person');
+        $revoked = $this->portalMember('Revoked Portal Person');
+
+        foreach ([[$keptContact, 'contact'], [$archived, 'contact'], [$deleted, 'contact'], [$keptMember, 'portal_user'], [$revoked, 'portal_user']] as [$record, $kind]) {
+            $this->open($this->owner, $kind, $record->public_id);
+        }
+        $this->assertCount(5, $this->recents($this->owner));
+
+        $archived->forceFill(['is_archived' => true])->save();
+        $deleted->delete();
+        $revoked->delete();
+
+        $this->assertEqualsCanonicalizing([$keptContact->public_id, $keptMember->public_id], array_column($this->recents($this->owner), 'id'));
+        // An archived contact cannot be newly recorded either.
+        $this->postRecent($this->owner, 'contact', $archived->public_id, $this->workspace->public_id)->assertExactJson(['recorded' => false]);
+    }
+
+    public function test_a_non_manager_cannot_record_or_see_contacts_and_portal_users(): void
+    {
+        $contact = $this->contact('Managed', 'Contact');
+        $membership = $this->portalMember('Managed Portal Person');
+        $this->open($this->owner, 'contact', $contact->public_id);
+        $this->open($this->owner, 'portal_user', $membership->public_id);
+
+        foreach ([$this->member, $this->viewer, $this->client] as $viewer) {
+            $this->postRecent($viewer, 'contact', $contact->public_id, $this->workspace->public_id)->assertExactJson(['recorded' => false]);
+            $this->postRecent($viewer, 'portal_user', $membership->public_id, $this->workspace->public_id)->assertExactJson(['recorded' => false]);
+            $this->assertSame(0, PaletteRecent::query()->where('user_id', $viewer->id)->count());
+        }
+        $this->assertCount(2, $this->recents($this->owner), 'Control: the manager still has them');
+
+        // Even rows stored for someone who is not a manager are never shown to them.
+        PaletteRecent::query()->where('user_id', $this->owner->id)->update(['user_id' => $this->member->id]);
+        $this->assertSame([], $this->recents($this->member));
+    }
+
+    public function test_resolving_recents_costs_the_same_queries_however_many_contacts_and_memberships(): void
+    {
+        $count = function (): int {
+            $this->actingAs($this->owner);
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->getJson('/palette?path='.urlencode($this->dashboardPath()))->assertOk();
+            $queries = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return $queries;
+        };
+        $this->open($this->owner, 'contact', $this->contact('One', 'Contact')->public_id);
+        $this->open($this->owner, 'portal_user', $this->portalMember('One Portal Person')->public_id);
+        $small = $count();
+
+        foreach (range(2, 4) as $i) {
+            $this->open($this->owner, 'contact', $this->contact('Many'.$i, 'Contact')->public_id);
+            $this->open($this->owner, 'portal_user', $this->portalMember('Many Portal Person '.$i)->public_id);
+        }
+
+        $this->assertCount(8, $this->recents($this->owner));
+        $this->assertSame($small, $count());
     }
 
     private function open(User $user, string $kind, string $id): void

@@ -72,8 +72,7 @@ final class SecurityHeaders
     /**
      * The allowlist, built from what the code loads today:
      *  - Stripe.js (js.stripe.com) and its payment frames, API and images - resources/js/lib/stripe-js.ts.
-     *  - Bunny Fonts, the font provider vite.config.ts names (build output is self-hosted; kept so a
-     *    deployment that links the provider directly does not report).
+     *  - Fonts are self-hosted (@fontsource, bundled by Vite), so no font provider is allowed.
      *  - The identity provider, for the form-post sign-out redirect.
      *  - The Vite dev server (script, style, font, image and websocket) only while `public/hot` exists.
      *  - Square is reached by redirect to its hosted page and by server-side calls only: no Square
@@ -97,9 +96,9 @@ final class SecurityHeaders
         $directives = [
             'default-src' => ["'self'"],
             'script-src' => ["'self'", "'nonce-{$nonce}'", 'https://js.stripe.com', 'https://*.js.stripe.com', ...$dev['http']],
-            'style-src' => ["'self'", "'unsafe-inline'", 'https://fonts.bunny.net', ...$dev['http']],
+            'style-src' => ["'self'", "'unsafe-inline'", ...$dev['http']],
             'img-src' => ["'self'", 'data:', 'blob:', 'https://*.stripe.com', ...$dev['http']],
-            'font-src' => ["'self'", 'data:', 'https://fonts.bunny.net', ...$dev['http']],
+            'font-src' => ["'self'", 'data:', ...$dev['http']],
             'connect-src' => ["'self'", 'https://api.stripe.com', ...$dev['http'], ...$dev['ws']],
             'frame-src' => ['https://js.stripe.com', 'https://*.js.stripe.com', 'https://hooks.stripe.com'],
             'object-src' => ["'none'"],

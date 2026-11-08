@@ -9,14 +9,38 @@ type RefreshPagePropsOptions = {
 };
 
 /** Refresh authoritative props; callers retain their own mutation/retry policy. */
-export function refreshPageProps({
+export function refreshPageProps(
+    options: RefreshPagePropsOptions = {},
+): Promise<void> {
+    return reloadPage(options).then(() => undefined);
+}
+
+/**
+ * Refresh authoritative props and resolve with the page Inertia returned, so a
+ * caller derives what it observed from the awaited value instead of assigning
+ * to variables captured by a callback. Rejects unless the refresh succeeded.
+ */
+export function reloadPageProps(
+    options: Omit<RefreshPagePropsOptions, 'requireSuccess'> = {},
+): Promise<Page> {
+    return reloadPage({ ...options, requireSuccess: true }).then((page) => {
+        if (page === undefined) {
+            throw new Error('Current page props could not be refreshed.');
+        }
+
+        return page;
+    });
+}
+
+function reloadPage({
     onFinish,
     onSuccess,
     requireSuccess = false,
     ...options
-}: RefreshPagePropsOptions = {}): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+}: RefreshPagePropsOptions): Promise<Page | undefined> {
+    return new Promise<Page | undefined>((resolve, reject) => {
         let succeeded = false;
+        let refreshed: Page | undefined;
         let settled = false;
         const finish = () => {
             if (settled) {
@@ -34,7 +58,7 @@ export function refreshPageProps({
                         new Error('Current page props could not be refreshed.'),
                     );
                 } else {
-                    resolve();
+                    resolve(refreshed);
                 }
             }
         };
@@ -59,19 +83,19 @@ export function refreshPageProps({
             : undefined;
         router.reload({
             ...options,
-            ...(onSuccess ? { onSuccess } : {}),
             ...(requireSuccess
                 ? {
                       // The caller renders a recoverable failure after onFinish.
                       // Suppress Inertia's default error modal/global network throw.
                       onNetworkError: () => false,
                       onHttpException: () => false,
-                      onSuccess: (page) => {
-                          succeeded = true;
-                          onSuccess?.(page);
-                      },
                   }
                 : {}),
+            onSuccess: (page) => {
+                succeeded = true;
+                refreshed = page;
+                onSuccess?.(page);
+            },
             onFinish: finish,
         });
     });

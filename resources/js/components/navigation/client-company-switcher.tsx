@@ -199,9 +199,7 @@ export function ClientCompanySwitcher({
                                             ? 'true'
                                             : undefined
                                     }
-                                    onClick={(
-                                        event: ReactMouseEvent<HTMLAnchorElement>,
-                                    ) => {
+                                    onClick={(event: ReactMouseEvent) => {
                                         event.preventDefault();
                                         choose(client);
                                     }}
