@@ -10,14 +10,13 @@ use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
  * Synthetic data for the isolated staging deployment, and for nothing else.
  *
- * One workspace, one client company, a portal contact and four issued invoices small
- * enough to pay online. Every name is invented and every address uses a reserved
+ * One workspace, one client company and four issued invoices small enough to pay online,
+ * granted to two test identities that have each signed in once (the seeder creates no users). Every name is invented and every address uses a reserved
  * domain unless the operator names a test identity in `svc.staging_seed`. Safe to
  * run twice: rows are found by their obvious synthetic identifiers.
  *
@@ -33,8 +32,8 @@ class StagingSeeder extends Seeder
             throw new RuntimeException('StagingSeeder writes synthetic data and refuses to run in production.');
         }
 
-        $owner = $this->user((string) config('svc.staging_seed.owner_email'), 'Staging Owner');
-        $portal = $this->user((string) config('svc.staging_seed.portal_email'), 'Staging Portal Contact');
+        $owner = $this->signedInUser((string) config('svc.staging_seed.owner_email'), 'owner');
+        $portal = $this->signedInUser((string) config('svc.staging_seed.portal_email'), 'portal contact');
 
         $workspace = Workspace::query()->firstOrCreate(['slug' => self::WORKSPACE_SLUG], ['name' => 'Staging Synthetic Workspace']);
         $workspace->memberships()->firstOrCreate(['user_id' => $owner->id], ['role' => 'owner']);
@@ -58,9 +57,25 @@ class StagingSeeder extends Seeder
         }
     }
 
-    private function user(string $email, string $name): User
+    /**
+     * The account the identity provider created when this test identity first signed in.
+     *
+     * SVC binds an account to its provider subject at first sign-in and never adopts an
+     * unbound account by email, so a seeder-created user could never sign in. Each test
+     * identity signs in once first; the seeder then grants that bound account its role.
+     */
+    private function signedInUser(string $email, string $role): User
     {
-        return User::query()->firstOrCreate(['email' => $email], ['name' => $name, 'password' => Str::random(48)]);
+        $user = User::query()->where('email', $email)->whereNotNull('oauth_provider')->whereNotNull('oauth_subject')->first();
+        if (! $user instanceof User) {
+            throw new RuntimeException(sprintf(
+                'Sign in to staging once as the %s test identity (%s) through the identity provider, then run the seeder again: it only grants roles to accounts bound to an identity. Nothing was changed.',
+                $role,
+                $email,
+            ));
+        }
+
+        return $user;
     }
 
     private function invoice(Workspace $workspace, ClientCompany $company, string $number, int $cents): void

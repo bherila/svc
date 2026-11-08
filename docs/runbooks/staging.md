@@ -92,20 +92,24 @@ There is no queue worker; none is needed.
 
 ## Seed data
 
-Run once after the first deploy, on the host, from the deploy directory:
+SVC binds an account to its identity-provider subject at first sign-in and never adopts an
+existing unbound account by email, so the seeder creates no users. In this order:
+
+1. Pick two dedicated test identities at the identity provider (never a real client's): an owner
+   and a portal contact. Set `SVC_STAGING_SEED_OWNER_EMAIL` / `SVC_STAGING_SEED_PORTAL_EMAIL` to
+   their addresses (defaults `staging-owner@example.test` / `staging-portal@example.test`).
+2. Sign in to staging once as each of them. SVC creates each account bound to its identity.
+3. On the host, from the deploy directory, run:
 
 ```bash
 php artisan db:seed --class='Database\Seeders\StagingSeeder' --force
 ```
 
-`StagingSeeder` creates one workspace (`staging-synthetic`), an owner and a portal contact, one
-client company and four issued invoices (two of $250, two of $125, under the online-payment cap),
-all with invented names. It refuses to run when `APP_ENV=production`, is idempotent, and reads no
-other database. The default users are `staging-owner@example.test` and
-`staging-portal@example.test`. Sign-in goes through the identity provider, so to log in as them,
-create matching test accounts there, or set `SVC_STAGING_SEED_OWNER_EMAIL` /
-`SVC_STAGING_SEED_PORTAL_EMAIL` to the addresses of dedicated test identities (never a real
-client's) before seeding.
+`StagingSeeder` then creates one workspace (`staging-synthetic`) owned by the first identity, one
+client company with the second as its portal contact, and four issued invoices (two of $250, two
+of $125, under the online-payment cap), all with invented names. It refuses, changing nothing,
+until both identities have signed in; it refuses to run when `APP_ENV=production`, is
+idempotent, and reads no other database.
 
 Autopay needs an invoice due today: create one in the app, with a due date of today, for the
 portal company.
