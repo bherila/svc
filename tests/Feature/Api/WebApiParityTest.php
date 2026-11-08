@@ -19,6 +19,7 @@ final class WebApiParityTest extends TestCase
 {
     private const array BROWSER_ONLY = [
         'account.preferences.update' => 'web-only:a display preference of the signed-in person, not business data',
+        'palette.recents' => 'web-only:the signed-in person\'s own recent-items list for the command palette; a kind and a public id, checked against what they may open before it is stored',
         // A credential may never mint another credential (#384).
         'bherila-auth.credentials.apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.apps.store' => 'deliberate:credentials are issued only by the signed-in person',

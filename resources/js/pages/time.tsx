@@ -634,6 +634,7 @@ export default function TimeSheet({
                                 </Button>
                                 {selectionMode === 'invoice' ? (
                                     <Button
+                                        variant="outline"
                                         onClick={() => {
                                             if (invoiceDraft !== null) {
                                                 setInvoiceSelection(
@@ -752,19 +753,14 @@ export default function TimeSheet({
                             render={<Button variant="outline">Cancel</Button>}
                         />
                         <AlertDialogAction
-                            render={
-                                <Button
-                                    variant="destructive"
-                                    disabled={deleting}
-                                    onClick={() =>
-                                        pendingDelete !== null &&
-                                        remove(pendingDelete)
-                                    }
-                                >
-                                    Delete
-                                </Button>
+                            variant="destructive"
+                            disabled={deleting}
+                            onClick={() =>
+                                pendingDelete !== null && remove(pendingDelete)
                             }
-                        />
+                        >
+                            Delete
+                        </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
@@ -898,7 +894,9 @@ function MonthCard({
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="w-8" />
+                                <TableHead className="w-8">
+                                    <span className="sr-only">Select</span>
+                                </TableHead>
                                 <TableHead className="w-28">Date</TableHead>
                                 <TableHead className="min-w-64">Work</TableHead>
                                 <TableHead className="w-20 text-right">

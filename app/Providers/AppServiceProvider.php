@@ -30,6 +30,7 @@ use App\Support\AgentApi\MarkedInternalAgentApiTransport;
 use App\Support\AgentApi\ProviderIdentityWrites;
 use App\Support\Auth\OAuthClient;
 use App\Support\Auth\PersonalAccessTokenIdentity;
+use App\Support\Http\RateLimits;
 use App\Support\Payments\PaymentProcessor;
 use Bherila\McpLaravelBridge\Capabilities\Availability;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
@@ -181,6 +182,8 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('brevo-webhooks', fn (Request $request): Limit => Limit::perMinute(
             (int) config('services.brevo.webhook_rate_limit_per_minute', 600),
         )->by($request->ip() ?? 'unknown'));
+
+        RateLimits::register();
 
         $this->configureDefaults();
 

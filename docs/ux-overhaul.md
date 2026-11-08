@@ -728,6 +728,130 @@ three can't disagree.
   the in-app glossary (section 8). Parity tests check that REST, MCP and the
   dashboard return the same figures for the same fixture.
 
+## 14. Security hardening
+
+A conservative pass over transport headers, rate limits, cookies, uploads and
+CI. Nothing here changes how sign-in, billing or the payment processors behave.
+Every decision is recorded so a later change knows what it is undoing.
+
+### Headers (`App\Http\Middleware\SecurityHeaders`)
+
+- One global middleware, so web pages, the portal, the REST and MCP API, the
+  processor webhooks and error pages all carry the same headers. A header a
+  controller already set is never overwritten.
+- Enforced: `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, `X-Frame-Options: DENY` and a minimal
+  `Permissions-Policy` (camera, microphone, geolocation, USB and FLoC off).
+  Nothing in SVC is framed by another site, and SVC frames only Stripe's own
+  payment frames, so `DENY` has no exception. `frame-ancestors` is not put in the
+  CSP: a report-only policy cannot enforce it, so `X-Frame-Options` carries it.
+- `Strict-Transport-Security: max-age=31536000` only when the request is HTTPS.
+  Decided: no `preload` (a preload listing is close to irreversible) and no
+  `includeSubDomains` (other subdomains of the host are not this application's
+  to commit). `SVC_HSTS_MAX_AGE=0` turns it off.
+- **CSP is report-only and nothing enforces it.** There is deliberately no setting
+  that enforces it; enforcing is a later, separate decision once reports are
+  clean. Sent on HTML responses only. The allowlist was built from the code:
+  Stripe.js (`js.stripe.com`, `resources/js/lib/stripe-js.ts`), Stripe frames
+  (`js.stripe.com`, `hooks.stripe.com`), `api.stripe.com`, Stripe images, Bunny
+  Fonts (named in `vite.config.ts`), the identity provider's origin in
+  `form-action` (sign-out is a form post that redirects there), and the Vite dev
+  server (script, style, font, image, `ws:`) only while `public/hot` exists.
+  Square needs nothing: it is reached by redirect to its hosted page and by
+  server-side calls, never by a Square script, frame or browser connection. If a
+  Square web payments SDK is ever added, its origins join this list first.
+- `script-src` and `style-src` keep `'unsafe-inline'`: the appearance bootstrap in
+  `app.blade.php` is an inline script and component libraries write style
+  attributes. Enforcing needs a nonce pass first; that is why it stays report-only.
+- No `report-uri` unless `SVC_CSP_REPORT_URI` is set (an https URL or an absolute
+  path, validated). There is no collector endpoint in SVC, and adding one that
+  stores browser-supplied JSON is a product decision, so reports go to the
+  browser console until one is chosen.
+
+### Rate limits
+
+Inventory of unauthenticated and portal routes, and what was done:
+
+| Route(s) | Before | Now |
+| --- | --- | --- |
+| `/login`, `/oauth/redirect`, `/oauth/callback`, `POST /logout` | none | `sign-in`, 60/min per address |
+| every `portal/*` route (including portal file downloads) | none | `portal`, 300/min per person |
+| every `portal/*` write (POST, DELETE) | none | plus `portal-writes`, 60/min per person |
+| `POST .../invoices/{id}/stripe-payment-intent` | none | `payment-intents`, 30/min per person |
+| shared project invitation invite/accept/decline | none | `invitations`, 30/min per person |
+| `/oauth/token`, `/oauth/register`, `/oauth/authorize` | package/Passport throttle; register 10 per 60 min | unchanged |
+| REST (`api/v1/*`) and MCP (`api/v1/mcp`) | `throttle:60,1` | unchanged |
+| `api/webhooks/brevo` | `brevo-webhooks`, 600/min | unchanged |
+| `api/webhooks/stripe*`, `api/webhooks/square*` | none | **none, on purpose** |
+| `/search`, `/palette*`, MCP credential settings | already throttled | unchanged |
+| `POST /application-access`, `/.well-known/*`, `/up`, `/sanctum/csrf-cookie` | none | none (see below) |
+
+- Every ceiling is several times what a person doing ordinary work reaches, and
+  is tunable with `SVC_RATE_LIMIT_*` (`config/svc.php` `rate_limits`); a value
+  that is not a positive number falls back to the default.
+- Authenticated limiters key on the person, not the address, so an office behind
+  one address is not one bucket. Sign-in keys on the address because there is no
+  person yet. Behind the CDN the address is the real client's, resolved by the
+  auth package's trusted-proxy handling.
+- Stripe and Square webhooks are signature-verified and retried by the
+  processor; a 429 would delay or drop a genuine delivery, so they are never
+  throttled by the application. A test pins that.
+- There is no public pay link and no magic-link endpoint in this codebase: every
+  payment and portal route sits behind `auth`. Portal invitations are applied at
+  sign-in, which the `sign-in` limiter covers.
+- Left alone: `/application-access` is the identity provider's signed (JWT,
+  nonce) call, package-owned, and answers 404 until enabled; wrapping it risks
+  dropping provider calls. The `.well-known` documents are static and cheap.
+
+### Cookies
+
+`config/session.php` `secure` was unset, so the cookie was Secure only when the
+request itself looked HTTPS. It now defaults to true when `APP_URL` is https and
+can still be set explicitly (`SESSION_SECURE_COOKIE=false` for a plain-http
+checkout). `http_only` already defaulted to true and `same_site` to `lax`; both
+are pinned by tests. The session is stored in the database and is not encrypted
+at rest in the cookie (the cookie holds only an id).
+
+### Uploads
+
+Audit of every attachment path (they all end in `AttachmentStorageService`):
+
+- Fine already: 50 MB ceiling checked twice (validator `max:51200` and again
+  while streaming into staging); the stored type is sniffed from the bytes
+  (`getMimeType()`), never taken from the extension or the client; the object
+  key is a UUID path, so a hostile filename never reaches the disk; filenames are
+  encrypted at rest; downloads are authorised per audience and served as
+  `attachment`.
+- Fixed: downloads now send `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: default-src 'none'; sandbox`; a type a browser would
+  run (HTML, XHTML, SVG, XML, JavaScript) is served as `application/octet-stream`
+  so a client that ignores `attachment` cannot execute an upload; the served
+  filename drops control characters and bidirectional overrides
+  (`evil\u202Efdp.exe`) and is capped at 255 characters.
+- Not changed, a product decision: there is no type allowlist. Any file type up to
+  50 MB is accepted. Restricting it would reject files people attach today.
+- Not changed: an SVG receipt is now served as opaque bytes, so it no longer
+  previews as an image from the download URL; it still downloads.
+
+### CI
+
+- `composer audit --locked` and `pnpm audit --prod` run in a `dependency-audit`
+  job that is **not** a need of `ci`, so a newly published advisory cannot block
+  unrelated work. State when added: `pnpm audit --prod` clean; `composer audit`
+  reports 13 advisories in seven Symfony 8.1.x components (`http-foundation`,
+  `http-kernel`, `routing`, `serializer`, `yaml`, `http-client`, `filesystem`), all
+  fixed by 8.1.11. Not bumped here: a lock-file change is its own PR.
+- `MCP_BRIDGE_DEPLOY_KEY` and every `webfactory/ssh-agent` step are removed from
+  `tests.yml`, `pilot-deploy.yml`, `mcp-visibility-candidate.yml` and
+  `cloudflare-ranges.yml`. `bherila/mcp-laravel-bridge` is public and
+  `composer.lock` already references it by https. The SSH used to deploy to web1
+  is untouched, and `stripe-test-mode.yml` is left to its own PR.
+- `clean-install` installs Composer and pnpm dependencies with no secrets,
+  runs `php artisan about`, the workflow unit tests and `tsc`, and is a need of
+  `ci`: it is the proof that an outside contributor can work on SVC.
+  `DependencyAccessWorkflowTest` fails if a bridge key, an ssh-agent step or a
+  `secrets.` reference comes back.
+
 ## Delivery slices (stacked commits, one PR)
 
 0. **Help scaffolding** (section 8): the `docs/help` loader, glossary,
@@ -804,6 +928,47 @@ Settled by the product owner before a period away:
 ### Decisions made while away
 
 (Appended as they happen: date, PR, question, decision, why.)
+
+- **2026-11-08, command palette v2 (kinds, commands, recents, shortcuts, portal).**
+  - **Kinds.** The palette also finds expenses, agreements, proposals, files,
+    time entries, contacts and portal users. Each asks the page it opens:
+    expenses follow the client Expenses tab (a reachable client and a project
+    the viewer holds), agreements `BillingRecordAccess::constrainAgreements`,
+    files `AttachmentReader`, time `AgentTimeEntryQuery` (the time sheet's own
+    query), proposals the operator proposal page and the portal's conditions.
+    Contacts and portal users are managers only. The agent API's `search` tool
+    does not ask for the new kinds, so its contract is unchanged.
+  - **Portal viewers are searched as clients.** A workspace where someone holds
+    only a client company membership is searched with the portal's own
+    conditions (client-visible, not a draft, approved time matched on the
+    client-safe description only, no expenses, no contacts). Someone who is both
+    staff and a client in one workspace gets the staff view of it.
+  - **Filenames are matched in PHP.** `original_filename` is encrypted at rest,
+    so SQL cannot LIKE it and a plaintext copy would undo the encryption. A
+    search looks through the newest 300 files the viewer may read and matches
+    the term against those; a file older than that is reached by its record.
+  - **Commands are built from the navigation factory**, so they cannot drift
+    from the navbar. "Go to Revenue" is offered only to owners and admins (the
+    Dashboard it sits on is open to every member). "My work" is offered to any
+    member, including managers, though the navbar hides it for them. "Settings"
+    is the current client's settings (managers); no workspace settings screen
+    exists. With several workspaces and no workspace in the page, only
+    "Switch workspace" is offered. A portal viewer with several clients and no
+    client in the page gets no client-specific commands.
+  - **Recents** are a kind and a public id, per person per workspace, newest
+    eight kept. Titles and links are resolved again through the authorized
+    queries on every read, and an id the viewer could not open is never stored.
+    Only the palette records them (opening a record elsewhere does not), and
+    only clients, projects, invoices, tasks, expenses, agreements, proposals and
+    files.
+  - **Shortcuts.** Cmd/Ctrl+K toggles from anywhere except a rich-text editor
+    (a chord types nothing). `/` and `?` never fire while typing in an input,
+    textarea, select, contenteditable or ARIA text widget, with a held
+    modifier, during IME composition, or while another dialog is open.
+  - **Harness.** `node scripts/check-layout.mjs --palette` reads the palette as
+    an owner, an owner on a client, a scoped member and the client contact. The
+    router answers `/search` and `/palette` as whoever the page in the Referer
+    belongs to; recents are seeded because the harness refuses the POST.
 
 - **2026-11-07, #624 item 9: Appendix B (receipts).**
   - **Who is told of a receipt:** operator audience, workspace managers only
@@ -1415,23 +1580,34 @@ subscription. Decisions, made unattended and conservatively:
 - **One list.** `StripeWebhookService::EVENTS` is every type the service handles
   and `REQUIRED_EVENTS` is that list without the legacy alias
   `charge.refund.updated`. The endpoint SVC creates subscribes to `EVENTS`
-  (as before); the check requires `REQUIRED_EVENTS`. `STAND_INS` records that a
-  subscription to `charge.refund.updated` satisfies `refund.updated` (the docs
-  already said it may stand in), so a manually made endpoint with the old name is
-  not reported broken. `StripeWebhookEventsTest` reads the service's source and
+  (as before); the check requires `REQUIRED_EVENTS`. `refund.updated` is required
+  on its own: `charge.refund.updated` is still handled when it arrives but never
+  counts in its place (the earlier `STAND_INS` is gone). `StripeWebhookEventsTest` reads the service's source and
   fails if a handled type is not listed or a listed type is not named in a
   handler. The old `StripeKeyAdapter::EVENTS` is gone.
 - **Required, not minimal.** The dispute hint events (`updated`, `funds_withdrawn`,
   `funds_reinstated`) are handled and registered by SVC today, so they are
   required: an endpoint following only the documented list is told to add them.
-- **One endpoint is judged.** Of the account's endpoints at SVC's URL for the
-  connection, the one SVC created (the stored `webhook_endpoint_id`), else the first
-  enabled one, else the first. Its signing secret is the one SVC holds, so a
-  second endpoint's subscriptions prove nothing. "Missing" is relative to it, and
-  so is the fix. URLs compare by scheme, host, port (default dropped) and path,
-  case-insensitively for scheme and host, trailing slash and query ignored.
-  The connection made from the environment also accepts the legacy
-  `/api/webhooks/stripe` URL.
+- **Only the stored endpoint is judged.** The signing secret SVC holds belongs to
+  the endpoint SVC created (the stored `webhook_endpoint_id`); a different endpoint
+  at the same URL signs with another secret and every delivery would fail
+  verification, so it is never adopted and its subscriptions prove nothing. If the
+  stored id is not listed at Stripe the status is `endpoint_missing` ("The webhook
+  endpoint SVC was set up with no longer exists"), never healthy, with no event
+  patch offered. If the connection has no stored id (migrated from environment
+  configuration), a URL match is reported as `endpoint_unverified` ("SVC cannot
+  confirm which webhook endpoint is its own"): decided conservatively, since even
+  a fully subscribed match at the legacy URL cannot be shown to be the one the
+  stored secret belongs to; with no match at all it stays `not_found`. A stored
+  endpoint that now has another URL is `not_found`. The repair for both identity
+  statuses is the explicit **Reconnect webhook** (`reconnect`), which creates a new
+  endpoint and stores its id and signing secret in one save (the Stripe call is
+  outside any transaction; if the save fails the new endpoint is deleted again).
+  The plain **Create endpoint** (`create`) remains only for `not_found`.
+  **Add missing events** requires the judged endpoint to be the stored one.
+  URLs compare by scheme, host, port (default dropped) and path, case-insensitively
+  for scheme and host, trailing slash and query ignored. The connection made from
+  the environment also accepts the legacy `/api/webhooks/stripe` URL.
 - **Stored on the connection row**, three nullable columns
   (`webhook_check_status`, `webhook_check_missing`, `webhook_checked_at`): the
   row is already workspace-scoped, so no new table or foreign key. A failed check
@@ -1450,13 +1626,16 @@ subscription. Decisions, made unattended and conservatively:
 - **Fix never removes an event and never touches another endpoint.** Add events
   sends the union of what the endpoint has and what it lacks. A disabled endpoint
   is reported with instructions, not re-enabled: the owner may have disabled it
-  on purpose. Create is offered only when no endpoint matches; it creates at the
-  connection's URL with `EVENTS`, stores the new signing secret and endpoint id
-  on the same row through the model's `encrypted` cast (replacing the old
-  secret, which belonged to an endpoint that no longer exists), and deletes the
-  endpoint again if the secret cannot be stored. The browser sends the action
+  on purpose. Create (nothing at the URL, no recorded id) and Reconnect (see above) create at
+  the connection's URL with `EVENTS`, store the new signing secret and endpoint id
+  together on the same row through the model's `encrypted` cast (replacing the old
+  secret, which belonged to an endpoint that no longer exists or could not be
+  confirmed), and delete the endpoint again if they cannot be stored. The browser sends the action
   the person confirmed; the server re-reads Stripe first and refuses (422) a
   fix that the fresh state no longer calls for.
+- **Daily order.** `svc:payments:check-stripe-webhooks` takes connections never
+  checked first, then by `webhook_checked_at` ascending, then by id, so a run bounded
+  by `--limit` does not starve the same workspaces.
 - **Errors name the permission.** A 403 on the read says to set Webhook
   Endpoints to Read; on the write, Write.
 - **Visibility.** Everyone in the workspace sees the sentence and the time; the
@@ -1466,6 +1645,114 @@ subscription. Decisions, made unattended and conservatively:
   there is nothing to sit beside; the check and fix are browser-only routes in
   `WebApiParityTest` with reasons.
 - **No Stripe calls on page load.** The page prints the stored result.
+
+### Migration impact inventory and explicit ownership (2026-11-08)
+
+A reviewer asked for an inventory of what `svc:payments:migrate-environment`
+changes before the owner approves running it in production, and noted the
+runbook overstated rollback. Decisions, made unattended and conservatively:
+
+- **The preview is the inventory.** The default (no `--apply`) run, and
+  `--format=json` under the `inventory` key, report per processor: the masked
+  environment credential and its mode, who would own the connection and the
+  rule, every workspace that relies on the environment credential with counts
+  (open invoices payable online, autopay companies, saved cards, pending
+  payments, autopay attempts held for review, webhook events in the last 90
+  days; for Square, invoices linked to a Square invoice, linked customers,
+  pending payments and webhook receipts), the existing connections that block
+  or are untouched, and for Square the location rule and what the local mirror
+  says about other locations. It reads with grouped queries, one per measure
+  for all workspaces, so the query count does not grow with the number of
+  workspaces, and it runs only SELECTs.
+- **No new API call.** The preview already called neither Stripe nor Square, and
+  still does not. The Stripe account, the Square merchant and the chosen Square
+  location therefore read "not checked"; `--apply` reads and stores them. Nothing
+  was added to the preview path that talks to a processor.
+- **Ownership was implicit, so it is now refused when ambiguous.** The command
+  already took `--workspace`, but fell back to `SQUARE_WORKSPACE` without
+  asking. That is sound for Square (the environment's Square token has only ever
+  served that one workspace) and a guess for Stripe (the environment's Stripe
+  key serves every workspace that has not connected its own, and
+  `SQUARE_WORKSPACE` says nothing about Stripe). Ownership is now **ambiguous**
+  when no `--workspace` was given and another workspace than the configured one
+  has Stripe activity (any of the inventory counts above) while having no
+  connection of its own. `--apply` then refuses with exit code 2 and writes
+  nothing; a preview prints the inventory with the owner "not decided" and the
+  same exit code. An explicit `--workspace` always settles it, and the other
+  dependent workspaces are listed as losing access. Apply behaviour is
+  otherwise unchanged: with an unambiguous owner (explicit, or the only
+  workspace with activity) it does exactly what it did.
+- **Rollback is described accurately.** The runbook no longer says the only undo
+  is a restored backup. Disconnect, Replace key and the conditional manual
+  database reversal each undo something, and the runbook says what, and under
+  which conditions. It also lists what cannot be undone: money already charged,
+  messages already sent, webhook events already applied or refused, and the
+  deleted rows' contents.
+
+### Accessibility to zero (#624 item 4, 2026-11-08)
+
+- **Every screen gates, in both themes.** The `uiGated` list and the
+  measurement-only exemption for axe and UI-consistency are gone: any axe
+  violation at any impact, and any UI-consistency error, fails the harness on
+  every capture, light and dark. Overflow and navbar assertions keep their
+  existing `measuredOnly` exemptions (only the autopay and consent states use
+  it); axe and the token checks do not honour it.
+- **Advisory stays advisory: a text button with no icon.** `action-button-icon`
+  still reports without failing. About a hundred buttons are legitimately
+  text-only (Cancel, Dismiss, Void, recovery buttons), and putting an icon on
+  each would be a visual redesign, not an accessibility fix. Revisit if the
+  list is ever worth gating.
+- **A modal dialog counts alone for "one filled button".** While a modal is
+  open the page behind it is inert, so only the dialog's own buttons are
+  counted; the page is counted whole again when it closes. This is a change to
+  what the check counts, made because the dialog's confirm button and the
+  page's one primary button are never both actionable. Pages with several
+  independent forms (client settings, task planning, payment connections) went
+  to outlined buttons rather than choosing one form's Save as the primary.
+- **Tokens, not overrides.** Light `--destructive` darkened (0.577 to 0.48
+  lightness) and dark lightened (0.704 to 0.78) so destructive text is 4.5:1 on
+  its own tint and hover tint; light `--muted-foreground` darkened (0.556 to
+  0.5) for text on `--muted`; `--ring` darkened/lightened to 3:1 against the
+  background and card. The operations "bridge" palette gained dark mappings for
+  `text-slate-700` and `text-cyan-700`.
+- **Card titles are level-2 headings by default** (`CardTitle` has
+  `role="heading" aria-level={2}`); a page whose title is a card passes
+  `aria-level={1}`. A page with no visible title (portal billing, portal
+  invoice) has a screen-reader-only `h1`.
+- **Scroll regions** become keyboard-focusable only while they overflow
+  (`useScrollable`), instead of a tab stop on every table.
+- **Native `<select>` is banned, all of them.** The task named the buy-down
+  picker; the grep found nine more (appearance, portal scope, project access,
+  history, three on collaboration, two on expense schedules). All use
+  `OptionSelect`; `native-select.test.ts` guards it. An option whose stored
+  value is the empty string is carried under a stand-in value, because Base UI
+  reads `''` as "nothing chosen".
+- **Skip link finds `<main>`.** Pages draw their own `<main>`, so the link
+  gives the first one an id and `tabindex="-1"` on mount instead of every page
+  naming a target.
+- **Toasts.** The application renders none (the Sonner `Toaster` is unused), so
+  announcements stay `role="status"`/`role="alert"` in the page; nothing was
+  added.
+- **Harness upkeep.** Four groups already failed on a clean `origin/main`
+  (clients, disputes, square, tasks) because the UI had moved on: the client
+  switcher is named "Current client: ...", a disputed invoice offers no "Send to
+  client", a client sees "Still deferred" only when the agreement opts in (the
+  Square fixture's invoice had no agreement), and the section tabs collapse
+  below `xl`. The harness and seed follow the product; no product behaviour
+  changed. The harness now runs with reduced motion and waits for styles to
+  settle after a theme switch, because axe otherwise measured half-faded
+  popups and mid-transition colours as contrast failures.
+- **CI.** Every harness group runs on every push and pull request in eight
+  concurrent shards (`layout`), required by `ci` through `layout-gate`;
+  `LayoutWorkflowTest` fails when a group has no shard. The collaboration,
+  task-organization and attachment-sharing scripts run in `layout-scripts` with
+  the same gate (`scripts/layout/a11y.mjs`). The four `workflow_dispatch` layout
+  jobs stay as they were.
+- **Found by the wider gate.** A task list was a `ul` of `Card`s each holding an
+  `li` (invalid list structure) - now `ul > li > Card`; two "Files" landmarks per
+  comment became a labelled group; an open menu's popup is not counted by axe's
+  `region` rule in the focused scripts (it is a transient widget, not page
+  content).
 
 ## Open questions
 

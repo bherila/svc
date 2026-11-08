@@ -11,7 +11,8 @@
  *   whose computed radius, padding or title size differs from the token
  *   (12 px / 20 px / 16 px on desktop; 16 px padding and a 15 px title on a
  *   phone, below 768 px);
- * - `filled-buttons`: more than one filled (primary) button on the page;
+ * - `filled-buttons`: more than one filled (primary) button on the page (or,
+ *   while a modal dialog is open, inside that dialog);
  * - `bordered-link-in-card`: a bordered `<a>` inside a card body - the trailing
  *   action of a card row is a plain link;
  * - `action-button-name`: a button with neither text nor an accessible name;
@@ -116,9 +117,20 @@ export function collectUiConsistencyRisks(): UiRisk[] {
     const primary = getComputedStyle(probe).backgroundColor;
     probe.remove();
     const transparent = ['', 'transparent', 'rgba(0, 0, 0, 0)'];
+    // A modal dialog that is open makes the page behind it inert, so the one
+    // thing that needs doing now is inside it: the dialog's own confirm button
+    // is counted alone, and the page's filled button is counted again once the
+    // dialog closes.
+    const modal = Array.from(
+        document.querySelectorAll(
+            '[role="dialog"][data-open], [role="alertdialog"][data-open]',
+        ),
+    )
+        .filter((dialog) => visible(dialog))
+        .at(-1);
     const filled = transparent.includes(primary)
         ? []
-        : Array.from(document.querySelectorAll('button, a')).filter(
+        : Array.from((modal ?? document).querySelectorAll('button, a')).filter(
               (element) =>
                   visible(element) &&
                   getComputedStyle(element).backgroundColor === primary,

@@ -36,33 +36,17 @@ const artifacts = path.join(
     'layout',
     path.basename(runtime),
 );
-const widths = [390, 820, 1440, 1920];
-// Screens built to the UX overhaul conventions: a token violation or a serious
-// axe finding fails the run here. Every other screen is measured and reported in
-// the "UI consistency / axe" column until its own slice lands - they predate the
-// conventions (several filled buttons, 12 px cards, low-contrast text) and a
-// screen leaves this reporting-only state by being added to the set, never by
-// loosening a rule.
-const uiGated = new Set([
-    'dashboard',
-    'workspace_clients',
-    'client_overview',
-    'workspace_invoices',
-    'workspace_time',
-    'workspace_finance',
-    'my_work',
-    'portal_home',
-    'shared_index',
-    'shared_host',
-    'shared_participant',
-    'shared_invitation',
-    'reviewer_queue',
-    'reviewer_grants',
-    'light_my_work',
-    'light_submissions',
-    'light_timesheet',
-    'light_invitation',
-]);
+// `--widths=390,1440` narrows a local iteration to some of the required widths.
+// CI and every claim of "verified" run all four.
+const widthsArgument = process.argv.find((argument) =>
+    argument.startsWith('--widths='),
+);
+const widths = widthsArgument
+    ? widthsArgument.slice('--widths='.length).split(',').map(Number)
+    : [390, 820, 1440, 1920];
+// Every screen is gated: a token violation or any axe finding, at any impact,
+// in either theme, fails the run (see capture()). There is no reporting-only
+// state to leave; a new screen is held to the same rules from its first capture.
 const clientsOnly = process.argv.includes('--clients');
 const resourceChromeOnly = process.argv.includes('--resource-chrome');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
@@ -95,6 +79,7 @@ const sharedProjectsOnly = process.argv.includes('--shared-projects');
 const reviewersOnly = process.argv.includes('--reviewers');
 const lightOnly = process.argv.includes('--light-workspace');
 const autopayOnly = process.argv.includes('--autopay');
+const paletteOnly = process.argv.includes('--palette');
 const revenueScreens = new Set([
     'dashboard',
     'workspace_clients',
@@ -221,6 +206,7 @@ try {
         SVC_LAYOUT_REVIEWERS: reviewersOnly ? '1' : '0',
         SVC_LAYOUT_LIGHT: lightOnly ? '1' : '0',
         SVC_LAYOUT_AUTOPAY: autopayOnly ? '1' : '0',
+        SVC_LAYOUT_PALETTE: paletteOnly ? '1' : '0',
         SVC_LAYOUT_INVOICE_DOCUMENT: invoiceDocumentOnly ? '1' : '0',
         // The portal offers card payment only where the deployment can confirm one.
         STRIPE_PUBLISHABLE_KEY: invoiceDocumentOnly
@@ -315,7 +301,14 @@ try {
     expect(wrongHostStatus).toBe(403);
 
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ extraHTTPHeaders: headers });
+    // Reduced motion: popups and dialogs fade in, and axe measures contrast on
+    // whatever is on screen at that instant - a half-faded dialog or a colour
+    // mid-transition after the theme switch reads as a contrast failure that
+    // no reader sees. It also exercises the app's reduced-motion rules.
+    const context = await browser.newContext({
+        extraHTTPHeaders: headers,
+        reducedMotion: 'reduce',
+    });
     await context.route('**/*', (route) => {
         return new URL(route.request().url()).origin === origin
             ? route.continue()
@@ -663,8 +656,12 @@ try {
             }
 
             await expect(appendix.getByText('scan.pdf')).toHaveCount(0);
-            await expect(appendix.getByText(/SyntheticReceiptScan/)).toHaveCount(0);
-            await expect(appendix.getByText('No receipt on file')).toHaveCount(0);
+            await expect(
+                appendix.getByText(/SyntheticReceiptScan/),
+            ).toHaveCount(0);
+            await expect(appendix.getByText('No receipt on file')).toHaveCount(
+                0,
+            );
             await expect(appendix.getByText(/hidden|withheld/i)).toHaveCount(0);
         } else {
             // The proforma reads as the client and carries no receipts.
@@ -746,12 +743,48 @@ try {
         // endpoint URL carries an unbroken token and must wrap; a member sees the
         // sentence but neither the URL nor a button.
         const webhookStates = [
-            ['webhook-healthy', 'payments_stripe', 'Webhook: all', true, 'none'],
-            ['webhook-missing', 'payments_webhook_missing', 'Missing: ', true, 'Add missing events'],
-            ['webhook-notfound', 'payments_webhook_notfound', 'No webhook endpoint found', true, 'Create endpoint'],
-            ['webhook-denied', 'payments_webhook_denied', 'SVC cannot read', true, 'none'],
-            ['webhook-disabled', 'payments_webhook_disabled', 'Webhook endpoint is disabled', true, 'none'],
-            ['webhook-member', 'payments_webhook_member', 'Missing: ', false, 'none'],
+            [
+                'webhook-healthy',
+                'payments_stripe',
+                'Webhook: all',
+                true,
+                'none',
+            ],
+            [
+                'webhook-missing',
+                'payments_webhook_missing',
+                'Missing: ',
+                true,
+                'Add missing events',
+            ],
+            [
+                'webhook-notfound',
+                'payments_webhook_notfound',
+                'No webhook endpoint found',
+                true,
+                'Create endpoint',
+            ],
+            [
+                'webhook-denied',
+                'payments_webhook_denied',
+                'SVC cannot read',
+                true,
+                'none',
+            ],
+            [
+                'webhook-disabled',
+                'payments_webhook_disabled',
+                'Webhook endpoint is disabled',
+                true,
+                'none',
+            ],
+            [
+                'webhook-member',
+                'payments_webhook_member',
+                'Missing: ',
+                false,
+                'none',
+            ],
         ];
 
         for (const [state, key, summary, showsUrl, fix] of webhookStates) {
@@ -1595,6 +1628,170 @@ try {
         }
     }
 
+    // The command palette (--palette), read as four people on four pages: an
+    // owner with no client in context, an owner on a client, a member scoped to
+    // one project, and the client contact in the portal. For each: the palette at
+    // rest (commands and recent items), a search that reaches every kind that
+    // person may see, the keyboard sheet, and the checks the layout cannot see for
+    // itself: nothing a person may not do is offered, the dialog stays inside the
+    // window with unbroken names, the list is operable from the keyboard, the
+    // result count is announced, and axe finds nothing serious or critical inside
+    // the dialog.
+    async function checkPalette(screen, width) {
+        await page.waitForLoadState('networkidle');
+
+        const manager =
+            screen === 'palette_owner' || screen === 'palette_owner_client';
+        const portal = screen === 'palette_portal';
+        const trigger = page
+            .locator('header')
+            .getByRole('button', { name: 'Search', exact: true });
+        const dialog = page.getByRole('dialog', { name: 'Search' });
+
+        async function dialogChecks(label) {
+            const box = await page.getByRole('dialog').first().boundingBox();
+
+            if (!box || box.x < 0 || box.x + box.width > width + 0.5) {
+                failures.push(
+                    `${screen}/${label} at ${width}px: the dialog leaves the window (${JSON.stringify(box)}).`,
+                );
+            }
+
+            const axe = await new AxeBuilder({ page })
+                .include('[role="dialog"]')
+                .analyze();
+            const serious = axe.violations
+                .filter((violation) =>
+                    ['serious', 'critical'].includes(violation.impact ?? ''),
+                )
+                .map(
+                    (violation) =>
+                        `${violation.id} (${violation.impact}: ${violation.nodes
+                            .slice(0, 3)
+                            .map((node) => node.target.join(' '))
+                            .join(', ')})`,
+                );
+
+            if (serious.length > 0) {
+                failures.push(
+                    `${screen}/${label} at ${width}px: axe in the dialog: ${serious.join('; ')}`,
+                );
+            }
+        }
+
+        await trigger.click();
+        await expect(dialog).toBeVisible();
+        await expect(
+            dialog.getByText('Commands', { exact: true }),
+        ).toBeVisible();
+        const status = dialog.getByRole('status');
+        await expect(status).toContainText('available. Type to search.');
+
+        // At rest: what this person may do, and nothing they may not.
+        const atRest = await dialog.innerText();
+        const expectAtRest = (text, present) => {
+            if (atRest.includes(text) !== present) {
+                failures.push(
+                    `${screen}/empty at ${width}px: "${text}" is ${present ? 'missing' : 'offered'}.`,
+                );
+            }
+        };
+
+        expectAtRest('Switch workspace', true);
+        expectAtRest('Keyboard shortcuts', true);
+        expectAtRest('Go to Revenue', manager);
+        expectAtRest('Go to Payments', manager);
+        expectAtRest('New invoice draft', manager);
+        expectAtRest('Log time', !portal);
+        expectAtRest('Pay an invoice', portal);
+        expectAtRest('Billing', portal);
+
+        if (manager) {
+            await expect(
+                dialog.getByText('Recent', { exact: true }),
+            ).toBeVisible();
+        }
+
+        await capture(screen, 'empty', width, false);
+        await dialogChecks('empty');
+
+        // Operable from the keyboard alone: the highlighted row moves.
+        const input = dialog.getByRole('combobox', {
+            name: 'Search and commands',
+        });
+        await expect(input).toBeFocused();
+        const selected = dialog.locator('[cmdk-item][aria-selected="true"]');
+        const before = await selected.first().innerText();
+        await page.keyboard.press('ArrowDown');
+        const after = await selected.first().innerText();
+
+        if (before === after) {
+            failures.push(
+                `${screen}/empty at ${width}px: ArrowDown did not move the highlight.`,
+            );
+        }
+
+        // A search that reaches every kind this person may see.
+        await input.fill('probe');
+        await expect(status).toContainText(/\d+ results?\./);
+
+        for (const heading of [
+            'Agreements',
+            'Proposals',
+            'Files',
+            'Time',
+            ...(portal ? [] : ['Expenses']),
+        ]) {
+            if ((await dialog.getByText(heading, { exact: true }).count()) === 0) {
+                failures.push(
+                    `${screen}/results at ${width}px: "${heading}" is missing from: ${(await dialog.innerText()).replace(/\s+/g, ' ').slice(0, 300)}`,
+                );
+            }
+        }
+
+        for (const heading of ['Contacts', 'Portal users']) {
+            const count = await dialog
+                .getByText(heading, { exact: true })
+                .count();
+
+            if (count > 0 !== manager) {
+                failures.push(
+                    `${screen}/results at ${width}px: "${heading}" is ${count > 0 ? 'offered' : 'missing'}.`,
+                );
+            }
+        }
+
+        if (
+            portal &&
+            (await dialog.getByText('Expenses', { exact: true }).count()) > 0
+        ) {
+            failures.push(
+                `${screen}/results at ${width}px: Expenses reach the portal.`,
+            );
+        }
+
+        await capture(screen, 'results', width, false);
+        await dialogChecks('results');
+
+        // A typed word matches a command locally and shows it above the records.
+        await input.fill(portal ? 'pay' : 'log');
+        await expect(
+            dialog.getByText('Commands', { exact: true }),
+        ).toBeVisible();
+        await capture(screen, 'command-match', width, false);
+
+        // Escape closes it; the shortcut sheet opens on a question mark.
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        await page.keyboard.press('?');
+        const sheet = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+        await expect(sheet).toBeVisible();
+        await capture(screen, 'shortcuts', width, false);
+        await dialogChecks('shortcuts');
+        await page.keyboard.press('Escape');
+        await expect(sheet).toBeHidden();
+    }
+
     // "My work" and the portal home (--work-portal). Both are read as the
     // people they are for: a member who is not an owner or admin, and a client
     // contact. The member's page must carry no price however it is read; the
@@ -1790,9 +1987,73 @@ try {
         }
     }
 
+    // Every capture is checked in both themes. The theme follows the browser's
+    // colour scheme live (appearance.ts listens to the media query), so an open
+    // dialog or menu stays open across the switch and is checked in both.
+    // A caller that has already put the page in dark mode (the invoice
+    // document) is checked in dark only, and keeps its own light capture.
     async function capture(screen, state, width, measuredOnly = false) {
-        await page.evaluate(() => document.fonts.ready);
+        await settleStyles(page);
         await page.evaluate(() => window.scrollTo(0, 0));
+        const startsDark = await page.evaluate(() =>
+            document.documentElement.classList.contains('dark'),
+        );
+
+        if (startsDark) {
+            await captureTheme(screen, state, width, measuredOnly, 'dark', '');
+
+            return;
+        }
+
+        await captureTheme(screen, state, width, measuredOnly, 'light', '');
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await expect(page.locator('html')).toHaveClass(/dark/);
+        await settleStyles(page);
+
+        try {
+            await captureTheme(
+                screen,
+                state,
+                width,
+                measuredOnly,
+                'dark',
+                '-dark',
+            );
+        } finally {
+            await page.emulateMedia({ colorScheme: 'light' });
+            await expect(page.locator('html')).not.toHaveClass(/dark/);
+            await settleStyles(page);
+        }
+    }
+
+    // The theme switch changes colours on every element; axe samples the
+    // computed colour of whatever is on screen at that instant, so wait until
+    // the styles have been recalculated and no transition is still running.
+    async function settleStyles(page) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.evaluate(
+            () =>
+                new Promise((resolve) =>
+                    requestAnimationFrame(() => requestAnimationFrame(resolve)),
+                ),
+        );
+        await page
+            .waitForFunction(() =>
+                document
+                    .getAnimations()
+                    .every((animation) => animation.playState !== 'running'),
+            )
+            .catch(() => undefined);
+    }
+
+    async function captureTheme(
+        screen,
+        state,
+        width,
+        measuredOnly,
+        theme,
+        suffix,
+    ) {
         const metrics = await page.evaluate(() => {
             const header = document.querySelector('header');
             const row = header?.firstElementChild;
@@ -1841,23 +2102,23 @@ try {
         // Radius, padding and font size come from the cascade, so they are
         // checked here and not in jsdom: cards against the spec tokens, one
         // filled button per page, no bordered link in a card, every action
-        // button named. Advisory risks (a text button without an icon) are
-        // reported and do not fail. Then axe: serious or critical fails.
+        // button named. Then axe, at every impact: any violation fails, on
+        // every screen and in both themes. Only the advisory consistency
+        // risk (a text button without an icon) is reported without failing.
         const uiRisks = await uiConsistencyRisks(page);
         const uiErrors = uiRisks.filter((risk) => risk.severity === 'error');
-        const axe = await new AxeBuilder({ page }).analyze();
-        const axeSerious = axe.violations
-            .filter((violation) =>
-                ['serious', 'critical'].includes(violation.impact ?? ''),
-            )
-            .map(
-                (violation) =>
-                    `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
-                        .slice(0, 3)
-                        .map((node) => node.target.join(' '))
-                        .join(', ')})`,
-            );
-        const screenshot = `${screen}-${state}-${width}.png`;
+        const axeResult = await new AxeBuilder({ page }).analyze();
+        const axeFindings = axeResult.violations.map(
+            (violation) =>
+                `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
+                    .slice(0, 3)
+                    .map(
+                        (node) =>
+                            `${node.target.join(' ')} [${node.html.slice(0, 140)}]`,
+                    )
+                    .join(', ')})`,
+        );
+        const screenshot = `${screen}-${state}-${width}${suffix}.png`;
         await page.screenshot({
             path: path.join(artifacts, screenshot),
             fullPage: !(screen === 'task_list' && state.startsWith('create-')),
@@ -1867,40 +2128,49 @@ try {
             screen,
             state,
             width,
+            theme,
             measuredOnly,
             passes,
             ...metrics,
             ui: uiRisks,
-            axe: axeSerious,
+            axe: axeFindings,
+            axeDetail: axeResult.violations.map((violation) => ({
+                id: violation.id,
+                impact: violation.impact,
+                help: violation.help,
+                nodes: violation.nodes.map((node) => ({
+                    target: node.target.join(' '),
+                    summary: node.failureSummary?.split('\n').slice(0, 3),
+                })),
+            })),
             screenshot,
         });
+        const where = `${screen}/${state} at ${width}px (${theme})`;
 
         if (!passes && !measuredOnly) {
-            failures.push(
-                `${screen}/${state} at ${width}px: overflow or navbar no longer one row.`,
-            );
+            failures.push(`${where}: overflow or navbar no longer one row.`);
         }
 
-        if (!measuredOnly && uiGated.has(screen) && uiErrors.length > 0) {
+        if (uiErrors.length > 0) {
             failures.push(
-                `${screen}/${state} at ${width}px: UI consistency: ${uiErrors
+                `${where}: UI consistency: ${uiErrors
                     .slice(0, 5)
                     .map((risk) => `${risk.rule} ${risk.detail}`)
                     .join('; ')}`,
             );
         }
 
-        if (!measuredOnly && uiGated.has(screen) && axeSerious.length > 0) {
-            failures.push(
-                `${screen}/${state} at ${width}px: axe: ${axeSerious.join('; ')}`,
-            );
+        if (axeFindings.length > 0) {
+            failures.push(`${where}: axe: ${axeFindings.join('; ')}`);
         }
     }
 
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of autopayOnly
+        for (const screen of paletteOnly
+            ? ['palette_owner', 'palette_owner_client', 'palette_member', 'palette_portal']
+            : autopayOnly
             ? [
                   'autopay_billing',
                   'autopay_billing_off',
@@ -2117,6 +2387,12 @@ try {
 
             if (paymentsOnly) {
                 await checkPayments(width);
+
+                continue;
+            }
+
+            if (paletteOnly) {
+                await checkPalette(screen, width);
 
                 continue;
             }
@@ -2388,7 +2664,7 @@ try {
             if (screen === 'task_editor') {
                 await expect(
                     page.locator(
-                        'header [aria-label="Client sections"]:visible',
+                        'header [aria-label$="Client sections"]:visible',
                     ),
                 ).toContainText('Tasks');
                 await expect(page.locator('header')).not.toContainText(
@@ -2504,7 +2780,14 @@ try {
                 ).toBeVisible();
             }
 
-            if (screen.startsWith('square_') && !disputesOnly) {
+            if (screen === 'square_portal' && !disputesOnly) {
+                // Paid in SVC while Square still has an open balance: there is
+                // nothing left for the client to pay, so no pay link is offered
+                // (InvoicePaymentOptions offers one only for a payable invoice).
+                await expect(
+                    page.getByRole('link', { name: /pay in square/i }),
+                ).toHaveCount(0);
+            } else if (screen.startsWith('square_') && !disputesOnly) {
                 await expect(
                     page
                         .getByRole('link', {
@@ -2873,8 +3156,7 @@ try {
                     .click();
                 await page
                     .getByRole('button', {
-                        name: 'Current client',
-                        exact: true,
+                        name: /^Current client/,
                     })
                     .click();
                 await page
@@ -2931,8 +3213,7 @@ try {
                 await expect(page.getByRole('dialog')).toHaveCount(0);
                 await page
                     .getByRole('button', {
-                        name: 'Current client',
-                        exact: true,
+                        name: /^Current client/,
                     })
                     .click();
                 await page
@@ -3564,9 +3845,12 @@ try {
                             new URL(response.url()).pathname,
                         ),
                 );
-                await access.selectOption('viewer');
+                await access.click();
+                await page
+                    .getByRole('option', { name: 'Viewer', exact: true })
+                    .click();
                 expect((await granted).status()).toBe(200);
-                await expect(access).toHaveValue('viewer');
+                await expect(access).toContainText('Viewer');
                 await capture(screen, 'project-edited-and-granted', width);
                 await page
                     .getByLabel('New project', { exact: true })
@@ -3761,7 +4045,13 @@ try {
                         name: 'Portal access for the new contact',
                         exact: true,
                     })
-                    .selectOption('projects');
+                    .click();
+                await page
+                    .getByRole('option', {
+                        name: 'Selected projects',
+                        exact: true,
+                    })
+                    .click();
                 await capture(screen, 'portal-project-selection', width);
                 await card
                     .getByRole('button', { name: 'Remove', exact: true })
@@ -4244,98 +4534,106 @@ try {
             }
 
             if (screen === 'invoice') {
-                await page
-                    .getByRole('button', {
-                        name: 'Send to client',
-                        exact: true,
-                    })
-                    .click();
-                const compose = page.getByRole('dialog');
-                await compose
-                    .getByLabel('Subject', { exact: true })
-                    .fill('Synthetic invoice subject '.repeat(8));
-                await compose
-                    .getByLabel('Covering note (optional)', { exact: true })
-                    .fill('SyntheticUnbrokenCoveringNote'.repeat(100));
-                await compose
-                    .getByLabel('To', { exact: true })
-                    .fill(
-                        `${'synthetic'.repeat(7)}@${'reserved'.repeat(7)}.example.test`,
-                    );
-                await compose
-                    .getByRole('button', { name: 'Add', exact: true })
-                    .click();
-                await capture(screen, 'send-compose', width);
-                // Synthetic adapter outcome only: no email leaves this layout
-                // fixture. The real after-commit path is proved by
-                // InvoiceSendOutcomeTest with its replaceable mail adapter.
-                let composeChecks = 0;
-                await page.route(
-                    '**/api/v1/workspaces/*/invoices/*/send',
-                    async (route) => {
-                        const request = route.request();
-                        const body = request.postDataJSON();
+                // A disputed invoice cannot be sent (the page offers no "Send to
+                // client" and the reminder buttons are asserted absent above), so
+                // the compose flow runs on every other group's invoice.
+                if (!disputesOnly) {
+                    await page
+                        .getByRole('button', {
+                            name: 'Send to client',
+                            exact: true,
+                        })
+                        .click();
+                    const compose = page.getByRole('dialog');
+                    await compose
+                        .getByLabel('Subject', { exact: true })
+                        .fill('Synthetic invoice subject '.repeat(8));
+                    await compose
+                        .getByLabel('Covering note (optional)', { exact: true })
+                        .fill('SyntheticUnbrokenCoveringNote'.repeat(100));
+                    await compose
+                        .getByLabel('To', { exact: true })
+                        .fill(
+                            `${'synthetic'.repeat(7)}@${'reserved'.repeat(7)}.example.test`,
+                        );
+                    await compose
+                        .getByRole('button', { name: 'Add', exact: true })
+                        .click();
+                    await capture(screen, 'send-compose', width);
+                    // Synthetic adapter outcome only: no email leaves this layout
+                    // fixture. The real after-commit path is proved by
+                    // InvoiceSendOutcomeTest with its replaceable mail adapter.
+                    let composeChecks = 0;
+                    await page.route(
+                        '**/api/v1/workspaces/*/invoices/*/send',
+                        async (route) => {
+                            const request = route.request();
+                            const body = request.postDataJSON();
 
-                        if (
-                            request.headers()['idempotency-key'] == null ||
-                            body.confirm !== true ||
-                            typeof body.expected_version !== 'string'
-                        ) {
-                            throw new Error(
-                                'Invoice compose omitted its confirmed version or retry key.',
-                            );
-                        }
+                            if (
+                                request.headers()['idempotency-key'] == null ||
+                                body.confirm !== true ||
+                                typeof body.expected_version !== 'string'
+                            ) {
+                                throw new Error(
+                                    'Invoice compose omitted its confirmed version or retry key.',
+                                );
+                            }
 
-                        await route.fulfill({
-                            status: 200,
-                            contentType: 'application/json',
-                            body: JSON.stringify({
-                                data: {
-                                    id: new URL(request.url()).pathname
-                                        .split('/')
-                                        .at(-2),
-                                    version: body.expected_version,
-                                    delivery: {
-                                        id: 'synthetic-layout-delivery',
-                                        status:
-                                            composeChecks++ === 0
-                                                ? 'sending'
-                                                : 'sent',
-                                        error_summary: null,
+                            await route.fulfill({
+                                status: 200,
+                                contentType: 'application/json',
+                                body: JSON.stringify({
+                                    data: {
+                                        id: new URL(request.url()).pathname
+                                            .split('/')
+                                            .at(-2),
+                                        version: body.expected_version,
+                                        delivery: {
+                                            id: 'synthetic-layout-delivery',
+                                            status:
+                                                composeChecks++ === 0
+                                                    ? 'sending'
+                                                    : 'sent',
+                                            error_summary: null,
+                                        },
                                     },
-                                },
-                            }),
-                        });
-                    },
-                );
-                await compose
-                    .getByRole('button', { name: 'Send', exact: true })
-                    .click();
-                await expect(
-                    compose.getByRole('button', {
-                        name: 'Check delivery',
-                        exact: true,
-                    }),
-                ).toBeVisible();
-                await expect(
-                    compose.getByLabel('Subject', { exact: true }),
-                ).toBeDisabled();
-                await capture(screen, 'send-unresolved', width);
-                await compose
-                    .getByRole('button', {
-                        name: 'Check delivery',
-                        exact: true,
-                    })
-                    .click();
-                await expect(compose).toHaveCount(0);
-                await expect(
-                    page.getByText('Reconciled in finance', { exact: true }),
-                ).toBeVisible();
-                await expect(
-                    page.getByRole('link', {
-                        name: 'Finance transaction 2 of 2',
-                    }),
-                ).toBeVisible();
+                                }),
+                            });
+                        },
+                    );
+                    await compose
+                        .getByRole('button', { name: 'Send', exact: true })
+                        .click();
+                    await expect(
+                        compose.getByRole('button', {
+                            name: 'Check delivery',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await expect(
+                        compose.getByLabel('Subject', { exact: true }),
+                    ).toBeDisabled();
+                    await capture(screen, 'send-unresolved', width);
+                    await compose
+                        .getByRole('button', {
+                            name: 'Check delivery',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(compose).toHaveCount(0);
+                    await expect(
+                        page.getByText('Reconciled in finance', {
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await expect(
+                        page.getByRole('link', {
+                            name: 'Finance transaction 2 of 2',
+                        }),
+                    ).toBeVisible();
+                }
+
                 await page
                     .getByRole('button', {
                         name: 'Record payment',
@@ -4415,6 +4713,7 @@ try {
     }
 
     if (
+        !paletteOnly &&
         !resourceChromeOnly &&
         !invoiceActionsOnly &&
         !invoiceSendOnly &&
@@ -4462,6 +4761,7 @@ try {
     }
 
     if (
+        !paletteOnly &&
         !resourceChromeOnly &&
         !invoiceSendOnly &&
         !invoiceRecoveryOnly &&

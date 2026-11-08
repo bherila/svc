@@ -32,6 +32,12 @@ final readonly class SearchResult
          * single workspace it is noise on every row.
          */
         public string $workspaceName,
+        /**
+         * The workspace's public id. Palette-only: it is how a recent item is
+         * filed under the workspace it was opened in, and it is deliberately
+         * absent from {@see toArray()} so the agent API's row is unchanged.
+         */
+        public string $workspaceId = '',
     ) {}
 
     /** @return array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string} */
@@ -44,6 +50,25 @@ final readonly class SearchResult
             'subtitle' => $this->subtitle,
             'href' => $this->href,
             'workspace' => $this->workspaceName,
+        ];
+    }
+
+    /**
+     * The row as the palette receives it.
+     *
+     * The heading and whether the row can become a recent item are decided
+     * here, so the browser carries neither a list of headings nor a list of
+     * which kinds are reopenable - a kind added on the server arrives complete.
+     *
+     * @return array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string, workspace_id: string, heading: string, recent: bool}
+     */
+    public function toPaletteArray(): array
+    {
+        return [
+            ...$this->toArray(),
+            'workspace_id' => $this->workspaceId,
+            'heading' => $this->kind->heading(),
+            'recent' => in_array($this->kind, SearchResultKind::recentable(), true),
         ];
     }
 }

@@ -35,4 +35,43 @@ final class LayoutWorkflowTest extends TestCase
         }
         $this->assertCount(4, array_unique($selected));
     }
+
+    public function test_every_screen_group_of_the_harness_runs_on_every_pull_request(): void
+    {
+        $root = dirname(__DIR__, 3);
+        $workflow = Yaml::parseFile($root.'/.github/workflows/tests.yml');
+        $harness = file_get_contents($root.'/scripts/check-layout.mjs');
+        preg_match_all("/process\\.argv\\.includes\\('(--[a-z-]+)'\\)/", $harness, $found);
+        // --skip-build is not a group; every other flag selects one.
+        $groups = array_values(array_diff(array_unique($found[1]), ['--skip-build']));
+        sort($groups);
+        $this->assertNotEmpty($groups);
+
+        $job = $workflow['jobs']['layout'];
+        $this->assertArrayNotHasKey('if', $job, 'Layout groups gate every push and pull request, not only a dispatch.');
+        $this->assertSame([], $job['needs'] ?? [], 'Layout shards must be concurrent.');
+        $this->assertFalse($job['strategy']['fail-fast']);
+
+        $scheduled = [];
+        foreach ($job['strategy']['matrix']['include'] as $shard) {
+            preg_match_all('/--[a-z-]+/', $shard['groups'], $flags);
+            array_push($scheduled, ...$flags[0]);
+        }
+        $this->assertEmpty(array_diff($groups, $scheduled), 'Every harness group needs a shard: '.implode(' ', array_diff($groups, $scheduled)));
+        $this->assertSame(array_values(array_unique($scheduled)), $scheduled, 'A group runs in one shard only.');
+        $this->assertContains('', array_column($job['strategy']['matrix']['include'], 'groups'), 'The default screens need a shard.');
+
+        $this->assertSame(['layout', 'layout-scripts'], $workflow['jobs']['layout-gate']['needs']);
+        foreach (glob($root.'/scripts/check-*-layout.mjs') as $script) {
+            $name = 'scripts/'.basename($script);
+            if ($name === 'scripts/check-layout.mjs') {
+                continue;
+            }
+            $scripts = array_column($workflow['jobs']['layout-scripts']['strategy']['matrix']['include'], 'script');
+            if (str_contains(file_get_contents($script), 'accessibilityFindings')) {
+                $this->assertContains($name, $scripts, $name.' gates accessibility, so CI must run it.');
+            }
+        }
+        $this->assertContains('layout-gate', $workflow['jobs']['ci']['needs']);
+    }
 }

@@ -205,120 +205,128 @@ function ListPanel({
                             const index = order.indexOf(list.id);
 
                             return (
-                                <Card key={list.id} className="min-w-0">
-                                    <CardContent>
-                                        <li className="grid grid-cols-1 gap-3">
-                                            <Link
-                                                href={list.browse_href}
-                                                className="font-medium wrap-anywhere underline underline-offset-4"
-                                            >
-                                                {list.name}
-                                            </Link>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <Badge variant="secondary">
-                                                    {list.archived
-                                                        ? 'Archived'
-                                                        : list.is_visible_to_client
-                                                          ? 'Client sharing enabled'
-                                                          : 'Internal'}
-                                                </Badge>
-                                                {view.reorder_lists_href &&
-                                                    index >= 0 &&
-                                                    !view.moving && (
-                                                        <OrderButtons
-                                                            name={list.name}
-                                                            index={index}
-                                                            count={order.length}
-                                                            disabled={
-                                                                mutation.locked
-                                                            }
-                                                            change={(offset) =>
-                                                                setDraft(
-                                                                    (
-                                                                        current,
-                                                                    ) => ({
-                                                                        ids: reorder(
-                                                                            current?.ids ??
-                                                                                view.ordered_list_ids,
-                                                                            index,
-                                                                            offset,
-                                                                        ),
-                                                                        version:
-                                                                            current?.version ??
-                                                                            view.lists_version,
-                                                                    }),
-                                                                )
-                                                            }
-                                                        />
-                                                    )}
+                                <li key={list.id} className="min-w-0">
+                                    <Card className="min-w-0">
+                                        <CardContent>
+                                            <div className="grid grid-cols-1 gap-3">
+                                                <Link
+                                                    href={list.browse_href}
+                                                    className="font-medium wrap-anywhere underline underline-offset-4"
+                                                >
+                                                    {list.name}
+                                                </Link>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <Badge variant="secondary">
+                                                        {list.archived
+                                                            ? 'Archived'
+                                                            : list.is_visible_to_client
+                                                              ? 'Client sharing enabled'
+                                                              : 'Internal'}
+                                                    </Badge>
+                                                    {view.reorder_lists_href &&
+                                                        index >= 0 &&
+                                                        !view.moving && (
+                                                            <OrderButtons
+                                                                name={list.name}
+                                                                index={index}
+                                                                count={
+                                                                    order.length
+                                                                }
+                                                                disabled={
+                                                                    mutation.locked
+                                                                }
+                                                                change={(
+                                                                    offset,
+                                                                ) =>
+                                                                    setDraft(
+                                                                        (
+                                                                            current,
+                                                                        ) => ({
+                                                                            ids: reorder(
+                                                                                current?.ids ??
+                                                                                    view.ordered_list_ids,
+                                                                                index,
+                                                                                offset,
+                                                                            ),
+                                                                            version:
+                                                                                current?.version ??
+                                                                                view.lists_version,
+                                                                        }),
+                                                                    )
+                                                                }
+                                                            />
+                                                        )}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {!view.moving &&
+                                                        list.update_href && (
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled={
+                                                                    mutation.locked
+                                                                }
+                                                                onClick={() =>
+                                                                    open({
+                                                                        kind: 'edit-list',
+                                                                        list,
+                                                                    })
+                                                                }
+                                                            >
+                                                                Edit list
+                                                            </Button>
+                                                        )}
+                                                    {!view.moving &&
+                                                        list.archive_href && (
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled={
+                                                                    mutation.locked
+                                                                }
+                                                                onClick={() =>
+                                                                    open({
+                                                                        kind: 'archive-list',
+                                                                        list,
+                                                                    })
+                                                                }
+                                                            >
+                                                                Archive list
+                                                            </Button>
+                                                        )}
+                                                    {!view.moving &&
+                                                        list.restore_href && (
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled={
+                                                                    mutation.locked
+                                                                }
+                                                                onClick={() =>
+                                                                    open({
+                                                                        kind: 'restore-list',
+                                                                        list,
+                                                                    })
+                                                                }
+                                                            >
+                                                                Restore list
+                                                            </Button>
+                                                        )}
+                                                    <MoveHere
+                                                        view={view}
+                                                        target={
+                                                            list.move_target
+                                                        }
+                                                        mutation={mutation}
+                                                    />
+                                                </div>
                                             </div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {!view.moving &&
-                                                    list.update_href && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            disabled={
-                                                                mutation.locked
-                                                            }
-                                                            onClick={() =>
-                                                                open({
-                                                                    kind: 'edit-list',
-                                                                    list,
-                                                                })
-                                                            }
-                                                        >
-                                                            Edit list
-                                                        </Button>
-                                                    )}
-                                                {!view.moving &&
-                                                    list.archive_href && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            disabled={
-                                                                mutation.locked
-                                                            }
-                                                            onClick={() =>
-                                                                open({
-                                                                    kind: 'archive-list',
-                                                                    list,
-                                                                })
-                                                            }
-                                                        >
-                                                            Archive list
-                                                        </Button>
-                                                    )}
-                                                {!view.moving &&
-                                                    list.restore_href && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            disabled={
-                                                                mutation.locked
-                                                            }
-                                                            onClick={() =>
-                                                                open({
-                                                                    kind: 'restore-list',
-                                                                    list,
-                                                                })
-                                                            }
-                                                        >
-                                                            Restore list
-                                                        </Button>
-                                                    )}
-                                                <MoveHere
-                                                    view={view}
-                                                    target={list.move_target}
-                                                    mutation={mutation}
-                                                />
-                                            </div>
-                                        </li>
-                                    </CardContent>
-                                </Card>
+                                        </CardContent>
+                                    </Card>
+                                </li>
                             );
                         })}
                     </ul>
@@ -328,6 +336,7 @@ function ListPanel({
                     order.length > 1 && (
                         <div className="flex flex-wrap gap-2">
                             <Button
+                                variant="outline"
                                 type="button"
                                 disabled={!dirty || mutation.locked}
                                 onClick={() =>
@@ -458,118 +467,125 @@ function TaskPanel({
                         }
 
                         return (
-                            <Card key={task.id} className="min-w-0">
-                                <CardContent>
-                                    <li className="grid grid-cols-1 gap-3">
-                                        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                            <div className="min-w-0 flex-1">
-                                                <Link
-                                                    href={task.task_href}
-                                                    className="font-medium wrap-anywhere underline underline-offset-4"
-                                                >
-                                                    {task.title}
-                                                </Link>
-                                            </div>
-                                            {container.reorder_href &&
-                                                !view.moving && (
-                                                    <OrderButtons
-                                                        name={task.title}
-                                                        index={index}
-                                                        count={order.length}
-                                                        disabled={
-                                                            mutation.locked
-                                                        }
-                                                        change={(offset) =>
-                                                            setDraft(
-                                                                (current) => ({
-                                                                    ids: reorder(
-                                                                        current?.ids ??
-                                                                            container.tasks.map(
-                                                                                (
-                                                                                    task,
-                                                                                ) =>
-                                                                                    task.id,
-                                                                            ),
-                                                                        index,
-                                                                        offset,
-                                                                    ),
-                                                                    version:
-                                                                        current?.version ??
-                                                                        container.version,
-                                                                    target:
-                                                                        current?.target ??
-                                                                        container.target,
-                                                                }),
-                                                            )
-                                                        }
-                                                    />
-                                                )}
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            <Badge variant="secondary">
-                                                {task.status_label}
-                                            </Badge>
-                                            <Badge variant="outline">
-                                                {task.effective_visible_to_client
-                                                    ? 'Client sharing enabled'
-                                                    : task.is_visible_to_client
-                                                      ? 'Hidden by project or parent'
-                                                      : 'Internal'}
-                                            </Badge>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <Link
-                                                href={task.browse_href}
-                                                className="text-sm underline underline-offset-4"
-                                            >
-                                                Subtasks
-                                            </Link>
-                                            {!view.moving &&
-                                                task.create_child_href && (
-                                                    <Button
-                                                        type="button"
-                                                        size="sm"
-                                                        variant="outline"
-                                                        disabled={
-                                                            mutation.locked
-                                                        }
-                                                        onClick={() =>
-                                                            open({
-                                                                kind: 'new-task',
-                                                                href: task.create_child_href!,
-                                                                target: task.child_target,
-                                                                title: 'New subtask',
-                                                            })
-                                                        }
+                            <li key={task.id} className="min-w-0">
+                                <Card className="min-w-0">
+                                    <CardContent>
+                                        <div className="grid grid-cols-1 gap-3">
+                                            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                <div className="min-w-0 flex-1">
+                                                    <Link
+                                                        href={task.task_href}
+                                                        className="font-medium wrap-anywhere underline underline-offset-4"
                                                     >
-                                                        New subtask
-                                                    </Button>
-                                                )}
-                                            {!view.moving && (
+                                                        {task.title}
+                                                    </Link>
+                                                </div>
+                                                {container.reorder_href &&
+                                                    !view.moving && (
+                                                        <OrderButtons
+                                                            name={task.title}
+                                                            index={index}
+                                                            count={order.length}
+                                                            disabled={
+                                                                mutation.locked
+                                                            }
+                                                            change={(offset) =>
+                                                                setDraft(
+                                                                    (
+                                                                        current,
+                                                                    ) => ({
+                                                                        ids: reorder(
+                                                                            current?.ids ??
+                                                                                container.tasks.map(
+                                                                                    (
+                                                                                        task,
+                                                                                    ) =>
+                                                                                        task.id,
+                                                                                ),
+                                                                            index,
+                                                                            offset,
+                                                                        ),
+                                                                        version:
+                                                                            current?.version ??
+                                                                            container.version,
+                                                                        target:
+                                                                            current?.target ??
+                                                                            container.target,
+                                                                    }),
+                                                                )
+                                                            }
+                                                        />
+                                                    )}
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                <Badge variant="secondary">
+                                                    {task.status_label}
+                                                </Badge>
+                                                <Badge variant="outline">
+                                                    {task.effective_visible_to_client
+                                                        ? 'Client sharing enabled'
+                                                        : task.is_visible_to_client
+                                                          ? 'Hidden by project or parent'
+                                                          : 'Internal'}
+                                                </Badge>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2">
                                                 <Link
-                                                    href={task.move_picker_href}
+                                                    href={task.browse_href}
                                                     className="text-sm underline underline-offset-4"
                                                 >
-                                                    Move task
+                                                    Subtasks
                                                 </Link>
-                                            )}
-                                            <MoveHere
-                                                view={view}
-                                                target={task.move_target}
-                                                mutation={mutation}
-                                            >
-                                                Move under this task
-                                            </MoveHere>
+                                                {!view.moving &&
+                                                    task.create_child_href && (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={
+                                                                mutation.locked
+                                                            }
+                                                            onClick={() =>
+                                                                open({
+                                                                    kind: 'new-task',
+                                                                    href: task.create_child_href!,
+                                                                    target: task.child_target,
+                                                                    title: 'New subtask',
+                                                                })
+                                                            }
+                                                        >
+                                                            New subtask
+                                                        </Button>
+                                                    )}
+                                                {!view.moving && (
+                                                    <Link
+                                                        href={
+                                                            task.move_picker_href
+                                                        }
+                                                        className="text-sm underline underline-offset-4"
+                                                    >
+                                                        Move task
+                                                    </Link>
+                                                )}
+                                                <MoveHere
+                                                    view={view}
+                                                    target={task.move_target}
+                                                    mutation={mutation}
+                                                >
+                                                    Move under this task
+                                                </MoveHere>
+                                            </div>
                                         </div>
-                                    </li>
-                                </CardContent>
-                            </Card>
+                                    </CardContent>
+                                </Card>
+                            </li>
                         );
                     })}
                 </ol>
                 {container.reorder_href && !view.moving && order.length > 1 && (
                     <div className="flex flex-wrap gap-2">
                         <Button
+                            variant="outline"
                             type="button"
                             disabled={!dirty || mutation.locked}
                             onClick={() =>

@@ -88,7 +88,7 @@ export default function ClientTasks({
                 <Card>
                     <CardHeader className="gap-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                            <CardTitle>Tasks</CardTitle>
+                            <CardTitle aria-level={1}>Tasks</CardTitle>
                             {task_management !== null && (
                                 <TaskCreateDialog
                                     projects={task_management.projects}
