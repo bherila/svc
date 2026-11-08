@@ -28,7 +28,10 @@ final class PaletteValueObjectsTest extends TestCase
         $this->assertSame('Time', SearchResultKind::Time->heading());
         $this->assertSame('Contacts', SearchResultKind::Contact->heading());
         $this->assertSame('Portal users', SearchResultKind::PortalUser->heading());
-        $this->assertSame('Clients', SearchResultKind::Client->heading());
+        $this->assertSame(
+            ['Clients', 'Projects', 'Invoices', 'Tasks', 'Notes', 'Discussions', 'Comments', 'History', 'Expenses', 'Agreements', 'Proposals', 'Files', 'Time', 'Contacts', 'Portal users'],
+            array_map(fn (SearchResultKind $kind): string => $kind->heading(), SearchResultKind::cases()),
+        );
     }
 
     public function test_the_original_kinds_list_by_title_and_the_new_ones_keep_their_query_order(): void
