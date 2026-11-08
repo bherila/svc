@@ -24,6 +24,7 @@ final class RateLimits
         'portal-writes' => 60,
         'payment-intents' => 30,
         'invitations' => 30,
+        'csp-reports' => 120,
     ];
 
     public static function register(): void

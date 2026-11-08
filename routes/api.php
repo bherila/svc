@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
 use App\Http\Controllers\Api\V1\DeferredBuyDownController;
 use App\Http\Controllers\Api\V1\FinanceReconciliationController;
+use App\Http\Controllers\CspReportController;
 use App\Http\Controllers\SquareWebhookController;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
@@ -57,6 +58,10 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Middleware\CheckToken;
+
+// The CSP violation collector. An API-group route, so it has no session and no CSRF check: a browser
+// posts a report with no token. Named limiter, bounded body, log-only (see the controller).
+Route::post('/csp-reports', CspReportController::class)->middleware('throttle:csp-reports')->name('svc.csp-reports');
 
 Route::post('/webhooks/square', SquareWebhookController::class)->name('svc.billing.square.webhook');
 Route::post('/webhooks/square/{endpoint}', SquareWebhookController::class)

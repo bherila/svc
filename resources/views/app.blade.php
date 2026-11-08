@@ -8,7 +8,8 @@
         <meta name="color-scheme" content="light dark">
         <meta name="darkreader-lock">
 
-        <script>
+        {{-- Carries the response's CSP nonce (SecurityHeaders draws it before this view renders), so script-src needs no 'unsafe-inline'. --}}
+        <script @if (Vite::cspNonce()) nonce="{{ Vite::cspNonce() }}" @endif>
             (() => {
                 let stored = null;
 

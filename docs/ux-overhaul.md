@@ -744,29 +744,72 @@ Every decision is recorded so a later change knows what it is undoing.
   `Permissions-Policy` (camera, microphone, geolocation, USB and FLoC off).
   Nothing in SVC is framed by another site, and SVC frames only Stripe's own
   payment frames, so `DENY` has no exception. `frame-ancestors` is not put in the
-  CSP: a report-only policy cannot enforce it, so `X-Frame-Options` carries it.
+  CSP: a report-only policy cannot enforce it (and `X-Frame-Options` carries it
+  in every mode), so it joins the policy only if that header is ever dropped.
 - `Strict-Transport-Security: max-age=31536000` only when the request is HTTPS.
   Decided: no `preload` (a preload listing is close to irreversible) and no
   `includeSubDomains` (other subdomains of the host are not this application's
-  to commit). `SVC_HSTS_MAX_AGE=0` turns it off.
-- **CSP is report-only and nothing enforces it.** There is deliberately no setting
-  that enforces it; enforcing is a later, separate decision once reports are
-  clean. Sent on HTML responses only. The allowlist was built from the code:
-  Stripe.js (`js.stripe.com`, `resources/js/lib/stripe-js.ts`), Stripe frames
-  (`js.stripe.com`, `hooks.stripe.com`), `api.stripe.com`, Stripe images, Bunny
-  Fonts (named in `vite.config.ts`), the identity provider's origin in
-  `form-action` (sign-out is a form post that redirects there), and the Vite dev
-  server (script, style, font, image, `ws:`) only while `public/hot` exists.
-  Square needs nothing: it is reached by redirect to its hosted page and by
-  server-side calls, never by a Square script, frame or browser connection. If a
-  Square web payments SDK is ever added, its origins join this list first.
-- `script-src` and `style-src` keep `'unsafe-inline'`: the appearance bootstrap in
-  `app.blade.php` is an inline script and component libraries write style
-  attributes. Enforcing needs a nonce pass first; that is why it stays report-only.
-- No `report-uri` unless `SVC_CSP_REPORT_URI` is set (an https URL or an absolute
-  path, validated). There is no collector endpoint in SVC, and adding one that
-  stores browser-supplied JSON is a product decision, so reports go to the
-  browser console until one is chosen.
+  to commit). `SVC_HSTS_MAX_AGE=0` turns it off. **Unchanged in this follow-up,
+  on purpose:** the header is host-only. `includeSubDomains` on `svc.bherila.net`
+  would cover only that host's own descendants (`*.svc.bherila.net`), never
+  `bherila.net` or its siblings, so it is the narrow case, but it still forces
+  HTTPS on every present and future descendant name; and `preload` / a wider
+  `includeSubDomains` on the parent domain are not SVC's to decide. Both wait for
+  a hostname inventory (every subdomain, what serves it, and whether each can
+  serve valid HTTPS for the whole max-age) that nobody has made yet.
+- **CSP has a real mode switch.** `SVC_CSP_MODE` is `off`, `report-only` (the
+  default, so deploying this changes no behaviour) or `enforce`; anything else is
+  read as `report-only`, so a typo neither disables the policy nor starts blocking
+  pages. **Bug fixed:** `SVC_CSP_REPORT_ONLY=false` used to *disable* the policy
+  rather than enforce it; the setting is retired. For compatibility it still maps
+  when `SVC_CSP_MODE` is unset (`false` -> `off`, as it behaved, anything else ->
+  `report-only`); new configuration should use `SVC_CSP_MODE`. Sent on HTML
+  responses only; JSON, API and webhook responses carry no page policy.
+- **Nonce.** `SecurityHeaders` draws a fresh nonce per request *before* the view
+  renders and passes it to `Vite::useCspNonce()`, so every `<script>` Vite emits
+  (React Refresh preamble, module entries, dev client) carries it; the inline
+  appearance bootstrap in `app.blade.php` is the only other executable script in
+  any blade view (the invoice and timesheet documents have `<style>` only) and
+  reads the same nonce. `script-src` is `'self'`, the nonce, Stripe and, in
+  development, the Vite origin: **no `'unsafe-inline'`**. Tests check the nonce is
+  unique per request and matches every executable script tag, with and without
+  the dev server.
+- **`style-src` keeps `'unsafe-inline'`, deliberately.** Stripe's Payment Element
+  and the component library (positioned popovers, Recharts) write `style`
+  attributes and `<style>` rules at runtime; a nonce cannot cover attributes.
+  Style injection cannot run script, so this is the smaller risk; revisit with
+  `style-src-attr` / `style-src-elem` splitting only if reports show it is
+  feasible.
+- **Stripe.** SVC loads exactly one Stripe component set: Stripe.js from
+  `https://js.stripe.com/v3/` (`resources/js/lib/stripe-js.ts`) and mounts the
+  **Payment Element** (`elements.create('payment')`) for `confirmPayment` and
+  `confirmSetup`. There is no Checkout redirect, no Address or Link Authentication
+  element and no Google Maps use. Following Stripe's CSP guidance, `script-src`
+  and `frame-src` allow `https://js.stripe.com` and `https://*.js.stripe.com`;
+  `frame-src` also `https://hooks.stripe.com` (3-D Secure / redirect-based
+  methods); `connect-src` `https://api.stripe.com`; `img-src` `https://*.stripe.com`.
+  `maps.googleapis.com` is left out until an Address Element is used. In
+  report-only mode, watch the reports through a real payment before enforcing.
+- **Violation collector.** `POST /api/csp-reports` (`CspReportController`) is the
+  default `report-uri`, and the policy also names `report-to csp-endpoint` with a
+  `Reporting-Endpoints` header (modern browsers prefer it). It accepts
+  `application/csp-report` and `application/reports+json` only (415 otherwise),
+  refuses a body over 8 KiB (413, by `Content-Length` and by measuring the bytes),
+  reads at most 10 reports per post, and is limited by the named `csp-reports`
+  limiter (120/min per address, tunable with `SVC_RATE_LIMIT_CSP_REPORTS`). It is an API-group route, so there is no session
+  and no CSRF check (a browser posts a report with no token). What it keeps is one
+  **log line** per report with three fields: the directive name, the blocked
+  host (or a keyword such as `inline`/`eval`), and the document path with record
+  ids replaced and every character outside `A-Za-z0-9._~/{}-` replaced, capped at
+  120. No raw JSON, query string, credentials, sample, referrer or user agent is
+  stored, nothing goes to the database, and the response is always empty (204 on
+  success, 400 for malformed JSON). `SVC_CSP_REPORT_URI` can point elsewhere (https
+  URL or absolute path); an empty value sends no reports.
+- **Rolling out enforcement** (a deployment decision, not made here): leave
+  `report-only` through a full billing cycle including a card payment and a
+  setup-intent save, read `csp.violation` lines, then set `SVC_CSP_MODE=enforce`.
+  Rolling back is the same variable.
+- Square needs nothing in the policy; see the list above.
 
 ### Rate limits
 
