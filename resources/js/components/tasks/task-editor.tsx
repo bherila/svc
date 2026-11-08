@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useScrollable } from '@/hooks/use-scrollable';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
@@ -63,6 +64,7 @@ function AssigneePicker({
     onChange: (next: TaskAssignee[]) => void;
 }) {
     const searchId = useId();
+    const [attachScroll, scrollProps] = useScrollable<HTMLDivElement>();
     const [search, setSearch] = useState('');
     const [lookup, setLookup] = useState<{
         search: string;
@@ -155,7 +157,15 @@ function AssigneePicker({
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
             />
-            <div className="grid max-h-48 min-w-0 grid-cols-1 gap-2 overflow-y-auto rounded-lg border p-3">
+            <div
+                ref={attachScroll}
+                {...scrollProps}
+                // A disabled fieldset (a save in flight, or one whose outcome is
+                // unknown) makes everything in it unfocusable, so a scroll box
+                // there could not be reached by keyboard: it grows to show the
+                // whole list instead of scrolling, until the form is live again.
+                className="grid max-h-48 min-w-0 grid-cols-1 gap-2 overflow-y-auto rounded-lg border p-3 in-disabled:max-h-none in-disabled:overflow-visible"
+            >
                 {options.map((person) => {
                     const checked = selected.some(
                         (item) => item.id === person.id,

@@ -199,7 +199,7 @@ export function InvoiceDocument({
                 {document.stamp !== null && (
                     <p
                         role="note"
-                        className="border-2 border-amber-700 px-3 py-2 text-center text-sm font-semibold tracking-wide text-amber-700 dark:border-amber-500 dark:text-amber-500 print:border-amber-700 print:text-amber-700"
+                        className="border-2 border-amber-700 px-3 py-2 text-center text-sm font-semibold tracking-wide text-amber-700 dark:border-amber-500 dark:text-amber-500 dark:in-[.invoice-paper]:border-amber-700 dark:in-[.invoice-paper]:text-amber-700 print:border-amber-700 print:text-amber-700"
                     >
                         {document.stamp}
                     </p>

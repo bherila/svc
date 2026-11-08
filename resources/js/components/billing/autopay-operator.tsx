@@ -150,7 +150,6 @@ export function ClientAutopayCard({
                             id="autopay-settings-heading"
                             role="heading"
                             aria-level={2}
-                            className="text-lg"
                         >
                             Autopay
                         </CardTitle>
@@ -288,6 +287,7 @@ export function ClientAutopayCard({
                             </>
                         ) : (
                             <Button
+                                variant="outline"
                                 type="button"
                                 disabled={busy || !canTurnOn}
                                 onClick={() => setDialog(true)}
@@ -314,7 +314,6 @@ export function ClientAutopayCard({
                         id="autopay-upcoming-heading"
                         role="heading"
                         aria-level={2}
-                        className="text-lg"
                     >
                         Upcoming autopay charges
                     </CardTitle>

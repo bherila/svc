@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useScrollable } from '@/hooks/use-scrollable';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
@@ -115,6 +116,7 @@ function InvoiceCompose({
     const [subject, setSubject] = useState(initial.email.default_subject);
     const [message, setMessage] = useState('');
     const [bccSelf, setBccSelf] = useState(true);
+    const [attachScroll, scrollProps] = useScrollable<HTMLDivElement>();
     const [busy, setBusy] = useState(false);
     const [checking, setChecking] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -372,117 +374,133 @@ function InvoiceCompose({
                     </DialogDescription>
                 </DialogHeader>
 
-                <fieldset
-                    disabled={busy || unresolved}
-                    className="grid min-h-0 min-w-0 grid-cols-1 gap-4 overflow-y-auto pr-1"
+                {/*
+                 * The scroll box is a div around the fieldset: a disabled
+                 * fieldset (while a send is unresolved) is not focusable, and
+                 * a box that scrolls must be reachable by keyboard.
+                 */}
+                <div
+                    ref={attachScroll}
+                    {...scrollProps}
+                    className="grid min-h-0 min-w-0 grid-cols-1 overflow-y-auto pr-1"
                 >
-                    <div className="grid grid-cols-1 gap-1 text-sm">
-                        <span className="text-muted-foreground">From</span>
-                        <span className="wrap-anywhere">{email.from}</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-2">
-                        <Label htmlFor="invoice-recipient">To</Label>
-                        {recipients.length > 0 && (
-                            <ul className="flex flex-wrap gap-2">
-                                {recipients.map((address) => (
-                                    <li
-                                        key={address}
-                                        className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-sm"
-                                    >
-                                        <span className="wrap-anywhere">
-                                            {address}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            aria-label={`Remove ${address}`}
-                                            className="rounded-full p-0.5 hover:bg-muted"
-                                            onClick={() =>
-                                                setRecipients((current) =>
-                                                    current.filter(
-                                                        (kept) =>
-                                                            kept !== address,
-                                                    ),
-                                                )
-                                            }
-                                        >
-                                            <XIcon
-                                                aria-hidden="true"
-                                                className="size-3"
-                                            />
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                            <Input
-                                id="invoice-recipient"
-                                type="email"
-                                className="min-w-40 flex-1"
-                                placeholder="Add another address"
-                                value={adding}
-                                onChange={(event) =>
-                                    setAdding(event.target.value)
-                                }
-                                onKeyDown={(event) => {
-                                    if (event.key === 'Enter') {
-                                        // Otherwise Enter submits the dialog and
-                                        // sends the invoice to whoever is on the
-                                        // list, without the address being typed.
-                                        event.preventDefault();
-                                        add();
-                                    }
-                                }}
-                            />
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={add}
-                            >
-                                Add
-                            </Button>
+                    <fieldset
+                        disabled={busy || unresolved}
+                        className="grid min-w-0 grid-cols-1 gap-4"
+                    >
+                        <div className="grid grid-cols-1 gap-1 text-sm">
+                            <span className="text-muted-foreground">From</span>
+                            <span className="wrap-anywhere">{email.from}</span>
                         </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 gap-2">
-                        <Label htmlFor="invoice-subject">Subject</Label>
-                        <Input
-                            id="invoice-subject"
-                            value={subject}
-                            onChange={(event) => setSubject(event.target.value)}
-                        />
-                    </div>
+                        <div className="grid grid-cols-1 gap-2">
+                            <Label htmlFor="invoice-recipient">To</Label>
+                            {recipients.length > 0 && (
+                                <ul className="flex flex-wrap gap-2">
+                                    {recipients.map((address) => (
+                                        <li
+                                            key={address}
+                                            className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-sm"
+                                        >
+                                            <span className="wrap-anywhere">
+                                                {address}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                aria-label={`Remove ${address}`}
+                                                className="rounded-full p-0.5 hover:bg-muted"
+                                                onClick={() =>
+                                                    setRecipients((current) =>
+                                                        current.filter(
+                                                            (kept) =>
+                                                                kept !==
+                                                                address,
+                                                        ),
+                                                    )
+                                                }
+                                            >
+                                                <XIcon
+                                                    aria-hidden="true"
+                                                    className="size-3"
+                                                />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                                <Input
+                                    id="invoice-recipient"
+                                    type="email"
+                                    className="min-w-40 flex-1"
+                                    placeholder="Add another address"
+                                    value={adding}
+                                    onChange={(event) =>
+                                        setAdding(event.target.value)
+                                    }
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            // Otherwise Enter submits the dialog and
+                                            // sends the invoice to whoever is on the
+                                            // list, without the address being typed.
+                                            event.preventDefault();
+                                            add();
+                                        }
+                                    }}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={add}
+                                >
+                                    Add
+                                </Button>
+                            </div>
+                        </div>
 
-                    <div className="grid grid-cols-1 gap-2">
-                        <Label htmlFor="invoice-message">
-                            Covering note (optional)
-                        </Label>
-                        <Textarea
-                            id="invoice-message"
-                            className="max-h-64 overflow-y-auto"
-                            rows={5}
-                            placeholder="Anything you want said above the figures."
-                            value={message}
-                            onChange={(event) => setMessage(event.target.value)}
-                        />
-                    </div>
+                        <div className="grid grid-cols-1 gap-2">
+                            <Label htmlFor="invoice-subject">Subject</Label>
+                            <Input
+                                id="invoice-subject"
+                                value={subject}
+                                onChange={(event) =>
+                                    setSubject(event.target.value)
+                                }
+                            />
+                        </div>
 
-                    <div className="flex items-center gap-3">
-                        <Switch
-                            id="invoice-bcc-self"
-                            disabled={busy || unresolved}
-                            checked={bccSelf}
-                            onCheckedChange={(checked: boolean) =>
-                                setBccSelf(checked)
-                            }
-                        />
-                        <Label htmlFor="invoice-bcc-self">
-                            Blind copy me ({email.self})
-                        </Label>
-                    </div>
-                </fieldset>
+                        <div className="grid grid-cols-1 gap-2">
+                            <Label htmlFor="invoice-message">
+                                Covering note (optional)
+                            </Label>
+                            <Textarea
+                                id="invoice-message"
+                                className="max-h-64 overflow-y-auto"
+                                rows={5}
+                                placeholder="Anything you want said above the figures."
+                                value={message}
+                                onChange={(event) =>
+                                    setMessage(event.target.value)
+                                }
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <Switch
+                                id="invoice-bcc-self"
+                                disabled={busy || unresolved}
+                                checked={bccSelf}
+                                onCheckedChange={(checked: boolean) =>
+                                    setBccSelf(checked)
+                                }
+                            />
+                            <Label htmlFor="invoice-bcc-self">
+                                Blind copy me ({email.self})
+                            </Label>
+                        </div>
+                    </fieldset>
+                </div>
 
                 <div className="grid min-w-0 grid-cols-1 gap-3">
                     {error !== null && (

@@ -178,7 +178,6 @@ export function PaymentMethodsCard({
                         id="methods-heading"
                         role="heading"
                         aria-level={2}
-                        className="text-lg"
                     >
                         Payment methods
                     </CardTitle>
@@ -187,7 +186,11 @@ export function PaymentMethodsCard({
                     </p>
                 </div>
                 {setup !== null && (
-                    <Button type="button" onClick={() => setAdding(true)}>
+                    <Button
+                        variant="outline"
+                        type="button"
+                        onClick={() => setAdding(true)}
+                    >
                         <PlusIcon aria-hidden="true" />
                         Add payment method
                     </Button>
@@ -225,11 +228,11 @@ export function PaymentMethodsCard({
                                 <Card
                                     className={
                                         method.is_default
-                                            ? 'py-0 ring-foreground'
-                                            : 'py-0'
+                                            ? 'ring-foreground'
+                                            : undefined
                                     }
                                 >
-                                    <CardContent className="flex min-w-0 flex-wrap items-center justify-between gap-3 py-3">
+                                    <CardContent className="flex min-w-0 flex-wrap items-center justify-between gap-3">
                                         <div className="grid min-w-0 grid-cols-1 gap-0.5">
                                             <span className="font-medium wrap-anywhere">
                                                 {method.label}
@@ -257,7 +260,7 @@ export function PaymentMethodsCard({
                                                     variant="outline"
                                                     size="sm"
                                                     disabled={busy}
-                                                    aria-label={`Make ${method.label} the default`}
+                                                    aria-label={`Make default: ${method.label}`}
                                                     onClick={() =>
                                                         makeDefault(method)
                                                     }

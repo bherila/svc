@@ -731,12 +731,17 @@ describe('recurring expense layout', () => {
 
         fireEvent.click(getByRole('button', { name: 'Edit schedule' }));
         expect(getByLabelText('Description')).toHaveValue(description);
-        expect(getByRole('option', { name: project })).toBeInTheDocument();
+        // The trigger prints the project's name, not its stored value.
+        expect(getByRole('combobox', { name: 'Project' })).toHaveTextContent(
+            project,
+        );
         expect(horizontalOverflowRisks(container)).toEqual([]);
 
         fireEvent.click(getByRole('button', { name: 'Cancel' }));
         fireEvent.click(getByRole('button', { name: 'New schedule' }));
-        expect(getByRole('option', { name: project })).toBeInTheDocument();
+        expect(getByRole('combobox', { name: 'Project' })).toHaveTextContent(
+            'Company expense',
+        );
         expect(getByLabelText('First occurrence')).toBeVisible();
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });

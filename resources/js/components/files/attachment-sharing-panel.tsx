@@ -541,7 +541,11 @@ export function UploadAttachment({
                     'New files are private. Choose “Visible to client” after uploading to share a file.'}
             </p>
             <div>
-                <Button type="submit" disabled={busy || stale || file === null}>
+                <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={busy || stale || file === null}
+                >
                     {unresolved ? 'Check upload' : 'Upload file'}
                 </Button>
             </div>
@@ -584,7 +588,13 @@ export default function AttachmentSharingPanel({
     const { files, next, busy, error } = pages;
 
     return (
-        <section aria-label={title} className="grid min-w-0 grid-cols-1 gap-4">
+        // A group, not a landmark: a thread repeats this panel once per comment, and
+        // landmarks of the same name must be unique on a page.
+        <div
+            role="group"
+            aria-label={title}
+            className="grid min-w-0 grid-cols-1 gap-4"
+        >
             <h2 className="text-lg font-semibold wrap-anywhere">{title}</h2>
             {files.length === 0 && (
                 <p className="text-sm text-muted-foreground">No files.</p>
@@ -708,6 +718,6 @@ export default function AttachmentSharingPanel({
                     {error}
                 </p>
             )}
-        </section>
+        </div>
     );
 }
