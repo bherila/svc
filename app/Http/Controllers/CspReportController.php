@@ -30,7 +30,7 @@ final class CspReportController extends Controller
     public function __invoke(Request $request): Response
     {
         $length = $request->headers->get('Content-Length');
-        if (is_numeric($length) && (int) $length > self::MAX_BYTES) {
+        if (is_numeric($length) && $length > self::MAX_BYTES) {
             return response()->noContent(413);
         }
 
@@ -66,7 +66,7 @@ final class CspReportController extends Controller
         // application/csp-report: {"csp-report": {...}}. application/reports+json: [{"type": "csp-violation", "body": {...}}].
         $candidates = isset($decoded['csp-report']) ? [$decoded['csp-report']] : array_map(
             static fn (mixed $entry): mixed => is_array($entry) && ($entry['type'] ?? null) === 'csp-violation' ? ($entry['body'] ?? null) : null,
-            array_values($decoded),
+            $decoded,
         );
 
         $reports = [];

@@ -92,6 +92,44 @@ final class CspReportControllerTest extends TestCase
         $this->assertSame('img10.example.test', $this->logged[9][1]['blocked']);
     }
 
+    public function test_the_first_name_present_wins_in_both_report_formats(): void
+    {
+        $this->legacy(['effective-directive' => 'img-src', 'effectiveDirective' => 'font-src', 'violated-directive' => 'default-src',
+            'blocked-uri' => 'https://first.example.test/x', 'blockedURL' => 'https://second.example.test/x',
+            'document-uri' => 'https://svc.example.test/first', 'documentURL' => 'https://svc.example.test/second']);
+        $this->legacy(['effectiveDirective' => 'font-src', 'violated-directive' => 'default-src',
+            'blockedURL' => 'https://second.example.test/x', 'documentURL' => 'https://svc.example.test/second']);
+        $this->legacy(['violated-directive' => 'default-src']);
+
+        $this->assertSame([
+            ['directive' => 'img-src', 'blocked' => 'first.example.test', 'path' => '/first'],
+            ['directive' => 'font-src', 'blocked' => 'second.example.test', 'path' => '/second'],
+            ['directive' => 'default-src', 'blocked' => 'unknown', 'path' => 'unknown'],
+        ], array_column($this->logged, 1));
+    }
+
+    public function test_a_body_nested_eight_levels_deep_is_refused_and_seven_is_read(): void
+    {
+        $this->assertSame(204, $this->send('application/reports+json', str_repeat('[', 7).str_repeat(']', 7))[0]);
+        $this->assertSame(400, $this->send('application/reports+json', str_repeat('[', 8).str_repeat(']', 8))[0]);
+    }
+
+    public function test_a_request_with_no_content_type_is_unsupported_not_an_error(): void
+    {
+        $request = Request::create('/api/csp-reports', 'POST', [], [], [], [], '{"csp-report":{}}');
+        $request->headers->remove('Content-Type');
+
+        set_error_handler(static function (int $level, string $message): never {
+            throw new \ErrorException($message, 0, $level);
+        }, E_DEPRECATED | E_WARNING);
+        try {
+            $this->assertSame(415, (new CspReportController)($request)->getStatusCode());
+        } finally {
+            restore_error_handler();
+        }
+        $this->assertCount(0, $this->logged);
+    }
+
     public function test_only_the_two_report_media_types_are_read(): void
     {
         $this->assertSame(204, $this->send('application/csp-report; charset=utf-8', '{"csp-report":{}}')[0]);

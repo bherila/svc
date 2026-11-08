@@ -212,6 +212,41 @@ final class SecurityHeadersTest extends TestCase
         }
     }
 
+    public function test_the_reporting_endpoint_is_advertised_beside_the_policy_and_a_preset_one_is_kept(): void
+    {
+        $html = static fn (array $headers = []): Response => new Response('<p>x</p>', 200, ['Content-Type' => 'text/html'] + $headers);
+
+        config(['svc.security.csp_report_uri' => '/csp-reports']);
+        $this->assertSame('csp-endpoint="/csp-reports"', $this->pass('http://svc.example.test/x', $html())->headers->get('Reporting-Endpoints'));
+
+        config(['svc.security.csp_report_uri' => 'https://reports.example.test:8443/csp?x=1']);
+        $this->assertSame('csp-endpoint="https://reports.example.test:8443/csp?x=1"', $this->pass('http://svc.example.test/x', $html())->headers->get('Reporting-Endpoints'));
+
+        $this->assertSame('mine="/m"', $this->pass('http://svc.example.test/x', $html(['Reporting-Endpoints' => 'mine="/m"']))->headers->get('Reporting-Endpoints'));
+
+        foreach ([null, '', 'javascript:1', 'http://reports.example.test/csp'] as $unusable) {
+            config(['svc.security.csp_report_uri' => $unusable]);
+            $this->assertFalse($this->pass('http://svc.example.test/x', $html())->headers->has('Reporting-Endpoints'), var_export($unusable, true));
+        }
+
+        config(['svc.security.csp_report_uri' => '/csp-reports']);
+        $this->assertFalse($this->pass('http://svc.example.test/x')->headers->has('Reporting-Endpoints'), 'a non-HTML response advertises nothing');
+        config(['svc.security.csp_mode' => 'off']);
+        $this->assertFalse($this->pass('http://svc.example.test/x', $html())->headers->has('Reporting-Endpoints'));
+    }
+
+    public function test_enforce_mode_sets_the_enforcing_header_only_and_never_overwrites_a_chosen_one(): void
+    {
+        config(['svc.security.csp_mode' => 'enforce']);
+        $headers = $this->pass('http://svc.example.test/x', new Response('<p>x</p>', 200, ['Content-Type' => 'text/html']))->headers;
+        $this->assertStringStartsWith("default-src 'self'; script-src 'self' 'nonce-", (string) $headers->get('Content-Security-Policy'));
+        $this->assertFalse($headers->has('Content-Security-Policy-Report-Only'));
+
+        $kept = $this->pass('http://svc.example.test/x', new Response('<p>x</p>', 200, ['Content-Type' => 'text/html', 'Content-Security-Policy' => 'default-src none']))->headers;
+        $this->assertSame('default-src none', $kept->get('Content-Security-Policy'));
+        $this->assertFalse($kept->has('Content-Security-Policy-Report-Only'));
+    }
+
     private function pass(string $url, ?SymfonyResponse $response = null): SymfonyResponse
     {
         $response ??= new Response('ok', 200, ['Content-Type' => 'text/plain']);

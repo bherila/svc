@@ -94,7 +94,7 @@ final class ContentSecurityPolicyTest extends TestCase
         $response->assertHeaderMissing('Content-Security-Policy');
     }
 
-    public function test_off_mode_sends_no_policy_no_reporting_endpoint_and_no_nonce(): void
+    public function test_off_mode_sends_no_policy_and_no_reporting_endpoint(): void
     {
         config(['svc.security.csp_mode' => 'off']);
         $response = $this->get('/');
@@ -102,7 +102,6 @@ final class ContentSecurityPolicyTest extends TestCase
         $response->assertHeaderMissing('Content-Security-Policy');
         $response->assertHeaderMissing('Content-Security-Policy-Report-Only');
         $response->assertHeaderMissing('Reporting-Endpoints');
-        $this->assertStringNotContainsString('nonce=', (string) $response->getContent());
     }
 
     /** A typo must neither disable the policy nor start blocking pages. */

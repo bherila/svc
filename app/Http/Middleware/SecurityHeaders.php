@@ -30,7 +30,8 @@ final class SecurityHeaders
     {
         $mode = CspMode::fromConfig(config('svc.security.csp_mode'));
         // Drawn before the view renders: the blade views and Vite read it back while the page is built.
-        $nonce = $mode === CspMode::Off ? null : Vite::useCspNonce();
+        // Drawn in every mode so the page renders the same; in `off` it simply goes unused.
+        $nonce = Vite::useCspNonce();
 
         $response = $next($request);
         $headers = $response->headers;
@@ -55,8 +56,7 @@ final class SecurityHeaders
         }
 
         $header = $mode->header();
-        if ($nonce !== null
-            && $header !== null
+        if ($header !== null
             && ! $headers->has($header)
             && str_starts_with((string) $headers->get('Content-Type'), 'text/html')) {
             $headers->set($header, $this->contentSecurityPolicy($nonce));
