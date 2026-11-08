@@ -92,7 +92,7 @@ final class SecurityHeaders
         ));
 
         $report = (string) config('svc.security.csp_report_uri', '');
-        if (preg_match('#^(https://[A-Za-z0-9.-]+(:\d+)?)?/[A-Za-z0-9._~:/?=&%-]*$#', $report) === 1) {
+        if (preg_match('#^(https://[A-Za-z0-9.-]+(:\d+)?)?/(?!/)[A-Za-z0-9._~:/?=&%-]*\z#', $report) === 1) {
             $policy .= '; report-uri '.$report;
         }
 
