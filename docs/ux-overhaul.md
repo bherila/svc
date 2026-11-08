@@ -1486,6 +1486,49 @@ subscription. Decisions, made unattended and conservatively:
   `WebApiParityTest` with reasons.
 - **No Stripe calls on page load.** The page prints the stored result.
 
+### Migration impact inventory and explicit ownership (2026-11-08)
+
+A reviewer asked for an inventory of what `svc:payments:migrate-environment`
+changes before the owner approves running it in production, and noted the
+runbook overstated rollback. Decisions, made unattended and conservatively:
+
+- **The preview is the inventory.** The default (no `--apply`) run, and
+  `--format=json` under the `inventory` key, report per processor: the masked
+  environment credential and its mode, who would own the connection and the
+  rule, every workspace that relies on the environment credential with counts
+  (open invoices payable online, autopay companies, saved cards, pending
+  payments, autopay attempts held for review, webhook events in the last 90
+  days; for Square, invoices linked to a Square invoice, linked customers,
+  pending payments and webhook receipts), the existing connections that block
+  or are untouched, and for Square the location rule and what the local mirror
+  says about other locations. It reads with grouped queries, one per measure
+  for all workspaces, so the query count does not grow with the number of
+  workspaces, and it runs only SELECTs.
+- **No new API call.** The preview already called neither Stripe nor Square, and
+  still does not. The Stripe account, the Square merchant and the chosen Square
+  location therefore read "not checked"; `--apply` reads and stores them. Nothing
+  was added to the preview path that talks to a processor.
+- **Ownership was implicit, so it is now refused when ambiguous.** The command
+  already took `--workspace`, but fell back to `SQUARE_WORKSPACE` without
+  asking. That is sound for Square (the environment's Square token has only ever
+  served that one workspace) and a guess for Stripe (the environment's Stripe
+  key serves every workspace that has not connected its own, and
+  `SQUARE_WORKSPACE` says nothing about Stripe). Ownership is now **ambiguous**
+  when no `--workspace` was given and another workspace than the configured one
+  has Stripe activity (any of the inventory counts above) while having no
+  connection of its own. `--apply` then refuses with exit code 2 and writes
+  nothing; a preview prints the inventory with the owner "not decided" and the
+  same exit code. An explicit `--workspace` always settles it, and the other
+  dependent workspaces are listed as losing access. Apply behaviour is
+  otherwise unchanged: with an unambiguous owner (explicit, or the only
+  workspace with activity) it does exactly what it did.
+- **Rollback is described accurately.** The runbook no longer says the only undo
+  is a restored backup. Disconnect, Replace key and the conditional manual
+  database reversal each undo something, and the runbook says what, and under
+  which conditions. It also lists what cannot be undone: money already charged,
+  messages already sent, webhook events already applied or refused, and the
+  deleted rows' contents.
+
 ## Open questions
 
 None. Answered on 2026-11-06:
