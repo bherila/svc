@@ -59,6 +59,16 @@ return [
         'transaction_url' => env('SVC_FINANCE_TRANSACTION_URL'),
     ],
 
+    // Browser security headers (App\Http\Middleware\SecurityHeaders). The CSP is report-only
+    // by design: there is deliberately no setting that enforces it. `csp_report_uri` is a
+    // collector's https URL or an absolute path; unset sends no reports (the browser console shows them).
+    'security' => [
+        // Seconds; 0 turns Strict-Transport-Security off. Never sent over plain HTTP, never preload.
+        'hsts_max_age' => (int) env('SVC_HSTS_MAX_AGE', 31536000),
+        'csp_report_only' => (bool) env('SVC_CSP_REPORT_ONLY', true),
+        'csp_report_uri' => env('SVC_CSP_REPORT_URI'),
+    ],
+
     // Attempts per minute for the named limiters in App\Support\Http\RateLimits.
     // Unset (or not a positive number) keeps the generous default.
     'rate_limits' => [
