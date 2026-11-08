@@ -49,15 +49,18 @@ Route::withoutMiddleware(['web'])->group(function (): void {
     Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1')->name('openapi.document');
 });
 
-Route::get('/login', [OAuthLoginController::class, 'redirect'])->name('login');
+// Sign-in and sign-out are per address and generous: the limiter stops a loop or a probe,
+// never a person who retries (RateLimits::DEFAULTS['sign-in']).
+Route::get('/login', [OAuthLoginController::class, 'redirect'])->middleware('throttle:sign-in')->name('login');
 Route::get('/oauth/redirect', [OAuthLoginController::class, 'redirect'])
     ->withoutMiddleware(HandleInertiaRequests::class)
+    ->middleware('throttle:sign-in')
     ->name('oauth.redirect');
-Route::get('/oauth/callback', [OAuthLoginController::class, 'callback'])->name('oauth.callback');
+Route::get('/oauth/callback', [OAuthLoginController::class, 'callback'])->middleware('throttle:sign-in')->name('oauth.callback');
 // Outside `auth`: an expired session's sign-out still reaches the provider
 // instead of being sent to sign in. Provider identity enforcement skips it by
 // name (bherila-auth.provider_identity.except_routes).
-Route::post('/logout', [OAuthLoginController::class, 'logout'])->name('logout');
+Route::post('/logout', [OAuthLoginController::class, 'logout'])->middleware('throttle:sign-in')->name('logout');
 
 Route::middleware('auth')->group(function (): void {
     // Where signing in lands. One row per workspace and nothing else - the
@@ -253,3 +256,16 @@ require __DIR__.'/collaboration.php';
 require __DIR__.'/shared-projects.php';
 require __DIR__.'/approvals.php';
 require __DIR__.'/submissions.php';
+
+// Every portal route is reached by a client contact, so each carries the portal ceiling and
+// every write the lower writes ceiling. Added once here, after all route files are loaded,
+// so a portal route added later in any file cannot be left out.
+foreach (Route::getRoutes()->getRoutes() as $portalRoute) {
+    if (! str_starts_with($portalRoute->uri(), 'portal/')) {
+        continue;
+    }
+    $portalRoute->middleware('throttle:portal');
+    if (array_diff($portalRoute->methods(), ['GET', 'HEAD']) !== []) {
+        $portalRoute->middleware('throttle:portal-writes');
+    }
+}

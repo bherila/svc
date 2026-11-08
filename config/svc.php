@@ -58,4 +58,14 @@ return [
         'external_system' => env('SVC_FINANCE_EXTERNAL_SYSTEM', 'finance'),
         'transaction_url' => env('SVC_FINANCE_TRANSACTION_URL'),
     ],
+
+    // Attempts per minute for the named limiters in App\Support\Http\RateLimits.
+    // Unset (or not a positive number) keeps the generous default.
+    'rate_limits' => [
+        'sign-in' => env('SVC_RATE_LIMIT_SIGN_IN'),
+        'portal' => env('SVC_RATE_LIMIT_PORTAL'),
+        'portal-writes' => env('SVC_RATE_LIMIT_PORTAL_WRITES'),
+        'payment-intents' => env('SVC_RATE_LIMIT_PAYMENT_INTENTS'),
+        'invitations' => env('SVC_RATE_LIMIT_INVITATIONS'),
+    ],
 ];
