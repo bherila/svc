@@ -1,3 +1,4 @@
+import { useScrollable } from '@/hooks/use-scrollable';
 import { useForm } from '@inertiajs/react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -63,6 +64,7 @@ function AssigneePicker({
     onChange: (next: TaskAssignee[]) => void;
 }) {
     const searchId = useId();
+    const [attachScroll, scrollProps] = useScrollable<HTMLDivElement>();
     const [search, setSearch] = useState('');
     const [lookup, setLookup] = useState<{
         search: string;
@@ -155,7 +157,11 @@ function AssigneePicker({
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
             />
-            <div className="grid max-h-48 min-w-0 grid-cols-1 gap-2 overflow-y-auto rounded-lg border p-3">
+            <div
+                ref={attachScroll}
+                {...scrollProps}
+                className="grid max-h-48 min-w-0 grid-cols-1 gap-2 overflow-y-auto rounded-lg border p-3"
+            >
                 {options.map((person) => {
                     const checked = selected.some(
                         (item) => item.id === person.id,

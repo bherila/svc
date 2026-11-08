@@ -378,6 +378,7 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                         )}
                         <div className="flex flex-wrap gap-2">
                             <Button
+                                variant="outline"
                                 type="submit"
                                 disabled={busy || secret === ''}
                             >

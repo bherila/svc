@@ -753,19 +753,14 @@ export default function TimeSheet({
                             render={<Button variant="outline">Cancel</Button>}
                         />
                         <AlertDialogAction
-                            render={
-                                <Button
-                                    variant="destructive"
-                                    disabled={deleting}
-                                    onClick={() =>
-                                        pendingDelete !== null &&
-                                        remove(pendingDelete)
-                                    }
-                                >
-                                    Delete
-                                </Button>
+                            variant="destructive"
+                            disabled={deleting}
+                            onClick={() =>
+                                pendingDelete !== null && remove(pendingDelete)
                             }
-                        />
+                        >
+                            Delete
+                        </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

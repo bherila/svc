@@ -93,6 +93,7 @@ function SelectionForm<T extends { id: string }>({
             {mutation.error && <PlanningMutationError mutation={mutation} />}
             <div className="flex flex-wrap gap-2">
                 <Button
+                    variant="outline"
                     type="submit"
                     disabled={mutation.locked || draft === null}
                 >
@@ -125,7 +126,7 @@ function References({
 }) {
     return (
         <div className="grid min-w-0 grid-cols-1 gap-2">
-            <h4 className="text-sm font-medium">{title}</h4>
+            <h3 className="text-sm font-medium">{title}</h3>
             {rows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">None.</p>
             ) : (
@@ -307,6 +308,7 @@ function Dependencies({
                         )}
                         <div className="flex flex-wrap gap-2">
                             <Button
+                                variant="outline"
                                 type="submit"
                                 disabled={mutation.locked || draft === null}
                             >

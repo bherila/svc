@@ -3,6 +3,23 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect } from '@playwright/test';
 import { uiConsistencyRisks } from '../../resources/js/test/ui-consistency.ts';
 
+async function settle(page) {
+    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(
+        () =>
+            new Promise((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(resolve)),
+            ),
+    );
+    await page
+        .waitForFunction(() =>
+            document
+                .getAnimations()
+                .every((animation) => animation.playState !== 'running'),
+        )
+        .catch(() => undefined);
+}
+
 /**
  * The accessibility gate shared by the focused layout checks.
  *
@@ -15,6 +32,7 @@ import { uiConsistencyRisks } from '../../resources/js/test/ui-consistency.ts';
  * onto its own failure list, so a script keeps its existing reporting.
  */
 export async function accessibilityFindings(page, where) {
+    await settle(page);
     const findings = [];
     const theme = await page.evaluate(() =>
         document.documentElement.classList.contains('dark') ? 'dark' : 'light',

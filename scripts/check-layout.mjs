@@ -36,7 +36,14 @@ const artifacts = path.join(
     'layout',
     path.basename(runtime),
 );
-const widths = [390, 820, 1440, 1920];
+// `--widths=390,1440` narrows a local iteration to some of the required widths.
+// CI and every claim of "verified" run all four.
+const widthsArgument = process.argv.find((argument) =>
+    argument.startsWith('--widths='),
+);
+const widths = widthsArgument
+    ? widthsArgument.slice('--widths='.length).split(',').map(Number)
+    : [390, 820, 1440, 1920];
 // Every screen is gated: a token violation or any axe finding, at any impact,
 // in either theme, fails the run (see capture()). There is no reporting-only
 // state to leave; a new screen is held to the same rules from its first capture.
@@ -1820,7 +1827,7 @@ try {
     // A caller that has already put the page in dark mode (the invoice
     // document) is checked in dark only, and keeps its own light capture.
     async function capture(screen, state, width, measuredOnly = false) {
-        await page.evaluate(() => document.fonts.ready);
+        await settleStyles(page);
         await page.evaluate(() => window.scrollTo(0, 0));
         const startsDark = await page.evaluate(() =>
             document.documentElement.classList.contains('dark'),
@@ -1835,7 +1842,7 @@ try {
         await captureTheme(screen, state, width, measuredOnly, 'light', '');
         await page.emulateMedia({ colorScheme: 'dark' });
         await expect(page.locator('html')).toHaveClass(/dark/);
-        await page.evaluate(() => document.fonts.ready);
+        await settleStyles(page);
 
         try {
             await captureTheme(
@@ -1849,7 +1856,28 @@ try {
         } finally {
             await page.emulateMedia({ colorScheme: 'light' });
             await expect(page.locator('html')).not.toHaveClass(/dark/);
+            await settleStyles(page);
         }
+    }
+
+    // The theme switch changes colours on every element; axe samples the
+    // computed colour of whatever is on screen at that instant, so wait until
+    // the styles have been recalculated and no transition is still running.
+    async function settleStyles(page) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.evaluate(
+            () =>
+                new Promise((resolve) =>
+                    requestAnimationFrame(() => requestAnimationFrame(resolve)),
+                ),
+        );
+        await page
+            .waitForFunction(() =>
+                document
+                    .getAnimations()
+                    .every((animation) => animation.playState !== 'running'),
+            )
+            .catch(() => undefined);
     }
 
     async function captureTheme(
@@ -2459,7 +2487,7 @@ try {
             if (screen === 'task_editor') {
                 await expect(
                     page.locator(
-                        'header [aria-label="Client sections"]:visible',
+                        'header [aria-label$="Client sections"]:visible',
                     ),
                 ).toContainText('Tasks');
                 await expect(page.locator('header')).not.toContainText(
@@ -2582,7 +2610,9 @@ try {
                             name:
                                 screen === 'square_explore'
                                     ? 'Open'
-                                    : 'View or pay in Square',
+                                    : screen === 'square_portal'
+                                      ? 'Pay in Square'
+                                      : 'View or pay in Square',
                         })
                         .first(),
                 ).toHaveAttribute(
@@ -2944,8 +2974,7 @@ try {
                     .click();
                 await page
                     .getByRole('button', {
-                        name: 'Current client',
-                        exact: true,
+                        name: /^Current client/,
                     })
                     .click();
                 await page
@@ -3002,8 +3031,7 @@ try {
                 await expect(page.getByRole('dialog')).toHaveCount(0);
                 await page
                     .getByRole('button', {
-                        name: 'Current client',
-                        exact: true,
+                        name: /^Current client/,
                     })
                     .click();
                 await page
@@ -3635,9 +3663,12 @@ try {
                             new URL(response.url()).pathname,
                         ),
                 );
-                await access.selectOption('viewer');
+                await access.click();
+                await page
+                    .getByRole('option', { name: 'Viewer', exact: true })
+                    .click();
                 expect((await granted).status()).toBe(200);
-                await expect(access).toHaveValue('viewer');
+                await expect(access).toHaveText('Viewer');
                 await capture(screen, 'project-edited-and-granted', width);
                 await page
                     .getByLabel('New project', { exact: true })
@@ -3832,7 +3863,13 @@ try {
                         name: 'Portal access for the new contact',
                         exact: true,
                     })
-                    .selectOption('projects');
+                    .click();
+                await page
+                    .getByRole('option', {
+                        name: 'Selected projects',
+                        exact: true,
+                    })
+                    .click();
                 await capture(screen, 'portal-project-selection', width);
                 await card
                     .getByRole('button', { name: 'Remove', exact: true })
@@ -4315,98 +4352,105 @@ try {
             }
 
             if (screen === 'invoice') {
-                await page
-                    .getByRole('button', {
-                        name: 'Send to client',
-                        exact: true,
-                    })
-                    .click();
-                const compose = page.getByRole('dialog');
-                await compose
-                    .getByLabel('Subject', { exact: true })
-                    .fill('Synthetic invoice subject '.repeat(8));
-                await compose
-                    .getByLabel('Covering note (optional)', { exact: true })
-                    .fill('SyntheticUnbrokenCoveringNote'.repeat(100));
-                await compose
-                    .getByLabel('To', { exact: true })
-                    .fill(
-                        `${'synthetic'.repeat(7)}@${'reserved'.repeat(7)}.example.test`,
-                    );
-                await compose
-                    .getByRole('button', { name: 'Add', exact: true })
-                    .click();
-                await capture(screen, 'send-compose', width);
-                // Synthetic adapter outcome only: no email leaves this layout
-                // fixture. The real after-commit path is proved by
-                // InvoiceSendOutcomeTest with its replaceable mail adapter.
-                let composeChecks = 0;
-                await page.route(
-                    '**/api/v1/workspaces/*/invoices/*/send',
-                    async (route) => {
-                        const request = route.request();
-                        const body = request.postDataJSON();
+                // A disputed invoice cannot be sent (the page offers no "Send to
+                // client" and the reminder buttons are asserted absent above), so
+                // the compose flow runs on every other group's invoice.
+                if (!disputesOnly) {
+                    await page
+                        .getByRole('button', {
+                            name: 'Send to client',
+                            exact: true,
+                        })
+                        .click();
+                    const compose = page.getByRole('dialog');
+                    await compose
+                        .getByLabel('Subject', { exact: true })
+                        .fill('Synthetic invoice subject '.repeat(8));
+                    await compose
+                        .getByLabel('Covering note (optional)', { exact: true })
+                        .fill('SyntheticUnbrokenCoveringNote'.repeat(100));
+                    await compose
+                        .getByLabel('To', { exact: true })
+                        .fill(
+                            `${'synthetic'.repeat(7)}@${'reserved'.repeat(7)}.example.test`,
+                        );
+                    await compose
+                        .getByRole('button', { name: 'Add', exact: true })
+                        .click();
+                    await capture(screen, 'send-compose', width);
+                    // Synthetic adapter outcome only: no email leaves this layout
+                    // fixture. The real after-commit path is proved by
+                    // InvoiceSendOutcomeTest with its replaceable mail adapter.
+                    let composeChecks = 0;
+                    await page.route(
+                        '**/api/v1/workspaces/*/invoices/*/send',
+                        async (route) => {
+                            const request = route.request();
+                            const body = request.postDataJSON();
 
-                        if (
-                            request.headers()['idempotency-key'] == null ||
-                            body.confirm !== true ||
-                            typeof body.expected_version !== 'string'
-                        ) {
-                            throw new Error(
-                                'Invoice compose omitted its confirmed version or retry key.',
-                            );
-                        }
+                            if (
+                                request.headers()['idempotency-key'] == null ||
+                                body.confirm !== true ||
+                                typeof body.expected_version !== 'string'
+                            ) {
+                                throw new Error(
+                                    'Invoice compose omitted its confirmed version or retry key.',
+                                );
+                            }
 
-                        await route.fulfill({
-                            status: 200,
-                            contentType: 'application/json',
-                            body: JSON.stringify({
-                                data: {
-                                    id: new URL(request.url()).pathname
-                                        .split('/')
-                                        .at(-2),
-                                    version: body.expected_version,
-                                    delivery: {
-                                        id: 'synthetic-layout-delivery',
-                                        status:
-                                            composeChecks++ === 0
-                                                ? 'sending'
-                                                : 'sent',
-                                        error_summary: null,
+                            await route.fulfill({
+                                status: 200,
+                                contentType: 'application/json',
+                                body: JSON.stringify({
+                                    data: {
+                                        id: new URL(request.url()).pathname
+                                            .split('/')
+                                            .at(-2),
+                                        version: body.expected_version,
+                                        delivery: {
+                                            id: 'synthetic-layout-delivery',
+                                            status:
+                                                composeChecks++ === 0
+                                                    ? 'sending'
+                                                    : 'sent',
+                                            error_summary: null,
+                                        },
                                     },
-                                },
-                            }),
-                        });
-                    },
-                );
-                await compose
-                    .getByRole('button', { name: 'Send', exact: true })
-                    .click();
-                await expect(
-                    compose.getByRole('button', {
-                        name: 'Check delivery',
-                        exact: true,
-                    }),
-                ).toBeVisible();
-                await expect(
-                    compose.getByLabel('Subject', { exact: true }),
-                ).toBeDisabled();
-                await capture(screen, 'send-unresolved', width);
-                await compose
-                    .getByRole('button', {
-                        name: 'Check delivery',
-                        exact: true,
-                    })
-                    .click();
-                await expect(compose).toHaveCount(0);
-                await expect(
-                    page.getByText('Reconciled in finance', { exact: true }),
-                ).toBeVisible();
-                await expect(
-                    page.getByRole('link', {
-                        name: 'Finance transaction 2 of 2',
-                    }),
-                ).toBeVisible();
+                                }),
+                            });
+                        },
+                    );
+                    await compose
+                        .getByRole('button', { name: 'Send', exact: true })
+                        .click();
+                    await expect(
+                        compose.getByRole('button', {
+                            name: 'Check delivery',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await expect(
+                        compose.getByLabel('Subject', { exact: true }),
+                    ).toBeDisabled();
+                    await capture(screen, 'send-unresolved', width);
+                    await compose
+                        .getByRole('button', {
+                            name: 'Check delivery',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(compose).toHaveCount(0);
+                    await expect(
+                        page.getByText('Reconciled in finance', {
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await expect(
+                        page.getByRole('link', {
+                            name: 'Finance transaction 2 of 2',
+                        }),
+                    ).toBeVisible();
+                }
                 await page
                     .getByRole('button', {
                         name: 'Record payment',

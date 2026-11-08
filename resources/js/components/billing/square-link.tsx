@@ -160,14 +160,16 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
                             <dt className="text-muted-foreground">
                                 Square invoice
                             </dt>
-                            <dd className="font-mono wrap-anywhere">
-                                {link.square_invoice_number}
+                            <dd className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="font-mono wrap-anywhere">
+                                    {link.square_invoice_number}
+                                </span>
+                                <Badge variant="outline">
+                                    {link.match_method === 'suggested'
+                                        ? `Suggested${link.score === null ? '' : `, score ${link.score}`}`
+                                        : 'Matched by hand'}
+                                </Badge>
                             </dd>
-                            <Badge variant="outline">
-                                {link.match_method === 'suggested'
-                                    ? `Suggested${link.score === null ? '' : `, score ${link.score}`}`
-                                    : 'Matched by hand'}
-                            </Badge>
                         </div>
                         <div className="flex min-w-0 flex-wrap gap-2">
                             <dt className="text-muted-foreground">Series</dt>
