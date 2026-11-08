@@ -9,6 +9,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
+use App\Services\Billing\InvoiceFromTimeService;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use DomainException;
@@ -43,6 +44,7 @@ final class DisputedDraftRebuilder
     public function __construct(
         private readonly DraftInvoiceTimeRegenerator $time,
         private readonly ClientInvoicingService $generated,
+        private readonly InvoiceFromTimeService $selectedTime,
     ) {}
 
     /**
@@ -59,7 +61,12 @@ final class DisputedDraftRebuilder
         }
 
         foreach ($this->draftsCarryingTime($workspaceId, $entryIds) as [$draft, $entryId]) {
-            $this->attempt(fn () => $this->time->regenerate($draft, $workspace, $entryId));
+            // An ad-hoc selection drops every held row at once: rebuilt one
+            // named entry at a time, two disputes on one draft would each
+            // refuse the other's rebuild.
+            $this->attempt(fn () => $draft->invoiceKindValue() === InvoiceKind::AdHoc->value
+                ? $this->selectedTime->regenerateDraftSelection($draft, $workspace, $entryId, dropHeld: true)
+                : $this->time->regenerate($draft, $workspace, $entryId));
         }
         foreach ($this->cadenceDraftsCarryingExpenses($workspaceId, $expenseIds) as $draft) {
             $this->attempt(fn () => $this->generated->regenerateDraftInvoice($draft));
@@ -88,6 +95,23 @@ final class DisputedDraftRebuilder
             ->get();
         foreach ($entries as $entry) {
             $this->attempt(fn () => $this->time->regenerateCovering($workspace, $entry));
+            // Its own period already invoiced: the next cadence draft is where
+            // it bills, so that draft is rebuilt too.
+            if (! $entry->invoiceLines()->where('client_invoice_lines.workspace_id', $workspaceId)->exists()) {
+                $next = ClientInvoice::query()
+                    ->where('workspace_id', $workspaceId)
+                    ->where('client_company_id', $entry->client_company_id)
+                    ->where('status', InvoiceStatus::Draft->value)
+                    ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+                    ->whereNotNull('client_agreement_id')
+                    ->whereDate('service_period_start', '>', $entry->worked_on->toDateString())
+                    ->orderBy('service_period_start')
+                    ->orderBy('id')
+                    ->first();
+                if ($next instanceof ClientInvoice) {
+                    $this->attempt(fn () => $this->generated->regenerateDraftInvoice($next));
+                }
+            }
         }
 
         $expenses = $expenseIds === [] ? collect() : ClientExpense::query()
@@ -148,10 +172,9 @@ final class DisputedDraftRebuilder
             if (! $draft instanceof ClientInvoice) {
                 continue;
             }
-            // A generated draft is rebuilt whole, so once is enough; an ad-hoc
-            // draft refreshes one named entry at a time.
-            $generated = $draft->invoiceKindValue() !== InvoiceKind::AdHoc->value;
-            if ($generated && isset($rebuilt[$draft->id])) {
+            // Each draft is rebuilt whole - an ad-hoc one dropping every held
+            // selection - so once is enough.
+            if (isset($rebuilt[$draft->id])) {
                 continue;
             }
             $rebuilt[$draft->id] = true;

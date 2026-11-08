@@ -356,7 +356,7 @@ Held is not stored. It is read from the dispute: a row with
 | Where the row is when disputed | What happens |
 | --- | --- |
 | Not on any invoice | No draft takes it: release, hand-picked time, cadence generation, regeneration, the deferred backlog, buy-down and termination collection all skip it. An expense is not allocated. |
-| On a draft invoice | Once the dispute commits, the draft is rebuilt by the ordinary generators, in their own transaction and lock order (`DisputedDraftRebuilder`). The client's dispute must stand whatever happens to the draft. The hour is no longer charged; it is listed under the draft's *Still deferred* section with a **Disputed** tag, so the operator sees what was taken off and why. If the rebuild is refused (a buy-down settles the entry, say), the refusal is reported, the dispute still stands, and issuing is refused (422, code `disputed_on_draft`) with the count of rows. |
+| On a draft invoice | Once the dispute commits, the draft is rebuilt by the ordinary generators, in their own transaction and lock order (`DisputedDraftRebuilder`). The client's dispute must stand whatever happens to the draft. The hour is no longer charged; it is listed under the draft's *Still deferred* section with a **Disputed** tag, so the operator sees what was taken off and why. If the rebuild is refused (a buy-down settles the entry, say), the refusal is reported, the dispute still stands, and issuing is refused (422, code `disputed_on_draft`) with the count of rows. An ad-hoc draft drops every held selection in one rebuild, so two disputes on it never refuse each other's. |
 | On an issued invoice | Unchanged: the correction flow. The issued document is never edited, and paying it never approves the row. |
 
 The hold is one model scope, `ClientTimeEntry::notHeldForDispute()`, inside
@@ -366,6 +366,16 @@ added to each query. The release rule and the hand-picked pricing rule
 (`ConsultantTimeRelease`, `SelectedTimeInvoiceTerms`) refuse disputed rows in
 their own pure, unit-tested code, and the pure statement of the hold is
 `DisputeHold`. Expense allocation skips disputed and written-off expenses.
+
+**A dispute racing the issue.** The issue reads the draft's time and expenses
+with row locks - after its lines, before the company - and holds them until it
+commits. A locking read sees the current row, not the caller's snapshot, so a
+dispute that committed first refuses the issue even inside an outer
+transaction; one that arrives later waits for the charge, and the charge
+stands as any charged row's does (`DisputeIssueRaceTest`, MariaDB). The
+interim claim's time fingerprint includes the dispute, settlement and version
+columns, so a dispute on time the claim does not link still refuses a claim
+priced from an older snapshot.
 
 #### Settling a dispute
 
@@ -380,6 +390,9 @@ client reads:
 - **Write off.** The row becomes non-billable (`is_billable = false`) and
   leaves billing for good. A reply is required. The client still sees it,
   read-only, in that month's To approve as *Written off*, with the reply.
+  The write-off is terminal: the shared billing scope, release and hand-picked
+  pricing all exclude it whatever its billable flag says, and an edit that
+  would make it billable again is refused.
 
 A subcontractor's resubmission keeps working as it does: it already clears the
 dispute (`SubmissionService`).
@@ -403,7 +416,12 @@ dispute (`SubmissionService`).
 A new dispute clears the previous reply. Every settlement is a compare-and-set
 on the row's version, under its lock. After it commits, the drafts it affects
 are rebuilt, as after a dispute: an answered row goes back on the generated
-draft whose period covers it, and a written-off one comes off any draft. A row
+draft whose period covers it, and a written-off one comes off any draft.
+When no draft covers its period - the period was invoiced while it was held -
+an answered subcontractor hour, priced alone at its own date and rate, is
+carried to the next cadence draft. Retainer time needs no carrying: the ledger
+is rebuilt from current rows, so the answered hour counts in its own month
+again, reducing what rolls over or carrying forward as debt. A row
 an issued invoice already charges can't be written off (409); answer it, and
 correct the invoice. Each settlement is written to the client history
 (`ClientActivityRecorder`, actions `dispute.answered` and

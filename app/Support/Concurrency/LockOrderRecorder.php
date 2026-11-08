@@ -180,6 +180,15 @@ final class LockOrderRecorder
             // locks, so its locks belong to the outermost frame. Only a
             // transaction opened at the recording floor starts a sequence.
             if (self::$recording && $event->connection->transactionLevel() === self::$baseline + 1) {
+                // Laravel runs after-commit callbacks before it announces the
+                // commit, so a callback that opens a transaction begins here
+                // while the frame of the one that just committed is still
+                // open. That transaction has committed and released its
+                // locks: archive its frame rather than lose it.
+                if (self::$frame !== null && self::$frame !== []) {
+                    self::$sequences[] = self::$frame;
+                    self::$exclusiveCommands[] = self::$exclusiveCommand;
+                }
                 self::$frame = [];
                 self::$exclusiveCommand = null;
             }

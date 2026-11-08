@@ -3,15 +3,16 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgentPrincipal;
 use App\Models\ClientExpense;
-use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentMutationExecutor;
+use App\Services\AgentApi\AgentReadService;
 use App\Services\Approval\DisputeSettlements;
 use App\Services\Authorization\ProjectAccess;
-use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\Approval\DisputeSettlement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,9 +32,11 @@ final class AgentDisputeController extends Controller
         private readonly DisputeSettlements $settlements,
     ) {}
 
-    public function settleTime(Request $request, Workspace $workspace, string $entry, ProjectAccess $access, AgentTimeEntryPresenter $presenter): JsonResponse
+    public function settleTime(Request $request, Workspace $workspace, string $entry, AgentReadService $reads): JsonResponse
     {
         $context = $this->contexts->from($request);
+        $reader = $request->user();
+        abort_unless($reader instanceof User || $reader instanceof AgentPrincipal, 401);
         $ids = $this->mutations->run(
             $context->user,
             $workspace,
@@ -46,18 +49,14 @@ final class AgentDisputeController extends Controller
 
                 return [$this->settlements->settleTime($workspace, $entry, $context->user, DisputeSettlement::from($data['outcome']), $data['reply'], $data['expected_version'])->public_id];
             },
-            function (array $ids) use ($workspace, $access, $context): void {
-                // A replay answers only someone who can still see the entry.
-                $records = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->get();
-                abort_unless($records->count() === count($ids), 404);
-                foreach ($records as $record) {
-                    abort_unless($record->project !== null && $access->canView($context->user, $record->project), 404);
-                }
+            // A replay answers only someone who can still read the entry, by
+            // the same row-level visibility `time_entries.list` applies.
+            function (array $ids) use ($reads, $reader, $workspace): void {
+                $reads->timeEntriesByIds($reader, $workspace, $ids);
             },
         );
-        $record = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $ids[0] ?? null)->firstOrFail();
 
-        return response()->json(['data' => $presenter->present($workspace, $record)]);
+        return response()->json(['data' => $reads->timeEntriesByIds($reader, $workspace, $ids)[0]]);
     }
 
     public function settleExpense(Request $request, Workspace $workspace, string $expense, ProjectAccess $access, AgentExpenseReadService $reads): JsonResponse

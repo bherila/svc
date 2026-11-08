@@ -435,14 +435,21 @@ of the invoice, because nothing may be read or locked ahead of it — then the
 invoice, and refuses if the locked invoice names a different agreement. The
 cycle's charged interim claims are then locked (`lockCycleClaims()`, a current
 read, so a claim voided or charged a moment ago is seen as it is), then the
+draft's lines, then its time (`lockTimeFingerprint()`, and the dispute guard's
+locking read of the charged time and its pivots), then its expenses, then the
 company, and only then is the ledger read. The order is agreement → invoice →
-cycle claims → company, which the registry already declares; nothing is locked
-inside an invoice-locked body that ranks before invoices.
+cycle claims → lines → time → expenses → company, which the registry already
+declares; nothing is locked inside an invoice-locked body that ranks before
+invoices. The fingerprint was once taken inside `lockCycleClaims()`, before the
+lines: an inversion the conformance fixture did not see while it lost the
+frames of transactions followed by an after-commit transaction (Laravel runs
+those callbacks before it announces the commit). The recorder now archives
+such a frame instead of dropping it.
 
 **What is authoritative.** The charged claims, through the locking read, and
-the time the ledger is built from, through a fingerprint. `lockCycleClaims()`
+the time the ledger is built from, through a fingerprint. `lockTimeFingerprint()`
 fingerprints the company's time entries in the agreement's scope (its project,
-when it names one) from the agreement's first month to the cycle's end — every column the ledger's arithmetic reads, soft-deleted rows
+when it names one) from the agreement's first month to the cycle's end — every column the ledger's arithmetic reads, the dispute, settlement and version columns, soft-deleted rows
 included — with a locking read (time entries rank after invoices and before the
 company); `assertClaimIssuable()` fingerprints the same rows with an ordinary
 read after every lock. When `issue()` owns its transaction the two agree by

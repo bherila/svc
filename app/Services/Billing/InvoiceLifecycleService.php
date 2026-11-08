@@ -347,6 +347,7 @@ final class InvoiceLifecycleService
                 $assertLocked($locked);
             }
             $interimClaims = null;
+            $interimTime = null;
             // Only a draft whose claim can be placed: one with a complete,
             // ordered period. Anything else is refused by the period checks
             // below, with the refusal that names its repair.
@@ -439,6 +440,23 @@ final class InvoiceLifecycleService
                     ->where('total_amount', '<', 0)
                     ->tap(Locks::forUpdate())
                     ->first(['id']) !== null;
+                // A client's dispute holds a row out of billing
+                // (docs/ux-overhaul.md 7b″). The dispute rebuilds the draft
+                // without it; this refuses the draft whose rebuild could not.
+                // The rows are read with locks, which see the current row
+                // rather than this transaction's snapshot, and are held until
+                // the issue commits: a dispute either committed first and is
+                // refused here, or waits for the charge and finds the row
+                // already charged. They rank after the invoice and its lines
+                // and before the company, and a locking read fixes no snapshot
+                // for the credit check that follows.
+                $lineIds = $this->lockLineIds($locked);
+                // The interim claim's time fingerprint, also a locking read
+                // of time entries, after the lines and before the company.
+                if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
+                    $interimTime = $this->interimOverageGenerator()->lockTimeFingerprint($locked, $agreement, $interimClaims[0]);
+                }
+                $this->assertChargesNoDisputedRows($locked, $lineIds);
                 $company = $this->overpaymentCreditService->lockForSpending(
                     (int) $locked->workspace_id,
                     (int) $locked->client_company_id,
@@ -460,11 +478,6 @@ final class InvoiceLifecycleService
 
                 throw new DomainException('Only draft invoices can be issued.');
             }
-
-            // A client's dispute holds a row out of billing (docs/ux-overhaul.md
-            // 7b″). The dispute rebuilds the draft without it; this refuses the
-            // draft whose rebuild could not, before anything is spent or moved.
-            $this->assertChargesNoDisputedRows($locked);
 
             // Before anything is spent, moved or recorded, and deliberately
             // after the charged-status return above: an invoice that already
@@ -585,10 +598,10 @@ final class InvoiceLifecycleService
             // credit locks above, so late approvals and newly private wording
             // are reflected without rebuilding any charge or allocation.
             app(ClientInvoicingService::class)->refreshDeferredWorkSnapshotAtIssue($locked);
-            if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
+            if ($interimClaims !== null && $interimTime !== null) {
                 // After every lock, so a transaction this method owns builds the
                 // ledger through a snapshot that starts after all of them.
-                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1], $interimClaims[2]);
+                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1], $interimTime);
             }
             if ($this->capOverpaymentCreditAtIssue($locked)) {
                 $this->overpaymentCreditService->recordPoolChange((int) $locked->workspace_id, (int) $company->id);
@@ -845,35 +858,56 @@ final class InvoiceLifecycleService
         }
     }
 
-    /**
-     * Refuse a draft that still charges a disputed hour or expense, or one a
-     * settlement wrote off. Plain
-     * reads, after every lock the issue takes, of this workspace's own rows.
-     */
-    private function assertChargesNoDisputedRows(ClientInvoice $draft): void
+    /** @return list<int> the draft's lines, locked */
+    private function lockLineIds(ClientInvoice $draft): array
     {
-        $lineIds = ClientInvoiceLine::query()
+        return array_values(ClientInvoiceLine::query()
             ->where('workspace_id', $draft->workspace_id)
             ->where('client_invoice_id', $draft->id)
-            ->pluck('id');
-        if ($lineIds->isEmpty()) {
+            ->tap(Locks::forUpdate())
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all());
+    }
+
+    /**
+     * Refuse a draft that still charges a disputed hour or expense, or one a
+     * settlement wrote off. Every read is a locking read of this workspace's
+     * own rows, in the registered order - the time charged on the draft's
+     * locked lines together with the pivots that link it, then the expenses -
+     * and the locks are held until the issue commits.
+     */
+    /** @param  list<int>  $lineIds  from {@see self::lockLineIds()} */
+    private function assertChargesNoDisputedRows(ClientInvoice $draft, array $lineIds): void
+    {
+        if ($lineIds === []) {
             return;
         }
 
-        $held = fn ($rows) => $rows->where(fn ($open) => $open->whereNotNull('client_disputed_at')
-            ->orWhere('client_dispute_settlement', DisputeSettlement::WrittenOff->value));
+        // Joined rather than filtered through a subquery: a locking read does
+        // not lock, or read current, the rows of a nested subquery.
         $hours = ClientTimeEntry::query()
-            ->where('workspace_id', $draft->workspace_id)
-            ->tap($held)
-            ->whereIn('id', DB::table('client_invoice_line_time_entries')
-                ->where('workspace_id', $draft->workspace_id)
-                ->whereIn('client_invoice_line_id', $lineIds)
-                ->select('client_time_entry_id'))
+            ->join('client_invoice_line_time_entries as allocation', function ($join) use ($draft, $lineIds): void {
+                $join->on('allocation.client_time_entry_id', '=', 'client_time_entries.id')
+                    ->where('allocation.workspace_id', '=', $draft->workspace_id)
+                    ->whereIn('allocation.client_invoice_line_id', $lineIds);
+            })
+            ->where('client_time_entries.workspace_id', $draft->workspace_id)
+            ->select(['client_time_entries.id', 'client_time_entries.client_disputed_at', 'client_time_entries.client_dispute_settlement'])
+            ->tap(Locks::forUpdate())
+            ->get()
+            ->filter(fn (ClientTimeEntry $entry): bool => $entry->getAttributes()['client_disputed_at'] !== null
+                || $entry->getAttributes()['client_dispute_settlement'] === DisputeSettlement::WrittenOff->value)
+            ->unique('id')
             ->count();
         $expenses = ClientExpense::query()
             ->where('workspace_id', $draft->workspace_id)
-            ->tap($held)
             ->whereIn('client_invoice_line_id', $lineIds)
+            ->select(['id', 'client_disputed_at', 'client_dispute_settlement'])
+            ->tap(Locks::forUpdate())
+            ->get()
+            ->filter(fn (ClientExpense $expense): bool => $expense->getAttributes()['client_disputed_at'] !== null
+                || $expense->getAttributes()['client_dispute_settlement'] === DisputeSettlement::WrittenOff->value)
             ->count();
 
         if ($hours > 0 || $expenses > 0) {

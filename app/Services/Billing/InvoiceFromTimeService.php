@@ -11,6 +11,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
@@ -172,13 +173,19 @@ final class InvoiceFromTimeService
      * invoice creation. The mutated entry may legitimately disappear from the
      * selection (delete, non-billable or deferred); any other selected entry
      * becoming invalid is treated as corruption and fails the whole mutation.
+     *
+     * With `$dropHeld`, a dispute's rebuild (docs/ux-overhaul.md 7b″): every
+     * selected entry a dispute holds, or a settlement wrote off, comes off
+     * under the same locks, so two disputes on one draft do not each refuse
+     * the other's rebuild. Any other invalid entry still refuses.
      */
     public function regenerateDraftSelection(
         ClientInvoice $invoice,
         Workspace $workspace,
         int $mutatedEntryId,
+        bool $dropHeld = false,
     ): ClientInvoice {
-        return DB::transaction(function () use ($invoice, $workspace, $mutatedEntryId): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $mutatedEntryId, $dropHeld): ClientInvoice {
             BillingMaintenance::share($workspace->id);
             $locked = ClientInvoice::query()
                 ->whereKey($invoice->id)
@@ -242,7 +249,7 @@ final class InvoiceFromTimeService
                         : null;
 
                 if ($terms === null) {
-                    if ($entryId !== $mutatedEntryId) {
+                    if ($entryId !== $mutatedEntryId && ! ($dropHeld && $entry instanceof ClientTimeEntry && self::heldOut($entry))) {
                         throw new DomainException('Another selected time entry is no longer invoiceable; refresh the draft explicitly.');
                     }
 
@@ -294,6 +301,13 @@ final class InvoiceFromTimeService
 
             return $locked->fresh(['lines', 'clientCompany']);
         });
+    }
+
+    /** Disputed, or written off by its settlement: off every unbilled draft. */
+    private static function heldOut(ClientTimeEntry $entry): bool
+    {
+        return $entry->getRawOriginal('client_disputed_at') !== null
+            || $entry->getRawOriginal('client_dispute_settlement') === DisputeSettlement::WrittenOff->value;
     }
 
     /**

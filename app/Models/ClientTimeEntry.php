@@ -488,7 +488,13 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     public function scopeNotHeldForDispute(Builder $query): Builder
     {
         return $query->where(fn (Builder $open): Builder => $open
-            ->whereNull('client_disputed_at')
+            ->where(fn (Builder $settled): Builder => $settled
+                ->whereNull('client_disputed_at')
+                // A write-off is terminal: never billed, whatever an edit
+                // does to its billable flag afterwards.
+                ->where(fn (Builder $outcome): Builder => $outcome
+                    ->whereNull('client_dispute_settlement')
+                    ->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value)))
             ->orWhereHas('invoiceLines', fn (Builder $lines): Builder => self::ownWorkspaceAllocation($lines)
                 ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
                     ->whereIn('client_invoices.status', InvoiceStatus::charged()))));

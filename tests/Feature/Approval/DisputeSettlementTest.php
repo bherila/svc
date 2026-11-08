@@ -8,20 +8,27 @@ use App\Models\ClientCompanyMembership;
 use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\TimeEntryMutationService;
+use App\Services\Approval\DisputedDraftRebuilder;
 use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\InterimOverageGenerator;
+use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\SelectedTimeInvoiceTerms;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -295,5 +302,178 @@ final class DisputeSettlementTest extends TestCase
             ->assertJsonPath('data.client_review.reply', 'Synthetic reply');
         $this->postJson($path, $body + ['confirm' => true], ['Idempotency-Key' => 'synthetic-settle'])->assertOk();
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'time_entries.settle_dispute', 'outcome' => 'replay']);
+    }
+
+    // --- review regressions -------------------------------------------
+
+    /** @return array{0: int, 1: string} */
+    private function stampDispute(ClientTimeEntry|ClientExpense $row): void
+    {
+        $row::query()->where('workspace_id', $this->workspace->id)->whereKey($row->id)->update([
+            'client_disputed_at' => now(), 'client_dispute_note' => 'Synthetic question', 'lock_version' => DB::raw('lock_version + 1'),
+        ]);
+    }
+
+    public function test_every_settled_dispute_is_its_own_history_event(): void
+    {
+        $first = $this->hours('2026-09-20', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $second = $this->hours('2026-09-21', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $expense = $this->expense('2026-09-22', 4200);
+        $contact = $this->contact();
+        $this->dispute($contact, 'time', $first->public_id);
+        $this->dispute($contact, 'time', $second->public_id);
+        $this->dispute($contact, 'expense', $expense->public_id);
+
+        $this->settleTime($first, DisputeSettlement::Answered, reply: 'First reply');
+        $this->settleTime($second, DisputeSettlement::Answered, reply: 'Second reply');
+        $freshExpense = $expense->fresh();
+        app(DisputeSettlements::class)->settleExpense($this->workspace, $freshExpense->public_id, $this->owner, DisputeSettlement::Answered, 'Expense reply', AgentApiVersion::for($freshExpense));
+        // The same row disputed again and answered differently.
+        $this->dispute($contact, 'time', $first->public_id);
+        $this->settleTime($first, DisputeSettlement::Answered, reply: 'Another reply');
+
+        $events = DB::table('client_company_activity')->where('action', 'dispute.answered')->orderBy('id')->pluck('payload')
+            ->map(fn (string $payload): string => json_decode($payload, true)['reply'])->all();
+        $this->assertSame(['First reply', 'Second reply', 'Expense reply', 'Another reply'], $events);
+        $this->assertSame('Another reply', $first->fresh()->client_dispute_reply);
+    }
+
+    public function test_a_written_off_hour_cannot_be_made_billable_again_and_never_bills_if_it_is(): void
+    {
+        $entry = $this->hours('2026-09-20', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $this->dispute($this->contact(), 'time', $entry->public_id);
+        $this->settleTime($entry, DisputeSettlement::WrittenOff);
+        $this->assertFalse((bool) $entry->fresh()->is_billable);
+
+        $mutations = app(TimeEntryMutationService::class);
+        $unapproved = $mutations->unapprove($this->workspace, $entry->fresh(), $this->owner, AgentApiVersion::for($entry->fresh()));
+        try {
+            $mutations->update($this->workspace, $unapproved, $this->owner, ['is_billable' => true, 'expected_version' => AgentApiVersion::for($unapproved)]);
+            $this->fail('A write-off was made billable again.');
+        } catch (\DomainException $refused) {
+            $this->assertStringContainsString('written off', $refused->getMessage());
+        }
+        $this->assertFalse((bool) $entry->fresh()->is_billable);
+
+        // Even a row whose flag was changed underneath stays out of every bill:
+        // as a draft, release leaves it a draft...
+        ClientTimeEntry::query()->whereKey($entry->id)->update(['is_billable' => true]);
+        $control = $this->hours('2026-09-21', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $this->generate();
+        $this->assertSame('draft', $entry->fresh()->status);
+        $this->assertFalse($this->onAnyLine($entry->fresh()));
+        // ...and approved, no billing read takes it.
+        ClientTimeEntry::query()->whereKey($entry->id)->update(['status' => 'approved']);
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($this->draft());
+        $this->assertFalse($this->onAnyLine($entry->fresh()));
+        $this->assertTrue($this->onAnyLine($control));
+        $this->assertSame(0, ClientTimeEntry::query()->whereKey($entry->id)->notHeldForDispute()->count());
+        $this->assertNull(SelectedTimeInvoiceTerms::forEntry($entry->fresh()));
+        app(InvoiceLifecycleService::class)->issue($this->draft(), $this->workspace);
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function withdrawals(): iterable
+    {
+        yield 'both rows in one withdrawal' => [true];
+        yield 'one withdrawal per row' => [false];
+    }
+
+    #[DataProvider('withdrawals')]
+    public function test_two_disputes_on_one_ad_hoc_draft_both_come_off_it(bool $together): void
+    {
+        [$a, $b, $c] = array_map(fn (string $day): ClientTimeEntry => $this->hours($day, 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']), ['2026-09-20', '2026-09-21', '2026-09-22']);
+        $draft = app(InvoiceFromTimeService::class)->create($this->workspace, $this->company, ['invoice_number' => 'SYNTH-ADHOC-TWO', 'currency' => 'USD'], [$a->public_id, $b->public_id, $c->public_id]);
+        // Both disputes commit before either rebuild runs.
+        $this->stampDispute($a);
+        $this->stampDispute($b);
+
+        $rebuilder = app(DisputedDraftRebuilder::class);
+        if ($together) {
+            $rebuilder->withdraw($this->workspace->id, [$a->id, $b->id], []);
+        } else {
+            $rebuilder->withdraw($this->workspace->id, [$a->id], []);
+            $rebuilder->withdraw($this->workspace->id, [$b->id], []);
+        }
+
+        $this->assertFalse($this->onAnyLine($a));
+        $this->assertFalse($this->onAnyLine($b));
+        $this->assertTrue($this->onAnyLine($c));
+        $this->assertSame(10000, (int) $draft->fresh()->total_amount);
+        app(InvoiceLifecycleService::class)->issue($draft->fresh(), $this->workspace);
+        $this->assertSame('issued', $draft->fresh()->status);
+    }
+
+    public function test_an_answered_subcontractor_hour_whose_period_has_no_draft_bills_on_the_next_one(): void
+    {
+        $flat = ['status' => 'approved', 'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'];
+        $earlier = $this->hours('2026-08-10', 120, $flat);
+        $this->stampDispute($earlier);
+        $this->generate();
+        $draft = $this->draft();
+        $this->assertFalse($this->onAnyLine($earlier), 'Held while disputed.');
+
+        $this->settleTime($earlier, DisputeSettlement::Answered);
+
+        $this->assertTrue($this->onAnyLine($earlier), 'Answered, it bills on the next draft. ');
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $earlier->id)->count());
+        // Regenerating again bills it once, not twice.
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($draft->fresh());
+        $this->assertSame(1, DB::table('client_invoice_line_time_entries')->where('client_time_entry_id', $earlier->id)->count());
+    }
+
+    public function test_an_unanswered_subcontractor_hour_from_an_earlier_period_is_not_carried(): void
+    {
+        $earlier = $this->hours('2026-08-10', 120, ['status' => 'approved', 'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD']);
+        $this->generate();
+
+        $this->assertFalse($this->onAnyLine($earlier), 'Only an answered dispute is carried forward.');
+    }
+
+    public function test_the_interim_time_fingerprint_moves_with_a_dispute(): void
+    {
+        $this->agreement->forceFill(['billing_cadence' => 'quarterly'])->save();
+        $entry = $this->hours('2026-07-10', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $draft = new ClientInvoice(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'service_period_start' => '2026-07-01', 'service_period_end' => '2026-07-31']);
+        $generator = app(InterimOverageGenerator::class);
+        $fingerprint = fn (): string => DB::transaction(fn (): string => $generator->lockTimeFingerprint($draft, $this->agreement->fresh(), $generator->lockCycleClaims($draft, $this->agreement->fresh())[0]));
+
+        $before = $fingerprint();
+        $this->assertSame($before, $fingerprint());
+        $this->stampDispute($entry);
+        $this->assertNotSame($before, $fingerprint(), 'A dispute changes what the ledger counts.');
+    }
+
+    public function test_a_settlement_replay_answers_only_someone_who_can_still_read_the_entry(): void
+    {
+        $colleague = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $colleague->id, 'role' => 'member']);
+        $manager = User::factory()->create();
+        $membership = $this->workspace->memberships()->create(['user_id' => $manager->id, 'role' => 'admin']);
+        ClientProjectMembership::query()->create(['workspace_id' => $this->workspace->id, 'client_project_id' => $this->project->id, 'user_id' => $manager->id, 'role' => 'contributor']);
+        $entry = $this->hours('2026-09-20', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD'], $colleague);
+        $this->dispute($this->contact(), 'time', $entry->public_id);
+        $base = "/api/v1/workspaces/{$this->workspace->public_id}";
+        $path = $base.'/time-entries/'.$entry->public_id.'/dispute/settle';
+        $body = ['expected_version' => AgentApiVersion::for($entry->fresh()), 'outcome' => 'answered', 'reply' => 'Synthetic reply', 'confirm' => true];
+
+        $this->actingAsMcp($manager, [AgentApiScopes::TIME_READ, AgentApiScopes::TIME_WRITE]);
+        $this->postJson($path, $body, ['Idempotency-Key' => 'synthetic-settle-replay'])->assertOk()
+            ->assertJsonPath('data.client_review.settlement', 'answered');
+        $events = DB::table('client_company_activity')->where('action', 'dispute.answered')->count();
+        // Replayed while still a manager: the existing result, no new event.
+        $this->postJson($path, $body, ['Idempotency-Key' => 'synthetic-settle-replay'])->assertOk()
+            ->assertJsonPath('data.id', $entry->public_id);
+        $this->assertSame($events, DB::table('client_company_activity')->where('action', 'dispute.answered')->count());
+        // The same key with another payload is still a conflict.
+        $this->assertGreaterThanOrEqual(409, $this->postJson($path, ['reply' => 'Changed'] + $body, ['Idempotency-Key' => 'synthetic-settle-replay'])->status());
+
+        // Demoted to a contributor who keeps the project, they no longer read
+        // a colleague's hour, and the replay gives them nothing of it.
+        $membership->update(['role' => 'member']);
+        $this->actingAsMcp($manager->fresh(), [AgentApiScopes::TIME_READ, AgentApiScopes::TIME_WRITE]);
+        $replay = $this->postJson($path, $body, ['Idempotency-Key' => 'synthetic-settle-replay']);
+        $replay->assertNotFound();
+        $this->assertStringNotContainsString('Synthetic reply', (string) $replay->getContent());
     }
 }

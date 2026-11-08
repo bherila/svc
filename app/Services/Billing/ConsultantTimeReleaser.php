@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientTimeEntry;
 use App\Support\Approval\ConsultantTimeRelease;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -69,7 +70,9 @@ final class ConsultantTimeReleaser
                 $entry->worked_on->toDateString(),
                 $today,
                 (bool) $entry->getAttribute('on_an_invoice_line'),
-                $entry->client_disputed_at !== null,
+                // Disputed, or written off by its settlement: neither bills.
+                $entry->client_disputed_at !== null
+                    || $entry->getRawOriginal('client_dispute_settlement') === DisputeSettlement::WrittenOff->value,
             )) {
                 continue;
             }
@@ -84,6 +87,8 @@ final class ConsultantTimeReleaser
                 ->whereKey($entry->id)
                 ->where('status', 'draft')
                 ->whereNull('client_disputed_at')
+                ->where(fn ($outcome) => $outcome->whereNull('client_dispute_settlement')
+                    ->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value))
                 ->update(['status' => 'approved', 'lock_version' => DB::raw('lock_version + 1')] + $this->rateFor($entry));
         }
 

@@ -49,6 +49,13 @@ final class SelectedTimeInvoiceTermsTest extends TestCase
         $this->assertSame(0, $terms->totalAmount);
     }
 
+    public function test_an_answered_dispute_is_priced_again(): void
+    {
+        $terms = SelectedTimeInvoiceTerms::forEntry($this->entry(['client_dispute_settlement' => 'answered']));
+        $this->assertNotNull($terms);
+        $this->assertSame(10000, $terms->totalAmount);
+    }
+
     /** @param array<string, mixed> $attributes */
     #[DataProvider('ineligibleEntries')]
     public function test_ineligible_or_invalid_legacy_time_has_no_quote(array $attributes): void
@@ -63,6 +70,7 @@ final class SelectedTimeInvoiceTermsTest extends TestCase
         yield 'non-billable' => [['is_billable' => false]];
         yield 'deferred' => [['is_deferred' => true]];
         yield 'disputed by the client' => [['client_disputed_at' => '2026-11-07 10:00:00']];
+        yield 'written off by its settlement' => [['client_dispute_settlement' => 'written_off']];
         yield 'direct billing' => [['subcontractor_billing_mode' => 'direct']];
         yield 'non-string mode' => [['subcontractor_billing_mode' => 17]];
         yield 'unknown mode' => [['subcontractor_billing_mode' => 'synthetic-unknown']];

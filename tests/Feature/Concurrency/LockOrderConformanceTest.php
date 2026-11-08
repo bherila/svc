@@ -119,6 +119,7 @@ final class LockOrderConformanceTest extends TestCase
         'App\\Services\\Billing\\InterimOverageGenerator::timeFingerprint',
         'App\\Services\\Billing\\InvoiceFromTimeService::prepareLines',
         'App\\Services\\Billing\\InvoiceFromTimeService::regenerateDraftSelection',
+        'App\\Services\\Billing\\InvoiceLifecycleService::assertChargesNoDisputedRows',
         'App\\Services\\Billing\\InvoiceLifecycleService::releaseAllocations',
         'App\\Services\\Billing\\InvoiceLineComposer::addBillableMilestoneTasks',
         'App\\Services\\Files\\AttachmentAction::lockedRecord',
@@ -515,8 +516,9 @@ final class LockOrderConformanceTest extends TestCase
         $this->assertSame('draft', $draft->status);
         app(InvoiceLifecycleService::class)->issue($draft, $this->workspace);
         DB::transaction(function () use ($draft, $agreement): void {
-            $claims = app(InterimOverageGenerator::class)->lockCycleClaims($draft->fresh(), $agreement->fresh());
-            $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $claims[2]);
+            $generator = app(InterimOverageGenerator::class);
+            $claims = $generator->lockCycleClaims($draft->fresh(), $agreement->fresh());
+            $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $generator->lockTimeFingerprint($draft->fresh(), $agreement->fresh(), $claims[0]));
         });
     }
 

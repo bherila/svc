@@ -92,7 +92,7 @@ final class DisputeSettlements
                 DisputeSettlement::Answered => [],
                 DisputeSettlement::WrittenOff => ['is_billable' => false],
             });
-            $this->record($workspace, (int) $entry->client_company_id, 'time', $entry->public_id, $entry->client_dispute_note, $outcome, $reply, $actor);
+            $this->record($workspace, (int) $entry->client_company_id, 'time', $entry->public_id, (int) $entry->lock_version, $entry->client_dispute_note, $outcome, $reply, $actor);
             $this->afterCommit((int) $workspace->id, $outcome, [(int) $entry->id], []);
 
             return $entry->fresh() ?? $entry;
@@ -116,7 +116,7 @@ final class DisputeSettlements
             $this->assertOpen($expense, $expectedVersion);
             abort_if($outcome === DisputeSettlement::WrittenOff && $this->charged($workspace, $expense), 409, self::CHARGED_MESSAGE);
             $this->write(ClientExpense::query(), $workspace, $expense, $actor, $outcome, $reply, []);
-            $this->record($workspace, (int) $expense->client_company_id, 'expense', $expense->public_id, $expense->client_dispute_note, $outcome, $reply, $actor);
+            $this->record($workspace, (int) $expense->client_company_id, 'expense', $expense->public_id, (int) $expense->lock_version, $expense->client_dispute_note, $outcome, $reply, $actor);
             $this->afterCommit((int) $workspace->id, $outcome, [], [(int) $expense->id]);
 
             return $expense->fresh() ?? $expense;
@@ -174,7 +174,12 @@ final class DisputeSettlements
         abort_unless($written === 1, 409, 'This row has changed; read it and retry.');
     }
 
-    private function record(Workspace $workspace, int $companyId, string $kind, string $publicId, ?string $note, DisputeSettlement $outcome, string $reply, User $actor): void
+    /**
+     * The company's history, one event per settled dispute: the occurrence is
+     * the row and the version it was disputed at, which every new dispute
+     * moves, so two rows - or two disputes of one row - never share a key.
+     */
+    private function record(Workspace $workspace, int $companyId, string $kind, string $publicId, int $disputedVersion, ?string $note, DisputeSettlement $outcome, string $reply, User $actor): void
     {
         $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($companyId)->first();
         if (! $company instanceof ClientCompany) {
@@ -183,7 +188,7 @@ final class DisputeSettlements
 
         $this->activities->record($workspace, $company, 'dispute.'.$outcome->value, $company, [
             'kind' => $kind, 'id' => $publicId, 'dispute_note' => $note, 'reply' => $reply,
-        ], $actor);
+        ], $actor, occurrence: $kind.':'.$publicId.':'.$disputedVersion);
     }
 
     /**

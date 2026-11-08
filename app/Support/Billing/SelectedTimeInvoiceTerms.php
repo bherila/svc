@@ -4,6 +4,7 @@ namespace App\Support\Billing;
 
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\MoneyService;
+use App\Support\Approval\DisputeSettlement;
 use InvalidArgumentException;
 
 /** Database-free pricing shared by selected-time creation and its preview. */
@@ -26,6 +27,11 @@ final readonly class SelectedTimeInvoiceTerms
         // rebuilt after the dispute drops it.
         // Raw, so this stays free of the date cast and its connection.
         if (($entry->getAttributes()['client_disputed_at'] ?? null) !== null) {
+            return null;
+        }
+        // Written off by its settlement: never billed, whatever an edit does
+        // to its billable flag afterwards.
+        if (($entry->getAttributes()['client_dispute_settlement'] ?? null) === DisputeSettlement::WrittenOff->value) {
             return null;
         }
 
