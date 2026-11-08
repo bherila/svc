@@ -56,7 +56,7 @@ try {
     if ($input['operation'] === 'discard') {
         (new WorkspaceExpenses($workspace))->discard($expense);
     } else {
-        app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic receipt race'), $user);
+        app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('synthetic.pdf', 'Synthetic receipt race'), $user);
     }
     echo "outcome:success\n";
 } catch (ModelNotFoundException) {

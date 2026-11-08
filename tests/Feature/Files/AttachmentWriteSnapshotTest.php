@@ -49,7 +49,7 @@ final class AttachmentWriteSnapshotTest extends TestCase
             $company = $this->syntheticCompany($workspace, 'file-snapshot');
             $project = $this->syntheticProject($company, 'file-snapshot');
             $expense = $this->recordSyntheticExpense($workspace, $company);
-            $file = UploadedFile::fake()->createWithContent('synthetic-snapshot.txt', 'Synthetic snapshot bytes');
+            $file = UploadedFile::fake()->createWithContent('synthetic-snapshot.pdf', 'Synthetic snapshot bytes');
             $files = app(AgentAttachmentService::class);
             $receipts = app(AgentExpenseReceiptService::class);
             $projectVersion = AgentApiVersion::for($project);

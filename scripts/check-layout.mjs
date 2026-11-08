@@ -176,6 +176,9 @@ try {
         DB_DATABASE: path.join(runtime, 'database.sqlite'),
         SESSION_DRIVER: 'file',
         SESSION_SECURE_COOKIE: 'false',
+        // The harness runs the enforcing policy: a script or connection the nonce policy would
+        // block shows up as a console message, which capture() turns into a failure.
+        SVC_CSP_MODE: 'enforce',
         CACHE_STORE: 'array',
         MAIL_MAILER: 'array',
         QUEUE_CONNECTION: 'sync',
@@ -344,6 +347,12 @@ try {
     page.on('pageerror', (error) =>
         failures.push(`Browser error: ${error.message}`),
     );
+    // Chromium reports an enforced-policy block as a console error.
+    page.on('console', (message) => {
+        if (message.text().includes('Content Security Policy')) {
+            failures.push(`CSP violation: ${message.text().slice(0, 300)}`);
+        }
+    });
 
     async function checkInvoiceRecovery(
         screen,
@@ -4322,7 +4331,7 @@ try {
                             current,
                         );
                     });
-                    const filename = `synthetic-browser-receipt-${width}.txt`;
+                    const filename = `synthetic-browser-receipt-${width}.pdf`;
                     const uploads = [];
                     await page.route(
                         origin + fixture.receipt_upload + '*',
@@ -4358,9 +4367,9 @@ try {
                     );
                     await page.getByLabel('Upload a file').setInputFiles({
                         name: filename,
-                        mimeType: 'text/plain',
+                        mimeType: 'application/pdf',
                         buffer: Buffer.from(
-                            'Synthetic receipt browser acceptance bytes.',
+                            '%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n% Synthetic receipt browser acceptance bytes.',
                         ),
                     });
                     await page.route(

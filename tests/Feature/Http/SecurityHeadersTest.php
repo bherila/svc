@@ -84,29 +84,20 @@ final class SecurityHeadersTest extends TestCase
         $this->get('https://localhost/')->assertHeader('Strict-Transport-Security', 'max-age=600');
     }
 
-    public function test_the_policy_allowlist_covers_stripe_and_is_never_enforced(): void
+    public function test_the_policy_allowlist_covers_stripe(): void
     {
         config(['bherila-auth.oauth_client.base_url' => 'https://identity.example.test']);
         $policy = (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only');
 
-        $this->assertStringContainsString("script-src 'self' 'unsafe-inline' https://js.stripe.com;", $policy);
+        $this->assertMatchesRegularExpression("/script-src 'self' 'nonce-[A-Za-z0-9]{40}' https:\/\/js\.stripe\.com https:\/\/\*\.js\.stripe\.com;/", $policy);
         $this->assertStringContainsString('connect-src \'self\' https://api.stripe.com;', $policy);
-        $this->assertStringContainsString('frame-src https://js.stripe.com https://hooks.stripe.com;', $policy);
+        $this->assertStringContainsString('frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com;', $policy);
         $this->assertStringContainsString('img-src \'self\' data: blob: https://*.stripe.com;', $policy);
         $this->assertStringContainsString('font-src \'self\' data:;', $policy);
         $this->assertStringContainsString("style-src 'self' 'unsafe-inline';", $policy);
         $this->assertStringContainsString("object-src 'none'; base-uri 'self'; form-action 'self' https://identity.example.test", $policy);
         $this->assertStringNotContainsString('ws://', $policy);
-        $this->assertStringNotContainsString('report-uri', $policy);
-    }
-
-    public function test_the_policy_can_be_switched_off_and_is_never_sent_as_enforcing(): void
-    {
-        config(['svc.security.csp_report_only' => false]);
-        $response = $this->get('/');
-
-        $response->assertHeaderMissing('Content-Security-Policy-Report-Only');
-        $response->assertHeaderMissing('Content-Security-Policy');
+        $this->assertStringEndsWith('; report-uri /api/csp-reports; report-to csp-endpoint', $policy);
     }
 
     public function test_the_vite_dev_server_is_allowed_only_while_it_is_running(): void
@@ -114,7 +105,7 @@ final class SecurityHeadersTest extends TestCase
         file_put_contents(public_path('hot'), "http://[::1]:5173\n");
         $policy = (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only');
 
-        $this->assertStringContainsString("script-src 'self' 'unsafe-inline' https://js.stripe.com http://[::1]:5173;", $policy);
+        $this->assertMatchesRegularExpression("/script-src 'self' 'nonce-[A-Za-z0-9]{40}' https:\/\/js\.stripe\.com https:\/\/\*\.js\.stripe\.com http:\/\/\[::1\]:5173;/", $policy);
         $this->assertStringContainsString("connect-src 'self' https://api.stripe.com http://[::1]:5173 ws://[::1]:5173;", $policy);
 
         file_put_contents(public_path('hot'), 'https://dev.example.test');
@@ -130,10 +121,10 @@ final class SecurityHeadersTest extends TestCase
     public function test_a_report_endpoint_is_added_only_when_it_is_well_formed(): void
     {
         config(['svc.security.csp_report_uri' => 'https://reports.example.test/csp']);
-        $this->assertStringEndsWith('; report-uri https://reports.example.test/csp', (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only'));
+        $this->assertStringEndsWith('; report-uri https://reports.example.test/csp; report-to csp-endpoint', (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only'));
 
         config(['svc.security.csp_report_uri' => '/csp-reports']);
-        $this->assertStringEndsWith('; report-uri /csp-reports', (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only'));
+        $this->assertStringEndsWith('; report-uri /csp-reports; report-to csp-endpoint', (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only'));
 
         foreach (['http://reports.example.test/csp', 'https://reports.example.test/csp; script-src *', "/x\ny", 'javascript:1'] as $bad) {
             config(['svc.security.csp_report_uri' => $bad]);

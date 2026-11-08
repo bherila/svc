@@ -39,14 +39,14 @@ final class AttachmentPaginationTest extends TestCase
         $company = $this->syntheticCompany($workspace, 'file-pagination');
         $record = $kind === 'generic' ? $this->syntheticProject($company, 'file-pagination') : $this->recordSyntheticExpense($workspace, $company);
         $first = app(AttachmentStorageService::class)->store($workspace, $record,
-            UploadedFile::fake()->createWithContent('synthetic-file-0.txt', 'Synthetic page bytes'), $owner);
+            UploadedFile::fake()->createWithContent('synthetic-file-0.pdf', 'Synthetic page bytes'), $owner);
         $template = (array) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->first();
         unset($template['id']);
         $expected = [$first->public_id];
         for ($index = 1; $index < 105; $index++) {
             $id = (string) Str::uuid();
             DB::table('client_attachments')->insert([...$template, 'public_id' => $id, 'object_key' => 'synthetic/'.Str::uuid(),
-                'original_filename' => Crypt::encryptString('synthetic-file-'.$index.'.txt')]);
+                'original_filename' => Crypt::encryptString('synthetic-file-'.$index.'.pdf')]);
             $expected[] = $id;
         }
         $this->actingAsMcp($owner, ['mcp:use', 'files:read', 'expenses:read']);
@@ -64,7 +64,7 @@ final class AttachmentPaginationTest extends TestCase
         $this->assertSame(17, AgentApiCursor::decode(base64_encode('17'), $workspace->public_id, 'legacy-existing-query'), 'Old callers retain the default legacy cursor interpretation.');
 
         // Real encrypted TEXT values valid on MariaDB, with full filenames kept.
-        $longName = 'Synthetic-'.str_repeat('🔒', 3000).'.txt';
+        $longName = 'Synthetic-'.str_repeat('🔒', 3000).'.pdf';
         DB::table('client_attachments')->where('workspace_id', $workspace->id)->update(['original_filename' => Crypt::encryptString($longName)]);
         $tool = $kind === 'generic' ? 'attachments.list' : 'expenses.receipts.list';
         $arguments = $kind === 'generic' ? ['workspace_id' => $workspace->public_id, 'record_type' => 'project', 'record_id' => $record->public_id]
@@ -101,7 +101,7 @@ final class AttachmentPaginationTest extends TestCase
         $project = $this->syntheticProject($company, 'bound-file-pagination');
         $project->update(['is_visible_to_client' => true]);
         for ($index = 0; $index < 2; $index++) {
-            app(AttachmentStorageService::class)->store($workspace, $project, UploadedFile::fake()->createWithContent('synthetic-bound-'.$index.'.txt', 'Synthetic bound bytes'), $owner);
+            app(AttachmentStorageService::class)->store($workspace, $project, UploadedFile::fake()->createWithContent('synthetic-bound-'.$index.'.pdf', 'Synthetic bound bytes'), $owner);
         }
         $this->actingAsMcp($owner, ['files:read']);
         $base = '/api/v1/workspaces/'.$workspace->public_id.'/records/';
@@ -125,7 +125,7 @@ final class AttachmentPaginationTest extends TestCase
         $this->getJson($base.$path.$tail)->assertUnprocessable();
 
         $expense = $this->recordSyntheticExpense($workspace, $company);
-        $file = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('synthetic-native-0.txt', 'Synthetic native bytes'), $owner);
+        $file = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('synthetic-native-0.pdf', 'Synthetic native bytes'), $owner);
         $row = (array) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $file->id)->first();
         unset($row['id']);
         for ($index = 0; $index < 100; $index++) {
@@ -151,7 +151,7 @@ final class AttachmentPaginationTest extends TestCase
         $agreement = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
             'title' => 'Synthetic paged agreement', 'starts_on' => '2026-10-01', 'currency' => 'USD', 'status' => 'active', 'is_visible_to_client' => true]);
         $file = app(AttachmentStorageService::class)->store($workspace, $agreement,
-            UploadedFile::fake()->createWithContent('synthetic-native-file.txt', 'Synthetic native bytes'), $owner);
+            UploadedFile::fake()->createWithContent('synthetic-native-file.pdf', 'Synthetic native bytes'), $owner);
         $row = (array) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $file->id)->first();
         unset($row['id']);
         for ($index = 0; $index < 300; $index++) {

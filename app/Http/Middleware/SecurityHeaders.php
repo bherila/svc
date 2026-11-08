@@ -2,8 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Http\CspMode;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -16,13 +18,21 @@ use Symfony\Component\HttpFoundation\Response;
  * Stripe's own payment frames) and, on HTTPS only, `Strict-Transport-Security` (no preload,
  * no includeSubDomains: other subdomains of the host are not this application's to commit).
  *
- * Report-only: the Content-Security-Policy. It is never enforced from here - see
- * {@see self::contentSecurityPolicy()} and docs/ux-overhaul.md "Security hardening".
+ * The Content-Security-Policy follows `svc.security.csp_mode` ({@see CspMode}): off, report-only
+ * (the default) or enforce. Every page gets a fresh nonce, drawn before the view renders and
+ * handed to Vite, so the inline scripts the views and Vite emit carry it and script-src needs
+ * no 'unsafe-inline'. See {@see self::contentSecurityPolicy()} and docs/ux-overhaul.md
+ * "Security hardening".
  */
 final class SecurityHeaders
 {
     public function handle(Request $request, Closure $next): Response
     {
+        $mode = CspMode::fromConfig(config('svc.security.csp_mode'));
+        // Drawn before the view renders: the blade views and Vite read it back while the page is built.
+        // Drawn in every mode so the page renders the same; in `off` it simply goes unused.
+        $nonce = Vite::useCspNonce();
+
         $response = $next($request);
         $headers = $response->headers;
 
@@ -45,10 +55,15 @@ final class SecurityHeaders
             $headers->set('Strict-Transport-Security', 'max-age='.$hstsMaxAge);
         }
 
-        if (config('svc.security.csp_report_only', true)
-            && ! $headers->has('Content-Security-Policy-Report-Only')
+        $header = $mode->header();
+        if ($header !== null
+            && ! $headers->has($header)
             && str_starts_with((string) $headers->get('Content-Type'), 'text/html')) {
-            $headers->set('Content-Security-Policy-Report-Only', $this->contentSecurityPolicy());
+            $headers->set($header, $this->contentSecurityPolicy($nonce));
+            $endpoint = $this->reportEndpoint();
+            if ($endpoint !== null && ! $headers->has('Reporting-Endpoints')) {
+                $headers->set('Reporting-Endpoints', 'csp-endpoint="'.$endpoint.'"');
+            }
         }
 
         return $response;
@@ -63,22 +78,29 @@ final class SecurityHeaders
      *  - Square is reached by redirect to its hosted page and by server-side calls only: no Square
      *    script, frame or connection is needed in the browser.
      *
-     * `unsafe-inline` stays for scripts (the appearance bootstrap in app.blade.php) and styles
-     * (component libraries set style attributes) until a nonce pass makes enforcing possible.
+     *  - Stripe's documented CSP set for Stripe.js and the Payment Element SVC mounts: `js.stripe.com`
+     *    and `*.js.stripe.com` for script and frame, `hooks.stripe.com` for 3-D Secure frames,
+     *    `api.stripe.com` for connections and `*.stripe.com` images. Google Maps (address
+     *    autocomplete) is not listed: SVC mounts no Address Element.
+     *
+     * Scripts: only 'self', Stripe and this response's nonce. There is no 'unsafe-inline' in
+     * script-src, so an injected inline script does not run. Styles keep 'unsafe-inline': Stripe's
+     * Payment Element and the component library (Base UI / Radix positioning, Recharts) write
+     * `style` attributes and `<style>` rules at runtime, which a nonce cannot cover.
      */
-    public function contentSecurityPolicy(): string
+    public function contentSecurityPolicy(string $nonce): string
     {
         $dev = $this->devServerOrigins();
         $provider = $this->origin((string) config('bherila-auth.oauth_client.base_url'));
 
         $directives = [
             'default-src' => ["'self'"],
-            'script-src' => ["'self'", "'unsafe-inline'", 'https://js.stripe.com', ...$dev['http']],
+            'script-src' => ["'self'", "'nonce-{$nonce}'", 'https://js.stripe.com', 'https://*.js.stripe.com', ...$dev['http']],
             'style-src' => ["'self'", "'unsafe-inline'", ...$dev['http']],
             'img-src' => ["'self'", 'data:', 'blob:', 'https://*.stripe.com', ...$dev['http']],
             'font-src' => ["'self'", 'data:', ...$dev['http']],
             'connect-src' => ["'self'", 'https://api.stripe.com', ...$dev['http'], ...$dev['ws']],
-            'frame-src' => ['https://js.stripe.com', 'https://hooks.stripe.com'],
+            'frame-src' => ['https://js.stripe.com', 'https://*.js.stripe.com', 'https://hooks.stripe.com'],
             'object-src' => ["'none'"],
             'base-uri' => ["'self'"],
             'form-action' => $provider === null ? ["'self'"] : ["'self'", $provider],
@@ -90,12 +112,20 @@ final class SecurityHeaders
             $directives,
         ));
 
-        $report = (string) config('svc.security.csp_report_uri', '');
-        if (preg_match('#^(https://[A-Za-z0-9.-]+(:\d+)?)?/(?!/)[A-Za-z0-9._~:/?=&%-]*\z#', $report) === 1) {
-            $policy .= '; report-uri '.$report;
+        $report = $this->reportEndpoint();
+        if ($report !== null) {
+            $policy .= '; report-uri '.$report.'; report-to csp-endpoint';
         }
 
         return $policy;
+    }
+
+    /** The violation collector: an https URL or an absolute path, or null when unset or malformed. */
+    private function reportEndpoint(): ?string
+    {
+        $report = (string) config('svc.security.csp_report_uri', '');
+
+        return preg_match('#^(https://[A-Za-z0-9.-]+(:\d+)?)?/(?!/)[A-Za-z0-9._~:/?=&%-]*\z#', $report) === 1 ? $report : null;
     }
 
     /** @return array{http: list<string>, ws: list<string>} */

@@ -434,6 +434,9 @@ final class AttachmentStorageService
     /** @return array{public_id:string, record_type:string, record_public_id:string, object_key:string, staged_object_key:string, original_filename:string, media_type:string, bytes:int, sha256:string} */
     private function stage(Workspace $workspace, Model $record, UploadedFile $file, ?string $publicId = null): array
     {
+        // Before a byte is read or written: an expense's file is a receipt, every other record's a general attachment.
+        AttachmentTypePolicy::assertAcceptable($record instanceof ClientExpense ? AttachmentUploadKind::Receipt : AttachmentUploadKind::General, $file);
+
         $source = fopen($file->getPathname(), 'rb');
         if (! is_resource($source)) {
             throw new RuntimeException('The uploaded file could not be opened.');

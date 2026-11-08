@@ -4,6 +4,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAttachment;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
@@ -83,7 +84,10 @@ $expense = (new WorkspaceExpenses($workspace))->record($company, $project,
     new NewExpense(CarbonImmutable::parse('2026-10-01'), 10000, 'USD', str_repeat('SyntheticReceiptExpense', 10)), $manager);
 $storage = app(AttachmentStorageService::class);
 foreach ([[$agreement, $sharingLayout ? 4 : 301], [$expense, $sharingLayout ? 1 : 101], [$portalProposal, 2], [$portalInvoice, 2], [$project, 2], [$task, 2]] as [$parent, $count]) {
-    $first = $storage->store($workspace, $parent, UploadedFile::fake()->createWithContent('SyntheticReaderFile.txt', 'Synthetic browser file bytes'), $manager);
+    // An expense's files are receipts, which the upload policy limits to PDF and raster images.
+    $first = $storage->store($workspace, $parent, $parent instanceof ClientExpense
+        ? UploadedFile::fake()->createWithContent('SyntheticReaderReceipt.pdf', "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n")
+        : UploadedFile::fake()->createWithContent('SyntheticReaderFile.txt', 'Synthetic browser file bytes'), $manager);
     DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->update(['is_visible_to_client' => true]);
     $row = (array) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $first->id)->first();
     unset($row['id']);
