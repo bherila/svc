@@ -9,6 +9,7 @@ use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Services\Payments\StripeEventRoute;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Billing\StripeCustomerDefault;
 use App\Support\Billing\StripeDefaultBasis;
 use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Billing\StripeEventOutsideConnection;
@@ -389,24 +390,7 @@ final class StripeWebhookService
         } catch (ApiErrorException|\RuntimeException) {
             throw new StripeEventMustBeRetried('The Stripe customer could not be read; retry the event.');
         }
-        if (($customer['object'] ?? null) !== 'customer' || ($customer['id'] ?? null) !== $customerId) {
-            throw new StripeEventMustBeRetried('Stripe did not return the customer; retry the event.');
-        }
-        // A deleted customer is returned as a stub: it has no default.
-        if (($customer['deleted'] ?? null) === true) {
-            return ['customer' => $customerId, 'default' => null, 'basis' => $basis];
-        }
-        $settings = $customer['invoice_settings'] ?? null;
-        if (! is_array($settings) || ! array_key_exists('default_payment_method', $settings)) {
-            throw new StripeEventMustBeRetried('The Stripe customer has no readable default payment method; retry the event.');
-        }
-        $default = $settings['default_payment_method'];
-        $defaultId = match (true) {
-            $default === null => null,
-            is_string($default) && $default !== '' => $default,
-            is_array($default) && is_string($default['id'] ?? null) && $default['id'] !== '' => $default['id'],
-            default => throw new StripeEventMustBeRetried('The Stripe customer default payment method is unreadable; retry the event.'),
-        };
+        $defaultId = StripeCustomerDefault::of($customer, $customerId);
 
         return ['customer' => $customerId, 'default' => $defaultId, 'basis' => $basis];
     }
