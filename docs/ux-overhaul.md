@@ -1096,6 +1096,17 @@ Settled by the product owner before a period away:
   - **Payments page:** there was no workspace settings page, so it has its own
     page at `/workspaces/{workspace}/payments`. It will move into settings
     when one exists.
+- **2026-11-08: connection transition tests.**
+  - The environment migration writes with `connectIfNone`: it never revokes a
+    connection entered after the inventory was read; it reports
+    `workspace_already_connected` and fails the run.
+  - A Stripe reconnect claims the row with one conditional write on the endpoint
+    id it started from; the loser deletes its own new endpoint. A health check
+    records its answer only while the row still holds the endpoint it asked
+    about. No new lock: both are single conditional updates.
+  - Open decision: the replaced signing secret is not retained, so a retried
+    event signed by the old endpoint gets a 400 and is lost (documented in the
+    runbook).
 - **2026-11-06, #619: Operations is not retired yet.** The Operations page
   still hosts live tools with no other home:
   - proposal draft and send;
