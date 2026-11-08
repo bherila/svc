@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { OptionSelect } from '@/components/ui/option-select';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -58,21 +59,20 @@ export default function HistoryIndex({
                     </div>
                     <div className="grid min-w-0 grid-cols-1 gap-2">
                         <Label htmlFor="history-kind">Record type</Label>
-                        <select
+                        <OptionSelect
                             id="history-kind"
-                            className="h-9 rounded-md border bg-background px-3 text-sm"
                             value={form.data.kind}
-                            onChange={(event) =>
-                                form.setData('kind', event.target.value)
+                            options={[
+                                { value: '', label: 'All types' },
+                                ...kinds.map((kind) => ({
+                                    value: kind.value,
+                                    label: kind.label,
+                                })),
+                            ]}
+                            onValueChange={(next) =>
+                                form.setData('kind', next)
                             }
-                        >
-                            <option value="">All types</option>
-                            {kinds.map((kind) => (
-                                <option key={kind.value} value={kind.value}>
-                                    {kind.label}
-                                </option>
-                            ))}
-                        </select>
+                        />
                     </div>
                     <Button type="submit" disabled={form.processing}>
                         Search

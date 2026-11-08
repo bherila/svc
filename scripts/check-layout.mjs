@@ -37,32 +37,9 @@ const artifacts = path.join(
     path.basename(runtime),
 );
 const widths = [390, 820, 1440, 1920];
-// Screens built to the UX overhaul conventions: a token violation or a serious
-// axe finding fails the run here. Every other screen is measured and reported in
-// the "UI consistency / axe" column until its own slice lands - they predate the
-// conventions (several filled buttons, 12 px cards, low-contrast text) and a
-// screen leaves this reporting-only state by being added to the set, never by
-// loosening a rule.
-const uiGated = new Set([
-    'dashboard',
-    'workspace_clients',
-    'client_overview',
-    'workspace_invoices',
-    'workspace_time',
-    'workspace_finance',
-    'my_work',
-    'portal_home',
-    'shared_index',
-    'shared_host',
-    'shared_participant',
-    'shared_invitation',
-    'reviewer_queue',
-    'reviewer_grants',
-    'light_my_work',
-    'light_submissions',
-    'light_timesheet',
-    'light_invitation',
-]);
+// Every screen is gated: a token violation or any axe finding, at any impact,
+// in either theme, fails the run (see capture()). There is no reporting-only
+// state to leave; a new screen is held to the same rules from its first capture.
 const clientsOnly = process.argv.includes('--clients');
 const resourceChromeOnly = process.argv.includes('--resource-chrome');
 const portalOnly = process.argv.includes('--portal-access') || clientsOnly;
@@ -1790,9 +1767,52 @@ try {
         }
     }
 
+    // Every capture is checked in both themes. The theme follows the browser's
+    // colour scheme live (appearance.ts listens to the media query), so an open
+    // dialog or menu stays open across the switch and is checked in both.
+    // A caller that has already put the page in dark mode (the invoice
+    // document) is checked in dark only, and keeps its own light capture.
     async function capture(screen, state, width, measuredOnly = false) {
         await page.evaluate(() => document.fonts.ready);
         await page.evaluate(() => window.scrollTo(0, 0));
+        const startsDark = await page.evaluate(() =>
+            document.documentElement.classList.contains('dark'),
+        );
+
+        if (startsDark) {
+            await captureTheme(screen, state, width, measuredOnly, 'dark', '');
+
+            return;
+        }
+
+        await captureTheme(screen, state, width, measuredOnly, 'light', '');
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await expect(page.locator('html')).toHaveClass(/dark/);
+        await page.evaluate(() => document.fonts.ready);
+
+        try {
+            await captureTheme(
+                screen,
+                state,
+                width,
+                measuredOnly,
+                'dark',
+                '-dark',
+            );
+        } finally {
+            await page.emulateMedia({ colorScheme: 'light' });
+            await expect(page.locator('html')).not.toHaveClass(/dark/);
+        }
+    }
+
+    async function captureTheme(
+        screen,
+        state,
+        width,
+        measuredOnly,
+        theme,
+        suffix,
+    ) {
         const metrics = await page.evaluate(() => {
             const header = document.querySelector('header');
             const row = header?.firstElementChild;
@@ -1841,23 +1861,20 @@ try {
         // Radius, padding and font size come from the cascade, so they are
         // checked here and not in jsdom: cards against the spec tokens, one
         // filled button per page, no bordered link in a card, every action
-        // button named. Advisory risks (a text button without an icon) are
-        // reported and do not fail. Then axe: serious or critical fails.
+        // button named. Then axe, at every impact: any violation fails, on
+        // every screen and in both themes. Only the advisory consistency
+        // risk (a text button without an icon) is reported without failing.
         const uiRisks = await uiConsistencyRisks(page);
         const uiErrors = uiRisks.filter((risk) => risk.severity === 'error');
-        const axe = await new AxeBuilder({ page }).analyze();
-        const axeSerious = axe.violations
-            .filter((violation) =>
-                ['serious', 'critical'].includes(violation.impact ?? ''),
-            )
-            .map(
-                (violation) =>
-                    `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
-                        .slice(0, 3)
-                        .map((node) => node.target.join(' '))
-                        .join(', ')})`,
-            );
-        const screenshot = `${screen}-${state}-${width}.png`;
+        const axeResult = await new AxeBuilder({ page }).analyze();
+        const axeFindings = axeResult.violations.map(
+            (violation) =>
+                `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
+                    .slice(0, 3)
+                    .map((node) => node.target.join(' '))
+                    .join(', ')})`,
+        );
+        const screenshot = `${screen}-${state}-${width}${suffix}.png`;
         await page.screenshot({
             path: path.join(artifacts, screenshot),
             fullPage: !(screen === 'task_list' && state.startsWith('create-')),
@@ -1867,33 +1884,40 @@ try {
             screen,
             state,
             width,
+            theme,
             measuredOnly,
             passes,
             ...metrics,
             ui: uiRisks,
-            axe: axeSerious,
+            axe: axeFindings,
+            axeDetail: axeResult.violations.map((violation) => ({
+                id: violation.id,
+                impact: violation.impact,
+                help: violation.help,
+                nodes: violation.nodes.map((node) => ({
+                    target: node.target.join(' '),
+                    summary: node.failureSummary?.split('\n').slice(0, 3),
+                })),
+            })),
             screenshot,
         });
+        const where = `${screen}/${state} at ${width}px (${theme})`;
 
         if (!passes && !measuredOnly) {
-            failures.push(
-                `${screen}/${state} at ${width}px: overflow or navbar no longer one row.`,
-            );
+            failures.push(`${where}: overflow or navbar no longer one row.`);
         }
 
-        if (!measuredOnly && uiGated.has(screen) && uiErrors.length > 0) {
+        if (uiErrors.length > 0) {
             failures.push(
-                `${screen}/${state} at ${width}px: UI consistency: ${uiErrors
+                `${where}: UI consistency: ${uiErrors
                     .slice(0, 5)
                     .map((risk) => `${risk.rule} ${risk.detail}`)
                     .join('; ')}`,
             );
         }
 
-        if (!measuredOnly && uiGated.has(screen) && axeSerious.length > 0) {
-            failures.push(
-                `${screen}/${state} at ${width}px: axe: ${axeSerious.join('; ')}`,
-            );
+        if (axeFindings.length > 0) {
+            failures.push(`${where}: axe: ${axeFindings.join('; ')}`);
         }
     }
 

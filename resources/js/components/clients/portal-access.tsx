@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { OptionSelect } from '@/components/ui/option-select';
 import {
     Select,
     SelectContent,
@@ -728,17 +729,20 @@ function ScopeFields({
 }) {
     return (
         <div className="grid grid-cols-1 gap-2 text-sm">
-            <select
+            <OptionSelect
                 aria-label={label}
-                className="h-9 max-w-xs rounded-md border bg-transparent px-2"
+                className="h-9 max-w-xs"
                 value={scope}
-                onChange={(event) => onScope(event.target.value as PortalScope)}
-            >
-                <option value="company">The whole client</option>
-                <option value="projects" disabled={projects.length === 0}>
-                    Selected projects
-                </option>
-            </select>
+                options={[
+                    { value: 'company', label: 'The whole client' },
+                    {
+                        value: 'projects',
+                        label: 'Selected projects',
+                        disabled: projects.length === 0,
+                    },
+                ]}
+                onValueChange={(next) => onScope(next as PortalScope)}
+            />
             {scope === 'projects' && (
                 <fieldset className="grid grid-cols-1 gap-1">
                     <legend className="sr-only">Projects</legend>

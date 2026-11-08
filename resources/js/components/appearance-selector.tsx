@@ -1,5 +1,12 @@
 import { MonitorIcon, MoonIcon, SunIcon } from 'lucide-react';
+import { OptionSelect } from '@/components/ui/option-select';
 import { isAppearance, useAppearance } from '@/lib/appearance';
+
+const APPEARANCES = [
+    { value: 'system', label: 'System' },
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+];
 
 export function AppearanceSelector() {
     const [appearance, setAppearance] = useAppearance();
@@ -28,24 +35,21 @@ export function AppearanceSelector() {
                 />
             )}
             <span className="sr-only">Appearance</span>
-            <select
+            <OptionSelect
                 aria-label="Appearance"
                 // Capped on a phone, where the bar has three things on it that
                 // matter more: which client, which section, and the way out.
                 // The icon beside it already says which mode is active, so a
                 // clipped label costs nothing the reader needs.
-                className="max-w-24 rounded-lg border border-border bg-background px-2 py-1 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-none"
+                className="w-auto max-w-24 sm:max-w-none"
                 value={appearance}
-                onChange={(event) => {
-                    if (isAppearance(event.target.value)) {
-                        setAppearance(event.target.value);
+                options={APPEARANCES}
+                onValueChange={(next) => {
+                    if (isAppearance(next)) {
+                        setAppearance(next);
                     }
                 }}
-            >
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-            </select>
+            />
         </label>
     );
 }

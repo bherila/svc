@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { OptionSelect } from '@/components/ui/option-select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
@@ -248,26 +249,21 @@ function AccessRow({
         <div className="grid grid-cols-1 gap-1">
             <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
                 <span className="min-w-0 wrap-anywhere">{member.name}</span>
-                <select
+                <OptionSelect
                     aria-label={`Access for ${member.name}`}
-                    className="h-9 rounded-md border bg-transparent px-2"
+                    className="h-9 w-auto min-w-32"
                     disabled={mutation.busy || mutation.unresolved}
                     value={role}
-                    onChange={(event) =>
+                    options={PROJECT_ROLES}
+                    onValueChange={(next) =>
                         void mutation.write('PUT', project.members_update_url, {
                             user_id: member.id,
-                            role: event.target.value,
+                            role: next,
                             expected_version: project.version,
                             confirm: true,
                         })
                     }
-                >
-                    {PROJECT_ROLES.map((option) => (
-                        <option key={option.value} value={option.value}>
-                            {option.label}
-                        </option>
-                    ))}
-                </select>
+                />
             </div>
             {mutation.failure && (
                 <p

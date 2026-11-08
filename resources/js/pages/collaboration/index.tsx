@@ -1,9 +1,11 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { CollaborationErrors } from '@/components/collaboration/content-controls';
 import { useCollaborationMutation } from '@/components/collaboration/use-collaboration-mutation';
+import { FormField } from '@/components/form-field';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { OptionSelect } from '@/components/ui/option-select';
 import { Textarea } from '@/components/ui/textarea';
 import { useVersionedDraft } from '@/hooks/use-versioned-draft';
 import WorkspaceShell from '@/layouts/workspace-shell';
@@ -52,37 +54,41 @@ function NewTopic({
                     <h2 className="text-lg font-semibold">
                         Create a note or discussion
                     </h2>
-                    <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                        Type
-                        <select
-                            disabled={mutation.locked}
-                            className="min-w-0 rounded-md border bg-background p-2"
-                            value={form.data.kind}
-                            onChange={(event) =>
-                                form.setData('kind', event.target.value)
-                            }
-                        >
-                            <option value="note">Note</option>
-                            <option value="discussion">Discussion</option>
-                        </select>
-                    </label>
-                    <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                        Scope
-                        <select
-                            disabled={mutation.locked}
-                            className="min-w-0 rounded-md border bg-background p-2"
-                            value={form.data.project_id}
-                            onChange={(event) =>
-                                form.setData('project_id', event.target.value)
-                            }
-                        >
-                            {scopes.map((scope) => (
-                                <option key={scope.id} value={scope.id}>
-                                    {scope.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                    <FormField label="Type">
+                        {(id) => (
+                            <OptionSelect
+                                id={id}
+                                disabled={mutation.locked}
+                                value={form.data.kind}
+                                options={[
+                                    { value: 'note', label: 'Note' },
+                                    {
+                                        value: 'discussion',
+                                        label: 'Discussion',
+                                    },
+                                ]}
+                                onValueChange={(next) =>
+                                    form.setData('kind', next)
+                                }
+                            />
+                        )}
+                    </FormField>
+                    <FormField label="Scope">
+                        {(id) => (
+                            <OptionSelect
+                                id={id}
+                                disabled={mutation.locked}
+                                value={form.data.project_id}
+                                options={scopes.map((scope) => ({
+                                    value: scope.id,
+                                    label: scope.label,
+                                }))}
+                                onValueChange={(next) =>
+                                    form.setData('project_id', next)
+                                }
+                            />
+                        )}
+                    </FormField>
                     <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
                         Title
                         <Input
@@ -152,27 +158,29 @@ export default function CollaborationIndex(props: CollaborationIndexProps) {
                 <h1 className="text-2xl font-semibold wrap-anywhere">
                     Notes and discussions
                 </h1>
-                <label className="grid min-w-0 grid-cols-1 gap-1 text-sm">
-                    Show
-                    <select
-                        className="min-w-0 rounded-md border bg-background p-2"
-                        value={props.filters.kind ?? ''}
-                        onChange={(event) =>
-                            router.get(
-                                props.filter_href,
-                                {
-                                    kind: event.target.value || null,
-                                    project_id: props.filters.project_id,
-                                },
-                                { preserveState: true },
-                            )
-                        }
-                    >
-                        <option value="">Notes and discussions</option>
-                        <option value="note">Notes</option>
-                        <option value="discussion">Discussions</option>
-                    </select>
-                </label>
+                <FormField label="Show">
+                    {(id) => (
+                        <OptionSelect
+                            id={id}
+                            value={props.filters.kind ?? ''}
+                            options={[
+                                { value: '', label: 'Notes and discussions' },
+                                { value: 'note', label: 'Notes' },
+                                { value: 'discussion', label: 'Discussions' },
+                            ]}
+                            onValueChange={(next) =>
+                                router.get(
+                                    props.filter_href,
+                                    {
+                                        kind: next || null,
+                                        project_id: props.filters.project_id,
+                                    },
+                                    { preserveState: true },
+                                )
+                            }
+                        />
+                    )}
+                </FormField>
                 <section
                     aria-label="Notes and discussions"
                     className="grid min-w-0 grid-cols-1 gap-3"
