@@ -865,8 +865,8 @@ final class InvoiceLifecycleService
             ->where('workspace_id', $draft->workspace_id)
             ->where('client_invoice_id', $draft->id)
             ->tap(Locks::forUpdate())
-            ->pluck('id')
-            ->map(fn (mixed $id): int => (int) $id)
+            ->get(['id'])
+            ->map(fn (ClientInvoiceLine $line): int => $line->id)
             ->all());
     }
 

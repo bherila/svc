@@ -45,10 +45,10 @@ final readonly class ClientReview
         ];
     }
 
-    /** @return list<string> every state, for the schema */
+    /** @return list<string> every state, for the schema: one per verdict */
     public static function states(): array
     {
-        return array_values(array_unique(array_map(self::state(...), ClientApprovalVerdict::cases())));
+        return array_map(self::state(...), ClientApprovalVerdict::cases());
     }
 
     private static function state(ClientApprovalVerdict $verdict): string

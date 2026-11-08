@@ -50,6 +50,16 @@ final class ClientReviewTest extends TestCase
     {
         $this->assertSame(['undecided', 'approved', 'approved_by_payment', 'disputed', 'written_off'], ClientReview::states());
         $labels = array_map(fn (ClientApprovalVerdict $verdict): string => ClientReview::present($verdict, false, null, null, null, null, null)['state_label'], ClientApprovalVerdict::cases());
-        $this->assertSame($labels, array_values(array_unique($labels)));
+        $this->assertSame([
+            'Waiting for the client', 'Approved by the client', 'Approved by payment', 'Disputed by the client', 'Written off',
+        ], $labels);
+    }
+
+    public function test_an_answered_settlement_without_a_time_shows_none_and_an_orphan_time_is_suppressed(): void
+    {
+        $answered = ClientReview::present(ClientApprovalVerdict::Pending, false, null, null, DisputeSettlement::Answered, 'Synthetic reply', null);
+        $this->assertSame(['answered', 'Answered', 'Synthetic reply', null], [$answered['settlement'], $answered['settlement_label'], $answered['reply'], $answered['settled_at']]);
+        $this->assertNull(ClientReview::present(ClientApprovalVerdict::Pending, false, null, null, null, null, CarbonImmutable::now())['settled_at'],
+            'No settlement, no settled time.');
     }
 }
