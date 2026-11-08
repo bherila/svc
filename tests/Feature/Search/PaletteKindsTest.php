@@ -414,8 +414,6 @@ final class PaletteKindsTest extends TestCase
         DB::enableQueryLog();
         $this->getJson('/search?q=zeppelin')->assertOk();
         $count = count(DB::getQueryLog());
-            file_put_contents('/tmp/claude-0/-home-user-svc/da843d0a-1699-5077-9fae-4ee843756074/scratchpad/pal/q-'.$viewer->name.'-'.$count.'.txt', implode("\n", array_map(fn ($q) => preg_replace('/\s+/', ' ', substr($q['query'], 0, 170)), DB::getQueryLog())));
-        }
         DB::disableQueryLog();
 
         return $count;
