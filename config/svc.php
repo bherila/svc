@@ -59,6 +59,13 @@ return [
         'transaction_url' => env('SVC_FINANCE_TRANSACTION_URL'),
     ],
 
+    // Synthetic staging data (Database\Seeders\StagingSeeder). Reserved-domain defaults; name the
+    // staging identity provider's test accounts to sign in as them. Never a real client.
+    'staging_seed' => [
+        'owner_email' => env('SVC_STAGING_SEED_OWNER_EMAIL', 'staging-owner@example.test'),
+        'portal_email' => env('SVC_STAGING_SEED_PORTAL_EMAIL', 'staging-portal@example.test'),
+    ],
+
     // Browser security headers (App\Http\Middleware\SecurityHeaders). `csp_mode` is `off`,
     // `report-only` (the default: violations are reported, nothing is blocked) or `enforce`.
     // The retired SVC_CSP_REPORT_ONLY still works when SVC_CSP_MODE is unset: false meant
