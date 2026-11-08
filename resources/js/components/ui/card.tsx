@@ -37,6 +37,11 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
+      // A card's title is the heading of its section: without a role the page
+      // outline jumps from the h1 to whatever h3 sits in the card. A caller
+      // that renders its own heading role passes it through `props`.
+      role="heading"
+      aria-level={2}
       className={cn(
         "font-heading text-[15px] leading-snug font-semibold md:text-base group-data-[size=sm]/card:text-sm",
         className

@@ -2,9 +2,11 @@
 
 namespace App\Services\Payments;
 
+use App\Services\Billing\StripeWebhookService;
 use App\Support\Payments\PaymentProcessor;
 use App\Support\Payments\StripeAccountCheck;
 use App\Support\Payments\StripePublishableKey;
+use App\Support\Payments\StripeWebhookHealthDecision;
 use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
 use Stripe\Exception\ApiErrorException;
@@ -22,16 +24,6 @@ use Throwable;
  */
 final class StripeKeyAdapter implements PaymentConnectionAdapter
 {
-    /** The events the webhook service handles. */
-    public const array EVENTS = [
-        'payment_intent.succeeded', 'payment_intent.processing', 'payment_intent.payment_failed', 'payment_intent.canceled',
-        'charge.refunded', 'charge.refund.updated', 'refund.updated', 'refund.failed',
-        'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed',
-        'charge.dispute.funds_withdrawn', 'charge.dispute.funds_reinstated',
-        'payout.paid', 'payout.failed', 'payout.canceled',
-        'payment_method.attached', 'payment_method.detached', 'setup_intent.succeeded', 'customer.updated',
-    ];
-
     public function processor(): PaymentProcessor
     {
         return PaymentProcessor::Stripe;
@@ -150,7 +142,7 @@ final class StripeKeyAdapter implements PaymentConnectionAdapter
         try {
             $endpoint = (new StripeClient($credentials->secret()))->webhookEndpoints->create([
                 'url' => $url,
-                'enabled_events' => self::EVENTS,
+                'enabled_events' => StripeWebhookService::EVENTS,
                 'description' => 'SVC workspace payments',
             ]);
         } catch (ExceptionInterface) {
@@ -162,6 +154,64 @@ final class StripeKeyAdapter implements PaymentConnectionAdapter
         }
 
         return new RegisteredWebhook($endpoint->id, $secret);
+    }
+
+    /**
+     * Every webhook endpoint of the key's account, as the health check reads
+     * them. One page of 100: Stripe allows an account far fewer endpoints.
+     *
+     * @return list<array{id: string, url: string, status: string, enabled_events: list<string>, livemode: bool}>
+     *
+     * @throws WebhookCallFailed
+     */
+    public function webhookEndpoints(#[SensitiveParameter] string $secret): array
+    {
+        try {
+            $list = (new StripeClient($secret))->webhookEndpoints->all(['limit' => 100]);
+        } catch (ExceptionInterface $failure) {
+            throw $this->webhookFailure($failure);
+        }
+
+        $endpoints = [];
+        foreach ($list->data as $endpoint) {
+            $events = $endpoint->enabled_events ?? null;
+            if (! is_string($endpoint->id ?? null) || ! is_string($endpoint->url ?? null) || ! is_iterable($events)) {
+                continue;
+            }
+            $endpoints[] = [
+                'id' => $endpoint->id,
+                'url' => $endpoint->url,
+                'status' => is_string($endpoint->status ?? null) ? $endpoint->status : 'disabled',
+                'enabled_events' => array_values(array_filter([...$events], is_string(...))),
+                'livemode' => (bool) ($endpoint->livemode ?? false),
+            ];
+        }
+
+        return $endpoints;
+    }
+
+    /**
+     * Set one endpoint's subscriptions. The caller passes the union of what it
+     * has and what it needs; this never removes an event by itself.
+     *
+     * @param  list<string>  $events
+     *
+     * @throws WebhookCallFailed
+     */
+    public function setWebhookEvents(#[SensitiveParameter] string $secret, string $endpointId, array $events): void
+    {
+        try {
+            (new StripeClient($secret))->webhookEndpoints->update($endpointId, ['enabled_events' => $events]);
+        } catch (ExceptionInterface $failure) {
+            throw $this->webhookFailure($failure);
+        }
+    }
+
+    private function webhookFailure(ExceptionInterface $failure): WebhookCallFailed
+    {
+        [$status, $type] = $this->failureOf($failure);
+
+        return new WebhookCallFailed(StripeWebhookHealthDecision::failure($status, $type));
     }
 
     public function removeWebhook(PaymentCredentials $credentials, string $endpointId): void

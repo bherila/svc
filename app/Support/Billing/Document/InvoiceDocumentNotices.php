@@ -27,10 +27,17 @@ final class InvoiceDocumentNotices
             : 'For the work this invoice reconciles and the retainer period that follows it. All figures are hours.';
     }
 
-    /** The sentence under Appendix B's heading. */
-    public static function receiptsIntro(): string
+    /**
+     * The sentence under Appendix B's heading.
+     *
+     * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
+     */
+    public static function receiptsIntro(string $audience): string
     {
-        return 'The expenses billed on this invoice, with the receipt filed for each. An expense with no receipt on file is listed without one.';
+        return match ($audience) {
+            InvoiceLineDetail::OPERATOR => 'The expenses billed on this invoice, with the receipt filed for each. An expense with no receipt on file is listed without one.',
+            InvoiceLineDetail::CLIENT => 'The expenses billed on this invoice that have a receipt shared with you, with that receipt.',
+        };
     }
 
     public static function reissueNotice(?string $reissuedOn): ?string

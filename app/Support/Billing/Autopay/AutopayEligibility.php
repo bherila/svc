@@ -33,7 +33,7 @@ final class AutopayEligibility
         if ($facts->priorAttempt !== null) {
             return match ($facts->priorAttempt) {
                 AutopayAttemptState::Skipped => AutopayVerdict::Skipped,
-                AutopayAttemptState::Claimed, AutopayAttemptState::Submitted, AutopayAttemptState::Failed => AutopayVerdict::AlreadyAttempted,
+                AutopayAttemptState::Claimed, AutopayAttemptState::Submitted, AutopayAttemptState::Failed, AutopayAttemptState::NotCharged => AutopayVerdict::AlreadyAttempted,
             };
         }
         if ($facts->dueOn === null) {

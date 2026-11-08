@@ -10,6 +10,10 @@ An expense is a cost passed through to the client.
 
 Attach the receipt to the expense. Approved expenses with receipts go on the next invoice.
 
+## Sharing a receipt with the client
+
+A new receipt is private: only workspace managers can open it. On the expense's receipts page, tick **Visible to client** on a receipt to share it. The client can then open it from the invoice the expense is billed on, in Appendix B of the portal invoice and of the PDF they download. Receipts you have not shared are not shown to the client, and the invoice does not say that any exist. Until the expense is on an invoice the client can see, a shared receipt stays hidden; the page says so under the tick. Untick it to stop sharing.
+
 ## Repeating expenses
 
 A schedule creates the same expense each period, so recurring costs are not typed again.

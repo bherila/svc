@@ -2,6 +2,7 @@
 
 import * as React from "react"
 
+import { useScrollable } from "@/hooks/use-scrollable"
 import { cn } from "@/lib/utils"
 
 function Table({
@@ -15,12 +16,17 @@ function Table({
    */
   scrollLabel?: string
 }) {
+  // A box that scrolls is reachable by keyboard, and only one that scrolls:
+  // see useScrollable.
+  const [attach, scrollProps] = useScrollable<HTMLDivElement>()
+
   return (
     <div
+      ref={attach}
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
       {...(scrollLabel === undefined
-        ? {}
+        ? scrollProps
         : { role: "region", "aria-label": scrollLabel, tabIndex: 0 })}
     >
       <table

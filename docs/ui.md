@@ -161,6 +161,61 @@ and the limits live on the view model rather than in each query adapter — two
 adapters choosing their own limits is two screens disagreeing about what
 "recent" means.
 
+## Accessibility is a gate, not a review comment
+
+Every screen the layout harness opens is checked, at 390, 820, 1440 and 1920
+pixels, in the light and the dark theme: any axe violation at any impact fails
+it, and so does any UI-consistency error. There is no reporting-only screen and
+no measurement-only exemption for these two checks; a new page is held to them
+from its first capture. CI runs every harness group on every pull request
+(`layout` shards in `.github/workflows/tests.yml`, and `LayoutWorkflowTest`
+fails when a group has no shard). The rules below are what the gate keeps
+true, and each lives in a shared component so a page gets it by using it.
+
+- **Skip link.** `SkipLink` is the first focusable element of `WorkspaceShell`
+  (all three of its branches) and of the welcome page. Pages draw their own
+  `<main>`, so the link finds the first `<main>` when clicked, gives it
+  `tabindex="-1"` and focuses it. Do not add a second one to a page.
+- **Focus is always visible.** Components draw their own `focus-visible` ring;
+  `app.css` adds a 2px `--ring` outline as the floor for bare links, summaries
+  and native controls. `--ring` is 3:1 or better against `--background` and
+  `--card` in both themes - change it only with a measured replacement.
+- **Names.** A control's accessible name contains its visible text (WCAG 2.5.3):
+  "Make default: Visa ending 4242" for a button that reads "Make default", never
+  a reworded sentence. An icon-only button has an `aria-label`. Every field has
+  a `Label` (`FormField` pairs them) or an `aria-label`; a placeholder is not a
+  label.
+- **Choices are the shared `Select`.** Use `OptionSelect` (`components/ui`):
+  it passes `items` so the trigger prints the label, and a native `<select>` fails
+  `native-select.test.ts`.
+- **Errors are tied to their field.** `FormField` takes `error`; hand-built
+  forms use `fieldErrorProps` and `FieldError`. The control gets `aria-invalid`
+  and `aria-describedby`, the message is `role="alert"`, and focus moves to the
+  first invalid control when a submit fails (`useFocusFirstInvalid`).
+- **Scroll regions are keyboard reachable.** `Table` makes its box focusable
+  whenever the table is wider than it (`tabindex="0"`; pass `scrollLabel` to
+  name it as a region). Any other `overflow-auto` box needs `tabIndex={0}` and an
+  `aria-label` - axe's `scrollable-region-focusable` fails otherwise.
+- **Headings.** One `h1` per page, in `<main>`. `CardTitle` is a level-2 heading
+  by default, so a card's own subsections are `h3`; never skip a level.
+- **Contrast lives in the tokens.** `--muted-foreground`, `--destructive` and the
+  `--ring` are chosen so text is 4.5:1 on `--background`, `--card`, `--muted` and
+  on the 10-20 percent `destructive` tint of a destructive button, in both themes.
+  Fix a failing colour in `app.css`, not with a per-page override. Dialogs and
+  menus fade in; the harness runs with reduced motion so axe never measures a
+  half-faded popup.
+- **Motion.** `app.css` zeroes animation and transition durations under
+  `prefers-reduced-motion: reduce`. New animations need no extra work; do not
+  start one from script without checking `matchMedia('(prefers-reduced-motion)')`.
+- **Announcements.** Status text that changes (saving, a result, a refusal) is
+  `role="status"` or `role="alert"` in the page, not a toast: the application
+  renders no toasts today, and the shared Sonner `Toaster` (already an aria-live
+  region) is the one to mount if that changes.
+- **Dialogs** are Base UI's `Dialog`/`AlertDialog`: they trap focus, close on
+  Escape and return focus to the trigger. Use them rather than a positioned div.
+- **One filled button.** A modal dialog counts alone while it is open (the page
+  behind it is inert); otherwise a page has at most one filled button.
+
 ## Checking a layout
 
 **In jsdom, with hostile fixtures.** `horizontalOverflowRisks` in
@@ -211,7 +266,11 @@ For the workspace payment connections page (`/workspaces/{workspace}/payments`),
 connected (masked key only), Square connected, reused and validation-refusal
 states, plus the open reuse list, at 390, 820, 1440 and 1920 pixels with unbroken
 workspace, account and location names, and asserts the key never reaches the
-page. No processor is asked. Read every screenshot afterwards.
+page. It also covers the Stripe webhook health line in every result (healthy,
+missing events with a long list, no endpoint, key without permission, disabled,
+and a member's read-only view with no URL or button), with the endpoint URL's
+unbroken token, and the fix confirmation dialog. No processor is asked. Read
+every screenshot afterwards.
 
 For payment reminders, dispatch with `reminder_layout: true`: its
 `reminder-layout` artifact covers the operator invoice with a reminder log of
@@ -275,6 +334,10 @@ The initial coverage is deliberately bounded:
 - **Measured only:** nothing is measurement-only now that the legacy
   Operations screen is retired. A green exit still does not certify any
   unlisted page.
+- **Accessibility:** every capture in every group is also run through axe and the
+  UI-consistency check in both themes, and the same pair of checks runs in the
+  focused collaboration, attachment-sharing and task-organization scripts
+  (`scripts/layout/a11y.mjs`).
 - **Additional static coverage:** the proposal acceptance form and unbroken
   summary/terms text have hostile-fixture coverage in `layout-overflow.test.tsx`.
 

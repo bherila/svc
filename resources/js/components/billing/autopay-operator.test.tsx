@@ -39,7 +39,9 @@ function client(
         upcoming: [],
         update_href: '/api/v1/workspaces/w-1/clients/c-1/autopay',
         portal_href: '/portal/c-1/billing',
+        connection_problem: null,
         stripe_connected: true,
+        payments_href: '/workspaces/w-1/payments',
         attestation_min: 10,
         attestation_max: 1000,
         ...overrides,
@@ -52,6 +54,29 @@ afterEach(() => {
 });
 
 describe('the client autopay settings', () => {
+    it('warns the provider when Stripe refused the connection and links the payments settings', () => {
+        render(
+            <ClientAutopayCard
+                autopay={client({
+                    enabled: true,
+                    limit_amount: 400_000,
+                    connection_problem: {
+                        since: '2030-12-01T15:00:00Z',
+                        message:
+                            'Not charged yet: the Stripe connection needs attention. Autopay charges on the first run after it is fixed.',
+                    },
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            /Not charged yet: the Stripe connection needs attention/,
+        );
+        expect(
+            screen.getByRole('link', { name: 'Open payments settings' }),
+        ).toHaveAttribute('href', '/workspaces/w-1/payments');
+    });
+
     it('turns autopay on with the limit and an attestation, confirmed, through the API', async () => {
         const fetchMock = vi
             .fn<(url: string, init: RequestInit) => Promise<Response>>()
@@ -332,11 +357,17 @@ function invoice(
             payment_status: 'failed',
             skipped_by_name: null,
             skipped_at: null,
+            resolved_by_name: null,
+            resolution_note: null,
             claimed_at: '2030-12-01T15:00:00Z',
             resolved_at: '2030-12-01T15:00:01Z',
         },
+        connection_problem: null,
+        can_resolve: false,
         skip_href: null,
+        resolve_href: null,
         settings_href: '/workspaces/w-1/clients/c-1/settings',
+        payments_href: '/workspaces/w-1/payments',
         ...overrides,
     };
 }
@@ -449,7 +480,180 @@ describe('autopay on an operator invoice', () => {
         );
 
         expect(
-            screen.getByText(/Check Stripe before collecting by hand/),
+            screen.getByText(/Check Stripe, then record what you found/),
+        ).toBeVisible();
+    });
+
+    it('warns the provider that the Stripe connection needs attention, with the way to fix it', () => {
+        render(
+            <InvoiceAutopayCard
+                autopay={invoice({
+                    state: 'will_charge',
+                    state_label: 'Will autopay',
+                    attempt: null,
+                    will_charge_on: '2030-12-01',
+                    connection_problem: {
+                        since: '2030-12-01T15:00:00Z',
+                        message:
+                            'Not charged yet: the Stripe connection needs attention. Autopay charges on the first run after it is fixed.',
+                    },
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            /Not charged yet: the Stripe connection needs attention/,
+        );
+        expect(
+            screen.getByRole('link', { name: 'Open payments settings' }),
+        ).toHaveAttribute('href', '/workspaces/w-1/payments');
+    });
+
+    function held() {
+        return invoice({
+            state: 'needs_review',
+            state_label: 'Autopay needs review',
+            can_resolve: true,
+            resolve_href: '/api/v1/workspaces/w-1/invoices/i-1/autopay/resolve',
+            attempt: {
+                ...invoice().attempt!,
+                state: 'claimed',
+                failure_code: null,
+                failure_reason: null,
+                payment_status: null,
+            },
+        });
+    }
+
+    it('closes out a held attempt as not charged only with a note, through the API', async () => {
+        const fetchMock = vi
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
+            .mockResolvedValue(
+                new Response(JSON.stringify({ data: invoice() }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                }),
+            );
+        vi.stubGlobal('fetch', fetchMock);
+        const user = userEvent.setup();
+        render(<InvoiceAutopayCard autopay={held()} />);
+
+        await user.click(
+            screen.getByRole('button', { name: 'Close out this attempt' }),
+        );
+        const dialog = screen.getByRole('dialog');
+        const record = within(dialog).getByRole('button', {
+            name: 'Record as not charged',
+        });
+        expect(record).toBeDisabled();
+        expect(within(dialog).getByText(/never sends a charge/)).toBeVisible();
+        await user.type(
+            within(dialog).getByLabelText('What did you check?'),
+            'No payment in the Stripe dashboard.',
+        );
+        expect(record).toBeEnabled();
+        await user.click(record);
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(fetchMock.mock.calls[0][0]).toBe(
+            '/api/v1/workspaces/w-1/invoices/i-1/autopay/resolve',
+        );
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+            expected_version: version,
+            outcome: 'not_charged',
+            note: 'No payment in the Stripe dashboard.',
+            confirm: true,
+        });
+    });
+
+    it('records a charge only with a well-formed PaymentIntent id, and shows a refusal', async () => {
+        const fetchMock = vi
+            .fn<(url: string, init: RequestInit) => Promise<Response>>()
+            .mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        message: 'That PaymentIntent is not for the amount.',
+                    }),
+                    {
+                        status: 422,
+                        headers: { 'Content-Type': 'application/json' },
+                    },
+                ),
+            );
+        vi.stubGlobal('fetch', fetchMock);
+        const user = userEvent.setup();
+        render(<InvoiceAutopayCard autopay={held()} />);
+
+        await user.click(
+            screen.getByRole('button', { name: 'Close out this attempt' }),
+        );
+        const dialog = screen.getByRole('dialog');
+        await user.click(
+            within(dialog).getByRole('radio', {
+                name: 'The client was charged',
+            }),
+        );
+        const record = within(dialog).getByRole('button', {
+            name: 'Record as charged',
+        });
+        await user.type(
+            within(dialog).getByLabelText('PaymentIntent id'),
+            'ch_not_an_intent',
+        );
+        expect(record).toBeDisabled();
+        await user.clear(within(dialog).getByLabelText('PaymentIntent id'));
+        await user.type(
+            within(dialog).getByLabelText('PaymentIntent id'),
+            ' pi_3Synthetic ',
+        );
+        expect(record).toBeEnabled();
+        await user.click(record);
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+            expected_version: version,
+            outcome: 'charged',
+            payment_intent_id: 'pi_3Synthetic',
+            confirm: true,
+        });
+        expect(
+            await within(dialog).findByText(
+                'That PaymentIntent is not for the amount.',
+            ),
+        ).toBeVisible();
+        expect(inertia.reload).not.toHaveBeenCalled();
+    });
+
+    it('offers no close-out unless the server sends the URL, and shows who closed an attempt out', () => {
+        const { rerender } = render(
+            <InvoiceAutopayCard
+                autopay={{ ...held(), resolve_href: null, can_resolve: false }}
+            />,
+        );
+        expect(
+            screen.queryByRole('button', { name: 'Close out this attempt' }),
+        ).toBeNull();
+
+        rerender(
+            <InvoiceAutopayCard
+                autopay={invoice({
+                    state: 'resolved_not_charged',
+                    state_label: 'Not autopaid: left for manual collection',
+                    attempt: {
+                        ...held().attempt!,
+                        state: 'not_charged',
+                        resolved_by_name: 'Sam Example',
+                        resolution_note: 'No payment in the Stripe dashboard.',
+                        resolved_at: '2030-12-02T09:00:00Z',
+                    },
+                })}
+            />,
+        );
+        expect(screen.getByText(/Left for manual collection/)).toBeVisible();
+        expect(
+            screen.getByText(
+                /Closed out by Sam Example on .* after checking Stripe: “No payment in the Stripe dashboard\.”/,
+            ),
         ).toBeVisible();
     });
 

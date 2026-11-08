@@ -24,6 +24,8 @@ use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Tasks\TaskVisibility;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
 
 /** Tenant-scoped persistence and current parent authority, applied before limits or metadata. */
 final class AttachmentReader
@@ -215,11 +217,12 @@ final class AttachmentReader
 
     /**
      * Parent types a portal reader is never served files of, whatever the file's
-     * flag says: the client company itself, and expenses, whose receipts have no
-     * client-facing surface. One list, read by the portal query below and by the
-     * invoice document deciding whether Appendix B may name a receipt to a client.
+     * flag says: the client company itself. An expense is served, but only
+     * through {@see self::portalExpenses()}: its receipts are private to
+     * workspace managers until one is flagged shared with the client AND the
+     * expense is billed on an invoice this viewer can see.
      */
-    private const PORTAL_UNREADABLE_PARENTS = ['company', 'expense'];
+    private const PORTAL_UNREADABLE_PARENTS = ['company'];
 
     public static function portalReadsParentType(string $type): bool
     {
@@ -238,6 +241,9 @@ final class AttachmentReader
         $query = $this->base($workspace, $type);
         if (! self::portalReadsParentType($type)) {
             return $query->whereRaw('1 = 0');
+        }
+        if ($type === 'expense') {
+            return $this->portalExpenses($query, $actor, $workspace, $preview);
         }
         if ($type === 'task') {
             $tasks = ClientTask::query()->whereIn('id', $query->select('id'));
@@ -263,5 +269,52 @@ final class AttachmentReader
 
         return $query->whereIn('client_company_id', $memberships)
             ->where(fn (Builder $parent) => $parent->whereNull('client_project_id')->orWhereIn('client_project_id', $projects->select('id')));
+    }
+
+    /**
+     * The expenses whose receipts a portal reader may be served: billed on a
+     * line of an invoice this viewer can already see (issued, visible to the
+     * client, same company, never a draft), and, for a project-scoped contact,
+     * on a project that contact was granted. An unbilled expense, one with no
+     * such invoice, or one in another company is never listed, so its receipts
+     * stay private whatever their flag says. One correlated query: no query per
+     * receipt however many there are.
+     *
+     * @param  Builder<covariant Model>  $expenses  the workspace-scoped expense query
+     * @return Builder<covariant Model>
+     */
+    private function portalExpenses(Builder $expenses, User|AgentPrincipal $actor, Workspace $workspace, bool $preview): Builder
+    {
+        $invoices = $preview ? $this->invoices->visibleInWorkspace($workspace, $actor) : $this->invoices->strictlyVisibleInWorkspace($workspace, $actor);
+        // One correlated EXISTS over the visible-invoice policy, kept shallow
+        // because SQLite caps expression depth.
+        $expenses->whereExists($invoices->select(DB::raw('1'))
+            ->whereColumn('client_invoices.client_company_id', 'client_expenses.client_company_id')
+            ->whereExists(fn (QueryBuilder $line): QueryBuilder => $line->select(DB::raw('1'))->from('client_invoice_lines')
+                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id')
+                ->whereColumn('client_invoice_lines.workspace_id', 'client_invoices.workspace_id')
+                ->whereColumn('client_invoice_lines.id', 'client_expenses.client_invoice_line_id'))
+            ->toBase());
+        if ($preview) {
+            return $expenses;
+        }
+
+        // Company-wide contacts read every visible invoice's expenses; a
+        // project-scoped contact only those on a project they were granted.
+        return $expenses->whereExists(fn (QueryBuilder $membership): QueryBuilder => $membership->select(DB::raw('1'))->from('client_company_memberships')
+            ->whereColumn('client_company_memberships.workspace_id', 'client_expenses.workspace_id')
+            ->whereColumn('client_company_memberships.client_company_id', 'client_expenses.client_company_id')
+            ->where('client_company_memberships.user_id', $actor->id)
+            ->where(fn (QueryBuilder $scope): QueryBuilder => $scope
+                ->where('client_company_memberships.access_scope', '!=', ClientCompanyMembership::SCOPE_PROJECTS)
+                ->orWhereNull('client_company_memberships.access_scope')
+                ->orWhereExists(fn (QueryBuilder $grant): QueryBuilder => $grant->select(DB::raw('1'))->from('client_portal_project_access')
+                    ->whereColumn('client_portal_project_access.workspace_id', 'client_expenses.workspace_id')
+                    ->whereColumn('client_portal_project_access.client_company_membership_id', 'client_company_memberships.id')
+                    ->whereColumn('client_portal_project_access.client_project_id', 'client_expenses.client_project_id')
+                    ->whereExists(fn (QueryBuilder $project): QueryBuilder => $project->select(DB::raw('1'))->from('client_projects')
+                        ->whereColumn('client_projects.id', 'client_portal_project_access.client_project_id')
+                        ->whereColumn('client_projects.workspace_id', 'client_expenses.workspace_id')
+                        ->whereColumn('client_projects.client_company_id', 'client_expenses.client_company_id')))));
     }
 }

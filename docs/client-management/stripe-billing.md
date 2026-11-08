@@ -47,7 +47,30 @@ sequenceDiagram
 - Saving a new method is explicit opt-in.
 - 3DS and other redirect confirmations return to the invoice page, which polls `pay-intent/{id}` until the payment leaves `requires_action`.
 - Failed online payment attempts are surfaced on the invoice payment panel.
-- Saved methods are scoped to a client company and can be removed or marked default.
+- Saved methods are scoped to a client company. A contact with company-wide portal access can add a card or US bank account on the Billing page (see below), mark one default, or remove one.
+
+### Managing saved methods in the portal
+
+`/portal/{company}/billing` is where a client keeps the methods autopay charges. Who may: the contacts who may consent to autopay (`PortalAutopayAuthority`); the server sends finished URLs or null. All Stripe calls use the workspace's own connection, are made outside database transactions, and are recorded locally afterwards through `StripePaymentMethodService`, the service the webhook uses, so the webhook for the same change is a no-op.
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant App
+    participant Stripe
+    Browser->>App: POST payment-methods/setup
+    App->>Stripe: create customer (first use, idempotent), SetupIntent usage=off_session
+    App-->>Browser: client_secret only
+    Browser->>Stripe: Payment Element confirmSetup
+    Browser->>App: POST payment-methods/confirm {setup_intent}
+    App->>Stripe: retrieve SetupIntent (customer must be this company's)
+    App->>App: attach (same path as the webhook)
+    Stripe->>App: setup_intent.succeeded / payment_method.attached (no-op)
+```
+
+- **Add**: only when the workspace's Stripe connection and publishable key are known (the portal pay path's check). The first saved method becomes the default.
+- **Make default**: `customers.update(invoice_settings.default_payment_method)`, then the local flag, exactly one per company; the `customer.updated` webhook converges on the same state.
+- **Remove**: `payment_methods.detach`, then the local soft delete. Removing the default turns autopay off after commit, as the webhook path does.
 
 ## Admin Surfaces
 
@@ -115,6 +138,48 @@ A declined card or an authentication request is one failed attempt: the reason i
 the attempt, a `failed` payment appears in the invoice's payments, and the invoice
 returns to the ordinary payment reminders. There are no retries.
 
+### When Stripe refuses our connection
+
+An `AuthenticationException`, a `PermissionException`, or an `InvalidRequestException`
+whose code names the key or account (`api_key_expired`, `account_invalid`,
+`platform_account_required`, `secret_key_required`, `livemode_mismatch`,
+`testmode_charges_only`; see `AutopayConnectionRefusal`) is about the provider's
+connection, not the client's card. Nothing was charged, so the claim is deleted and no
+attempt is recorded: the client sees nothing and the invoice is charged by the first run
+after the connection is fixed. Every other `InvalidRequestException` (a deleted customer,
+a bad parameter) stays a failed attempt.
+
+The workspace is marked in `workspaces.stripe_refused_at`. The provider is told by an
+`invoice.autopay_connection_refused` activity on the invoice (once per breakage), by
+`connection_problem` on `companies.autopay.get` / `invoices.autopay.get` (shown as "Not
+charged yet: the Stripe connection needs attention" with a link to the workspace payments
+settings on the client's Autopay card and the invoice's Autopay card), and by the command
+(`connection_needs_attention` in JSON, a warning in text). While the marker is under six
+hours old (`StripeConnectionHealth::BACKOFF_HOURS`) the command does not call Stripe for
+that workspace and the workspace's invoices do not use up the run's `--limit`. The marker
+ends when the connection is saved again (a `connected_at` after it) or when Stripe next
+answers an ordinary call (a charge, a decline, a different request error); the warning
+stays until then, past the six hours, when the next run tries once more.
+
+### Closing out a held attempt
+
+An attempt left `claimed` with no PaymentIntent (Stripe's answer was never read) is listed
+by every run. Ten minutes after the claim an owner or admin can close it out from the
+invoice's Autopay card, `invoices.autopay.resolve` over REST, or the MCP tool of the same
+name (explicit confirmation required), after checking the Stripe dashboard:
+
+- **Charged**, with the PaymentIntent id. SVC reads the intent from Stripe (outside any
+  transaction) and refuses it unless its metadata names this workspace and invoice (and
+  this attempt, when it names one), its amount and currency equal the attempt's, and
+  Stripe says `succeeded` or `processing`. It enters the ledger as the charge path does
+  (succeeded or pending), the attempt becomes `submitted`, and the webhook settles it.
+- **Not charged**, with a note. The attempt becomes `not_charged`; the invoice is left for
+  manual collection and no new attempt is made.
+
+Both are one conditional update on state `claimed` with no PaymentIntent, so of two people
+racing one wins and the other gets 409. Who, when and the note are on the attempt and in an
+`invoice.autopay_resolved` activity. The action creates and confirms nothing at Stripe.
+
 ### Where it shows
 
 The issued invoice (PDF, portal, email) says "Will be charged to Visa ending 4242 on
@@ -126,14 +191,14 @@ read the same over REST and MCP.
 
 ## Supported Events
 
-Subscribe the Stripe webhook endpoint to these event types:
+SVC creates the workspace's webhook endpoint itself when a restricted key is saved, and then keeps an eye on it (see [Webhook health](#webhook-health)). The list below is the one in `StripeWebhookService::REQUIRED_EVENTS`; the code is the source of truth and a test fails if a handled event is not listed there. Subscribe a hand-made endpoint to these event types:
 
 - `payment_intent.succeeded`: creates or restores a `ClientInvoicePayment`, then marks the invoice paid when the ledger covers the total.
 - `payment_intent.processing`: records pending ACH/card state without marking the invoice paid.
 - `payment_intent.payment_failed`: records `failure_reason` and logs `invoice.payment_failed`.
 - `payment_intent.canceled`: records a distinct terminal canceled state and logs `invoice.payment_canceled`; an older processing/failure delivery cannot make it pending again.
 - `charge.refunded`: re-reads the charge's complete refund list and totals refunds still standing (neither failed nor canceled), then corrects the payment and invoice. It does not trust the notification's `amount_refunded`: [Stripe documents failed refunds returning money](https://docs.stripe.com/refunds#handle-failed-refunds), but does not promise that a later charge aggregate excludes them. The [refund listing](https://docs.stripe.com/api/refunds/list) is authoritative. This current total applies even for an older notification, without rewinding the payment's latest event timestamp. A local payment change during the read, or a failed provider read, returns 503 and keeps the event retryable; no correction from that read is applied.
-- `refund.failed` **and** `refund.updated` (required for refund reversals; `charge.refund.updated` is the older name of `refund.updated` and may stand in for it): an asynchronous refund failure is sent only as `refund.failed`, and a canceled refund as an update. When a refund failed or was canceled, svc re-reads the charge's refunds from Stripe and records the total of those still standing, so the refunded amount falls again, recorded as `invoice.payment_refund_reversed` ("Refund reversed") rather than another refund. The total is applied even when the notification arrives after a newer event for the payment. If the payment changed while Stripe was being read - a newer refund recorded meanwhile - nothing is applied and the endpoint answers 503, so Stripe's retry reads afresh. Other refund updates change nothing.
+- `refund.failed` **and** `refund.updated` (both required for refund reversals; `charge.refund.updated` is the older name of `refund.updated`, is still processed if it arrives, and does not count in place of `refund.updated` in the webhook health check): an asynchronous refund failure is sent only as `refund.failed`, and a canceled refund as an update. When a refund failed or was canceled, svc re-reads the charge's refunds from Stripe and records the total of those still standing, so the refunded amount falls again, recorded as `invoice.payment_refund_reversed` ("Refund reversed") rather than another refund. The total is applied even when the notification arrives after a newer event for the payment. If the payment changed while Stripe was being read - a newer refund recorded meanwhile - nothing is applied and the endpoint answers 503, so Stripe's retry reads afresh. Other refund updates change nothing.
 - `charge.dispute.created`: marks the payment disputed and holds back only the disputed amount (`disputed_amount`), so a partial dispute reopens the invoice by that amount; without an amount the whole payment is held.
 - `charge.dispute.closed`: restores the payment when the dispute is won, including a partial win (the disputed amount is checked against the payment, not required to equal it); keeps it disputed when lost. A win after the invoice was paid again in the meantime is still recorded; the excess becomes the invoice's overpayment (derived credit) and is named as `overpaid_amount` in the `invoice.payment_received` activity. A win after the invoice was voided restores the payment and leaves the invoice void, with `review: restored_on_void_invoice` in that activity.
 
@@ -146,6 +211,19 @@ Refunds and disputes are recorded whatever the payment's finance reconciliation 
 - `setup_intent.succeeded`: syncs the saved method and records `payment_method.added`.
 
 Duplicate events are ignored using the unique `client_stripe_events.stripe_event_id` record. Events for Stripe customers that have no SVC mapping are acknowledged as permanently irrelevant; there is no webhook path that can create that ownership mapping. A known customer whose referenced default method has not arrived yet remains transient and is retried. Deterministic domain mismatches are recorded as failed and acknowledged on exact replay.
+
+Three more dispute events are handled and required, though the list above names only two: `charge.dispute.updated`, `charge.dispute.funds_withdrawn` and `charge.dispute.funds_reinstated` are hints to re-read the dispute group. `charge.refund.updated` (the older name of `refund.updated`) is handled and subscribed by the endpoint SVC creates, but is not required, and a subscription to it alone does not satisfy the requirement for `refund.updated`.
+
+## Webhook health
+
+The Payments page (`workspaces.payments`) tells an owner whether Stripe is actually sending SVC everything it needs, so nobody checks the Dashboard by hand.
+
+- **What is checked.** With the connection's own restricted key SVC lists the account's webhook endpoints, judges only the endpoint SVC created for the connection (the stored `webhook_endpoint_id`), because only it signs with the stored signing secret. The URL is this connection's (`/api/webhooks/stripe/{token}`; the environment-made connection also `/api/webhooks/stripe`; scheme, host, port and path compared, case, trailing slash and query ignored). It reports: **endpoint missing** (the stored endpoint no longer exists at Stripe, even when another endpoint has the same URL: that one signs with another secret, so it is never adopted), **endpoint not confirmed** (the connection records no endpoint id, as for a connection migrated from environment configuration, so a URL match proves nothing), not found (the stored endpoint is not at SVC's URL, or nothing is and no id is recorded), disabled, in the other mode (test or live) than the key, missing events (`*` covers everything), or healthy. A key that cannot read webhook endpoints is its own result naming the permission. If Stripe cannot be reached the result is "could not be checked", not a webhook problem.
+- **When.** After a key is saved (the save never waits on or fails because of it), when an owner or admin presses **Check again**, and daily at 03:35 UTC from the scheduler: `svc:payments:check-stripe-webhooks --apply` (a preview without `--apply` calls nothing; `--workspace=<public id>`, `--limit=`; connections are checked never-checked first, then oldest check first, then by id, so a bounded run never starves the same workspaces). There is no queue. The result is stored on the connection (`webhook_check_status`, `webhook_check_missing`, `webhook_checked_at`) and the page shows it without calling Stripe.
+- **Show.** The Stripe card says "Webhook: all N events subscribed" or "Missing: payment_method.attached, ..." with when it was checked; a warning banner appears for missing events, a disabled or absent endpoint, or the wrong mode. Owners and admins also see the endpoint URL.
+- **Fix** (owner or admin, after a confirmation dialog). **Add missing events** sets the endpoint's `enabled_events` to the union of what it has and what it lacks: nothing is removed and no other endpoint is touched. **Reconnect webhook** (offered only for *endpoint missing* and *endpoint not confirmed*) creates a new endpoint at the connection's URL and stores its id and its signing secret together in one save; neither is ever stored without the other, and no other endpoint is touched or adopted, so an old endpoint stays in Stripe for the owner to delete. **Add missing events** is never offered for an endpoint that is not the stored one. **Create endpoint** (offered only when nothing is at SVC's URL and no endpoint id is recorded) creates one with the events SVC handles; Stripe returns a new signing secret, which SVC stores encrypted on the connection in place of the old one (the same storage as every other secret) before saying "Created the Stripe webhook endpoint and stored its signing secret." If the secret cannot be stored the new endpoint is deleted again. A disabled endpoint is not re-enabled by SVC: enable it in the Dashboard.
+- **Reused connections** have no health of their own; the workspace that holds the key shows and fixes it.
+- **Restricted key permissions.** Read: *Webhook Endpoints: Read*. Fix, and creating the endpoint when the key is saved: *Webhook Endpoints: Write*. Verifying a publishable key: *SetupIntents: Write*.
 
 ## Stripe CLI Quickstart
 

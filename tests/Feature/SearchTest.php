@@ -53,6 +53,20 @@ class SearchTest extends TestCase
         $this->assertContains('task', $kinds);
     }
 
+    /** The palette's row carries the heading and whether it can become a recent item, so the browser keeps neither list. */
+    public function test_a_row_carries_its_heading_workspace_and_recent_flag(): void
+    {
+        $manager = User::factory()->create();
+        $workspace = $this->workspace('Synthetic Fields', 'synthetic-fields', $manager, 'admin');
+        $this->company($workspace, 'Fielded Synthetic Client', 'fielded-client');
+
+        $row = $this->actingAs($manager)->getJson('/search?q=fielded')->assertOk()->json('results.0');
+
+        $this->assertSame('Clients', $row['heading']);
+        $this->assertSame($workspace->public_id, $row['workspace_id']);
+        $this->assertTrue($row['recent']);
+    }
+
     /**
      * Each row has to lead to the screen that actually exists.
      *
@@ -208,9 +222,9 @@ class SearchTest extends TestCase
      */
 
     /**
-     * A portal user has client company memberships and no workspace
-     * membership. They reach the palette's endpoint like any signed-in person
-     * and must get nothing from it - the palette is operator navigation.
+     * Someone with no membership of any kind reaches the palette's endpoint
+     * like any signed-in person and must get nothing from it. (A client contact
+     * is searched as a client; `PaletteKindsTest` covers them.)
      */
     public function test_a_viewer_with_no_workspace_membership_gets_nothing(): void
     {

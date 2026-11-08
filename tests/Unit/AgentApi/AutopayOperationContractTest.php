@@ -29,6 +29,7 @@ final class AutopayOperationContractTest extends TestCase
                 'companies.autopay.set' => ['setCompany', Effect::ExternalWrite, 'PUT', 'clients.autopay.update', '/workspaces/{workspace}/clients/{client}/autopay', $write, AgentDeploymentFlags::CLIENTS, 'mcp.write.clients', 'CompanyAutopayResponse', ['WorkspaceId', 'client', 'IdempotencyKey'], true],
                 'invoices.autopay.get' => ['invoice', Effect::Read, 'GET', 'invoices.autopay.show', '/workspaces/{workspace}/invoices/{invoice}/autopay', ['billing:read'], null, 'mcp.read', 'InvoiceAutopayResponse', ['WorkspaceId', 'InvoiceId'], false],
                 'invoices.autopay.skip' => ['skip', Effect::LocalWrite, 'POST', 'invoices.autopay.skip', '/workspaces/{workspace}/invoices/{invoice}/autopay/skip', $write, AgentDeploymentFlags::INVOICES, 'mcp.write', 'InvoiceAutopayResponse', ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'], true],
+                'invoices.autopay.resolve' => ['resolve', Effect::LocalWrite, 'POST', 'invoices.autopay.resolve', '/workspaces/{workspace}/invoices/{invoice}/autopay/resolve', $write, AgentDeploymentFlags::INVOICES, 'mcp.write', 'InvoiceAutopayResponse', ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'], true],
             ] as $id => [$handler, $effect, $method, $route, $path, $scopes, $cutover, $group, $response, $parameters, $confirms]) {
                 $operation = $registry->find($id);
                 $this->assertNotNull($operation, $id);

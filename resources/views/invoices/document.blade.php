@@ -247,7 +247,7 @@
 @if ($document->receipts !== [])
     <div class="receipts new-page">
         <h2>Appendix B: receipts</h2>
-        <p class="muted">{{ \App\Support\Billing\Document\InvoiceDocumentNotices::receiptsIntro() }}</p>
+        <p class="muted">{{ \App\Support\Billing\Document\InvoiceDocumentNotices::receiptsIntro($document->audience) }}</p>
         <table class="expenses">
             <thead><tr><th class="ref">Ref</th><th class="date">Date</th><th>Description</th><th class="amount">Amount</th><th class="files">Receipts</th></tr></thead>
             @foreach ($document->receipts as $entry)

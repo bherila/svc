@@ -34,7 +34,21 @@ final class StripeWebhookService
      * Stripe's older name, `refund.updated` and `refund.failed` the current
      * ones; any of them may be subscribed, and each is handled the same way.
      */
-    private const array REFUND_UPDATES = ['charge.refund.updated', 'refund.updated', 'refund.failed'];
+    private const array REFUND_UPDATES = [...self::REFUND_LEGACY, ...self::REFUND_REQUIRED];
+
+    /**
+     * The refund reports SVC cannot do without: `refund.failed` is the only
+     * report of an asynchronous refund failure and `refund.updated` of a
+     * cancellation.
+     */
+    private const array REFUND_REQUIRED = ['refund.updated', 'refund.failed'];
+
+    /**
+     * The older name of `refund.updated`. It is handled if it arrives, and
+     * subscribed when SVC creates an endpoint, but it is not required and does
+     * not stand in for `refund.updated` in the health check.
+     */
+    private const array REFUND_LEGACY = ['charge.refund.updated'];
 
     /**
      * Events that report a payout reaching its end (S7). Each is applied from
@@ -48,6 +62,23 @@ final class StripeWebhookService
         'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed',
         'charge.dispute.funds_withdrawn', 'charge.dispute.funds_reinstated',
     ];
+
+    /**
+     * The Stripe event types an endpoint must be subscribed to for SVC to stay
+     * correct, and the one list everything shares: the webhook health check
+     * compares an account's endpoint with it, the Fix button adds what is
+     * missing from it, and a test pins it to the types this class handles.
+     * Adding a handler without listing the type here fails
+     * StripeWebhookEventsTest.
+     */
+    public const array REQUIRED_EVENTS = [
+        'payment_intent.succeeded', 'payment_intent.processing', 'payment_intent.payment_failed', 'payment_intent.canceled',
+        'charge.refunded', ...self::REFUND_REQUIRED, ...self::DISPUTE_EVENTS, ...self::PAYOUT_EVENTS,
+        'payment_method.attached', 'payment_method.detached', 'setup_intent.succeeded', 'customer.updated',
+    ];
+
+    /** Every type this class handles: the required ones and the legacy refund name. The endpoint SVC creates subscribes to all of them. */
+    public const array EVENTS = [...self::REQUIRED_EVENTS, ...self::REFUND_LEGACY];
 
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,

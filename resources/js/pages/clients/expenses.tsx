@@ -137,7 +137,7 @@ export default function ClientExpenses({
                 <Card>
                     <CardHeader className="gap-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                            <CardTitle>Expenses</CardTitle>
+                            <CardTitle aria-level={1}>Expenses</CardTitle>
                             {schedule_url && (
                                 <a className="underline" href={schedule_url}>
                                     Recurring expenses

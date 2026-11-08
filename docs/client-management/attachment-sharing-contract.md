@@ -47,8 +47,17 @@ All new uploads are private first, with no visibility input. An explicit later
 checkbox mutation can publish an available file. Retain every existing stored
 flag, including true files under currently private parents and every recovery
 lifecycle. Historical blobs/imports remain outside active attachment sharing.
-Expense receipts have no Portal parent: retain staff-only readers and offer no
-client-sharing control for them.
+Expense receipts are the exception (client-shared receipts): they are always
+created private, whatever the latch says, and the migration
+`2026_11_09_100000_make_expense_receipts_private` made every earlier receipt
+private. A manager shares one with the same "Visible to client" control and
+`attachments.visibility.update`, which follows the same writer switch and latch.
+A portal viewer reads a receipt only when the file is shared, its expense is
+billed on a line of an invoice that viewer can already see (issued, client
+visible, never a draft or void, same company), and, for a project-scoped
+contact, on a project they hold. Unbilled expenses' receipts stay private. The
+portal opens one at `portal.files.receipt.download`; there is no portal receipt
+listing.
 
 Reserve additive migration `2026_10_22_180210_use_private_attachment_default`:
 change only the database default to false, with no row backfill or drop. The
@@ -220,8 +229,8 @@ sharing: null | {
 
 It is non-null only for the current native publisher, available file, supported
 parent and enabled controls. A separate nullable upload capability supplies the
-finished URL and parent version. Read-only viewers, Portal/PortalPreview and
-expense receipts get no sharing control. Labels use “Visible to client” with
+finished URL and parent version. Read-only viewers and Portal/PortalPreview get
+no sharing control; an expense receipt has one for a manager. Labels use “Visible to client” with
 server-derived hidden-parent explanations. Save only an explicit checkbox
 request; hold a stable key for an identical lost-answer retry; close a captured
 editor before reloading stale versions. Do not auto-toggle the parent.

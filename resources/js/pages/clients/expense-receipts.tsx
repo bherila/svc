@@ -39,7 +39,9 @@ export default function ExpenseReceipts({
             >
                 <Card>
                     <CardHeader>
-                        <CardTitle id="files">Expense receipts</CardTitle>
+                        <CardTitle id="files" aria-level={1}>
+                            Expense receipts
+                        </CardTitle>
                     </CardHeader>
                     <CardContent className="grid min-w-0 grid-cols-1 gap-4">
                         <p className="wrap-anywhere">{expense.description}</p>
@@ -49,7 +51,10 @@ export default function ExpenseReceipts({
                             {statusLabel(expense.status)}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                            Receipts are available to workspace managers only.
+                            Receipts are private to workspace managers. Tick
+                            &ldquo;Visible to client&rdquo; on a receipt to
+                            share it; a client can then open it from the invoice
+                            this expense is billed on, and from nowhere else.
                         </p>
                         <AttachmentSharingPanel
                             panel={{ files, upload, next_href: null }}

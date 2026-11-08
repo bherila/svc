@@ -1085,7 +1085,7 @@
         "/workspaces/{workspace}/attachments/{attachment}/visibility": {
             "get": {
                 "operationId": "attachments.visibility.get",
-                "description": "Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. This read remains available when sharing writers are disabled and performs no durable mutation.",
+                "description": "Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Expense receipts are also accepted here, for sharing only: a receipt is private until shared, and a client opens it only when the expense is billed on an invoice they can see. This read remains available when sharing writers are disabled and performs no durable mutation.",
                 "security": [
                     {
                         "oauth2": [
@@ -1203,7 +1203,7 @@
             },
             "patch": {
                 "operationId": "attachments.visibility.update",
-                "description": "Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.",
+                "description": "Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. Expense receipts are also accepted here, for sharing only: a receipt is private until shared, and a client opens it only when the expense is billed on an invoice they can see. Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.",
                 "security": [
                     {
                         "oauth2": [
@@ -9594,7 +9594,7 @@
         "/workspaces/{workspace}/invoices/{invoice}/autopay": {
             "get": {
                 "operationId": "invoices.autopay.get",
-                "description": "Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, or skipped; its one attempt; and the invoice version invoices.autopay.skip requires.",
+                "description": "Workspace managers only. Where autopay stands for the invoice: will be charged on its due date, charged, failed with the reason, over the limit, no default method, skipped, held for review, or left for manual collection; its one attempt, with who closed it out; a connection_problem when Stripe refused the workspace's connection and the invoice is not charged yet; and the invoice version invoices.autopay.skip and invoices.autopay.resolve require.",
                 "security": [
                     {
                         "oauth2": [
@@ -9633,6 +9633,72 @@
                 "x-agent-mcp-tool": "invoices.autopay.get",
                 "x-svc-flags": [],
                 "x-mcp-tool": "invoices.autopay.get"
+            }
+        },
+        "/workspaces/{workspace}/invoices/{invoice}/autopay/resolve": {
+            "post": {
+                "operationId": "invoices.autopay.resolve",
+                "description": "Workspace owners and admins only. Close out an autopay attempt held for review (state needs_review, can_resolve true), after checking the Stripe dashboard, and record who and when. outcome charged needs payment_intent_id: the PaymentIntent is read from Stripe and refused with 422 unless its metadata names this workspace and invoice and its amount and currency match the attempt; it then enters the payment ledger as pending or succeeded per its status, for Stripe's webhook to settle. outcome not_charged needs a note and leaves the invoice for manual collection; no new attempt is made. Requires the invoice's current expected_version and confirm: true. Never sends a charge. 409 when the attempt was closed out by someone else first.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceAutopayResolveRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Attempt closed out",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceAutopayResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "invoices.autopay.resolve",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.autopay.resolve"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/autopay/skip": {
@@ -22751,7 +22817,8 @@
                     "currency",
                     "method",
                     "consents",
-                    "upcoming"
+                    "upcoming",
+                    "connection_problem"
                 ],
                 "properties": {
                     "client_id": {
@@ -22973,12 +23040,33 @@
                                         "over_limit",
                                         "no_default_method",
                                         "skipped",
+                                        "resolved_not_charged",
                                         "needs_review"
                                     ]
                                 },
                                 "state_label": {
                                     "type": "string"
                                 }
+                            }
+                        }
+                    },
+                    "connection_problem": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "since",
+                            "message"
+                        ],
+                        "properties": {
+                            "since": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "message": {
+                                "type": "string"
                             }
                         }
                     }
@@ -25525,6 +25613,8 @@
                     "will_charge_on",
                     "verdict",
                     "can_skip",
+                    "connection_problem",
+                    "can_resolve",
                     "attempt"
                 ],
                 "properties": {
@@ -25545,6 +25635,7 @@
                             "over_limit",
                             "no_default_method",
                             "skipped",
+                            "resolved_not_charged",
                             "needs_review"
                         ]
                     },
@@ -25603,6 +25694,29 @@
                     "can_skip": {
                         "type": "boolean"
                     },
+                    "connection_problem": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "since",
+                            "message"
+                        ],
+                        "properties": {
+                            "since": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "can_resolve": {
+                        "type": "boolean"
+                    },
                     "attempt": {
                         "type": [
                             "object",
@@ -25620,6 +25734,8 @@
                             "payment_status",
                             "skipped_by_name",
                             "skipped_at",
+                            "resolved_by_name",
+                            "resolution_note",
                             "claimed_at",
                             "resolved_at"
                         ],
@@ -25633,7 +25749,8 @@
                                     "claimed",
                                     "submitted",
                                     "failed",
-                                    "skipped"
+                                    "skipped",
+                                    "not_charged"
                                 ]
                             },
                             "amount": {
@@ -25685,6 +25802,18 @@
                                 ],
                                 "format": "date-time"
                             },
+                            "resolved_by_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "resolution_note": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
                             "claimed_at": {
                                 "type": [
                                     "string",
@@ -25700,6 +25829,44 @@
                                 "format": "date-time"
                             }
                         }
+                    }
+                }
+            },
+            "InvoiceAutopayResolveRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "outcome",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "enum": [
+                            "charged",
+                            "not_charged"
+                        ],
+                        "description": "charged: Stripe shows the client was charged; needs payment_intent_id. not_charged: nothing was charged; needs note."
+                    },
+                    "payment_intent_id": {
+                        "type": "string",
+                        "pattern": "^pi_[A-Za-z0-9_]{1,252}$",
+                        "description": "The Stripe PaymentIntent id. Required when outcome is charged; refused when it is not this invoice's attempt."
+                    },
+                    "note": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "description": "What was checked in Stripe. Required when outcome is not_charged."
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Must be true, only after the user explicitly confirms the outcome they found in Stripe."
                     }
                 }
             },
