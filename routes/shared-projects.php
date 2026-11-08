@@ -19,7 +19,7 @@ Route::middleware('auth')->group(function (): void {
 
     // Who takes part is a person's decision: browser-only, never REST or MCP.
     Route::prefix('/workspaces/{workspace}/shared-projects/{sharedProject}')->whereUuid('sharedProject')->group(function (): void {
-        Route::post('/invitations', [SharedProjectController::class, 'invite'])->name('shared-projects.invitations.store');
+        Route::post('/invitations', [SharedProjectController::class, 'invite'])->middleware('throttle:invitations')->name('shared-projects.invitations.store');
         Route::delete('/invitations/{invitation}', [SharedProjectController::class, 'revokeInvitation'])->whereUuid('invitation')->name('shared-projects.invitations.destroy');
         Route::delete('/participants/{participation}', [SharedProjectController::class, 'revokeParticipant'])->whereUuid('participation')->name('shared-projects.participants.destroy');
         Route::post('/leave', [SharedProjectController::class, 'leave'])->name('shared-projects.leave');
@@ -28,6 +28,6 @@ Route::middleware('auth')->group(function (): void {
 
     // An invitation is addressed to a person, not a workspace: no workspace in the path.
     Route::get('/shared-project-invitations/{invitation}', [SharedProjectInvitationController::class, 'show'])->whereUuid('invitation')->name('shared-project-invitations.show');
-    Route::post('/shared-project-invitations/{invitation}/accept', [SharedProjectInvitationController::class, 'accept'])->whereUuid('invitation')->name('shared-project-invitations.accept');
-    Route::post('/shared-project-invitations/{invitation}/decline', [SharedProjectInvitationController::class, 'decline'])->whereUuid('invitation')->name('shared-project-invitations.decline');
+    Route::post('/shared-project-invitations/{invitation}/accept', [SharedProjectInvitationController::class, 'accept'])->whereUuid('invitation')->middleware('throttle:invitations')->name('shared-project-invitations.accept');
+    Route::post('/shared-project-invitations/{invitation}/decline', [SharedProjectInvitationController::class, 'decline'])->whereUuid('invitation')->middleware('throttle:invitations')->name('shared-project-invitations.decline');
 });

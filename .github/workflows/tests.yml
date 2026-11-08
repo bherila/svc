@@ -58,10 +58,6 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
       - name: Install dependencies
         run: |
           composer install --no-interaction
@@ -101,10 +97,6 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
       - name: Install dependencies
         run: |
           composer install --no-interaction
@@ -144,10 +136,6 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
       - name: Install dependencies
         run: |
           composer install --no-interaction
@@ -187,10 +175,6 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
       - name: Install dependencies
         run: |
           composer install --no-interaction
@@ -206,6 +190,155 @@ jobs:
           name: reminder-layout
           path: test-results/layout/
           retention-days: 7
+
+  # Every screen group of the layout harness, on every pull request and push to main.
+  # Each group renders its screens at 390, 820, 1440 and 1920 pixels in the light and
+  # dark themes and fails on horizontal overflow, a wrapped navbar, any axe violation
+  # at any impact, and any UI-consistency error. Shards run concurrently and build the
+  # frontend once each; LayoutWorkflowTest fails if a group in scripts/check-layout.mjs
+  # is missing from this matrix.
+  layout:
+    name: Layout and accessibility (${{ matrix.name }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default screens
+            groups: ''
+          - name: invoice actions
+            groups: '--invoice-actions --invoice-send'
+          - name: invoice recovery
+            groups: '--invoice-history --invoice-recovery --invoice-correction'
+          - name: billing and connections
+            groups: '--autopay --payments --credentials'
+          - name: clients and portal access
+            groups: '--clients --portal-access --reminders --disputes'
+          - name: engagement and history
+            groups: '--engagement --deferred-backlog --time --history --resource-chrome'
+          - name: tasks and expenses
+            groups: '--tasks --task-lookups --expenses --expense-schedules --receipts --projects'
+          - name: dashboards and shared work
+            groups: '--revenue --work-portal --shared-projects --reviewers --light-workspace --workspaces --square --invoice-document --palette'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build the frontend once for the shard
+        run: pnpm run build
+      - name: Check browser layout and accessibility
+        env:
+          GROUPS_TO_RUN: ${{ matrix.groups }}
+        run: |
+          status=0
+          if [ -z "$GROUPS_TO_RUN" ]; then
+            node scripts/check-layout.mjs --skip-build || status=1
+          else
+            for group in $GROUPS_TO_RUN; do
+              node scripts/check-layout.mjs --skip-build "$group" || status=1
+            done
+          fi
+          exit $status
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-${{ strategy.job-index }}
+          path: test-results/layout/
+          retention-days: 7
+
+  # The focused browser scripts with their own fixtures. Each checks the same widths and
+  # both themes, and fails on the same axe and UI-consistency findings as the harness.
+  layout-scripts:
+    name: Layout and accessibility (${{ matrix.name }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: collaboration
+            script: scripts/check-collaboration-layout.mjs
+          - name: task organization
+            script: scripts/check-task-organization-layout.mjs
+          - name: attachment sharing
+            script: scripts/check-attachment-sharing-layout.mjs
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build the frontend
+        run: pnpm run build
+      - name: Check browser layout and accessibility
+        env:
+          LAYOUT_SCRIPT: ${{ matrix.script }}
+          # check-attachment-sharing-layout.mjs runs its own Vite dev server, which
+          # laravel-vite-plugin refuses to start under CI=true without this.
+          LARAVEL_BYPASS_ENV_CHECK: '1'
+        run: node "$LAYOUT_SCRIPT"
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-script-${{ strategy.job-index }}
+          path: test-results/
+          retention-days: 7
+
+  layout-gate:
+    name: Layout and accessibility
+    needs: [layout, layout-scripts]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require every layout shard
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/ci/require-success.sh
 
   checks:
     name: Static and frontend checks
@@ -243,11 +376,6 @@ jobs:
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
       # Cache downloaded archives only, never Composer auth or private VCS clones.
       - name: Cache Composer downloads
@@ -316,11 +444,6 @@ jobs:
           php-version: '8.5'
           tools: composer:v2
           coverage: none
-
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
       # Cache downloaded archives only, never Composer auth or private VCS clones.
       - name: Cache Composer downloads
@@ -408,11 +531,6 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
-
       # Cache downloaded archives only, never Composer auth or private VCS clones.
       - name: Cache Composer downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -463,11 +581,6 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
-
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
       - name: Install application and generate ephemeral OAuth keys
         run: |
@@ -536,12 +649,6 @@ jobs:
           tools: composer:v2
           coverage: pcov
 
-      - name: Authorize private MCP bridge dependency
-        if: ${{ steps.mutation_scope.outputs.required == 'true' }}
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
-
       - name: Install Composer dependencies
         if: ${{ steps.mutation_scope.outputs.required == 'true' }}
         run: composer install --no-interaction
@@ -600,6 +707,93 @@ jobs:
             storage/framework/cache/infection-diff/junit.xml
             storage/framework/cache/infection-diff/coverage-xml/**/*.xml
 
+  clean-install:
+    name: Clean install without secrets
+    # Proves an outside contributor, with no repository secrets, can install and run SVC.
+    # Never add a `secrets.` reference or a credential step to this job.
+    runs-on: ubuntu-24.04-arm
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_EXPECT_DRIVER: sqlite
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --no-progress
+          pnpm install --frozen-lockfile
+          test -f .env || cp .env.example .env
+          php artisan key:generate --ansi
+
+      - name: Smoke the installed application
+        run: |
+          php artisan about
+          php artisan test tests/Unit/Deployment
+          pnpm run types:check
+
+  dependency-audit:
+    name: Dependency audit (advisory)
+    # Advisory: not a need of `ci`, so a newly published advisory cannot block unrelated work.
+    # Read the report and update the named package; do not weaken the audit.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+
+      # Each audit reports as a warning annotation and never turns the check red: a red
+      # advisory check on every pull request would read as a failing candidate.
+      - name: Audit Composer lock file
+        run: |
+          if ! composer audit --locked --no-interaction; then
+            echo "::warning title=Composer advisories::composer audit --locked reports advisories; read the log above and update the named packages."
+          fi
+
+      - name: Audit production pnpm dependencies
+        run: |
+          if ! pnpm audit --prod; then
+            echo "::warning title=pnpm advisories::pnpm audit --prod reports advisories; read the log above and update the named packages."
+          fi
+
   mariadb:
     name: Tests on MariaDB
     needs: [mariadb-tests]
@@ -616,7 +810,7 @@ jobs:
         run: bash scripts/ci/require-success.sh
 
   ci:
-    needs: [checks, sqlite, mariadb, mcp-smoke]
+    needs: [checks, sqlite, mariadb, mcp-smoke, layout-gate, clean-install]
     if: ${{ always() }}
     runs-on: ubuntu-24.04-arm
     steps:
@@ -665,11 +859,6 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
-
-      - name: Authorize private MCP bridge dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
       - name: Install production Composer dependencies
         run: composer install --no-dev --no-interaction --optimize-autoloader

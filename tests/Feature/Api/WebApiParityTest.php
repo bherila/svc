@@ -19,6 +19,7 @@ final class WebApiParityTest extends TestCase
 {
     private const array BROWSER_ONLY = [
         'account.preferences.update' => 'web-only:a display preference of the signed-in person, not business data',
+        'palette.recents' => 'web-only:the signed-in person\'s own recent-items list for the command palette; a kind and a public id, checked against what they may open before it is stored',
         // A credential may never mint another credential (#384).
         'bherila-auth.credentials.apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.apps.store' => 'deliberate:credentials are issued only by the signed-in person',
@@ -36,6 +37,8 @@ final class WebApiParityTest extends TestCase
         'workspaces.reviewers.store' => 'deliberate:letting someone outside the business vouch for its hours is given only by a signed-in owner or admin',
         'workspaces.payments.destroy' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
         'workspaces.payments.reuse' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
+        'workspaces.payments.webhook.check' => 'deliberate:rereading the Stripe webhook endpoint with the workspace\'s stored restricted key is done only by a signed-in owner or admin; it changes nothing at Stripe and the daily svc:payments:check-stripe-webhooks command records the same result',
+        'workspaces.payments.webhook.fix' => 'deliberate:subscribing the Stripe webhook endpoint to the events SVC needs, or creating it and storing the new signing secret, uses the workspace\'s payment key and is confirmed in the browser by a signed-in owner or admin; payment connections have no agent writes',
         'workspaces.payments.store' => 'deliberate:payment keys are entered only by a signed-in owner or admin',
         'logout' => 'web-only:sign-out',
         'svc.billing.brevo.webhook' => 'web-only:inbound webhook',
@@ -49,6 +52,10 @@ final class WebApiParityTest extends TestCase
         'portal.approvals.approve' => 'deliberate:a client contact approving the hours and expenses they pay for is an interactive decision by the payer in the portal, which holds no agent credential',
         'portal.autopay.enable' => 'deliberate:a client contact authorizing charges to their own saved payment method is their own explicit consent in the portal, with the exact wording stored; the provider\'s attested route is companies.autopay.set',
         'portal.autopay.disable' => 'deliberate:a client contact withdrawing their authorization to charge their saved payment method is their own act in the portal; the provider side is companies.autopay.set',
+        'portal.payment-methods.setup' => 'deliberate:a client contact starting to save a card or bank account for their own company hands them to Stripe\'s own form in the portal; the browser receives only a client secret and the method is never entered through SVC',
+        'portal.payment-methods.confirm' => 'deliberate:reads back the setup the client contact just completed in Stripe\'s form, in the portal, so the saved method appears without waiting for the webhook',
+        'portal.payment-methods.default' => 'deliberate:a client contact choosing which of their own saved payment methods autopay charges is their own act in the portal; the provider side is companies.autopay.set',
+        'portal.payment-methods.destroy' => 'deliberate:a client contact removing their own saved payment method is their own act in the portal, and turns autopay off if it was the default',
         'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
         // Sharing a project crosses a workspace boundary, so only a signed-in
         // owner or admin of each side may open, accept, end or relink it (#631).

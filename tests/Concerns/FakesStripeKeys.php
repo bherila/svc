@@ -72,20 +72,33 @@ trait FakesStripeKeys
      *
      * @return Closure(string, string, array<string, mixed>, string): array{0: array<string, mixed>, 1?: int}
      */
-    protected static function stripeAnswers(): Closure
+    protected static function stripeAnswers(array $endpoints = []): Closure
     {
         $issued = [];
 
-        return static function (string $method, string $path, array $params, string $key) use (&$issued): array {
+        return static function (string $method, string $path, array $params, string $key) use (&$issued, &$endpoints): array {
             if (str_contains($key, 'rejected')) {
                 return [['error' => ['type' => 'authentication_error', 'message' => 'Invalid API Key.']], 401];
             }
             $suffix = substr(hash('sha256', $key), 0, 8);
+            $live = str_contains($key, '_live_');
+            $forbidden = [['error' => ['type' => 'invalid_request_error', 'message' => 'The provided key does not have the required permissions for this endpoint.']], 403];
 
             return match (true) {
                 $path === '/v1/account' => [['id' => 'acct_'.$suffix, 'object' => 'account', 'business_profile' => ['name' => 'Synthetic Business '.$suffix]]],
-                $path === '/v1/webhook_endpoints' && $method === 'post' => [['id' => 'we_'.$suffix, 'object' => 'webhook_endpoint', 'secret' => 'whsec_'.$suffix, 'url' => (string) ($params['url'] ?? '')]],
-                str_starts_with($path, '/v1/webhook_endpoints/') && $method === 'delete' => [['id' => basename($path), 'object' => 'webhook_endpoint', 'deleted' => true]],
+                // Webhook endpoints are kept per key, so the list shows what that key created
+                // (and what a test seeded with seededEndpoint). `no_webhook_read` and
+                // `no_webhook_write` keys lack the permission; `webhook_unreachable` never gets an answer.
+                $path === '/v1/webhook_endpoints' && $method === 'get' => str_contains($key, 'webhook_unreachable')
+                    ? throw new ApiConnectionException('Synthetic network failure.')
+                    : (str_contains($key, 'no_webhook_read') ? $forbidden : [['object' => 'list', 'url' => '/v1/webhook_endpoints', 'has_more' => false, 'data' => array_values(array_filter($endpoints, static fn (array $endpoint): bool => in_array($endpoint['_owner'], [$suffix, '*'], true)))]]),
+                $path === '/v1/webhook_endpoints' && $method === 'post' => str_contains($key, 'no_webhook_write')
+                    ? $forbidden
+                    : static::storeEndpoint($endpoints, 'we_'.$suffix, $suffix, $live, $params, 'whsec_'.$suffix),
+                str_starts_with($path, '/v1/webhook_endpoints/') && $method === 'post' => str_contains($key, 'no_webhook_write') || ! isset($endpoints[basename($path)])
+                    ? ($forbidden)
+                    : static::storeEndpoint($endpoints, basename($path), $suffix, $live, $params + ['url' => $endpoints[basename($path)]['url']], null),
+                str_starts_with($path, '/v1/webhook_endpoints/') && $method === 'delete' => static::dropEndpoint($endpoints, basename($path)),
                 $path === '/v1/payment_intents' && $method === 'post' => [['id' => 'pi_'.$suffix.'_'.substr(hash('sha256', (string) ($params['description'] ?? '')), 0, 6), 'object' => 'payment_intent', 'client_secret' => 'pi_secret_synthetic']],
                 $path === '/v1/setup_intents' && $method === 'post' => str_contains($key, 'no_setup_perm')
                     ? [['error' => ['type' => 'invalid_request_error', 'message' => 'The provided key does not have the required permissions for this endpoint.']], 403]
@@ -97,6 +110,55 @@ trait FakesStripeKeys
                 default => [['error' => ['type' => 'invalid_request_error', 'message' => 'Unhandled synthetic path '.$path]], 404],
             };
         };
+    }
+
+    /**
+     * A webhook endpoint to start the fake account with (pass them, keyed by
+     * id, to {@see stripeAnswers()}); any key may list it.
+     *
+     * @param  list<string>  $events
+     * @return array<string, array<string, mixed>>
+     */
+    protected static function seededEndpoint(string $id, string $url, array $events, string $status = 'enabled', bool $live = true): array
+    {
+        return [$id => ['id' => $id, 'object' => 'webhook_endpoint', 'url' => $url, 'status' => $status, 'livemode' => $live, 'enabled_events' => $events, '_owner' => '*']];
+    }
+
+    /**
+     * Create or update a fake webhook endpoint. An update keeps the endpoint's
+     * owner, mode, status and URL, and replaces its events as Stripe does.
+     *
+     * @param  array<string, array<string, mixed>>  $endpoints
+     * @param  array<string, mixed>  $params
+     * @return array{0: array<string, mixed>}
+     */
+    protected static function storeEndpoint(array &$endpoints, string $id, string $owner, bool $live, array $params, ?string $secret): array
+    {
+        $existing = $endpoints[$id] ?? null;
+        $events = $params['enabled_events'] ?? $existing['enabled_events'] ?? [];
+        $endpoint = [
+            'id' => $id,
+            'object' => 'webhook_endpoint',
+            'url' => (string) ($params['url'] ?? $existing['url'] ?? ''),
+            'status' => $existing['status'] ?? 'enabled',
+            'livemode' => $existing['livemode'] ?? $live,
+            'enabled_events' => array_values(is_array($events) ? $events : []),
+            '_owner' => $existing['_owner'] ?? $owner,
+        ];
+        $endpoints[$id] = $endpoint;
+
+        return [$secret === null ? $endpoint : [...$endpoint, 'secret' => $secret]];
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $endpoints
+     * @return array{0: array<string, mixed>}
+     */
+    protected static function dropEndpoint(array &$endpoints, string $id): array
+    {
+        unset($endpoints[$id]);
+
+        return [['id' => $id, 'object' => 'webhook_endpoint', 'deleted' => true]];
     }
 
     /**

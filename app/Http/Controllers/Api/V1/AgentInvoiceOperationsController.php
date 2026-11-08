@@ -89,7 +89,7 @@ final class AgentInvoiceOperationsController extends Controller
         $record = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $invoice)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id), 'workspace'])->firstOrFail();
         $audience = $access->isWorkspaceManager($principal, $workspace) ? InvoiceLineDetail::OPERATOR : InvoiceLineDetail::CLIENT;
 
-        return response($documents->pdf($record, $audience, receipts: ReceiptDetail::Embedded), 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_ATTACHMENT, $documents->filename($record))]);
+        return response($documents->pdf($record, $audience, receipts: ReceiptDetail::Embedded, viewer: $principal), 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_ATTACHMENT, $documents->filename($record))]);
     }
 
     private function principal(Request $request): User|AgentPrincipal

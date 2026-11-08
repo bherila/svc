@@ -31,7 +31,7 @@ export default function ClientTaskDetail({
             >
                 <Card className="min-w-0">
                     <CardHeader>
-                        <CardTitle className="wrap-anywhere">
+                        <CardTitle aria-level={1} className="wrap-anywhere">
                             {task.title}
                         </CardTitle>
                         <p className="text-sm wrap-anywhere text-muted-foreground">

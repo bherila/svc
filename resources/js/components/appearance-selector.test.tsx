@@ -6,6 +6,19 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AppearanceSelector } from '@/components/appearance-selector';
 import { resetAppearanceStoreForTests } from '@/lib/appearance';
 
+const appearances = () =>
+    screen.getAllByRole('combobox', { name: 'Appearance' });
+const appearance = () => appearances()[0];
+
+async function choose(
+    user: ReturnType<typeof userEvent.setup>,
+    index: number,
+    label: string,
+) {
+    await user.click(appearances()[index]);
+    await user.click(await screen.findByRole('option', { name: label }));
+}
+
 beforeEach(() => {
     resetAppearanceStoreForTests();
 });
@@ -23,7 +36,7 @@ test('persists the selected dark appearance and updates the document root', asyn
 
     render(<AppearanceSelector />);
 
-    await user.selectOptions(screen.getByLabelText('Appearance'), 'dark');
+    await choose(user, 0, 'Dark');
 
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
@@ -35,7 +48,7 @@ test('restores a persisted appearance when an authenticated page mounts', () => 
 
     render(<AppearanceSelector />);
 
-    expect(screen.getByLabelText('Appearance')).toHaveValue('dark');
+    expect(appearance()).toHaveTextContent('Dark');
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
 });
@@ -51,7 +64,7 @@ test('hydrates from the server snapshot before reconciling persisted dark mode',
 
     expect(
         within(container).getByRole('combobox', { name: 'Appearance' }),
-    ).toHaveValue('system');
+    ).toHaveTextContent('System');
 
     const root = hydrateRoot(container, <AppearanceSelector />, {
         onRecoverableError: recoverableError,
@@ -62,7 +75,7 @@ test('hydrates from the server snapshot before reconciling persisted dark mode',
     expect(recoverableError).not.toHaveBeenCalled();
     expect(
         within(container).getByRole('combobox', { name: 'Appearance' }),
-    ).toHaveValue('dark');
+    ).toHaveTextContent('Dark');
     expect(document.documentElement).toHaveClass('dark');
 
     await act(async () => root.unmount());
@@ -79,9 +92,9 @@ test('keeps working in memory when browser storage is blocked', async () => {
     const user = userEvent.setup();
 
     render(<AppearanceSelector />);
-    await user.selectOptions(screen.getByLabelText('Appearance'), 'dark');
+    await choose(user, 0, 'Dark');
 
-    expect(screen.getByLabelText('Appearance')).toHaveValue('dark');
+    expect(appearance()).toHaveTextContent('Dark');
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
 });
@@ -151,10 +164,10 @@ test('shares one preference and one system listener across consumers', async () 
     );
 
     expect(media.addEventListener).toHaveBeenCalledTimes(1);
-    await user.selectOptions(screen.getAllByLabelText('Appearance')[0], 'dark');
-    expect(screen.getAllByLabelText('Appearance')).toHaveLength(2);
-    expect(screen.getAllByLabelText('Appearance')[0]).toHaveValue('dark');
-    expect(screen.getAllByLabelText('Appearance')[1]).toHaveValue('dark');
+    await choose(user, 0, 'Dark');
+    expect(appearances()).toHaveLength(2);
+    expect(appearances()[0]).toHaveTextContent('Dark');
+    expect(appearances()[1]).toHaveTextContent('Dark');
     expect(media.removeEventListener).toHaveBeenCalledTimes(1);
 });
 
@@ -170,7 +183,7 @@ test('reconciles appearance changes made in another tab', () => {
         );
     });
 
-    expect(screen.getByLabelText('Appearance')).toHaveValue('dark');
+    expect(appearance()).toHaveTextContent('Dark');
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
 });

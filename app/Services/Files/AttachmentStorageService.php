@@ -231,9 +231,13 @@ final class AttachmentStorageService
             fclose($output);
             fclose($stream);
         }, $filename, [
-            'Content-Type' => $attachment->media_type,
+            'Content-Type' => $this->downloadMediaType($attachment->media_type),
             'Content-Length' => (string) $attachment->bytes,
             'X-Content-SHA256' => $attachment->sha256,
+            // The bytes are a stranger's: never let a browser sniff them into a page, and if one
+            // is ever opened inline anyway, give it no network, no script and an opaque origin.
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; sandbox",
         ]);
     }
 
@@ -568,12 +572,30 @@ final class AttachmentStorageService
         return is_string($mediaType) && $mediaType !== '' ? $mediaType : 'application/octet-stream';
     }
 
+    /**
+     * A type a browser would run as a page or script is served as opaque bytes. The download is
+     * already an attachment; this keeps a client that ignores that from executing an upload.
+     */
+    private function downloadMediaType(string $mediaType): string
+    {
+        $base = strtolower(trim(explode(';', $mediaType)[0]));
+        $active = ['text/html', 'application/xhtml+xml', 'image/svg+xml', 'text/xml', 'application/xml', 'text/javascript', 'application/javascript', 'application/x-javascript'];
+
+        return $base === '' || in_array($base, $active, true) ? 'application/octet-stream' : $mediaType;
+    }
+
+    /**
+     * Only the final path segment, with control characters and the bidirectional overrides that
+     * make `evil\u{202E}fdp.exe` read as a PDF removed, and no longer than a filesystem allows.
+     */
     private function downloadFilename(string $filename): string
     {
         $filename = basename(str_replace(['\\', "\0"], '/', $filename));
         $filename = preg_replace('/[\r\n]+/', ' ', $filename) ?: 'download';
+        $filename = preg_replace('/[\x00-\x1F\x7F]|[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u', '', $filename) ?? 'download';
+        $filename = mb_substr(trim($filename), 0, 255);
 
-        return $filename === '.' ? 'download' : $filename;
+        return in_array($filename, ['', '.', '..'], true) ? 'download' : $filename;
     }
 
     private function writeAll(mixed $stream, string $contents): void

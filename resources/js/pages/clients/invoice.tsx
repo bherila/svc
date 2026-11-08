@@ -637,6 +637,7 @@ export default function ClientInvoiceDetail({
                         )}
                     {mutation.locked && lifecycle === null && (
                         <Button
+                            variant="outline"
                             disabled={busy}
                             onClick={() => void mutation.retry()}
                         >
@@ -689,6 +690,7 @@ export default function ClientInvoiceDetail({
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         <Button
+                                            variant="outline"
                                             type="submit"
                                             size="sm"
                                             disabled={mutation.locked}
@@ -1336,6 +1338,7 @@ export default function ClientInvoiceDetail({
                                                                 }
                                                             />
                                                             <Button
+                                                                variant="outline"
                                                                 size="sm"
                                                                 disabled={
                                                                     mutation.locked ||

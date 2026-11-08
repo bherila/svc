@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientCompany;
 use App\Models\ClientStripeCustomer;
 use App\Models\ClientStripePaymentMethod;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\Autopay\AutopayConsentService;
@@ -136,16 +137,7 @@ final class StripePaymentMethodService
             : null;
 
         if ($method instanceof ClientStripePaymentMethod) {
-            if ($method->is_default) {
-                $method->forceFill(['is_default' => false])->save();
-                $this->autopayLosesItsMethod($workspace, $company);
-            }
-            $this->activities->record($workspace, $company, 'payment_method.removed', $method, [
-                'type' => $method->type,
-                'brand' => $method->brand,
-                'last4' => $method->last4,
-            ], occurrence: $occurrence);
-            $method->delete();
+            $this->forgetLocked($workspace, $company, $method, $occurrence, null);
         }
 
         $this->updateState(
@@ -159,6 +151,106 @@ final class StripePaymentMethodService
         );
 
         return $workspaceId;
+    }
+
+    /**
+     * Record that the client removed a saved method in the portal and Stripe has
+     * detached it. The same local effect as `payment_method.detached`, reached
+     * with the tenant already known, so a method that never had a state row is
+     * removed too. Run inside a transaction: removing the default turns autopay
+     * off, deferred to commit.
+     *
+     * The state row only ever moves forward, so a late attach event for this
+     * method cannot bring it back.
+     */
+    public function forget(Workspace $workspace, ClientCompany $company, ClientStripePaymentMethod $saved, User $actor, string $occurrence): bool
+    {
+        $providerId = $saved->stripe_payment_method_id;
+        $state = $this->lockState($providerId);
+        $method = ClientStripePaymentMethod::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->whereKey($saved->id)
+            ->tap(Locks::forUpdate())
+            ->first();
+        if (! $method instanceof ClientStripePaymentMethod) {
+            return false;
+        }
+        $this->forgetLocked($workspace, $company, $method, $occurrence, $actor);
+        $this->updateState(
+            $state,
+            'detached',
+            max($state->providerCreatedAt, $this->clock->now($workspace)->getTimestamp()),
+            $occurrence,
+            $workspace->id,
+            $company->id,
+            $method->client_stripe_customer_id,
+        );
+
+        return true;
+    }
+
+    /**
+     * Make one saved method the company's only default, mirroring a change
+     * already made at Stripe. It does not touch the ordering marker that
+     * `customer.updated` events use, so Stripe's own event for this change - or
+     * an older one still in flight - is judged on its merits and converges on
+     * the same state. Run inside a transaction.
+     */
+    public function adoptDefault(Workspace $workspace, ClientCompany $company, ClientStripePaymentMethod $saved, User $actor, string $occurrence): bool
+    {
+        $customer = ClientStripeCustomer::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->whereKey($saved->client_stripe_customer_id)
+            ->tap(Locks::forUpdate())
+            ->first();
+        if (! $customer instanceof ClientStripeCustomer) {
+            return false;
+        }
+        $methods = ClientStripePaymentMethod::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->where('client_stripe_customer_id', $customer->id)
+            ->tap(Locks::forUpdate())
+            ->get();
+        $next = $methods->firstWhere('id', $saved->id);
+        if (! $next instanceof ClientStripePaymentMethod) {
+            return false;
+        }
+        if ($methods->firstWhere('is_default', true)?->id === $next->id) {
+            return true;
+        }
+
+        ClientStripePaymentMethod::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->where('client_stripe_customer_id', $customer->id)
+            ->where('is_default', true)
+            ->update(['is_default' => false, 'updated_at' => $this->clock->now($workspace)]);
+        $next->forceFill(['is_default' => true])->save();
+        $this->activities->record($workspace, $company, 'payment_method.default_changed', $next, [
+            'type' => $next->type,
+            'brand' => $next->brand,
+            'last4' => $next->last4,
+            'is_default' => true,
+        ], $actor, $occurrence);
+
+        return true;
+    }
+
+    private function forgetLocked(Workspace $workspace, ClientCompany $company, ClientStripePaymentMethod $method, string $occurrence, ?User $actor): void
+    {
+        if ($method->is_default) {
+            $method->forceFill(['is_default' => false])->save();
+            $this->autopayLosesItsMethod($workspace, $company);
+        }
+        $this->activities->record($workspace, $company, 'payment_method.removed', $method, [
+            'type' => $method->type,
+            'brand' => $method->brand,
+            'last4' => $method->last4,
+        ], $actor, $occurrence);
+        $method->delete();
     }
 
     public function changeDefault(

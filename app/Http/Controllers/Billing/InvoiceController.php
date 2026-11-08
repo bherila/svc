@@ -122,7 +122,7 @@ class InvoiceController extends Controller
         $receipts = $audience === InvoiceLineDetail::CLIENT || Gate::forUser($request->user())->allows('manage', $workspace)
             ? ReceiptDetail::Embedded
             : ReceiptDetail::None;
-        $pdf = $documents->pdf($clientInvoice, $audience, receipts: $receipts);
+        $pdf = $documents->pdf($clientInvoice, $audience, receipts: $receipts, viewer: $request->user());
 
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',

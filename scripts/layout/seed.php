@@ -2,6 +2,7 @@
 
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
+use App\Models\ClientAttachment;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
@@ -23,6 +24,7 @@ use App\Models\ClientTaskLabel;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceAutopayAttempt;
 use App\Models\InvoiceReminderLog;
+use App\Models\PaletteRecent;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -34,6 +36,7 @@ use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
+use App\Services\Billing\StripeWebhookService;
 use App\Services\Files\AttachmentStorageService;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
@@ -435,8 +438,16 @@ $squareInvoice = $service->issue($service->createDraft($workspace, $company, [
     'type' => 'adjustment', 'description' => $description,
     'quantity' => '1', 'unit_amount' => 12_345, 'tax_amount' => 0, 'sort_order' => 1,
 ]]), $workspace);
+// A client sees an invoice's "Still deferred" list only when its agreement opts in.
+$squareAgreement = ClientAgreement::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic Square agreement',
+    'status' => 'expired', 'currency' => 'USD', 'starts_on' => '2022-01-01', 'ends_on' => '2022-12-31',
+    'billing_cadence' => 'monthly', 'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000,
+    'show_deferred_backlog_to_client' => true, 'is_visible_to_client' => false,
+]);
 $squareInvoice->forceFill([
     'is_visible_to_client' => true,
+    'client_agreement_id' => $squareAgreement->id,
     'deferred_work_statement' => ['version' => 1, 'entries' => [
         ['id' => 1, 'workedOn' => '2026-04-01', 'minutes' => 1, 'description' => null],
         ['id' => 2, 'workedOn' => '2026-04-02', 'minutes' => 61, 'description' => str_repeat('SyntheticDeferredWork', 40)],
@@ -755,7 +766,7 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
     }
     // Appendix B: three expenses billed on three expense lines. The first has a
     // PNG, a PDF and a file whose name has no break; the second a JPEG; the
-    // third none. The names have no break either. Real bytes, stored through
+    // third none. Only the two images are shared with the client. The names have no break either. Real bytes, stored through
     // the application's own adapter on the harness's private disk.
     $documentExpenseLines = [$documentLines['expense']];
     foreach ([['SyntheticLabResultsApiUsageWithoutBreaks'.str_repeat('A', 40), 9_900, 8], ['SyntheticParkingWithoutBreaks'.str_repeat('P', 40), 1_500, 9]] as [$text, $amount, $order]) {
@@ -780,8 +791,14 @@ if (getenv('SVC_LAYOUT_INVOICE_DOCUMENT') === '1') {
             1 => [UploadedFile::fake()->image('api-usage.jpg', 480, 640)],
             default => [],
         };
-        foreach ($files as $file) {
-            app(AttachmentStorageService::class)->store($workspace, $documentExpense, $file, $owner);
+        foreach ($files as $index => $file) {
+            $stored = app(AttachmentStorageService::class)->store($workspace, $documentExpense, $file, $owner);
+            // A receipt is created private. The two images are shared with the
+            // client, as the sharing action does it; the two PDFs stay private,
+            // so the portal invoice and the client PDF show B1 (one image) and B2.
+            if (in_array($position.'.'.$index, ['0.0', '1.0'], true)) {
+                DB::table('client_attachments')->where('id', $stored->id)->update(['is_visible_to_client' => true]);
+            }
         }
     }
     foreach ([[3, 90, 'SyntheticInternalNoteWithoutBreaks'.str_repeat('N', 40), false, null], [4, 60, 'Internal only', true, 'Reconciled the purchase order '.str_repeat('SyntheticClientNote', 8)], [5, 45, 'Internal only', false, null]] as [$day, $minutes, $note, $visible, $written]) {
@@ -847,6 +864,8 @@ if (getenv('SVC_LAYOUT_AUTOPAY') === '1') {
     app(WorkspacePaymentConnections::class)->connect($apWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
         'external_account_id' => 'acct_synthetic_autopay', 'display_name' => 'Synthetic', 'environment' => 'test',
         'secret' => 'sk_test_'.str_repeat('synthetic', 4).'0002', 'webhook_secret' => 'whsec_synthetic',
+        // The portal offers a client "Add payment method" only for a key it knows is this account's (#642).
+        'publishable_key' => 'pk_test_layout_synthetic',
     ]);
     $apToday = app(WorkspaceClock::class)->today($apWorkspace);
     $apMakeCompany = static function (string $name, string $slug, string $contactName, string $email) use ($apWorkspace): array {
@@ -889,12 +908,28 @@ if (getenv('SVC_LAYOUT_AUTOPAY') === '1') {
     $apFailed = $apInvoice($apOn, 'INV-AP-FAILED-'.str_repeat('X', 40), 250_000, 0);
     $apSkipped = $apInvoice($apOn, 'INV-AP-SKIPPED', 125_000, 5);
     $apOffInvoice = $apInvoice($apOff, 'INV-AP-OFF', 90_000, 10);
+    $apHeld = $apInvoice($apOn, 'INV-AP-HELD-'.str_repeat('X', 40), 175_000, 0);
+    $apClosed = $apInvoice($apOn, 'INV-AP-CLOSED-'.str_repeat('X', 40), 160_000, 0);
     InvoiceAutopayAttempt::query()->create([
         'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apFailed->id, 'client_company_id' => $apOn->id, 'state' => 'failed',
         'amount' => 250_000, 'currency' => 'USD', 'limit_amount' => 500_000, 'payment_method_label' => 'Visa ending 4242',
         'failure_code' => 'card_declined', 'failure_reason' => 'Your card was declined: '.str_repeat('SyntheticDeclineReasonWithoutBreaks', 5),
         'claimed_at' => now(), 'resolved_at' => now(),
     ]);
+    // #641: a claim Stripe never answered (held for review), and one an admin closed out as not charged.
+    InvoiceAutopayAttempt::query()->create([
+        'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apHeld->id, 'client_company_id' => $apOn->id, 'state' => 'claimed',
+        'amount' => 175_000, 'currency' => 'USD', 'limit_amount' => 500_000, 'payment_method_label' => 'Visa ending 4242',
+        'claimed_at' => now()->subMinutes(45),
+    ]);
+    InvoiceAutopayAttempt::query()->create([
+        'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apClosed->id, 'client_company_id' => $apOn->id, 'state' => 'not_charged',
+        'amount' => 160_000, 'currency' => 'USD', 'limit_amount' => 500_000, 'payment_method_label' => 'Visa ending 4242',
+        'claimed_at' => now()->subMinutes(90), 'resolved_at' => now()->subMinutes(30), 'resolved_by_user_id' => $owner->id,
+        'resolution_note' => 'Checked the Stripe dashboard, no payment: '.str_repeat('SyntheticResolutionNoteWithoutBreaks', 5),
+    ]);
+    // #641: Stripe refused the workspace's connection after it was last saved: the provider's cards warn.
+    DB::table('workspaces')->where('id', $apWorkspace->id)->update(['stripe_refused_at' => now()->addMinute()]);
     InvoiceAutopayAttempt::query()->create([
         'workspace_id' => $apWorkspace->id, 'client_invoice_id' => $apSkipped->id, 'client_company_id' => $apOn->id, 'state' => 'skipped',
         'skipped_by_user_id' => $owner->id, 'skipped_at' => now(), 'claimed_at' => now(), 'resolved_at' => now(),
@@ -909,6 +944,9 @@ if (getenv('SVC_LAYOUT_AUTOPAY') === '1') {
         'autopay_invoice_will' => route('clients.invoice', [$apWorkspace, $apOn, $apWill], absolute: false),
         'autopay_invoice_failed' => route('clients.invoice', [$apWorkspace, $apOn, $apFailed], absolute: false),
         'autopay_invoice_skipped' => route('clients.invoice', [$apWorkspace, $apOn, $apSkipped], absolute: false),
+        'autopay_invoice_held' => route('clients.invoice', [$apWorkspace, $apOn, $apHeld], absolute: false),
+        'autopay_invoice_closed' => route('clients.invoice', [$apWorkspace, $apOn, $apClosed], absolute: false),
+        'autopay_portal_closed' => route('portal.invoice', [$apOn, $apClosed], absolute: false),
         'autopay_portal_user_id' => $apOnContact->id,
         'autopay_portal_off_user_id' => $apOffContact->id,
         'autopay_off_invoice' => route('portal.invoice', [$apOff, $apOffInvoice], absolute: false),
@@ -934,7 +972,33 @@ if (getenv('SVC_LAYOUT_PAYMENTS') === '1') {
         'secret' => 'EAAA'.str_repeat('synthetic', 6).'wxyz', 'webhook_secret' => 'synthetic-signature', 'location_id' => str_repeat('L', 64),
     ]);
     $connections->reuse($reusedWorkspace, $stripeRow, $owner);
+    // The webhook health line (the check itself never runs here, no processor is
+    // asked): one workspace per result the card can show, written the way the
+    // check records it, and one a member (no buttons, no URL) reads.
+    $required = StripeWebhookService::REQUIRED_EVENTS;
+    $recordCheck = static function (string $name, string $slug, string $status, array $missing, string $role = 'owner') use ($connections, $owner): Workspace {
+        $healthWorkspace = Workspace::query()->create(['name' => $name, 'slug' => $slug, 'timezone' => 'America/Los_Angeles']);
+        $healthWorkspace->memberships()->create(['user_id' => $owner->id, 'role' => $role]);
+        $row = $connections->connect($healthWorkspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+            'external_account_id' => 'acct_synthetic_'.$slug, 'display_name' => 'Synthetic webhook business', 'environment' => 'live',
+            'secret' => 'rk_live_'.str_repeat('synthetic', 6).'a1b2', 'webhook_secret' => 'whsec_synthetic',
+            'endpoint_token' => substr(hash('sha256', $slug), 0, 40),
+        ]);
+        $row->forceFill(['webhook_check_status' => $status, 'webhook_check_missing' => $missing, 'webhook_checked_at' => now()->subHours(3)])->save();
+
+        return $healthWorkspace;
+    };
+    $recordCheck('Webhook healthy workspace', 'layout-webhook-healthy', 'healthy', []);
+    $stripeRow->forceFill(['webhook_check_status' => 'healthy', 'webhook_check_missing' => [], 'webhook_checked_at' => now()->subHours(3)])->save();
+    $webhookPages = [
+        'payments_webhook_missing' => $recordCheck('Webhook missing workspace', 'layout-webhook-missing', 'missing_events', array_slice($required, 0, 14)),
+        'payments_webhook_notfound' => $recordCheck('Webhook not found workspace', 'layout-webhook-notfound', 'not_found', []),
+        'payments_webhook_denied' => $recordCheck('Webhook denied workspace', 'layout-webhook-denied', 'permission_denied', []),
+        'payments_webhook_disabled' => $recordCheck('Webhook disabled workspace', 'layout-webhook-disabled', 'disabled', []),
+        'payments_webhook_member' => $recordCheck('Webhook member workspace', 'layout-webhook-member', 'missing_events', ['payment_method.attached', 'customer.updated'], 'member'),
+    ];
     $paymentPages = [
+        ...array_map(static fn (Workspace $page): string => route('workspaces.payments', $page, absolute: false), $webhookPages),
         'payments' => route('workspaces.payments', $workspace, absolute: false),
         'payments_stripe' => route('workspaces.payments', $stripeWorkspace, absolute: false),
         'payments_square' => route('workspaces.payments', $squareWorkspace, absolute: false),
@@ -1128,12 +1192,82 @@ if (getenv('SVC_LAYOUT_LIGHT') === '1') {
     ];
 }
 
+// The command palette (--palette). Every kind it can find, under one shared word
+// and names that will not break: an expense, an agreement, a proposal, a file, time
+// (one entry with a client-safe description for the portal), a contact and a second
+// portal user, plus the owner's recent items. Read as four people - an owner (with
+// and without a client in context), a member scoped to the one project, and the
+// client contact - each on a page of their own, since the harness picks the viewer
+// by path. The palette's own requests are answered as whoever the page belongs to.
+$palettePages = [];
+if (getenv('SVC_LAYOUT_PALETTE') === '1') {
+    $unbroken = str_repeat('SyntheticPaletteProbe', 5);
+    $project->forceFill(['is_visible_to_client' => true])->save();
+    $invoice->forceFill(['is_visible_to_client' => true])->save();
+
+    $paletteMember = User::factory()->create(['name' => 'Synthetic Palette Member', 'email' => 'layout-palette-member@example.test']);
+    $workspace->memberships()->create(['user_id' => $paletteMember->id, 'role' => 'member']);
+    ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $paletteMember->id, 'role' => 'contributor']);
+
+    ClientExpense::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'created_by_user_id' => $owner->id,
+        'spent_on' => $date, 'amount' => 123456, 'currency' => 'USD', 'status' => 'draft', 'description' => 'Probe expense '.$unbroken,
+    ]);
+    ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'title' => 'Probe agreement '.$unbroken,
+        'status' => 'active', 'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly', 'is_visible_to_client' => true,
+    ]);
+    ClientProposal::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'title' => 'Probe proposal '.$unbroken,
+        'status' => 'sent', 'currency' => 'USD', 'is_visible_to_client' => true,
+    ]);
+    $paletteFile = ClientAttachment::query()->create([
+        'workspace_id' => $workspace->id, 'record_type' => 'project', 'record_public_id' => $project->public_id, 'object_key' => 'synthetic/palette-probe',
+        'original_filename' => 'Probe-'.$unbroken.'.pdf', 'media_type' => 'application/pdf', 'bytes' => 1, 'sha256' => str_repeat('b', 64),
+        'uploader_id' => $owner->id, 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+    ]);
+    DB::table('client_attachments')->where('id', $paletteFile->id)->update(['is_visible_to_client' => true]);
+    ClientTimeEntry::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $paletteMember->id,
+        'worked_on' => $date, 'minutes' => 90, 'description' => 'Probe internal note '.$unbroken, 'client_visible_description' => 'Probe client summary '.$unbroken,
+        'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved',
+    ]);
+    ClientContact::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'first_name' => 'Probe'.$unbroken, 'last_name' => 'Contact',
+    ]);
+    $probePortalUser = User::factory()->create([
+        'name' => 'Probe portal user '.$unbroken, 'email' => 'probe-portal-user@client.example.test',
+        'oauth_provider' => 'synthetic', 'oauth_subject' => 'synthetic-palette-portal-user',
+    ]);
+    app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $company, $probePortalUser, PortalAccessScope::Company);
+    foreach ([['client', $company->public_id], ['project', $project->public_id], ['invoice', $invoice->public_id]] as $index => [$kind, $publicId]) {
+        PaletteRecent::query()->create([
+            'workspace_id' => $workspace->id, 'user_id' => $owner->id, 'kind' => $kind, 'record_public_id' => $publicId,
+            'opened_at' => now()->subMinutes($index + 1),
+        ]);
+    }
+
+    $palettePages = [
+        'palette_owner' => route('workspaces.dashboard', $workspace, absolute: false),
+        'palette_owner_client' => route('clients.show', [$workspace, $company], absolute: false),
+        'palette_member' => route('clients.time', [$workspace, $company], absolute: false),
+        'palette_portal' => route('portal.show', $company, absolute: false),
+        'palette_viewers' => [
+            route('workspaces.dashboard', $workspace, absolute: false) => $owner->id,
+            route('clients.show', [$workspace, $company], absolute: false) => $owner->id,
+            route('clients.time', [$workspace, $company], absolute: false) => $paletteMember->id,
+            route('portal.show', $company, absolute: false) => $squarePortalContact->id,
+        ],
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
     ...$autopayPages,
     ...$lightPages,
     ...$paymentPages,
     ...$reviewerPages,
     ...$workPortal,
+    ...$palettePages,
     ...$sharedPages,
     ...$documentPages,
     'selector' => route('workspaces.index', absolute: false),

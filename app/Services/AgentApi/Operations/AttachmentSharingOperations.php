@@ -69,7 +69,8 @@ final class AttachmentSharingOperations
                 'method' => $method, 'scopes' => $scopes, 'summary' => $summary,
                 'description' => ($id === 'collaboration.attachments.list' ? 'Trusted first-party sessions may request presentation=native or presentation=portal to receive data as NativeAttachmentPanel with finished URLs. Portal narrows to client-safe metadata and controls even for owner previews. Bearer/MCP callers cannot select this representation. ' : '').($collaboration
                     ? 'Current exact company, parent and file access is required. Portal audiences see only effectively shared files. Publishing requires a current workspace owner/admin or project owner/manager; Agent identities with Portal access cannot write. '
-                    : 'Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. ')
+                    : 'Workspace managers only, on the six existing generic upload parent types. Exact current parent and file access is required. '
+                    .(str_starts_with($id, 'attachments.visibility.') ? 'Expense receipts are also accepted here, for sharing only: a receipt is private until shared, and a client opens it only when the expense is billed on an invoice they can see. ' : ''))
                     .($write ? 'Attachment sharing and the retained privacy latch must be enabled. Uploads start private. Mutations reauthorize current roles and captured versions, including receipt replay. File sharing never changes parent content or sharing.'
                         : 'This read remains available when sharing writers are disabled and performs no durable mutation.'),
                 'parameters' => $parameters,

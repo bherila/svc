@@ -140,7 +140,6 @@ export function PortalAutopayCard({
                         id="autopay-heading"
                         role="heading"
                         aria-level={2}
-                        className="text-lg"
                     >
                         Autopay
                     </CardTitle>
@@ -246,6 +245,7 @@ export function PortalAutopayCard({
                         autopay.wording !== null ? (
                             <div>
                                 <Button
+                                    variant="outline"
                                     type="button"
                                     onClick={() => setDialog('on')}
                                 >
@@ -630,6 +630,12 @@ export function PortalInvoiceAutopayCard({
                     body: `Autopay is skipped for this one. Pay it here${autopay.due_on === null ? '' : ` by ${formatDay(autopay.due_on)}`}.`,
                     tone: 'plain',
                 };
+            case 'resolved_not_charged':
+                return {
+                    title: 'This invoice won’t be charged automatically',
+                    body: `Your card was not charged for this one. Pay it here${autopay.due_on === null ? '' : ` by ${formatDay(autopay.due_on)}`}.`,
+                    tone: 'plain',
+                };
             default:
                 return {
                     title: statusLabel(autopay.state),
@@ -643,6 +649,7 @@ export function PortalInvoiceAutopayCard({
         'over_limit',
         'no_default_method',
         'skipped',
+        'resolved_not_charged',
     ].includes(autopay.state);
 
     return (
@@ -672,13 +679,12 @@ export function PortalInvoiceAutopayCard({
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
                     {payable && (
-                        <Button
-                            render={<a href={payHref} />}
-                            variant="default"
-                            size="sm"
+                        <a
+                            href={payHref}
+                            className="text-sm font-medium underline underline-offset-4"
                         >
                             Pay {amount}
-                        </Button>
+                        </a>
                     )}
                     <a
                         href={autopay.manage_href}

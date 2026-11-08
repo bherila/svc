@@ -152,9 +152,19 @@ final class AttachmentSharingActionTest extends TestCase
         $this->assertSame(['company', 'expense', 'project', 'task', 'proposal', 'agreement', 'invoice'], AttachmentRecordResolver::uploadableTypes());
         $expense = $this->recordSyntheticExpense($workspace, $company, recordedBy: $owner);
         $receipt = app(AttachmentStorageService::class)->store($workspace, $expense, $this->upload(), $owner);
-        $this->assertRefused(422, fn () => $action->setVisibility($owner, $workspace, $receipt->public_id,
-            $this->change($receipt, $expense, true), AttachmentMutationOrigin::Native, new AttachmentParentReference('expense', $expense->public_id)));
+        // An expense receipt is created private and only a current manager shares it.
+        $this->assertFalse($receipt->is_visible_to_client);
+        $receiptScope = new AttachmentParentReference('expense', $expense->public_id);
+        $this->assertRefused(403, fn () => $action->setVisibility($publisher, $workspace, $receipt->public_id,
+            $this->change($receipt, $expense, true), AttachmentMutationOrigin::Native, $receiptScope));
+        $this->assertRefused(403, fn () => $action->setVisibility($owner, $workspace, $receipt->public_id,
+            $this->change($receipt, $expense, true), AttachmentMutationOrigin::Agent, $receiptScope));
         $this->assertFalse($receipt->fresh()->is_visible_to_client);
+        $sharedReceipt = $action->setVisibility($owner, $workspace, $receipt->public_id,
+            $this->change($receipt, $expense, true), AttachmentMutationOrigin::Native, $receiptScope);
+        $this->assertTrue($sharedReceipt->is_visible_to_client);
+        $this->assertFalse($action->setVisibility($owner, $workspace, $receipt->public_id,
+            $this->change($sharedReceipt, $expense, false), AttachmentMutationOrigin::Native, $receiptScope)->is_visible_to_client);
     }
 
     public function test_comment_authorship_or_contributor_status_does_not_grant_file_publishing(): void

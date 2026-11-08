@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Billing\Autopay\AutopayConsentService;
 use App\Services\Billing\Autopay\AutopayReader;
 use App\Services\Billing\Autopay\PortalAutopayAuthority;
+use App\Services\Billing\PortalPaymentMethodService;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AutopayPresenter;
@@ -41,6 +42,7 @@ final class PortalBillingController extends Controller
         private readonly AutopayReader $reader,
         private readonly AutopayPresenter $presenter,
         private readonly PaymentConnectionResolver $connections,
+        private readonly PortalPaymentMethodService $methodManagement,
     ) {}
 
     public function show(Request $request, ClientCompany $clientCompany): Response
@@ -59,6 +61,7 @@ final class PortalBillingController extends Controller
             ->whereIn('status', InvoiceStatus::charged())
             ->max('total_amount');
         $method = $this->reader->defaultMethod($workspace->id, $clientCompany->id);
+        ['management' => $management, 'publishable_key' => $publishableKey] = $this->methodManagement->access($workspace, $clientCompany, $viewer);
 
         return Inertia::render('portal/billing', [
             'company' => AgentClientPresenter::identity($clientCompany),
@@ -87,6 +90,13 @@ final class PortalBillingController extends Controller
                 'suggested_limit' => $this->suggestedLimit($largest),
                 'largest_invoice' => $largest > 0 ? $largest : null,
             ],
+            // Finished destinations, or null for a viewer who may not use them.
+            'payment_method_setup' => $management->mayAdd() && $publishableKey !== null ? [
+                'setup_href' => route('portal.payment-methods.setup', $clientCompany, absolute: false),
+                'confirm_href' => route('portal.payment-methods.confirm', $clientCompany, absolute: false),
+                'publishable_key' => $publishableKey,
+            ] : null,
+            'payment_methods_notice' => $management->notice($workspace->name),
             'payment_methods' => ClientStripePaymentMethod::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $clientCompany->id)
@@ -101,7 +111,12 @@ final class PortalBillingController extends Controller
                     'exp_month' => $saved->exp_month,
                     'exp_year' => $saved->exp_year,
                     'is_default' => $saved->is_default,
+                    'default_href' => $management->mayChange() && ! $saved->is_default
+                        ? route('portal.payment-methods.default', [$clientCompany, $saved->public_id], absolute: false) : null,
+                    'remove_href' => $management->mayChange()
+                        ? route('portal.payment-methods.destroy', [$clientCompany, $saved->public_id], absolute: false) : null,
                 ])->values()->all(),
+            'method_result' => session('payment_method_result'),
             'result' => session('autopay_result'),
         ]);
     }

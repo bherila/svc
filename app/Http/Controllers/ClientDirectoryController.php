@@ -982,9 +982,10 @@ class ClientDirectoryController extends Controller
             ],
             // Autopay (#636): the switch, its consent record and upcoming
             // charges. Turning it on and off goes through the API, like the cadence.
-            'autopay' => app(AutopayPresenter::class)->company($workspace, $clientCompany) + [
+            'autopay' => app(AutopayPresenter::class)->company($workspace, $clientCompany, forProvider: true) + [
                 'update_href' => route('agent-api.v1.clients.autopay.update', [$workspace, $clientCompany->public_id], absolute: false),
                 'portal_href' => route('portal.billing', $clientCompany, absolute: false),
+                'payments_href' => route('workspaces.payments', [$workspace], absolute: false),
                 'stripe_connected' => app(PaymentConnectionResolver::class)->stripe($workspace) !== null,
                 'attestation_min' => AutopayWording::ATTESTATION_MIN,
                 'attestation_max' => AutopayWording::ATTESTATION_MAX,
@@ -995,9 +996,13 @@ class ClientDirectoryController extends Controller
     /** @return array<string, mixed> */
     private function autopayOf(Workspace $workspace, ClientInvoice $invoice): array
     {
-        $autopay = app(AutopayPresenter::class)->invoice($workspace, $invoice);
+        $autopay = app(AutopayPresenter::class)->invoice($workspace, $invoice, forProvider: true);
 
         return $autopay + [
+            'resolve_href' => $autopay['can_resolve'] === true
+                ? route('agent-api.v1.invoices.autopay.resolve', [$workspace, $invoice->public_id], absolute: false)
+                : null,
+            'payments_href' => route('workspaces.payments', [$workspace], absolute: false),
             'skip_href' => $autopay['can_skip'] === true
                 ? route('agent-api.v1.invoices.autopay.skip', [$workspace, $invoice->public_id], absolute: false)
                 : null,

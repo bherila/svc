@@ -37,7 +37,7 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}', [InvoiceController::class, 'show'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('svc.billing.invoices.show');
-    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/stripe-payment-intent', [InvoiceController::class, 'stripePaymentIntent'])->name('svc.billing.invoices.stripe-payment-intent');
+    Route::post('/workspaces/{workspace}/invoices/{clientInvoice}/stripe-payment-intent', [InvoiceController::class, 'stripePaymentIntent'])->middleware('throttle:payment-intents')->name('svc.billing.invoices.stripe-payment-intent');
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}/pdf', [InvoiceController::class, 'pdf'])->name('svc.billing.invoices.pdf');
     Route::get('/workspaces/{workspace}/invoices/{clientInvoice}/corrections/{correction}', [InvoiceController::class, 'correction'])->name('svc.billing.invoices.corrections.show');
 

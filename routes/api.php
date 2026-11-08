@@ -384,6 +384,7 @@ Route::prefix('v1')
             'companies.autopay.set' => ['setCompany', 'client'],
             'invoices.autopay.get' => ['invoice', 'invoice'],
             'invoices.autopay.skip' => ['skip', 'invoice'],
+            'invoices.autopay.resolve' => ['resolve', 'invoice'],
         ] as $operationId => [$action, $id]) {
             $workspaceOperation($operationId, [AgentAutopayController::class, $action])->whereUuid($id);
         }

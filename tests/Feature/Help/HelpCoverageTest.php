@@ -27,6 +27,7 @@ class HelpCoverageTest extends TestCase
         'workspaces.operations' => 'redirect to the dashboard, the retired Operations page',
         'portal.files.parent.download' => 'a file download',
         'portal.files.collaboration.download' => 'a file download',
+        'portal.files.receipt.download' => 'a file download',
         'collaboration.comments.index' => 'a fragment of a discussion page',
         'portal.collaboration.comments.index' => 'a fragment of a discussion page',
     ];

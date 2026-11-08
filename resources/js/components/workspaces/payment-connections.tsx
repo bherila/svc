@@ -1,5 +1,10 @@
 import { router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import {
+    FieldError,
+    fieldErrorProps,
+    useFocusFirstInvalid,
+} from '@/components/form-field';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -17,6 +22,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { WebhookHealth } from '@/components/workspaces/webhook-health';
+import type { WebhookHealthView } from '@/components/workspaces/webhook-health';
 import { apiRequest } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 
@@ -29,6 +36,8 @@ export interface PaymentConnectionView {
     reused_from: string | null;
     usable: boolean;
     webhook_url: string | null;
+    /** Stripe only, and only for a connection with a key of its own. */
+    webhook?: WebhookHealthView | null;
 }
 
 export interface PaymentProcessorView {
@@ -58,7 +67,10 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
     const [source, setSource] = useState('');
     const [errors, setErrors] = useState<Errors>({});
     const [busy, setBusy] = useState(false);
+    const formRef = useRef<HTMLFormElement>(null);
     const [replacing, setReplacing] = useState(false);
+    useFocusFirstInvalid(formRef, JSON.stringify(errors));
+
     const connection = view.connection;
     const square = view.processor === 'square';
 
@@ -215,8 +227,13 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                     </dl>
                 )}
 
+                {connection?.webhook != null && !replacing && (
+                    <WebhookHealth health={connection.webhook} />
+                )}
+
                 {showForm && (
                     <form
+                        ref={formRef}
                         className="grid min-w-0 grid-cols-1 gap-3"
                         onSubmit={(event) => {
                             event.preventDefault();
@@ -231,6 +248,10 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                             </Label>
                             <Input
                                 id={`${view.processor}-secret`}
+                                {...fieldErrorProps(
+                                    `${view.processor}-secret`,
+                                    errors.secret,
+                                )}
                                 type="password"
                                 autoComplete="off"
                                 value={secret}
@@ -239,12 +260,9 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                 }
                             />
                             {errors.secret !== undefined && (
-                                <p
-                                    role="alert"
-                                    className="text-sm text-destructive"
-                                >
+                                <FieldError id={`${view.processor}-secret`}>
                                     {errors.secret}
-                                </p>
+                                </FieldError>
                             )}
                         </div>
                         {!square && (
@@ -254,6 +272,10 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                 </Label>
                                 <Input
                                     id="stripe-publishable"
+                                    {...fieldErrorProps(
+                                        'stripe-publishable',
+                                        errors.publishable_key,
+                                    )}
                                     autoComplete="off"
                                     placeholder="pk_live_… or pk_test_…"
                                     value={publishableKey}
@@ -272,12 +294,9 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                     the SetupIntents: Write permission.
                                 </p>
                                 {errors.publishable_key !== undefined && (
-                                    <p
-                                        role="alert"
-                                        className="text-sm text-destructive"
-                                    >
+                                    <FieldError id={'stripe-publishable'}>
                                         {errors.publishable_key}
-                                    </p>
+                                    </FieldError>
                                 )}
                             </div>
                         )}
@@ -289,18 +308,19 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                     </Label>
                                     <Input
                                         id="square-location"
+                                        {...fieldErrorProps(
+                                            'square-location',
+                                            errors.location_id,
+                                        )}
                                         value={locationId}
                                         onChange={(event) =>
                                             setLocationId(event.target.value)
                                         }
                                     />
                                     {errors.location_id !== undefined && (
-                                        <p
-                                            role="alert"
-                                            className="text-sm text-destructive"
-                                        >
+                                        <FieldError id={'square-location'}>
                                             {errors.location_id}
-                                        </p>
+                                        </FieldError>
                                     )}
                                 </div>
                                 <div className="grid min-w-0 grid-cols-1 gap-2">
@@ -337,6 +357,10 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                     </Label>
                                     <Input
                                         id="square-signature"
+                                        {...fieldErrorProps(
+                                            'square-signature',
+                                            errors.webhook_secret,
+                                        )}
                                         type="password"
                                         autoComplete="off"
                                         value={webhookSecret}
@@ -345,18 +369,16 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                         }
                                     />
                                     {errors.webhook_secret !== undefined && (
-                                        <p
-                                            role="alert"
-                                            className="text-sm text-destructive"
-                                        >
+                                        <FieldError id={'square-signature'}>
                                             {errors.webhook_secret}
-                                        </p>
+                                        </FieldError>
                                     )}
                                 </div>
                             </>
                         )}
                         <div className="flex flex-wrap gap-2">
                             <Button
+                                variant="outline"
                                 type="submit"
                                 disabled={busy || secret === ''}
                             >
@@ -394,7 +416,13 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                     setSource(value ?? '')
                                 }
                             >
-                                <SelectTrigger id={`${view.processor}-reuse`}>
+                                <SelectTrigger
+                                    id={`${view.processor}-reuse`}
+                                    {...fieldErrorProps(
+                                        `${view.processor}-reuse`,
+                                        errors.source,
+                                    )}
+                                >
                                     <SelectValue placeholder="Choose a connection" />
                                 </SelectTrigger>
                                 <SelectContent className="w-auto max-w-[min(28rem,calc(100vw-2rem))] min-w-(--anchor-width)">
@@ -410,12 +438,9 @@ function ProcessorCard({ view }: { view: PaymentProcessorView }) {
                                 </SelectContent>
                             </Select>
                             {errors.source !== undefined && (
-                                <p
-                                    role="alert"
-                                    className="text-sm text-destructive"
-                                >
+                                <FieldError id={`${view.processor}-reuse`}>
                                     {errors.source}
-                                </p>
+                                </FieldError>
                             )}
                             <div>
                                 <Button

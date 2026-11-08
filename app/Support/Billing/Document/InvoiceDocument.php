@@ -139,7 +139,7 @@ final readonly class InvoiceDocument
                 'blocks' => $this->appendix,
             ],
             'receipts' => $this->receipts === [] ? null : [
-                'intro' => InvoiceDocumentNotices::receiptsIntro(),
+                'intro' => InvoiceDocumentNotices::receiptsIntro($this->audience),
                 'receipt_count' => $this->receiptCount(),
                 'entries' => array_map(static fn (InvoiceReceiptEntry $entry): array => $entry->toArray(), $this->receipts),
             ],

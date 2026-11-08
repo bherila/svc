@@ -15,8 +15,24 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
+import { accessibilityFindingsBothThemes } from './layout/a11y.mjs';
 
 const paginationOnly = process.argv.includes('--pagination-only');
+const accessibilityFailures = [];
+
+// Every screenshot is also an accessibility check, in both themes: any axe
+// violation at any impact and any UI-consistency error fails the run.
+async function shoot(page, options) {
+    accessibilityFailures.push(
+        ...(await accessibilityFindingsBothThemes(
+            page,
+            path.basename(options.path ?? 'screenshot'),
+        )),
+    );
+
+    return page.screenshot(options);
+}
+
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 if (existsSync(path.join(root, 'public/hot'))) {
@@ -189,6 +205,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         const context = await browser.newContext({
             viewport: { width, height: 1080 },
             extraHTTPHeaders: headers,
+            reducedMotion: 'reduce',
         });
         const page = await context.newPage();
 
@@ -263,17 +280,17 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             }
 
             const panel = paginationOnly
-                ? page.getByRole('region', {
+                ? page.getByRole('group', {
                       name: 'Attached files',
                       exact: true,
                   })
                 : screen === 'agreementfiles'
-                  ? page.getByRole('region', {
+                  ? page.getByRole('group', {
                         name: 'Attached files',
                         exact: true,
                     })
                   : page
-                        .getByRole('region', {
+                        .getByRole('group', {
                             name: [
                                 'parentfiles',
                                 'portalprojectfiles',
@@ -323,7 +340,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                                         panel: await panel.innerText(),
                                     }) + '\n',
                                 );
-                                await page.screenshot({
+                                await shoot(page, {
                                     path: path.join(
                                         artifacts,
                                         `${screen}-failure-${width}.png`,
@@ -383,7 +400,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     expect(measured.document).toBeLessThanOrEqual(width);
                     expect(measured.nav).toBe(49);
                     expect(errors).toEqual([]);
-                    await page.screenshot({
+                    await shoot(page, {
                         animations: 'disabled',
                         path: path.join(
                             artifacts,
@@ -448,7 +465,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 requests,
                 `${screen} fetches seeded file data on mount`,
             ).toEqual([]);
-            await page.screenshot({
+            await shoot(page, {
                 animations: 'disabled',
                 path: path.join(artifacts, `${screen}-${width}.png`),
             });
@@ -503,7 +520,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 ).toBeEnabled();
                 await expect(checkbox).toBeDisabled();
                 await row.scrollIntoViewIfNeeded();
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(artifacts, `sharing-unknown-${width}.png`),
                 });
@@ -513,7 +530,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 await expect(checkbox).toBeEnabled();
                 expect(writes).toHaveLength(2);
                 expect(writes[1]).toEqual(writes[0]);
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(
                         artifacts,
@@ -530,13 +547,13 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     .filter({ has: page.locator('details') })
                     .first();
                 await comment.locator('summary').click();
-                const commentPanel = comment.getByRole('region', {
+                const commentPanel = comment.getByRole('group', {
                     name: 'Files',
                     exact: true,
                 });
                 await expect(commentPanel).toBeVisible();
                 await commentPanel.scrollIntoViewIfNeeded();
-                await page.screenshot({
+                await shoot(page, {
                     animations: 'disabled',
                     path: path.join(artifacts, `comment-files-${width}.png`),
                 });
@@ -556,6 +573,12 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         await context.close();
     }
 
+    if (accessibilityFailures.length > 0) {
+        throw new Error(
+            `Accessibility findings:\n${accessibilityFailures.join('\n')}`,
+        );
+    }
+
     writeFileSync(
         path.join(artifacts, 'results.json'),
         JSON.stringify({ results }, null, 2),
@@ -572,7 +595,16 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
     server?.kill();
 
     if (vite?.pid) {
-        process.kill(-vite.pid, 'SIGTERM');
+        try {
+            process.kill(-vite.pid, 'SIGTERM');
+        } catch (error) {
+            // ESRCH: Vite already exited (for example it refused to start), so
+            // there is nothing to stop; never mask the original failure.
+            if (error?.code !== 'ESRCH') {
+                console.error(error);
+                process.exitCode = 1;
+            }
+        }
     }
 
     rmSync(path.join(root, 'public/hot'), { force: true });

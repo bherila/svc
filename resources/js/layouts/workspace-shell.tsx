@@ -5,6 +5,7 @@ import { HelpPanel } from '@/components/help/help-panel';
 import { AccountMenu } from '@/components/navigation/account-menu';
 import { NewClientDialog } from '@/components/navigation/new-client-dialog';
 import { WorkspaceNavbar } from '@/components/navigation/workspace-navbar';
+import { SkipLink } from '@/components/skip-link';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
 import type {
@@ -57,6 +58,7 @@ export default function WorkspaceShell({
                 className="min-h-screen bg-background text-foreground"
                 data-appearance-bridge
             >
+                <SkipLink />
                 <header className="border-b border-border">
                     <div
                         className={cn(
@@ -81,7 +83,12 @@ export default function WorkspaceShell({
     // Off a workspace route entirely - the selector, the welcome page - there
     // is no workspace to be inside and nothing to render around the page.
     if (navigation === null || navigation === undefined) {
-        return <>{children}</>;
+        return (
+            <>
+                <SkipLink />
+                {children}
+            </>
+        );
     }
 
     return (
@@ -89,6 +96,7 @@ export default function WorkspaceShell({
             className="min-h-screen bg-background text-foreground"
             data-appearance-bridge
         >
+            <SkipLink />
             <WorkspaceNavbar
                 navigation={navigation}
                 activeModule={activeModule}
