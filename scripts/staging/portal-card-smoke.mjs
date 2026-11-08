@@ -33,7 +33,9 @@ const storageState = process.env.STAGING_STORAGE_STATE?.trim();
 const card = process.env.STAGING_TEST_CARD?.trim() || '4242'.repeat(4);
 
 if (base.protocol !== 'https:') {
-    throw new Error('STAGING_URL must be https; Stripe webhooks and the Payment Element need it.');
+    throw new Error(
+        'STAGING_URL must be https; Stripe webhooks and the Payment Element need it.',
+    );
 }
 
 if (!invoicePath?.startsWith('/portal/') || !storageState) {
@@ -84,8 +86,14 @@ try {
 
     while (!paid && Date.now() < deadline) {
         await page.reload();
+        // The invoice status is a paragraph whose whole text is "Paid" (shown in
+        // both the document header and the payment rail once paid). The
+        // "Paid" totals row is a <dt> and the rail's amount caption sits
+        // inside a longer paragraph, so neither matches before payment.
         paid = await page
-            .getByText('Paid', { exact: true })
+            .locator('p')
+            .filter({ hasText: /^\s*Paid\s*$/ })
+            .first()
             .isVisible()
             .catch(() => false);
 
