@@ -31,6 +31,9 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * which the deciding transaction, holding its rows' locks already, could only
  * take out of order. Nothing here runs from a queue.
  *
+ * Each rebuild runs in the generator's own transaction; nothing here opens
+ * one, so a decision with no draft to rebuild starts no transaction at all.
+ *
  * A refused rebuild (a buy-down settles the entry, a malformed draft) is
  * reported and left: the dispute still holds the row, and issuing the draft is
  * refused until it is settled ({@see DisputedRowsOnDraft}).
@@ -59,7 +62,7 @@ final class DisputedDraftRebuilder
             $this->attempt(fn () => $this->time->regenerate($draft, $workspace, $entryId));
         }
         foreach ($this->cadenceDraftsCarryingExpenses($workspaceId, $expenseIds) as $draft) {
-            $this->attempt(fn () => DB::transaction(fn () => $this->generated->regenerateDraftInvoice($draft)));
+            $this->attempt(fn () => $this->generated->regenerateDraftInvoice($draft));
         }
     }
 
@@ -84,7 +87,7 @@ final class DisputedDraftRebuilder
             ->orderBy('id')
             ->get();
         foreach ($entries as $entry) {
-            $this->attempt(fn () => DB::transaction(fn () => $this->time->regenerateCovering($workspace, $entry)));
+            $this->attempt(fn () => $this->time->regenerateCovering($workspace, $entry));
         }
 
         $expenses = $expenseIds === [] ? collect() : ClientExpense::query()
@@ -105,7 +108,7 @@ final class DisputedDraftRebuilder
                 ->orderBy('id')
                 ->get();
             foreach ($drafts as $draft) {
-                $this->attempt(fn () => DB::transaction(fn () => $this->generated->regenerateDraftInvoice($draft)));
+                $this->attempt(fn () => $this->generated->regenerateDraftInvoice($draft));
             }
         }
     }

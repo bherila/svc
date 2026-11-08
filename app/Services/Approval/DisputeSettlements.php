@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\BillingMaintenance;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\InvoiceStatus;
@@ -61,6 +62,9 @@ final class DisputeSettlements
         $reply = $this->reply($reply);
 
         return DB::transaction(function () use ($workspace, $entryId, $actor, $outcome, $reply, $expectedVersion): ClientTimeEntry {
+            // A time-entry writer: the maintenance share lock comes first, as
+            // for every other (docs/ux-overhaul.md 7b″, LockOrderConformanceTest).
+            BillingMaintenance::share($workspace->id);
             $entry = ClientTimeEntry::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('public_id', $entryId)
@@ -100,6 +104,7 @@ final class DisputeSettlements
         $reply = $this->reply($reply);
 
         return DB::transaction(function () use ($workspace, $expenseId, $actor, $outcome, $reply, $expectedVersion): ClientExpense {
+            BillingMaintenance::share($workspace->id);
             abort_unless($this->access->isWorkspaceManager($actor, $workspace), 403, 'Only a workspace owner or admin can settle a dispute on an expense.');
             $expense = ClientExpense::query()
                 ->where('workspace_id', $workspace->id)

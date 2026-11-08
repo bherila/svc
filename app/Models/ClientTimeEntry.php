@@ -7,6 +7,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Approval\ConsultantTimeRelease;
 use App\Support\Approval\DisputeHold;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredWorkDisposition;
@@ -506,6 +507,36 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             ->whereDoesntHave('invoiceLines', fn (Builder $lines): Builder => self::ownWorkspaceAllocation($lines)
                 ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
                     ->whereIn('client_invoices.status', InvoiceStatus::charged())));
+    }
+
+    /**
+     * Held work that would otherwise have billed: billable, disputed, not on a
+     * charged invoice, and either already approved in a mode this vendor
+     * invoices, or the consultant's own draft that generation would release
+     * ({@see ConsultantTimeRelease}). A draft lists these beside its deferred
+     * work, tagged, so it says what was left off and why
+     * (docs/ux-overhaul.md 7b″).
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeHeldThatWouldOtherwiseBill(Builder $query): Builder
+    {
+        return $query->heldForDispute()
+            ->where('is_billable', true)
+            ->where(fn (Builder $wouldBill): Builder => $wouldBill
+                ->where(fn (Builder $approved): Builder => $approved
+                    ->where('status', 'approved')
+                    ->where(fn (Builder $mode): Builder => $mode
+                        ->whereNull('subcontractor_billing_mode')
+                        ->orWhereIn('subcontractor_billing_mode', [
+                            SubcontractorBillingMode::FlatHourly->value,
+                            SubcontractorBillingMode::Retainer->value,
+                        ])))
+                ->orWhere(fn (Builder $consultant): Builder => $consultant
+                    ->where('status', 'draft')
+                    ->whereNull('subcontractor_billing_mode')
+                    ->whereNull('subcontractor_cost_amount')));
     }
 
     /**

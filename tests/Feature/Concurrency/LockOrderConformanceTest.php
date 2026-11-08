@@ -19,6 +19,7 @@ use App\Services\Access\PortalInvitations;
 use App\Services\Access\WorkspaceAccess;
 use App\Services\AgentApi\AgentInvoiceOperations;
 use App\Services\AgentApi\TimeEntryMutationService;
+use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
@@ -37,6 +38,7 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\StaffRole;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
@@ -111,6 +113,7 @@ final class LockOrderConformanceTest extends TestCase
     private const BILLING_WRITER_SITES = [
         'App\\Services\\AgentApi\\TimeEntryMutationService::approve',
         'App\\Services\\AgentApi\\TimeEntryMutationService::serialized',
+        'App\\Services\\Approval\\DisputeSettlements::settleTime',
         'App\\Services\\Billing\\AllocationService::group',
         'App\\Services\\Billing\\DeferredBuyDownAction::create',
         'App\\Services\\Billing\\InterimOverageGenerator::timeFingerprint',
@@ -304,6 +307,12 @@ final class LockOrderConformanceTest extends TestCase
         $split = $this->approvedEntry('2026-10-05', 180);
         app(TimeEntrySplitter::class)->splitEntry($split, 120);
         app(AllocationService::class)->recombineUnlinkedFragments($this->workspace, $this->company);
+
+        // Settling a client's dispute locks the entry after the maintenance
+        // share lock (docs/ux-overhaul.md 7b″).
+        $disputed = $this->approvedEntry('2026-10-06', 30);
+        ClientTimeEntry::query()->whereKey($disputed->id)->update(['client_disputed_at' => now()]);
+        app(DisputeSettlements::class)->settleTime($this->workspace, $disputed->public_id, $this->user, DisputeSettlement::Answered, 'Synthetic reply', AgentApiVersion::for($disputed->fresh()));
 
         $this->driveTheExpenseLifecycle();
         $this->driveTheAccessMutations();

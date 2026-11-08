@@ -219,6 +219,7 @@ final class CalendarDateCastTablesTest extends TestCase
                 'approved_at' => 'immutable_datetime',
                 'client_approved_at' => 'immutable_datetime',
                 'client_disputed_at' => 'immutable_datetime',
+                'client_dispute_settled_at' => 'immutable_datetime',
                 'submitted_at' => 'immutable_datetime',
             ],
         ];
