@@ -523,7 +523,7 @@ final class MigrationImpactInventoryTest extends TestCase
     /** @return array<string, int> */
     private function snapshot(): array
     {
-        // Schema::getTables works on both SQLite and MariaDB, unlike a sqlite_master query.
+        // Schema::getTableListing works on both SQLite and MariaDB, unlike a sqlite_master query.
         $tables = Schema::getTableListing(schemaQualified: false);
         $this->assertContains('workspace_payment_connections', $tables);
         $counts = [];
