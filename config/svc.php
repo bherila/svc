@@ -59,6 +59,13 @@ return [
         'transaction_url' => env('SVC_FINANCE_TRANSACTION_URL'),
     ],
 
+    // Synthetic staging data (Database\Seeders\StagingSeeder). Reserved-domain defaults; name the
+    // staging identity provider's test accounts to sign in as them. Never a real client.
+    'staging_seed' => [
+        'owner_email' => env('SVC_STAGING_SEED_OWNER_EMAIL', 'staging-owner@example.test'),
+        'portal_email' => env('SVC_STAGING_SEED_PORTAL_EMAIL', 'staging-portal@example.test'),
+    ],
+
     // Browser security headers (App\Http\Middleware\SecurityHeaders). The CSP is report-only
     // by design: there is deliberately no setting that enforces it. `csp_report_uri` is a
     // collector's https URL or an absolute path; unset sends no reports (the browser console shows them).
