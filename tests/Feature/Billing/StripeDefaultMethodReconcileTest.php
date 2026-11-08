@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspacePaymentConnection;
 use App\Services\Billing\StripePaymentMethodService;
+use App\Support\Billing\StripeEventMustBeRetried;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -267,6 +268,28 @@ final class StripeDefaultMethodReconcileTest extends TestCase
         $this->stripe['cus_synthetic_scene'] = 'pm_synthetic_new';
         $this->hook($payload)->assertOk();
         $this->assertDefault($new);
+    }
+
+    public function test_an_older_read_cannot_be_applied_after_a_newer_read_that_confirmed_the_default(): void
+    {
+        [$workspace, $company, $contact, $old] = $this->scene();
+        $this->turnAutopayOn($workspace, $company, $contact);
+        $service = app(StripePaymentMethodService::class);
+        // Request 1 starts reading while Stripe briefly has no default ...
+        $stale = $service->defaultBasis('cus_synthetic_scene');
+        $this->assertNotNull($stale);
+        // ... request 2 then reads Stripe holding the old default again and confirms it.
+        DB::transaction(fn () => $service->reconcileDefault('cus_synthetic_scene', 'pm_synthetic_old', $service->defaultBasis('cus_synthetic_scene'), 'evt_confirms'));
+        $this->assertDefault($old);
+
+        // Request 1's older "no default" read is refused and retried, never applied.
+        try {
+            DB::transaction(fn () => $service->reconcileDefault('cus_synthetic_scene', null, $stale, 'evt_stale'));
+            $this->fail('An older read must not be applied after a newer confirmation.');
+        } catch (StripeEventMustBeRetried) {
+        }
+        $this->assertDefault($old);
+        $this->assertNotNull($company->fresh()->autopay_enabled_at, 'Stripe holds a default, so autopay stays on.');
     }
 
     public function test_an_event_for_a_customer_svc_does_not_know_asks_stripe_nothing(): void

@@ -320,6 +320,11 @@ final class StripePaymentMethodService
             throw new StripeEventMustBeRetried('The new default Stripe payment method has not been synchronized yet.');
         }
         if ($current?->id === $next?->id) {
+            // Still a write of what SVC knows: a read begun before this one
+            // (say, a moment Stripe briefly had no default) must not be applied
+            // after it, so a confirming reconciliation moves the revision too.
+            $this->moveDefaultRevision($customer);
+
             return $workspace->id;
         }
 
