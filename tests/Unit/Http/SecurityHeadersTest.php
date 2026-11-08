@@ -12,10 +12,71 @@ use Tests\TestCase;
 #[CoversClass(SecurityHeaders::class)]
 final class SecurityHeadersTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // A null reaching a string function is a deprecation in PHP; make it fail the test so a
+        // missing setting is proven handled, not merely tolerated.
+        set_error_handler(static function (int $level, string $message): never {
+            throw new \ErrorException($message, 0, $level);
+        }, E_DEPRECATED);
+    }
+
     protected function tearDown(): void
     {
+        restore_error_handler();
         @unlink(public_path('hot'));
         parent::tearDown();
+    }
+
+    public function test_missing_settings_fall_back_to_the_documented_defaults(): void
+    {
+        config(['svc.security' => ['csp_report_uri' => null], 'bherila-auth.oauth_client.base_url' => null]);
+        $html = new Response('<p>x</p>', 200, ['Content-Type' => 'text/html']);
+
+        $headers = $this->pass('https://svc.example.test/x', $html)->headers;
+
+        $this->assertSame('max-age=31536000', $headers->get('Strict-Transport-Security'));
+        $policy = (string) $headers->get('Content-Security-Policy-Report-Only');
+        $this->assertStringStartsWith("default-src 'self'; script-src", $policy);
+        $this->assertStringEndsWith("form-action 'self'", $policy);
+        $this->assertStringNotContainsString('report-uri', $policy);
+    }
+
+    public function test_a_fractional_age_counts_as_its_whole_part(): void
+    {
+        config(['svc.security.hsts_max_age' => '0.5']);
+        $this->assertFalse($this->pass('https://svc.example.test/x')->headers->has('Strict-Transport-Security'));
+
+        config(['svc.security.hsts_max_age' => '90.9']);
+        $this->assertSame('max-age=90', $this->pass('https://svc.example.test/x')->headers->get('Strict-Transport-Security'));
+    }
+
+    public function test_a_response_without_a_content_type_gets_no_policy(): void
+    {
+        $response = new Response('x');
+        $response->headers->remove('Content-Type');
+
+        $this->assertFalse($this->pass('http://svc.example.test/x', $response)->headers->has('Content-Security-Policy-Report-Only'));
+    }
+
+    public function test_the_report_endpoint_extends_the_policy_it_does_not_replace_it(): void
+    {
+        config(['svc.security.csp_report_uri' => '/csp-reports', 'bherila-auth.oauth_client.base_url' => 'https://identity.example.test']);
+        $html = new Response('<p>x</p>', 200, ['Content-Type' => 'text/html']);
+
+        $policy = (string) $this->pass('http://svc.example.test/x', $html)->headers->get('Content-Security-Policy-Report-Only');
+
+        $this->assertStringStartsWith("default-src 'self'; script-src", $policy);
+        $this->assertStringEndsWith("form-action 'self' https://identity.example.test; report-uri /csp-reports", $policy);
+    }
+
+    public function test_surrounding_whitespace_in_the_hot_file_is_ignored(): void
+    {
+        file_put_contents(public_path('hot'), "\n  http://[::1]:5173 \n\n");
+
+        $this->assertStringContainsString('ws://[::1]:5173;', (new SecurityHeaders)->contentSecurityPolicy());
     }
 
     public function test_the_fixed_headers_are_set_on_any_response(): void

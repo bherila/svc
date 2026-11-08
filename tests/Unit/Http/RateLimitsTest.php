@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Http;
 
+use App\Providers\AppServiceProvider;
 use App\Support\Http\RateLimits;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -10,6 +11,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 #[CoversClass(RateLimits::class)]
+#[CoversClass(AppServiceProvider::class)]
 final class RateLimitsTest extends TestCase
 {
     public function test_every_named_limiter_is_registered_with_its_default_ceiling_per_minute(): void
@@ -70,12 +72,14 @@ final class RateLimitsTest extends TestCase
 
     public function test_attempts_ignore_settings_that_are_not_positive_numbers(): void
     {
-        foreach ([null, '', '0', '-3', 'many', 0, -1] as $bad) {
+        foreach ([null, '', '0', '0.5', '-3', 'many', 0, -1] as $bad) {
             config(['svc.rate_limits.invitations' => $bad]);
             $this->assertSame(30, RateLimits::attempts('invitations'), var_export($bad, true));
         }
         config(['svc.rate_limits.invitations' => '1']);
         $this->assertSame(1, RateLimits::attempts('invitations'));
+        config(['svc.rate_limits.invitations' => '12.9']);
+        $this->assertSame(12, RateLimits::attempts('invitations'));
         config(['svc.rate_limits.invitations' => 99]);
         $this->assertSame(99, RateLimits::attempts('invitations'));
     }

@@ -38,7 +38,9 @@ final class RateLimits
     {
         $configured = config('svc.rate_limits.'.$name);
 
-        return is_numeric($configured) && (int) $configured > 0 ? (int) $configured : self::DEFAULTS[$name];
+        $attempts = (int) $configured;
+
+        return is_numeric($configured) && $attempts > 0 ? $attempts : self::DEFAULTS[$name];
     }
 
     /** The signed-in person when there is one, otherwise the address. Sign-in is always per address. */

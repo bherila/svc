@@ -106,6 +106,7 @@ final class SecurityHeaders
         if (! is_file($hot)) {
             return ['http' => [], 'ws' => []];
         }
+        // @infection-ignore-all: a file is_file() confirmed but that cannot be read gives false, which trims to '' and is rejected below like any other non-address.
         $parts = parse_url(trim((string) file_get_contents($hot)));
         if (! is_array($parts) || ! in_array($parts['scheme'] ?? '', ['http', 'https'], true) || ! isset($parts['host'])) {
             return ['http' => [], 'ws' => []];
