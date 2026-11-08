@@ -24,11 +24,13 @@ export async function verify({ repository, sha, workflow = 'tests.yml', gateName
   }
 
   const response = await get(`${prefix}/actions/runs/${runs[0].id}/jobs?filter=latest&per_page=100`)
+
   if (!Array.isArray(response?.jobs) || response.jobs.length >= 100) {
     throw new Error('CI job inventory is incomplete.')
   }
 
   const gate = response.jobs.find((job) => job.name === gateName && job.head_sha === sha)
+
   if (!gate || gate.status !== 'completed' || gate.conclusion !== 'success') {
     throw new Error(`The newest ${workflow} run for ${sha} has no successful "${gateName}" job (state: ${gate ? `${gate.status}/${gate.conclusion}` : 'absent'}).`)
   }
@@ -46,6 +48,7 @@ function client(token) {
       headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
       signal: AbortSignal.timeout(15000),
     })
+
     if (!response.ok) {
       throw new Error(`GitHub CI verification failed with HTTP ${response.status}.`)
     }
@@ -57,9 +60,11 @@ function client(token) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const sha = await verify({ repository: process.env.GITHUB_REPOSITORY, sha: process.env.STAGING_SHA }, client(process.env.GH_TOKEN))
+
     if (process.env.GITHUB_OUTPUT) {
       appendFileSync(process.env.GITHUB_OUTPUT, `sha=${sha}\n`)
     }
+
     console.log(`CI gate verified for ${sha}.`)
   } catch (error) {
     console.error(`::error title=CI gate::${error.message}`)

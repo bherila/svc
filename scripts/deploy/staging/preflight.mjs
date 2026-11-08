@@ -48,6 +48,7 @@ export function check(env) {
   const problems = []
 
   const list = get('STAGING_MAIL_MAILER') === 'smtp' ? [...required, ...smtpOnly] : required
+
   for (const [name, kind, hint] of list) {
     if (get(name) === '') {
       problems.push(`${name} (${kind}) is missing: ${hint}`)
@@ -66,9 +67,10 @@ export function check(env) {
     ['STAGING_ENV_SOURCE', (v) => /^\.config\/[A-Za-z0-9._-]+\/deployment\.env$/.test(v) && !v.includes('..') && v !== '.config/svc/deployment.env', 'must be .config/<name>/deployment.env and not the production file'],
     ['STAGING_DEPLOY_DIR', (v) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(v) && !v.includes('..') && v !== 'svc-laravel', 'must be a plain directory name and not the production directory'],
   ]
+
   for (const [name, ok, message] of rules) {
     if (get(name) !== '' && !ok(get(name))) {
-      problems.push(`${name} is invalid: ${message}`)
+      problems.push(`${String(name)} is invalid: ${String(message)}`)
     }
   }
 
@@ -77,12 +79,15 @@ export function check(env) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const problems = check(process.env)
+
   if (problems.length > 0) {
     console.error('::error title=Staging is not configured::The staging deployment did not start. Nothing was deployed.')
     console.error('Provide these in the GitHub Environment "staging" (Settings > Environments > staging):')
+
     for (const problem of problems) {
       console.error(` - ${problem}`)
     }
+
     console.error('See docs/runbooks/staging.md for how to obtain each value.')
     process.exitCode = 1
   } else {
