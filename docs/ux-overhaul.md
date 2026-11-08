@@ -959,8 +959,18 @@ Settled by the product owner before a period away:
     eight kept. Titles and links are resolved again through the authorized
     queries on every read, and an id the viewer could not open is never stored.
     Only the palette records them (opening a record elsewhere does not), and
-    only clients, projects, invoices, tasks, expenses, agreements, proposals and
-    files.
+    only clients, projects, invoices, tasks, expenses, agreements, proposals,
+    files, contacts and portal users (managers only).
+  - **Recents resolve by exact id (2026-11-08 fix).** The contact and portal
+    membership queries ignored the requested ids and returned the first
+    matching contact or the newest membership, so a recent of either kind
+    resolved to the wrong record or none. Both now constrain by public id
+    (every other kind already did - audited: clients, projects, invoices,
+    tasks, expenses, agreements, proposals, files and time all go through
+    `SearchLookup::constrain`), and recording requires the authorized result to
+    be the same kind, workspace and id before anything is stored. Contacts and
+    portal users are now recentable; archived or deleted contacts and revoked
+    memberships drop out, and non-managers can neither record nor see them.
   - **Shortcuts.** Cmd/Ctrl+K toggles from anywhere except a rich-text editor
     (a chord types nothing). `/` and `?` never fire while typing in an input,
     textarea, select, contenteditable or ARIA text widget, with a held
