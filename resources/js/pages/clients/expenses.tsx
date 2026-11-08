@@ -308,8 +308,8 @@ export default function ClientExpenses({
                                                             .state ===
                                                             'disputed' && (
                                                             <Badge
-                                                                variant="destructive"
-                                                                className="ml-1"
+                                                                variant="secondary"
+                                                                className="ml-1 bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200"
                                                             >
                                                                 Disputed
                                                             </Badge>

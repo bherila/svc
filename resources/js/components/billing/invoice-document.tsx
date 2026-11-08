@@ -493,8 +493,8 @@ export function InvoiceDocument({
                                                 {entry.description ?? '—'}
                                                 {entry.disputed && (
                                                     <Badge
-                                                        variant="destructive"
-                                                        className="ml-2"
+                                                        variant="secondary"
+                                                        className="ml-2 bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200"
                                                         title="Held out of billing until the dispute is settled"
                                                     >
                                                         Disputed

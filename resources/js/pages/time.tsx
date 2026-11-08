@@ -56,7 +56,14 @@ function stateOf(entry: TimeEntry): {
     // A client's dispute outranks where the entry is: it is what the operator
     // has to act on (docs/ux-overhaul.md 7b″).
     if (entry.client_review.state === 'disputed') {
-        return { label: 'Disputed', variant: 'destructive' };
+        return {
+            label: 'Disputed',
+            variant: 'secondary',
+            // The destructive tint fails contrast on a badge; spelled out, as
+            // the other states are.
+            className:
+                'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
+        };
     }
 
     if (entry.client_review.state === 'written_off') {

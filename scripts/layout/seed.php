@@ -373,7 +373,7 @@ foreach ([
     // a note and a reply that will not break.
     ['description' => 'Synthetic disputed work', 'status' => 'approved', 'minutes' => 45,
         'client_visible_description' => 'Synthetic disputed client text', 'is_visible_to_client' => true,
-        'client_disputed_at' => now(), 'client_dispute_note' => 'Synthetic dispute note '.str_repeat('UnbrokenDisputeNote', 12)],
+        'client_disputed_at' => now(), 'client_dispute_note' => 'Synthetic operator-side question '.str_repeat('UnbrokenDisputeNote', 12)],
     ['description' => 'Synthetic written-off work', 'status' => 'approved', 'minutes' => 15, 'is_billable' => false,
         'client_visible_description' => 'Synthetic written-off client text', 'is_visible_to_client' => true,
         'client_dispute_settlement' => 'written_off', 'client_dispute_reply' => 'Synthetic reply '.str_repeat('UnbrokenDisputeReply', 12),
