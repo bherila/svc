@@ -190,14 +190,14 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
         $session = $this->initializeProgressive();
 
         $hidden = $this->callToolRaw($session, 'projects.members.list', ['workspace_id' => '00000000-0000-4000-8000-000000000000', 'project_id' => '00000000-0000-4000-8000-000000000000'])->assertOk();
-        $this->assertSame(-32601, $hidden->json('error.code'));
+        $this->assertSame(-32602, $hidden->json('error.code'));
         $unknown = $this->callToolRaw($session, 'no.such.tool', [])->assertOk();
         $this->assertSame($unknown->json('error.message'), str_replace('projects.members.list', 'no.such.tool', (string) $hidden->json('error.message')));
 
         $this->messages($this->callToolRaw($session, 'toolsets.enable', ['toolsets' => ['projects']]));
         $visible = $this->callToolRaw($session, 'projects.members.list', ['workspace_id' => '00000000-0000-4000-8000-000000000000', 'project_id' => '00000000-0000-4000-8000-000000000000'])->assertOk();
         // Found now; the call is authorized and validated like any other.
-        $this->assertNotSame(-32601, $visible->json('error.code'));
+        $this->assertStringNotContainsString('Tool not found', (string) $visible->json('error.message'));
     }
 
     public function test_a_toolset_the_connection_is_not_authorized_for_cannot_be_enabled(): void

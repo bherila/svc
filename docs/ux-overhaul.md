@@ -959,8 +959,18 @@ Settled by the product owner before a period away:
     eight kept. Titles and links are resolved again through the authorized
     queries on every read, and an id the viewer could not open is never stored.
     Only the palette records them (opening a record elsewhere does not), and
-    only clients, projects, invoices, tasks, expenses, agreements, proposals and
-    files.
+    only clients, projects, invoices, tasks, expenses, agreements, proposals,
+    files, contacts and portal users (managers only).
+  - **Recents resolve by exact id (2026-11-08 fix).** The contact and portal
+    membership queries ignored the requested ids and returned the first
+    matching contact or the newest membership, so a recent of either kind
+    resolved to the wrong record or none. Both now constrain by public id
+    (every other kind already did - audited: clients, projects, invoices,
+    tasks, expenses, agreements, proposals, files and time all go through
+    `SearchLookup::constrain`), and recording requires the authorized result to
+    be the same kind, workspace and id before anything is stored. Contacts and
+    portal users are now recentable; archived or deleted contacts and revoked
+    memberships drop out, and non-managers can neither record nor see them.
   - **Shortcuts.** Cmd/Ctrl+K toggles from anywhere except a rich-text editor
     (a chord types nothing). `/` and `?` never fire while typing in an input,
     textarea, select, contenteditable or ARIA text widget, with a held
@@ -1523,12 +1533,12 @@ Answers the owner gave in an interview on 2026-11-06.
     sets none on its own, so when a company has no default method the one just
     saved is made the default (Stripe, then locally). Later methods never take the
     default.
-  - **Default: Stripe first, mirror second, without moving the event marker.**
+  - **Default: Stripe first, mirror second.** (The event marker described here was
+    replaced by a revision; see "Default payment method: reconcile, do not order".)
     `invoice_settings.default_payment_method` is set through the adapter outside any
     transaction, then `adoptDefault` flips the local flag in a short transaction
-    (customer, then methods, the order the webhook uses). It deliberately does not
-    write `default_payment_method_event_*`: our clock is not Stripe's, and
-    advancing the marker could make a genuine later dashboard change look old. The
+    (customer, then methods, the order the webhook uses), moving the customer's
+    default revision so an in-flight reconciliation read is retried. The
     `customer.updated` for the same change then finds nothing to do. If the process
     dies between the two writes the webhook brings the record in line.
   - **Remove: detach at Stripe, then forget locally.** A method Stripe already
@@ -1620,6 +1630,37 @@ subscription. Decisions, made unattended and conservatively:
   there is nothing to sit beside; the check and fix are browser-only routes in
   `WebApiParityTest` with reasons.
 - **No Stripe calls on page load.** The page prints the stored result.
+
+### Default payment method: reconcile, do not order (2026-11-11)
+
+- **Bug.** `changeDefault` ordered customer events by `created` (one-second
+  precision) plus the first event id seen at that second, and recorded the
+  marker even for an event that changed nothing. Stripe does not guarantee
+  delivery order, so a metadata `customer.updated` with no default, delivered
+  first in the same second as the event setting the default, made SVC ignore
+  the real change: no default locally while Stripe had one, and autopay
+  switched off for a method that had not gone. Two non-null defaults could
+  likewise keep the earlier one.
+- **Decision.** `customer.updated` is a signal to reconcile. The webhook
+  service retrieves the customer from Stripe, outside the transaction, through
+  the route's access (the arriving connection's key; the environment key on the
+  legacy endpoint), and `StripePaymentMethodService::reconcileDefault` makes
+  SVC's default Stripe's current one. The event's snapshot is not read. Event
+  time and event id no longer order anything, and event ids are not sorted
+  lexically; `default_payment_method_event_*` are dropped.
+- **Stale reads.** A read begun before another write could rewind it, so a
+  per-customer `default_payment_method_revision` is read before Stripe is asked
+  and compared under the customer row lock (the existing customer-then-methods
+  order, no new lock). Every write of the default moves it, including the
+  portal's `adoptDefault`; an overtaken read is `StripeEventMustBeRetried`
+  (503, event left `received`), the refund path's semantics. A read that cannot
+  be made or understood, and a default method not yet synchronized, are
+  retried the same way. Event-id deduplication is unchanged.
+- **Autopay** turns off only when Stripe's current state has no default (or the
+  customer is deleted) and SVC held one, never from a stale snapshot.
+- **Isolation.** A customer is read only when its workspace is permitted by the
+  route; another workspace's customer is acknowledged and ignored with no
+  Stripe call, so a connection is never used for a workspace it does not serve.
 
 ### Migration impact inventory and explicit ownership (2026-11-08)
 
@@ -1747,3 +1788,21 @@ None. Answered on 2026-11-06:
    host requires naming the new host, either a participant workspace or a
    client-owned workspace created for the purpose. The project can't be left
    without a host. Until a handover happens, nothing about hosting changes.
+
+## MCP error codes after mcp/sdk 0.9
+
+Client-visible change from the `mcp/sdk` 0.9 upgrade (it follows the MCP
+specification, which SVC already advertised):
+
+- `tools/call` with a tool that is unknown, withheld by a deployment or
+  feature switch, or outside the connection's enabled toolsets now answers
+  `-32602` (Invalid params) with `Tool not found: "<name>"`. It was `-32601`.
+  `-32601` stays for methods the server does not implement (resource
+  subscriptions, logging, completion).
+- `prompts/get` with an unknown prompt answers `-32602`. It was `-32002`.
+- `resources/read` of an unknown or withheld resource still answers `-32002`
+  on the `2025-06-18` and `2025-11-25` revisions (`-32602` from `2026-07-28`).
+- A withheld tool is never dispatched and gets exactly the unknown-tool answer;
+  the toolset gate in `McpToolsetCallGateHandler` was changed to match.
+- `initialize` no longer carries `listChanged` from the SDK. SVC restores
+  `tools.listChanged` itself for progressive discovery.

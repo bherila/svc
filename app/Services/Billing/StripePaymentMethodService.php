@@ -9,13 +9,14 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\Autopay\AutopayConsentService;
+use App\Support\Billing\StripeDefaultBasis;
+use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
 
 final class StripePaymentMethodService
 {
@@ -192,10 +193,10 @@ final class StripePaymentMethodService
 
     /**
      * Make one saved method the company's only default, mirroring a change
-     * already made at Stripe. It does not touch the ordering marker that
-     * `customer.updated` events use, so Stripe's own event for this change - or
-     * an older one still in flight - is judged on its merits and converges on
-     * the same state. Run inside a transaction.
+     * already made at Stripe. It moves the default's revision, so a
+     * `customer.updated` reconciliation that read Stripe before this change is
+     * retried rather than applied over it; Stripe's own event for this change
+     * then finds nothing to do. Run inside a transaction.
      */
     public function adoptDefault(Workspace $workspace, ClientCompany $company, ClientStripePaymentMethod $saved, User $actor, string $occurrence): bool
     {
@@ -229,6 +230,7 @@ final class StripePaymentMethodService
             ->where('is_default', true)
             ->update(['is_default' => false, 'updated_at' => $this->clock->now($workspace)]);
         $next->forceFill(['is_default' => true])->save();
+        $this->moveDefaultRevision($customer);
         $this->activities->record($workspace, $company, 'payment_method.default_changed', $next, [
             'type' => $next->type,
             'brand' => $next->brand,
@@ -253,23 +255,56 @@ final class StripePaymentMethodService
         $method->delete();
     }
 
-    public function changeDefault(
+    /**
+     * What this customer's default is held at locally, before Stripe is asked
+     * what it is now. Null for a customer SVC does not know. No lock: it is read
+     * outside any transaction, and {@see reconcileDefault()} refuses the answer
+     * if the revision moved meanwhile.
+     */
+    public function defaultBasis(string $providerCustomerId): ?StripeDefaultBasis
+    {
+        $customer = ClientStripeCustomer::query()
+            ->where('stripe_customer_id', $providerCustomerId)
+            ->first(['id', 'workspace_id', 'default_payment_method_revision']);
+
+        return $customer instanceof ClientStripeCustomer
+            ? new StripeDefaultBasis($customer->workspace_id, $customer->default_payment_method_revision)
+            : null;
+    }
+
+    /**
+     * Make SVC's default the one Stripe reports for the customer right now.
+     *
+     * A customer event only says "something changed"; it is not an ordered
+     * stream (Stripe does not promise delivery order, and event time has
+     * one-second precision), so the caller reads the customer from Stripe and
+     * passes what it found. Every event for the customer then converges on the
+     * same state, whichever order they arrive in. `$stripeDefault` is Stripe's
+     * current `invoice_settings.default_payment_method`, null when it has none.
+     * Autopay turns off only when Stripe's current state has no default and SVC
+     * still held one.
+     *
+     * `$basis` is what {@see defaultBasis()} returned before that read. If the
+     * default was written since (another reconciliation, a portal change), the
+     * read may predate it and is not applied: the event is retried and reads
+     * afresh. Run inside a transaction; no Stripe call is made here.
+     *
+     * @throws StripeEventMustBeRetried
+     */
+    public function reconcileDefault(
         string $providerCustomerId,
-        ?string $providerMethodId,
+        ?string $stripeDefault,
+        StripeDefaultBasis $basis,
         string $occurrence,
-        int $providerCreatedAt,
     ): ?int {
         $tenant = $this->tenant($providerCustomerId);
         if ($tenant === null) {
             return null;
         }
         [$workspace, $company, $customer] = $tenant;
-        $lastCreatedAt = $customer->default_payment_method_event_created_at;
-        if ($lastCreatedAt !== null && ($lastCreatedAt > $providerCreatedAt
-            || ($lastCreatedAt === $providerCreatedAt
-                && $customer->default_payment_method_event_id !== null
-                && $customer->default_payment_method_event_id !== $occurrence))) {
-            return $workspace->id;
+        if ($customer->workspace_id !== $basis->workspaceId
+            || $customer->default_payment_method_revision !== $basis->revision) {
+            throw new StripeEventMustBeRetried('The default payment method changed while Stripe was being read.');
         }
         $methods = ClientStripePaymentMethod::query()
             ->where('workspace_id', $workspace->id)
@@ -278,14 +313,17 @@ final class StripePaymentMethodService
             ->tap(Locks::forUpdate())
             ->get();
         $current = $methods->firstWhere('is_default', true);
-        $next = $providerMethodId === null
+        $next = $stripeDefault === null
             ? null
-            : $methods->firstWhere('stripe_payment_method_id', $providerMethodId);
-        if ($providerMethodId !== null && ! $next instanceof ClientStripePaymentMethod) {
-            throw new RuntimeException('The new default Stripe payment method has not been synchronized yet.');
+            : $methods->firstWhere('stripe_payment_method_id', $stripeDefault);
+        if ($stripeDefault !== null && ! $next instanceof ClientStripePaymentMethod) {
+            throw new StripeEventMustBeRetried('The new default Stripe payment method has not been synchronized yet.');
         }
         if ($current?->id === $next?->id) {
-            $this->recordDefaultEvent($customer, $providerCreatedAt, $occurrence);
+            // Still a write of what SVC knows: a read begun before this one
+            // (say, a moment Stripe briefly had no default) must not be applied
+            // after it, so a confirming reconciliation moves the revision too.
+            $this->moveDefaultRevision($customer);
 
             return $workspace->id;
         }
@@ -299,7 +337,7 @@ final class StripePaymentMethodService
         if ($next instanceof ClientStripePaymentMethod) {
             $next->forceFill(['is_default' => true])->save();
         }
-        $this->recordDefaultEvent($customer, $providerCreatedAt, $occurrence);
+        $this->moveDefaultRevision($customer);
         if ($next === null) {
             $this->autopayLosesItsMethod($workspace, $company);
         }
@@ -316,6 +354,12 @@ final class StripePaymentMethodService
         ], occurrence: $occurrence);
 
         return $workspace->id;
+    }
+
+    /** Any write of the default moves the revision, so a Stripe read begun before it is never applied after it. */
+    private function moveDefaultRevision(ClientStripeCustomer $customer): void
+    {
+        $customer->forceFill(['default_payment_method_revision' => $customer->default_payment_method_revision + 1])->save();
     }
 
     /**
@@ -335,17 +379,6 @@ final class StripePaymentMethodService
                 Log::warning('Autopay could not record the removal of its default method.', ['company' => $company->public_id, 'error' => $failure->getMessage()]);
             }
         });
-    }
-
-    private function recordDefaultEvent(
-        ClientStripeCustomer $customer,
-        int $providerCreatedAt,
-        string $eventId,
-    ): void {
-        $customer->forceFill([
-            'default_payment_method_event_created_at' => max(0, $providerCreatedAt),
-            'default_payment_method_event_id' => $eventId,
-        ])->save();
     }
 
     /** @return array{Workspace, ClientCompany, ClientStripeCustomer}|null */

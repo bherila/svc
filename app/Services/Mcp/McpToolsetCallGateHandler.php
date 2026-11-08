@@ -39,7 +39,10 @@ final readonly class McpToolsetCallGateHandler implements RequestHandlerInterfac
         if ($request instanceof CallToolRequest) {
             $selection = McpToolsetSelection::fromSession($session->get(McpToolsetSelection::SESSION_KEY));
             if (! $this->visibility->isVisible($request->name, $selection)) {
-                return new Error($request->getId(), Error::METHOD_NOT_FOUND, (new ToolNotFoundException($request->name))->getMessage());
+                // The same answer the SDK gives for a name it does not know: -32602,
+                // as the specification requires, so a hidden tool is not told apart
+                // from an unknown one.
+                return Error::forInvalidParams((new ToolNotFoundException($request->name))->getMessage(), $request->getId());
             }
         }
 

@@ -266,6 +266,7 @@ final class AgentMcpServerFactory
             ->addRequestHandler(new McpToolsetInitializeHandler(
                 new InitializeHandler(new Configuration($serverInfo, $capabilities, $pageSize, $instructions)),
                 $initialSelection,
+                $capabilities,
             ))
             ->addRequestHandler(new McpToolsetListToolsHandler($registry, $visibility, $pageSize))
             ->setSession(new Psr16SessionStore($this->cache, CredentialSessionNamespace::prefix($request, 'svc_mcp_'), (int) config('agent_api.mcp_session_ttl_seconds')))
@@ -279,7 +280,7 @@ final class AgentMcpServerFactory
                     new ValidatedCallToolHandler(
                         new CallToolHandler($registry, new ReferenceHandler(app()), $logger, new OriginalShapeSchemaValidator($logger, $this->requestArguments)),
                         $registry,
-                        new SchemaValidator($logger),
+                        new SchemaValidator(logger: $logger),
                         $schemaIds,
                         $driftLogger,
                         'The SVC API returned a response that failed its output contract.',

@@ -39,7 +39,7 @@ final readonly class McpToolsetListToolsHandler implements RequestHandlerInterfa
         $selection = McpToolsetSelection::fromSession($session->get(McpToolsetSelection::SESSION_KEY));
         $tools = [];
         foreach ($this->registry->getTools()->references as $name => $tool) {
-            if ($tool instanceof Tool && $this->visibility->isVisible((string) $name, $selection)) {
+            if ($this->visibility->isVisible((string) $name, $selection)) {
                 $tools[(string) $name] = $tool;
             }
         }

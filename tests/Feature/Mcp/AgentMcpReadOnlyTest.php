@@ -226,7 +226,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'id' => 5,
             'method' => 'prompts/get',
             'params' => ['name' => 'log-time-across-projects', 'arguments' => []],
-        ], $limitedSession)->assertOk()->assertJsonPath('error.code', -32002);
+        ], $limitedSession)->assertOk()->assertJsonPath('error.code', -32602);
 
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         $this->actingAsMcp($user, [
@@ -330,7 +330,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             ],
         ], $session)
             ->assertOk()
-            ->assertJsonPath('error.code', -32601)
+            ->assertJsonPath('error.code', -32602)
             ->assertJsonMissingPath('result');
 
         $this->mcp([
@@ -767,14 +767,14 @@ final class AgentMcpReadOnlyTest extends TestCase
             'id' => 7,
             'method' => 'tools/call',
             'params' => ['name' => $unknownToolName, 'arguments' => ['query' => 'must-not-be-audited']],
-        ], $session)->assertOk()->assertJsonPath('error.code', -32601);
+        ], $session)->assertOk()->assertJsonPath('error.code', -32602);
         $unknownPromptName = 'unknown.prompt?credential=must-not-be-audited';
         $this->mcp([
             'jsonrpc' => '2.0',
             'id' => 8,
             'method' => 'prompts/get',
             'params' => ['name' => $unknownPromptName, 'arguments' => []],
-        ], $session)->assertOk()->assertJsonPath('error.code', -32002);
+        ], $session)->assertOk()->assertJsonPath('error.code', -32602);
 
         $events = array_values(array_filter(
             $audit->entries,
@@ -1152,7 +1152,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             'params' => ['name' => 'projects.list', 'arguments' => ['workspace_id' => (string) str()->uuid()]],
         ], $session)
             ->assertOk()
-            ->assertJsonPath('error.code', -32601)
+            ->assertJsonPath('error.code', -32602)
             ->assertJsonMissingPath('result');
 
         config(['agent_api.mcp_enabled' => false]);

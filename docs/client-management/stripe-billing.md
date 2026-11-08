@@ -69,7 +69,7 @@ sequenceDiagram
 ```
 
 - **Add**: only when the workspace's Stripe connection and publishable key are known (the portal pay path's check). The first saved method becomes the default.
-- **Make default**: `customers.update(invoice_settings.default_payment_method)`, then the local flag, exactly one per company; the `customer.updated` webhook converges on the same state.
+- **Make default**: `customers.update(invoice_settings.default_payment_method)`, then the local flag, exactly one per company; the `customer.updated` webhook reconciles to Stripe's current default and finds nothing to change.
 - **Remove**: `payment_methods.detach`, then the local soft delete. Removing the default turns autopay off after commit, as the webhook path does.
 
 ## Admin Surfaces
@@ -206,6 +206,7 @@ Refunds and disputes are recorded whatever the payment's finance reconciliation 
 
 - `payout.paid`, `payout.failed` and `payout.canceled`: store the payout for each workspace whose payments its balance transactions name, and record on each charged payment its payout, arrival date and fee (see [processor settlement and payouts](../finance-api.md#processor-settlement-and-payouts)). An automatic payout's balance transactions are read from Stripe; while Stripe cannot be read the endpoint answers 503 and Stripe's retry applies the event. A report older than the one stored changes nothing, so a payout reported failed after it was paid stays failed. A succeeded payment's charge time and fee are read after `payment_intent.succeeded`, best effort; `svc:finance:backfill-payouts` fills history.
 
+- `customer.updated`: a signal to reconcile, never an ordered change. SVC retrieves the customer from Stripe (outside any transaction, with the key of the connection the event arrived on, the environment key on the legacy endpoint) and makes `invoice_settings.default_payment_method` its one default, so events delivered in any order, or sharing a one-second timestamp, converge on Stripe's current state. The event's own snapshot is ignored. It only reads customers of workspaces connected to that account; another workspace's customer is acknowledged and ignored without a Stripe call. Autopay turns off only when Stripe's current state has no default (or the customer is deleted) and SVC still held one. A customer that cannot be read, a default method not synchronized yet, or a read overtaken by another write of the default (a per-customer revision, moved by every write, is checked under the customer's row lock) is answered `503` with the event still `received`, so Stripe delivers it again and the retry reads afresh.
 - `payment_method.attached`: syncs saved method metadata for the Stripe customer.
 - `payment_method.detached`: soft-deletes the saved method locally after resolving its tenant through the adapter index. An out-of-order detach creates a tombstone, so an older attach cannot resurrect an unusable method.
 - `setup_intent.succeeded`: syncs the saved method and records `payment_method.added`.
