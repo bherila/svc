@@ -1736,3 +1736,21 @@ None. Answered on 2026-11-06:
    host requires naming the new host, either a participant workspace or a
    client-owned workspace created for the purpose. The project can't be left
    without a host. Until a handover happens, nothing about hosting changes.
+
+## MCP error codes after mcp/sdk 0.9
+
+Client-visible change from the `mcp/sdk` 0.9 upgrade (it follows the MCP
+specification, which SVC already advertised):
+
+- `tools/call` with a tool that is unknown, withheld by a deployment or
+  feature switch, or outside the connection's enabled toolsets now answers
+  `-32602` (Invalid params) with `Tool not found: "<name>"`. It was `-32601`.
+  `-32601` stays for methods the server does not implement (resource
+  subscriptions, logging, completion).
+- `prompts/get` with an unknown prompt answers `-32602`. It was `-32002`.
+- `resources/read` of an unknown or withheld resource still answers `-32002`
+  on the `2025-06-18` and `2025-11-25` revisions (`-32602` from `2026-07-28`).
+- A withheld tool is never dispatched and gets exactly the unknown-tool answer;
+  the toolset gate in `McpToolsetCallGateHandler` was changed to match.
+- `initialize` no longer carries `listChanged` from the SDK. SVC restores
+  `tools.listChanged` itself for progressive discovery.
