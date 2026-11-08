@@ -1,4 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import {
+    FieldError,
+    fieldErrorProps,
+    useFocusFirstInvalid,
+} from '@/components/form-field';
 import { useClientChange } from '@/components/clients/use-client-change';
 import { useClientDraft } from '@/components/clients/use-client-draft';
 import {
@@ -70,9 +75,13 @@ function ContactForm({
         await refreshPageProps({ only: ['contacts'], requireSuccess: true });
     };
     const prefix = `contact-${contact?.id ?? 'new'}`;
+    const formRef = useRef<HTMLFormElement>(null);
+
+    useFocusFirstInvalid(formRef, Object.keys(change.errors).join(','));
 
     return (
         <form
+            ref={formRef}
             className="grid min-w-0 grid-cols-1 gap-4"
             onSubmit={(event) => {
                 event.preventDefault();
@@ -117,11 +126,15 @@ function ContactForm({
                             onChange={(event) =>
                                 form.setData(field, event.target.value)
                             }
+                            {...fieldErrorProps(
+                                `${prefix}-${field}`,
+                                change.errors[field]?.[0],
+                            )}
                         />
                         {change.errors[field]?.[0] && (
-                            <p className="text-sm text-destructive">
+                            <FieldError id={`${prefix}-${field}`}>
                                 {change.errors[field]?.[0]}
-                            </p>
+                            </FieldError>
                         )}
                     </div>
                 ))}
@@ -138,11 +151,15 @@ function ContactForm({
                     onChange={(event) =>
                         form.setData('notes', event.target.value)
                     }
+                    {...fieldErrorProps(
+                        `${prefix}-notes`,
+                        change.errors.notes?.[0],
+                    )}
                 />
                 {change.errors.notes?.[0] && (
-                    <p className="text-sm text-destructive">
+                    <FieldError id={`${prefix}-notes`}>
                         {change.errors.notes?.[0]}
-                    </p>
+                    </FieldError>
                 )}
             </div>
             {change.error && !confirming && (

@@ -257,7 +257,7 @@ export function PaymentMethodsCard({
                                                     variant="outline"
                                                     size="sm"
                                                     disabled={busy}
-                                                    aria-label={`Make ${method.label} the default`}
+                                                    aria-label={`Make default: ${method.label}`}
                                                     onClick={() =>
                                                         makeDefault(method)
                                                     }

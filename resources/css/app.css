@@ -77,7 +77,8 @@
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    /* 3:1 or better against --background and --card: a focus indicator. */
+    --ring: oklch(0.55 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -99,7 +100,7 @@
     --sidebar-accent: oklch(0.97 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar-ring: oklch(0.55 0 0);
 }
 
 .dark {
@@ -120,7 +121,7 @@
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --ring: oklch(0.68 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -136,7 +137,7 @@
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar-ring: oklch(0.68 0 0);
 }
 
 /* The original operations screens predate the token-based UI components.
@@ -205,6 +206,44 @@
     }
     html {
         @apply font-sans;
+    }
+
+    /*
+     * Every interactive element shows where focus is, in both themes. The
+     * components draw their own ring (`focus-visible:ring-3`); this is the floor
+     * for everything that does not - bare links, summaries, native checkboxes,
+     * scroll regions made focusable so a keyboard can scroll them. `--ring` is
+     * a mid grey in each theme, at least 3:1 against `--background` and
+     * `--card`, which is what a focus indicator needs.
+     */
+    :where(a, button, summary, input, textarea, select, [tabindex]):focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+    }
+
+    /*
+     * "Skip to content" moves focus to <main> with a script. That is a
+     * destination, not a control: it needs no indicator of its own.
+     */
+    main:focus {
+        outline: none;
+    }
+}
+
+/*
+ * A reader who asks for less motion gets none: no slide, fade, zoom or spin,
+ * and no smooth scrolling. Durations go to ~0 rather than the animation being
+ * removed so `animationend`/`transitionend` handlers (Base UI unmounts popups
+ * on them) still fire.
+ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }
 

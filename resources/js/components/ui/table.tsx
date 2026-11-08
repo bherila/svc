@@ -15,12 +15,42 @@ function Table({
    */
   scrollLabel?: string
 }) {
+  const container = React.useRef<HTMLDivElement>(null)
+  const [overflows, setOverflows] = React.useState(false)
+
+  // A box that scrolls must be reachable by keyboard (WCAG 2.1.1), and only
+  // one that scrolls: a tab stop on every table that fits would be noise. So
+  // the box becomes focusable while its content is wider than it is, whether
+  // or not the caller named it.
+  React.useEffect(() => {
+    const box = container.current
+
+    if (box === null || typeof ResizeObserver === "undefined") {
+      return
+    }
+
+    const measure = () => setOverflows(box.scrollWidth > box.clientWidth)
+    const observer = new ResizeObserver(measure)
+
+    measure()
+    observer.observe(box)
+
+    if (box.firstElementChild !== null) {
+      observer.observe(box.firstElementChild)
+    }
+
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <div
+      ref={container}
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
       {...(scrollLabel === undefined
-        ? {}
+        ? overflows
+          ? { tabIndex: 0 }
+          : {}
         : { role: "region", "aria-label": scrollLabel, tabIndex: 0 })}
     >
       <table
