@@ -93,8 +93,8 @@ final class SecurityHeadersTest extends TestCase
         $this->assertStringContainsString('connect-src \'self\' https://api.stripe.com;', $policy);
         $this->assertStringContainsString('frame-src https://js.stripe.com https://hooks.stripe.com;', $policy);
         $this->assertStringContainsString('img-src \'self\' data: blob: https://*.stripe.com;', $policy);
-        $this->assertStringContainsString('font-src \'self\' data: https://fonts.bunny.net;', $policy);
-        $this->assertStringContainsString("style-src 'self' 'unsafe-inline' https://fonts.bunny.net;", $policy);
+        $this->assertStringContainsString('font-src \'self\' data:;', $policy);
+        $this->assertStringContainsString("style-src 'self' 'unsafe-inline';", $policy);
         $this->assertStringContainsString("object-src 'none'; base-uri 'self'; form-action 'self' https://identity.example.test", $policy);
         $this->assertStringNotContainsString('ws://', $policy);
         $this->assertStringNotContainsString('report-uri', $policy);
