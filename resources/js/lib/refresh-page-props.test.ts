@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { refreshPageProps } from '@/lib/refresh-page-props';
+import { refreshPageProps, reloadPageProps } from '@/lib/refresh-page-props';
 
 const { reload, on } = vi.hoisted(() => ({ reload: vi.fn(), on: vi.fn() }));
 vi.mock('@inertiajs/react', () => ({ router: { reload, on } }));
@@ -148,3 +148,44 @@ it.each([false, true])(
         expect(finished).toHaveBeenCalledOnce();
     },
 );
+
+describe('reloadPageProps', () => {
+    it('resolves the page Inertia returned so callers derive what they observed from the value', async () => {
+        const refresh = reloadPageProps({ only: ['task'] });
+        const options = reload.mock.calls[0][0];
+        const page = { props: { task: { id: 'synthetic-task' } } };
+        options.onSuccess(page);
+        options.onFinish();
+        await expect(refresh).resolves.toBe(page);
+        expect(options.only).toEqual(['task']);
+    });
+
+    it('rejects when the read finishes without new props', async () => {
+        const refresh = reloadPageProps();
+        const refusal = expect(refresh).rejects.toThrow(
+            'Current page props could not be refreshed.',
+        );
+        reload.mock.calls[0][0].onFinish();
+        await refusal;
+    });
+
+    it('rejects a read cancelled by a before listener', async () => {
+        let before: (event: CustomEvent) => void = () => {};
+        on.mockImplementation((_name, callback) => {
+            before = callback;
+
+            return vi.fn();
+        });
+        reload.mockImplementationOnce(() => {
+            const event = new CustomEvent('inertia:before', {
+                cancelable: true,
+                detail: { visit: { method: 'get', url: window.location.href } },
+            });
+            before(event);
+            event.preventDefault();
+        });
+        await expect(reloadPageProps()).rejects.toThrow(
+            'Current page props could not be refreshed.',
+        );
+    });
+});
