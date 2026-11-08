@@ -312,6 +312,7 @@ export function CommandPalette() {
     // palette said "Nothing matched." about a search it had not yet made.
     const [isSearching, setIsSearching] = useState(false);
     const [highlight, setHighlight] = useState('');
+    const [highlightFor, setHighlightFor] = useState('');
     // One place closes the palette, and closing is what forgets the search.
     // Done here rather than in an effect watching `open` so that reopening
     // cannot briefly show the answer to the previous question between the
@@ -541,9 +542,12 @@ export function CommandPalette() {
                   ? `${results[0].kind}:${results[0].id}`
                   : '';
 
-    useEffect(() => {
+    // Reset during render, when the first row changes, rather than in an effect:
+    // an effect would paint one frame with the old highlight first.
+    if (highlightFor !== firstValue) {
+        setHighlightFor(firstValue);
         setHighlight(firstValue);
-    }, [firstValue, open]);
+    }
 
     const noMatches =
         trimmed !== '' &&
