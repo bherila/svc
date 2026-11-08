@@ -52,22 +52,27 @@ final class AttachmentDownloadHardeningTest extends TestCase
         $this->assertSame('text/plain', $disguised->media_type);
     }
 
-    /** @return array<string, array{string, string, string}> */
+    /** @return array<string, array{string, string}> */
     public static function activeContent(): array
     {
         return [
-            'html' => ['page.txt', '<!doctype html><html><body><script>alert(1)</script></body></html>', 'application/octet-stream'],
-            'svg' => ['logo.svg', '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>', 'application/octet-stream'],
-            'xml' => ['data.xml', '<?xml version="1.0"?><root><child/></root>', 'application/octet-stream'],
-            'plain text' => ['readme.txt', 'Synthetic readable text', 'text/plain; charset=utf-8'],
+            'html' => ['text/html', 'application/octet-stream'],
+            'svg' => ['image/svg+xml', 'application/octet-stream'],
+            'xml' => ['application/xml', 'application/octet-stream'],
+            'plain text' => ['text/plain', 'text/plain; charset=utf-8'],
         ];
     }
 
+    /**
+     * Uploads of active content are refused now (AttachmentTypePolicy), but a file stored before that
+     * policy can still exist: its download is served as opaque bytes.
+     */
     #[DataProvider('activeContent')]
-    public function test_content_a_browser_would_run_is_served_as_opaque_bytes(string $name, string $bytes, string $served): void
+    public function test_a_previously_stored_type_a_browser_would_run_is_served_as_opaque_bytes(string $storedType, string $served): void
     {
         [$owner, $workspace, $company] = $this->companyWorkspace();
-        $attachment = app(AttachmentStorageService::class)->store($workspace, $company, $this->realUpload($name, $bytes), $owner);
+        $attachment = app(AttachmentStorageService::class)->store($workspace, $company, $this->realUpload('legacy.txt', 'Synthetic legacy bytes'), $owner);
+        DB::table('client_attachments')->where('id', $attachment->id)->update(['media_type' => $storedType]);
 
         $this->actingAs($owner, 'web')
             ->get(route('svc.files.download', ['workspace' => $workspace, 'clientAttachment' => $attachment->public_id]))
@@ -125,7 +130,7 @@ final class AttachmentDownloadHardeningTest extends TestCase
     public function test_an_upload_over_the_size_limit_is_refused_before_it_is_stored(): void
     {
         [$owner, $workspace, $company] = $this->companyWorkspace();
-        $file = $this->realUpload('big.bin', '');
+        $file = $this->realUpload('big.dat', '');
         $handle = fopen($file->getPathname(), 'r+b');
         ftruncate($handle, 52428801);
         fclose($handle);

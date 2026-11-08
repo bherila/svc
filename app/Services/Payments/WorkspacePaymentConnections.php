@@ -12,6 +12,7 @@ use App\Support\Payments\PaymentProcessor;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -240,6 +241,46 @@ final class WorkspacePaymentConnections
 
                 return $created;
             });
+        } finally {
+            $this->forget();
+        }
+    }
+
+    /**
+     * Record a connection only if the workspace still has no active one at the
+     * processor; null, with nothing written, when it has. For the one writer that
+     * must never replace what a person entered meanwhile (the environment
+     * migration): the check is made inside the write's own transaction, and the
+     * unique active slot settles a connection that lands between that check and
+     * the insert, so a connection entered concurrently is never revoked.
+     *
+     * @param  array{external_account_id: string, display_name?: string|null, environment?: string|null, secret: string, webhook_secret?: string|null, webhook_endpoint_id?: string|null, location_id?: string|null, publishable_key?: string|null, endpoint_token?: string}  $account
+     */
+    public function connectIfNone(Workspace $workspace, PaymentProcessor $processor, ConnectionOrigin $origin, ?User $actor, #[SensitiveParameter] array $account): ?WorkspacePaymentConnection
+    {
+        if ($origin === ConnectionOrigin::Reused) {
+            throw new DomainException('A reused connection is made with reuse().');
+        }
+
+        $this->forget();
+
+        try {
+            return DB::transaction(function () use ($workspace, $processor, $origin, $actor, $account): ?WorkspacePaymentConnection {
+                $taken = WorkspacePaymentConnection::query()
+                    ->where('workspace_id', $workspace->id)
+                    ->where('processor', $processor->value)
+                    ->whereNull('revoked_at')
+                    ->exists();
+                if ($taken) {
+                    return null;
+                }
+                $created = $this->insert($workspace, $processor, $origin, $actor, $account);
+                $this->syncSquareHint($workspace->id);
+
+                return $created;
+            });
+        } catch (UniqueConstraintViolationException) {
+            return null;
         } finally {
             $this->forget();
         }

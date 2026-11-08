@@ -16,7 +16,7 @@ final class RateLimitsTest extends TestCase
 {
     public function test_every_named_limiter_is_registered_with_its_default_ceiling_per_minute(): void
     {
-        $this->assertSame(['sign-in', 'portal', 'portal-writes', 'payment-intents', 'invitations'], array_keys(RateLimits::DEFAULTS));
+        $this->assertSame(['sign-in', 'portal', 'portal-writes', 'payment-intents', 'invitations', 'csp-reports'], array_keys(RateLimits::DEFAULTS));
 
         foreach (RateLimits::DEFAULTS as $name => $default) {
             $limiter = RateLimiter::limiter($name);

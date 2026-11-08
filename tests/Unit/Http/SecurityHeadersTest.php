@@ -16,6 +16,9 @@ final class SecurityHeadersTest extends TestCase
     {
         parent::setUp();
 
+        // The application defaults to its own collector; the allowlist tests below compare the policy without it.
+        config(['svc.security.csp_report_uri' => null]);
+
         // A null reaching a string function is a deprecation, and reading a missing file a warning; make both fail the test so a
         // missing setting is proven handled, not merely tolerated.
         set_error_handler(static function (int $level, string $message): never {
@@ -69,14 +72,14 @@ final class SecurityHeadersTest extends TestCase
         $policy = (string) $this->pass('http://svc.example.test/x', $html)->headers->get('Content-Security-Policy-Report-Only');
 
         $this->assertStringStartsWith("default-src 'self'; script-src", $policy);
-        $this->assertStringEndsWith("form-action 'self' https://identity.example.test; report-uri /csp-reports", $policy);
+        $this->assertStringEndsWith("form-action 'self' https://identity.example.test; report-uri /csp-reports; report-to csp-endpoint", $policy);
     }
 
     public function test_surrounding_whitespace_in_the_hot_file_is_ignored(): void
     {
         file_put_contents(public_path('hot'), "\n  http://[::1]:5173 \n\n");
 
-        $this->assertStringContainsString('ws://[::1]:5173;', (new SecurityHeaders)->contentSecurityPolicy());
+        $this->assertStringContainsString('ws://[::1]:5173;', (new SecurityHeaders)->contentSecurityPolicy('N0nce'));
     }
 
     public function test_the_fixed_headers_are_set_on_any_response(): void
@@ -126,7 +129,7 @@ final class SecurityHeadersTest extends TestCase
         }
     }
 
-    public function test_the_policy_is_report_only_html_only_and_switchable(): void
+    public function test_the_policy_is_html_only_and_switchable(): void
     {
         $html = new Response('<p>x</p>', 200, ['Content-Type' => 'text/html; charset=UTF-8']);
         $headers = $this->pass('http://svc.example.test/x', $html)->headers;
@@ -136,8 +139,11 @@ final class SecurityHeadersTest extends TestCase
         $this->assertFalse($this->pass('http://svc.example.test/x', new Response('x', 200, ['Content-Type' => 'text/plain']))->headers->has('Content-Security-Policy-Report-Only'));
         $this->assertFalse($this->pass('http://svc.example.test/x', new Response('x', 200, ['Content-Type' => 'application/json; text/html']))->headers->has('Content-Security-Policy-Report-Only'));
 
-        config(['svc.security.csp_report_only' => false]);
-        $this->assertFalse($this->pass('http://svc.example.test/x', new Response('<p>x</p>', 200, ['Content-Type' => 'text/html']))->headers->has('Content-Security-Policy-Report-Only'));
+        config(['svc.security.csp_mode' => 'off']);
+        $off = $this->pass('http://svc.example.test/x', new Response('<p>x</p>', 200, ['Content-Type' => 'text/html']))->headers;
+        $this->assertFalse($off->has('Content-Security-Policy-Report-Only'));
+        $this->assertFalse($off->has('Content-Security-Policy'));
+        $this->assertFalse($off->has('Reporting-Endpoints'));
     }
 
     public function test_the_policy_text_is_exactly_the_documented_allowlist(): void
@@ -146,16 +152,16 @@ final class SecurityHeadersTest extends TestCase
 
         $this->assertSame(
             "default-src 'self'; "
-            ."script-src 'self' 'unsafe-inline' https://js.stripe.com; "
-            ."style-src 'self' 'unsafe-inline' https://fonts.bunny.net; "
+            ."script-src 'self' 'nonce-N0nce' https://js.stripe.com https://*.js.stripe.com; "
+            ."style-src 'self' 'unsafe-inline'; "
             ."img-src 'self' data: blob: https://*.stripe.com; "
-            ."font-src 'self' data: https://fonts.bunny.net; "
+            ."font-src 'self' data:; "
             ."connect-src 'self' https://api.stripe.com; "
-            .'frame-src https://js.stripe.com https://hooks.stripe.com; '
+            .'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; '
             ."object-src 'none'; "
             ."base-uri 'self'; "
             ."form-action 'self' https://identity.example.test:8443",
-            (new SecurityHeaders)->contentSecurityPolicy(),
+            (new SecurityHeaders)->contentSecurityPolicy('N0nce'),
         );
     }
 
@@ -163,47 +169,82 @@ final class SecurityHeadersTest extends TestCase
     {
         foreach (['', 'not a url', 'ftp://identity.example.test', '//identity.example.test', 'https:///path'] as $bad) {
             config(['bherila-auth.oauth_client.base_url' => $bad]);
-            $this->assertStringEndsWith("base-uri 'self'; form-action 'self'", (new SecurityHeaders)->contentSecurityPolicy(), $bad);
+            $this->assertStringEndsWith("base-uri 'self'; form-action 'self'", (new SecurityHeaders)->contentSecurityPolicy('N0nce'), $bad);
         }
 
         config(['bherila-auth.oauth_client.base_url' => 'http://localhost:9000']);
-        $this->assertStringEndsWith("form-action 'self' http://localhost:9000", (new SecurityHeaders)->contentSecurityPolicy());
+        $this->assertStringEndsWith("form-action 'self' http://localhost:9000", (new SecurityHeaders)->contentSecurityPolicy('N0nce'));
     }
 
     public function test_the_dev_server_joins_the_policy_only_while_its_hot_file_names_a_web_address(): void
     {
         file_put_contents(public_path('hot'), "http://[::1]:5173\n");
-        $policy = (new SecurityHeaders)->contentSecurityPolicy();
-        $this->assertStringContainsString("script-src 'self' 'unsafe-inline' https://js.stripe.com http://[::1]:5173;", $policy);
-        $this->assertStringContainsString("style-src 'self' 'unsafe-inline' https://fonts.bunny.net http://[::1]:5173;", $policy);
+        $policy = (new SecurityHeaders)->contentSecurityPolicy('N0nce');
+        $this->assertStringContainsString("script-src 'self' 'nonce-N0nce' https://js.stripe.com https://*.js.stripe.com http://[::1]:5173;", $policy);
+        $this->assertStringContainsString("style-src 'self' 'unsafe-inline' http://[::1]:5173;", $policy);
         $this->assertStringContainsString("img-src 'self' data: blob: https://*.stripe.com http://[::1]:5173;", $policy);
-        $this->assertStringContainsString("font-src 'self' data: https://fonts.bunny.net http://[::1]:5173;", $policy);
+        $this->assertStringContainsString("font-src 'self' data: http://[::1]:5173;", $policy);
         $this->assertStringContainsString("connect-src 'self' https://api.stripe.com http://[::1]:5173 ws://[::1]:5173;", $policy);
 
         file_put_contents(public_path('hot'), 'https://dev.example.test');
-        $this->assertStringContainsString('https://api.stripe.com https://dev.example.test wss://dev.example.test;', (new SecurityHeaders)->contentSecurityPolicy());
+        $this->assertStringContainsString('https://api.stripe.com https://dev.example.test wss://dev.example.test;', (new SecurityHeaders)->contentSecurityPolicy('N0nce'));
 
         foreach (['javascript:alert(1)', 'ftp://dev.example.test', 'nonsense', 'http://'] as $bad) {
             file_put_contents(public_path('hot'), $bad);
-            $this->assertStringNotContainsString('dev.example', (new SecurityHeaders)->contentSecurityPolicy(), $bad);
-            $this->assertStringContainsString("connect-src 'self' https://api.stripe.com;", (new SecurityHeaders)->contentSecurityPolicy(), $bad);
+            $this->assertStringNotContainsString('dev.example', (new SecurityHeaders)->contentSecurityPolicy('N0nce'), $bad);
+            $this->assertStringContainsString("connect-src 'self' https://api.stripe.com;", (new SecurityHeaders)->contentSecurityPolicy('N0nce'), $bad);
         }
 
         unlink(public_path('hot'));
-        $this->assertStringContainsString("connect-src 'self' https://api.stripe.com;", (new SecurityHeaders)->contentSecurityPolicy());
+        $this->assertStringContainsString("connect-src 'self' https://api.stripe.com;", (new SecurityHeaders)->contentSecurityPolicy('N0nce'));
     }
 
     public function test_a_report_endpoint_is_appended_only_when_well_formed(): void
     {
         foreach (['https://reports.example.test/csp', 'https://reports.example.test:8443/csp?x=1', '/csp-reports'] as $good) {
             config(['svc.security.csp_report_uri' => $good]);
-            $this->assertStringEndsWith("; report-uri {$good}", (new SecurityHeaders)->contentSecurityPolicy(), $good);
+            $this->assertStringEndsWith("; report-uri {$good}; report-to csp-endpoint", (new SecurityHeaders)->contentSecurityPolicy('N0nce'), $good);
         }
 
         foreach ([null, '', 'http://reports.example.test/csp', 'https://reports.example.test', 'https://reports.example.test/csp; script-src *', "/a\nb", '/a b', 'javascript:1', '//evil.example.test/x'] as $bad) {
             config(['svc.security.csp_report_uri' => $bad]);
-            $this->assertStringNotContainsString('report-uri', (new SecurityHeaders)->contentSecurityPolicy(), var_export($bad, true));
+            $this->assertStringNotContainsString('report-uri', (new SecurityHeaders)->contentSecurityPolicy('N0nce'), var_export($bad, true));
         }
+    }
+
+    public function test_the_reporting_endpoint_is_advertised_beside_the_policy_and_a_preset_one_is_kept(): void
+    {
+        $html = static fn (array $headers = []): Response => new Response('<p>x</p>', 200, ['Content-Type' => 'text/html'] + $headers);
+
+        config(['svc.security.csp_report_uri' => '/csp-reports']);
+        $this->assertSame('csp-endpoint="/csp-reports"', $this->pass('http://svc.example.test/x', $html())->headers->get('Reporting-Endpoints'));
+
+        config(['svc.security.csp_report_uri' => 'https://reports.example.test:8443/csp?x=1']);
+        $this->assertSame('csp-endpoint="https://reports.example.test:8443/csp?x=1"', $this->pass('http://svc.example.test/x', $html())->headers->get('Reporting-Endpoints'));
+
+        $this->assertSame('mine="/m"', $this->pass('http://svc.example.test/x', $html(['Reporting-Endpoints' => 'mine="/m"']))->headers->get('Reporting-Endpoints'));
+
+        foreach ([null, '', 'javascript:1', 'http://reports.example.test/csp'] as $unusable) {
+            config(['svc.security.csp_report_uri' => $unusable]);
+            $this->assertFalse($this->pass('http://svc.example.test/x', $html())->headers->has('Reporting-Endpoints'), var_export($unusable, true));
+        }
+
+        config(['svc.security.csp_report_uri' => '/csp-reports']);
+        $this->assertFalse($this->pass('http://svc.example.test/x')->headers->has('Reporting-Endpoints'), 'a non-HTML response advertises nothing');
+        config(['svc.security.csp_mode' => 'off']);
+        $this->assertFalse($this->pass('http://svc.example.test/x', $html())->headers->has('Reporting-Endpoints'));
+    }
+
+    public function test_enforce_mode_sets_the_enforcing_header_only_and_never_overwrites_a_chosen_one(): void
+    {
+        config(['svc.security.csp_mode' => 'enforce']);
+        $headers = $this->pass('http://svc.example.test/x', new Response('<p>x</p>', 200, ['Content-Type' => 'text/html']))->headers;
+        $this->assertStringStartsWith("default-src 'self'; script-src 'self' 'nonce-", (string) $headers->get('Content-Security-Policy'));
+        $this->assertFalse($headers->has('Content-Security-Policy-Report-Only'));
+
+        $kept = $this->pass('http://svc.example.test/x', new Response('<p>x</p>', 200, ['Content-Type' => 'text/html', 'Content-Security-Policy' => 'default-src none']))->headers;
+        $this->assertSame('default-src none', $kept->get('Content-Security-Policy'));
+        $this->assertFalse($kept->has('Content-Security-Policy-Report-Only'));
     }
 
     private function pass(string $url, ?SymfonyResponse $response = null): SymfonyResponse

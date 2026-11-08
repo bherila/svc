@@ -59,14 +59,24 @@ return [
         'transaction_url' => env('SVC_FINANCE_TRANSACTION_URL'),
     ],
 
-    // Browser security headers (App\Http\Middleware\SecurityHeaders). The CSP is report-only
-    // by design: there is deliberately no setting that enforces it. `csp_report_uri` is a
-    // collector's https URL or an absolute path; unset sends no reports (the browser console shows them).
+    // Synthetic staging data (Database\Seeders\StagingSeeder). Reserved-domain defaults; name the
+    // staging identity provider's test accounts to sign in as them. Never a real client.
+    'staging_seed' => [
+        'owner_email' => env('SVC_STAGING_SEED_OWNER_EMAIL', 'staging-owner@example.test'),
+        'portal_email' => env('SVC_STAGING_SEED_PORTAL_EMAIL', 'staging-portal@example.test'),
+    ],
+
+    // Browser security headers (App\Http\Middleware\SecurityHeaders). `csp_mode` is `off`,
+    // `report-only` (the default: violations are reported, nothing is blocked) or `enforce`.
+    // The retired SVC_CSP_REPORT_ONLY still works when SVC_CSP_MODE is unset: false meant
+    // "send no policy", so it maps to `off`; anything else maps to `report-only`.
+    // `csp_report_uri` is a collector's https URL or an absolute path; it defaults to SVC's own
+    // bounded collector (POST /api/csp-reports), and an empty value sends no reports.
     'security' => [
         // Seconds; 0 turns Strict-Transport-Security off. Never sent over plain HTTP, never preload.
         'hsts_max_age' => (int) env('SVC_HSTS_MAX_AGE', 31536000),
-        'csp_report_only' => (bool) env('SVC_CSP_REPORT_ONLY', true),
-        'csp_report_uri' => env('SVC_CSP_REPORT_URI'),
+        'csp_mode' => env('SVC_CSP_MODE', env('SVC_CSP_REPORT_ONLY') === false ? 'off' : 'report-only'),
+        'csp_report_uri' => env('SVC_CSP_REPORT_URI', '/api/csp-reports'),
     ],
 
     // Attempts per minute for the named limiters in App\Support\Http\RateLimits.
@@ -77,5 +87,6 @@ return [
         'portal-writes' => env('SVC_RATE_LIMIT_PORTAL_WRITES'),
         'payment-intents' => env('SVC_RATE_LIMIT_PAYMENT_INTENTS'),
         'invitations' => env('SVC_RATE_LIMIT_INVITATIONS'),
+        'csp-reports' => env('SVC_RATE_LIMIT_CSP_REPORTS'),
     ],
 ];

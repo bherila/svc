@@ -744,29 +744,81 @@ Every decision is recorded so a later change knows what it is undoing.
   `Permissions-Policy` (camera, microphone, geolocation, USB and FLoC off).
   Nothing in SVC is framed by another site, and SVC frames only Stripe's own
   payment frames, so `DENY` has no exception. `frame-ancestors` is not put in the
-  CSP: a report-only policy cannot enforce it, so `X-Frame-Options` carries it.
+  CSP: a report-only policy cannot enforce it (and `X-Frame-Options` carries it
+  in every mode), so it joins the policy only if that header is ever dropped.
 - `Strict-Transport-Security: max-age=31536000` only when the request is HTTPS.
   Decided: no `preload` (a preload listing is close to irreversible) and no
   `includeSubDomains` (other subdomains of the host are not this application's
-  to commit). `SVC_HSTS_MAX_AGE=0` turns it off.
-- **CSP is report-only and nothing enforces it.** There is deliberately no setting
-  that enforces it; enforcing is a later, separate decision once reports are
-  clean. Sent on HTML responses only. The allowlist was built from the code:
-  Stripe.js (`js.stripe.com`, `resources/js/lib/stripe-js.ts`), Stripe frames
-  (`js.stripe.com`, `hooks.stripe.com`), `api.stripe.com`, Stripe images, Bunny
-  Fonts (named in `vite.config.ts`), the identity provider's origin in
-  `form-action` (sign-out is a form post that redirects there), and the Vite dev
-  server (script, style, font, image, `ws:`) only while `public/hot` exists.
-  Square needs nothing: it is reached by redirect to its hosted page and by
-  server-side calls, never by a Square script, frame or browser connection. If a
-  Square web payments SDK is ever added, its origins join this list first.
-- `script-src` and `style-src` keep `'unsafe-inline'`: the appearance bootstrap in
-  `app.blade.php` is an inline script and component libraries write style
-  attributes. Enforcing needs a nonce pass first; that is why it stays report-only.
-- No `report-uri` unless `SVC_CSP_REPORT_URI` is set (an https URL or an absolute
-  path, validated). There is no collector endpoint in SVC, and adding one that
-  stores browser-supplied JSON is a product decision, so reports go to the
-  browser console until one is chosen.
+  to commit). `SVC_HSTS_MAX_AGE=0` turns it off. **Unchanged in this follow-up,
+  on purpose:** the header is host-only. `includeSubDomains` on `svc.bherila.net`
+  would cover only that host's own descendants (`*.svc.bherila.net`), never
+  `bherila.net` or its siblings, so it is the narrow case, but it still forces
+  HTTPS on every present and future descendant name; and `preload` / a wider
+  `includeSubDomains` on the parent domain are not SVC's to decide. Both wait for
+  a hostname inventory (every subdomain, what serves it, and whether each can
+  serve valid HTTPS for the whole max-age) that nobody has made yet.
+- **CSP has a real mode switch.** `SVC_CSP_MODE` is `off`, `report-only` (the
+  default, so deploying this changes no behaviour) or `enforce`; anything else is
+  read as `report-only`, so a typo neither disables the policy nor starts blocking
+  pages. **Bug fixed:** `SVC_CSP_REPORT_ONLY=false` used to *disable* the policy
+  rather than enforce it; the setting is retired. For compatibility it still maps
+  when `SVC_CSP_MODE` is unset (`false` -> `off`, as it behaved, anything else ->
+  `report-only`); new configuration should use `SVC_CSP_MODE`. Sent on HTML
+  responses only; JSON, API and webhook responses carry no page policy.
+- **Nonce.** `SecurityHeaders` draws a fresh nonce per request *before* the view
+  renders and passes it to `Vite::useCspNonce()`, so every `<script>` Vite emits
+  (React Refresh preamble, module entries, dev client) carries it; the inline
+  appearance bootstrap in `app.blade.php` is the only other executable script in
+  any blade view (the invoice and timesheet documents have `<style>` only) and
+  reads the same nonce. `script-src` is `'self'`, the nonce, Stripe and, in
+  development, the Vite origin: **no `'unsafe-inline'`**. Tests check the nonce is
+  unique per request and matches every executable script tag, with and without
+  the dev server.
+- **`style-src` keeps `'unsafe-inline'`, deliberately.** Stripe's Payment Element
+  and the component library (positioned popovers, Recharts) write `style`
+  attributes and `<style>` rules at runtime; a nonce cannot cover attributes.
+  Style injection cannot run script, so this is the smaller risk; revisit with
+  `style-src-attr` / `style-src-elem` splitting only if reports show it is
+  feasible.
+- **Stripe.** SVC loads exactly one Stripe component set: Stripe.js from
+  `https://js.stripe.com/v3/` (`resources/js/lib/stripe-js.ts`) and mounts the
+  **Payment Element** (`elements.create('payment')`) for `confirmPayment` and
+  `confirmSetup`. There is no Checkout redirect, no Address or Link Authentication
+  element and no Google Maps use. Following Stripe's CSP guidance, `script-src`
+  and `frame-src` allow `https://js.stripe.com` and `https://*.js.stripe.com`;
+  `frame-src` also `https://hooks.stripe.com` (3-D Secure / redirect-based
+  methods); `connect-src` `https://api.stripe.com`; `img-src` `https://*.stripe.com`.
+  `maps.googleapis.com` is left out until an Address Element is used. In
+  report-only mode, watch the reports through a real payment before enforcing.
+- **Violation collector.** `POST /api/csp-reports` (`CspReportController`) is the
+  default `report-uri`, and the policy also names `report-to csp-endpoint` with a
+  `Reporting-Endpoints` header (modern browsers prefer it). It accepts
+  `application/csp-report` and `application/reports+json` only (415 otherwise),
+  refuses a body over 8 KiB (413, by `Content-Length` and by measuring the bytes),
+  reads at most 10 reports per post, and is limited by the named `csp-reports`
+  limiter (120/min per address, tunable with `SVC_RATE_LIMIT_CSP_REPORTS`). It is an API-group route, so there is no session
+  and no CSRF check (a browser posts a report with no token). What it keeps is one
+  **log line** per report with three fields: the directive name, the blocked
+  host (or a keyword such as `inline`/`eval`), and the document path with record
+  ids replaced and every character outside `A-Za-z0-9._~/{}-` replaced, capped at
+  120. No raw JSON, query string, credentials, sample, referrer or user agent is
+  stored, nothing goes to the database, and the response is always empty (204 on
+  success, 400 for malformed JSON). `SVC_CSP_REPORT_URI` can point elsewhere (https
+  URL or absolute path); an empty value sends no reports.
+- **Rolling out enforcement** (a deployment decision, not made here): leave
+  `report-only` through a full billing cycle including a card payment and a
+  setup-intent save, read `csp.violation` lines, then set `SVC_CSP_MODE=enforce`.
+  Rolling back is the same variable.
+- **Layout harness runs the enforcing policy.** `scripts/check-layout.mjs` serves the
+  built assets (it refuses to run beside a Vite dev server, so there is no HMR
+  there) with `SVC_CSP_MODE=enforce`, and any Chromium "Content Security Policy"
+  console message fails the run. Against the dev server the nonce is applied the
+  same way: `Vite::useCspNonce()` covers the React Refresh preamble and the
+  module scripts, `public/hot`'s origin is allowed in `script-src`/`connect-src`
+  (`ws:`), and a test renders the page with the dev server on and checks every
+  executable script carries the nonce. The harness's receipt fixtures became real
+  PDFs, because the upload policy now refuses text receipts.
+- Square needs nothing in the policy; see the list above.
 
 ### Rate limits
 
@@ -828,19 +880,68 @@ Audit of every attachment path (they all end in `AttachmentStorageService`):
   so a client that ignores `attachment` cannot execute an upload; the served
   filename drops control characters and bidirectional overrides
   (`evil\u202Efdp.exe`) and is capped at 255 characters.
-- Not changed, a product decision: there is no type allowlist. Any file type up to
-  50 MB is accepted. Restricting it would reject files people attach today.
-- Not changed: an SVG receipt is now served as opaque bytes, so it no longer
-  previews as an image from the download URL; it still downloads.
+- **Type policy, server-enforced (follow-up).** `AttachmentTypePolicy` runs inside
+  `AttachmentStorageService::stage()`, before a byte is read or staged, so every
+  upload path (browser, native API, agent API, CLI, collaboration) is covered. It
+  judges the **sniffed** type (`getMimeType()`, the same value stored as the
+  attachment's media type; the client's declared type is never read) and uses the
+  file name only to refuse more. The vocabulary is one enum, `AttachmentFamily`
+  (pdf, image, office, text, archive, media, other, **active**), and
+  `AttachmentUploadKind` says what each kind accepts:
+  - **Receipt** (any file on an expense): a PDF or JPEG, PNG or WebP image, and
+    its extension must be one that type owns (`.pdf`; `.jpg`/`.jpeg`; `.png`;
+    `.webp`), so a script renamed `receipt.pdf` or a PDF named `receipt.png` is
+    refused, as is a file with no extension. HEIC and GIF are **not** accepted:
+    nothing in SVC previews either (the invoice PDF draws JPEG and PNG only and
+    lists a PDF or WebP receipt by name), so a client could not open them.
+    **SVG receipts are no longer accepted** (they were accepted before; those
+    already stored still download as opaque bytes, per the line above).
+  - **General** (every other record): unchanged breadth - every family except
+    *active*, so documents, spreadsheets, text, archives, images (including GIF
+    and HEIC) and media still upload, as do unrecognised binaries.
+  - **Refused for every upload:** HTML/XHTML, SVG, XML, JavaScript, PHP and other
+    scripts, and programs and installers, by sniffed type **or** by last
+    extension (`.js` text, `.exe`, `.html`, ...). Only the *last* extension is
+    checked, so `amazon.com.invoice.pdf` is fine. No existing test or fixture
+    uploaded SVG, HTML or XML as a business attachment (the only ones were the
+    download-hardening tests, which now seed a legacy row instead), and no
+    documented need exists, so there is no exception. Extend the lists in
+    `AttachmentFamily` deliberately if one appears.
+  - Errors are `422` with `errors.file[0]` set to a sentence such as "A receipt
+    must be a PDF or a JPEG, PNG or WebP image." or "The file name ends in .png
+    but the file is a PDF. Rename it to end in .pdf, or upload the original file."
+  - Not retroactive: nothing already stored is deleted or re-typed.
+- Test fixtures: receipt tests that uploaded `.txt` fakes now upload `.pdf`
+  fakes (Laravel's fake file reports the type from its name, so the policy sees a
+  PDF); the policy's own tests use real bytes on disk so the type is truly sniffed.
 
 ### CI
 
-- `composer audit --locked` and `pnpm audit --prod` run in a `dependency-audit`
-  job that is **not** a need of `ci`, so a newly published advisory cannot block
-  unrelated work. State when added: `pnpm audit --prod` clean; `composer audit`
-  reports 13 advisories in seven Symfony 8.1.x components (`http-foundation`,
-  `http-kernel`, `routing`, `serializer`, `yaml`, `http-client`, `filesystem`), all
-  fixed by 8.1.11. Not bumped here: a lock-file change is its own PR.
+- **The dependency audit now enforces (follow-up).** `dependency-audit` is a need
+  of `ci` (so it gates `deploy`) and runs `php scripts/ci/dependency-audit.php`,
+  which runs `composer audit --locked --format=json --abandoned=ignore` and
+  `pnpm audit --prod --json` and decides in `scripts/ci/DependencyAudit.php`
+  (unit-tested on fixture reports: clean, advisory, excepted, expired, tool
+  failure). Main was clean (Symfony 8.1.11 landed in #656), so there are no
+  exceptions to start with. Decisions:
+  - Exit status says who must act: `1` advisories found (or an expired exception),
+    `2` the audit could not run (no usable report from a tool: network, a crashed
+    or missing tool, an error document), `3` the exceptions file is invalid. An
+    audit that could not run is never read as "clean", and it is reported even
+    when the other tool found advisories.
+  - `.github/audit-exceptions.json` lists `{id, package, reason, expires}`. An
+    exception matches an advisory only when **both** the id (Composer advisory id,
+    GHSA or CVE; pnpm GHSA, numeric id or CVE) and the package match, and is valid
+    **through** its expiry day. After that the advisory blocks again with its own
+    "EXPIRED EXCEPTIONS" message. An exception that matches nothing is reported
+    as a note to remove it, not as a failure (a fixed advisory must not block).
+    Every field is required and the date must be a real `YYYY-MM-DD`.
+  - Abandoned Composer packages are not judged here (`--abandoned=ignore`): that is
+    a maintenance signal, not an advisory, and Composer's default for it changed
+    between versions.
+  - Cost: a newly published advisory can now turn `ci` red on an unrelated PR.
+    That is the intent; the remedy is to update the package or add a time-boxed,
+    reasoned exception, never to loosen the script.
 - `MCP_BRIDGE_DEPLOY_KEY` and every `webfactory/ssh-agent` step are removed from
   `tests.yml`, `pilot-deploy.yml`, `mcp-visibility-candidate.yml` and
   `cloudflare-ranges.yml`. `bherila/mcp-laravel-bridge` is public and
@@ -1106,6 +1207,17 @@ Settled by the product owner before a period away:
   - **Payments page:** there was no workspace settings page, so it has its own
     page at `/workspaces/{workspace}/payments`. It will move into settings
     when one exists.
+- **2026-11-08: connection transition tests.**
+  - The environment migration writes with `connectIfNone`: it never revokes a
+    connection entered after the inventory was read; it reports
+    `workspace_already_connected` and fails the run.
+  - A Stripe reconnect claims the row with one conditional write on the endpoint
+    id it started from; the loser deletes its own new endpoint. A health check
+    records its answer only while the row still holds the endpoint it asked
+    about. No new lock: both are single conditional updates.
+  - Open decision: the replaced signing secret is not retained, so a retried
+    event signed by the old endpoint gets a 400 and is lost (documented in the
+    runbook).
 - **2026-11-06, #619: Operations is not retired yet.** The Operations page
   still hosts live tools with no other home:
   - proposal draft and send;
