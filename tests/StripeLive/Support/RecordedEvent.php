@@ -32,6 +32,18 @@ final readonly class RecordedEvent
     }
 
     /**
+     * The object the event reports (`data.object`), empty when it has none.
+     *
+     * @return array<string, mixed>
+     */
+    public function object(): array
+    {
+        $object = $this->data['data']['object'] ?? null;
+
+        return is_array($object) ? $object : [];
+    }
+
+    /**
      * Every Stripe id the event's object points at: itself, and the intent,
      * customer, setup intent and payment method it belongs to.
      *

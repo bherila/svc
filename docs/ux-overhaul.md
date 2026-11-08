@@ -1563,6 +1563,25 @@ Answers the owner gave in an interview on 2026-11-06.
     id), then POSTed, oldest first, to the real route signed with a per-run `whsec_` secret.
     The required-event list in the tests is local; it does not duplicate the public constant
     the webhook-subscription health check will define.
+  - **Waits are on predicates, not types (review follow-up).** Setup tags the customer
+    before the default is set, so a customer produces two `customer.updated` events and
+    the first used to end a wait for the type. `StripeExpectation` can name the object
+    and, for `customer.updated`, the exact `invoice_settings.default_payment_method`;
+    `StripeEventFeed` reads through a `StripeEventSource` so a scripted two-poll unit test
+    proves poll 1 (metadata update, setup and attach events) does not end the wait.
+  - **Ordering is a first delivery.** The old replay delivered in order and then the same
+    ids reversed; the dedup ledger made pass 2 a no-op, so it proved only duplicate
+    handling. Reordered scenarios now clear the local projection and receipt ledger
+    (methods, method states, events, payment-method activity; the customer mapping and
+    autopay consent stay) and make newest-first, and a fixed `Mt19937` shuffle, the first
+    delivery, retrying a 503 as Stripe would, then assert SVC holds what Stripe holds.
+    The duplicate replay remains as an extra assertion. These scenarios need the
+    default-method reconciliation (it reads the customer from Stripe instead of ordering
+    events); on a build without it they fail, which is the point.
+  - **One scenario through a saved connection.** A `WorkspacePaymentConnection` row is
+    written directly (saving through the page would register a webhook endpoint at
+    Stripe), the environment key is removed, and setup, the autopay charge and
+    reordered webhook delivery to the connection's own endpoint all go through it.
   - **Safety.** Only `sk_test_` / `rk_test_` keys run (unit-tested in `tests/Unit/StripeLive`);
     an absent key skips; anything else fails; customers are checked to be `livemode: false`;
     the key is never printed. Customers are tagged `svc_e2e=1` plus a run id with

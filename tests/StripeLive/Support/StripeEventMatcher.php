@@ -35,16 +35,28 @@ final class StripeEventMatcher
     }
 
     /**
-     * Expected event types not yet seen among the matched events.
+     * Expectations no matched event satisfies yet, described for a message. A
+     * plain string is a type: any event of it counts. A {@see StripeExpectation}
+     * can ask for more - the object, the default payment method - so an earlier
+     * event of the same type cannot stand in for the one that is awaited.
      *
      * @param  list<RecordedEvent>  $matched
-     * @param  list<string>  $expected
+     * @param  list<string|StripeExpectation>  $expected
      * @return list<string>
      */
     public static function missing(array $matched, array $expected): array
     {
-        $seen = array_map(static fn (RecordedEvent $event): string => $event->type, $matched);
+        $missing = [];
+        foreach ($expected as $item) {
+            $expectation = StripeExpectation::of($item);
+            foreach ($matched as $event) {
+                if ($expectation->isMetBy($event)) {
+                    continue 2;
+                }
+            }
+            $missing[$expectation->describe()] = $expectation->describe();
+        }
 
-        return array_values(array_diff(array_unique($expected), $seen));
+        return array_values($missing);
     }
 }

@@ -8,21 +8,32 @@ use App\Models\ClientStripeCustomer;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspacePaymentConnection;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\PortalPaymentMethodService;
 use App\Services\Billing\StripePaymentMethodService;
+use App\Services\Payments\WorkspacePaymentConnections;
 use App\Support\Billing\PaymentMethods\SetupOutcome;
+use App\Support\Payments\ConnectionOrigin;
+use App\Support\Payments\PaymentProcessor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
+use Random\Engine\Mt19937;
+use Random\Randomizer;
 use RuntimeException;
 use Stripe\Stripe;
 use Stripe\StripeClient;
 use Tests\Concerns\BuildsAutopay;
 use Tests\StripeLive\Support\DisposableDatabase;
 use Tests\StripeLive\Support\RecordedEvent;
+use Tests\StripeLive\Support\StripeApiEventSource;
 use Tests\StripeLive\Support\StripeEventFeed;
+use Tests\StripeLive\Support\StripeExpectation;
 use Tests\StripeLive\Support\StripeTestKeyGate;
 use Tests\StripeLive\Support\StripeWebhookSignature;
 use Tests\TestCase;
@@ -66,6 +77,9 @@ abstract class StripeLiveTestCase extends TestCase
     protected StripeClient $stripe;
 
     protected string $webhookSecret;
+
+    /** The route events are delivered to: the environment endpoint, or a saved connection's own. */
+    protected string $webhookPath = '/api/webhooks/stripe';
 
     protected function setUp(): void
     {
@@ -250,37 +264,160 @@ abstract class StripeLiveTestCase extends TestCase
     }
 
     /**
-     * Read this scenario's events back from Stripe, wait for the expected types,
-     * and deliver each to SVC's real webhook route, signed with the run's secret.
-     * The route must accept every one.
+     * Read this scenario's events back from Stripe and wait until each expectation
+     * is met. A plain string waits for any event of that type; a
+     * {@see StripeExpectation} can wait for a particular object or, for
+     * `customer.updated`, for the event that carries the expected default method,
+     * so the earlier metadata update cannot end the wait.
      *
      * @param  list<string>  $ids  Stripe ids the scenario created (customer, intent, method)
-     * @param  list<string>  $expected  types that must be listed before replay starts
+     * @param  list<string|StripeExpectation>  $expected
+     * @return list<RecordedEvent> oldest first
+     */
+    protected function collectStripeEvents(array $ids, array $expected): array
+    {
+        return (new StripeEventFeed(new StripeApiEventSource($this->stripe)))->await($this->runStart, $ids, $expected, self::REPLAYABLE);
+    }
+
+    /**
+     * Collect this scenario's events and deliver each to SVC's real webhook
+     * route, signed with the run's secret, in the order Stripe produced them.
+     * The route must accept every one. Delivering the same events again is then
+     * a second assertion, about duplicates only (every one is acknowledged as a
+     * duplicate and changes nothing): ordering is covered by
+     * {@see deliverUntilAccepted()} on a cleared projection, which makes
+     * reordered delivery the first delivery.
+     *
+     * @param  list<string>  $ids
+     * @param  list<string|StripeExpectation>  $expected
      * @return list<RecordedEvent>
      */
     protected function replayStripeEvents(array $ids, array $expected): array
     {
-        $events = (new StripeEventFeed($this->stripe))->await($this->runStart, $ids, $expected, self::REPLAYABLE);
+        $events = $this->collectStripeEvents($ids, $expected);
         foreach ($events as $event) {
-            $this->deliver($event, 'in order');
+            $response = $this->deliverOnce($event);
+            $this->assertSame(200, $response->getStatusCode(), 'SVC refused '.$event->type.' '.$event->id.' (in order): '.$response->getContent());
         }
-        // Stripe retries and does not promise order: deliver everything again,
-        // newest first. Each must be accepted, and the caller's assertions about
-        // the final state then cover duplicate and reordered delivery as well.
-        foreach (array_reverse($events) as $event) {
-            $this->deliver($event, 'again, newest first');
-        }
+        $this->assertDuplicatesAreNoOps($events);
 
         return $events;
     }
 
-    private function deliver(RecordedEvent $event, string $pass): void
+    /**
+     * Deliver events that SVC has not seen, in this order, as Stripe would: an
+     * event SVC cannot apply yet (503, such as a default naming a method whose
+     * attach has not arrived) is delivered again after the others, until all are
+     * accepted. Anything but 200 or 503 fails.
+     *
+     * @param  list<RecordedEvent>  $events
+     */
+    protected function deliverUntilAccepted(array $events): void
+    {
+        $pending = $events;
+        for ($round = 1; $pending !== [] && $round <= count($events) + 1; $round++) {
+            $retry = [];
+            foreach ($pending as $event) {
+                $response = $this->deliverOnce($event);
+                if ($response->getStatusCode() === 503) {
+                    $retry[] = $event;
+
+                    continue;
+                }
+                $this->assertSame(200, $response->getStatusCode(), 'SVC refused '.$event->type.' '.$event->id.' (round '.$round.'): '.$response->getContent());
+                $this->assertFalse($response->json('duplicate'), $event->id.' was a duplicate of an event SVC had not been sent.');
+            }
+            $pending = $retry;
+        }
+        $this->assertSame([], array_map(static fn (RecordedEvent $event): string => $event->id, $pending), 'SVC still could not apply these events after Stripe\'s retries.');
+    }
+
+    /**
+     * Every event again: acknowledged as a duplicate, and nothing changes.
+     *
+     * @param  list<RecordedEvent>  $events
+     */
+    protected function assertDuplicatesAreNoOps(array $events): void
+    {
+        foreach ($events as $event) {
+            $response = $this->deliverOnce($event);
+            $this->assertSame(200, $response->getStatusCode(), 'SVC refused a repeat of '.$event->type.' '.$event->id.': '.$response->getContent());
+            $this->assertTrue($response->json('duplicate'), 'A repeat of '.$event->id.' was applied again.');
+        }
+    }
+
+    /**
+     * Forget everything SVC has recorded from Stripe about the company, as if no
+     * event had ever been delivered: its saved methods (soft-deleted ones too),
+     * the method states, the receipt ledger and the activity those wrote. The
+     * Stripe customer mapping stays - no webhook can create that, and the portal
+     * made it - and so does what the portal alone owns (autopay consent).
+     */
+    protected function resetStripeProjection(Workspace $workspace, ClientCompany $company): void
+    {
+        ClientStripePaymentMethod::query()->withTrashed()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->forceDelete();
+        DB::table('stripe_payment_method_states')->delete();
+        DB::table('client_stripe_events')->delete();
+        DB::table('client_company_activity')->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->where('action', 'like', 'payment_method.%')->delete();
+        $this->assertSame(0, ClientStripePaymentMethod::query()->withTrashed()->where('workspace_id', $workspace->id)->count(), 'The projection is clean before the first delivery.');
+        $this->assertSame(0, DB::table('client_stripe_events')->count(), 'The receipt ledger is clean before the first delivery.');
+    }
+
+    /**
+     * Newest first, or a fixed shuffle: the same events always come back in the
+     * same order, so a failure is reproducible.
+     *
+     * @param  list<RecordedEvent>  $events  oldest first
+     * @return list<RecordedEvent>
+     */
+    protected function reordered(array $events, string $order): array
+    {
+        return match ($order) {
+            'newest first' => array_reverse($events),
+            'shuffled' => (new Randomizer(new Mt19937(20261108)))->shuffleArray($events),
+        };
+    }
+
+    /** @return TestResponse<Response> */
+    private function deliverOnce(RecordedEvent $event): TestResponse
     {
         $signature = StripeWebhookSignature::header($event->json, $this->webhookSecret, time());
-        $response = $this->call('POST', '/api/webhooks/stripe', [], [], [], [
+
+        return $this->call('POST', $this->webhookPath, [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_STRIPE_SIGNATURE' => $signature,
         ], $event->json);
-        $this->assertSame(200, $response->getStatusCode(), 'SVC refused '.$event->type.' '.$event->id.' ('.$pass.'): '.$response->getContent());
+    }
+
+    /**
+     * Route this workspace through a saved connection - the post-migration
+     * path - instead of the deployment environment: the key is stored on a
+     * `WorkspacePaymentConnection`, the environment credentials are removed, and
+     * events are delivered to the connection's own endpoint, signed with its own
+     * secret. Every adapter, the autopay command and the webhook route then reach
+     * Stripe and the workspace only through that row.
+     *
+     * The row is written directly: saving through the settings page would verify
+     * the key and register a webhook endpoint at Stripe, which a test run must
+     * not leave behind. Nothing here reaches Stripe.
+     */
+    protected function connectThroughSavedKey(Workspace $workspace, User $owner): WorkspacePaymentConnection
+    {
+        $key = config('services.stripe.secret_key');
+        $this->assertIsString($key);
+        $this->webhookSecret = 'whsec_svc_e2e_conn_'.bin2hex(random_bytes(16));
+        $connection = app(WorkspacePaymentConnections::class)->connect($workspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+            'external_account_id' => 'acct_svc_e2e_'.strtolower(substr(str_replace('-', '', $this->runId), -12)),
+            'display_name' => 'SVC E2E saved connection',
+            'environment' => 'test',
+            'secret' => $key,
+            'webhook_secret' => $this->webhookSecret,
+            'publishable_key' => 'pk_test_svc_e2e_unused',
+            'endpoint_token' => Str::random(40),
+        ]);
+        config(['services.stripe.secret_key' => null, 'services.stripe.webhook_secret' => null]);
+        $this->webhookPath = '/api/webhooks/stripe/'.$connection->endpoint_token;
+
+        return $connection;
     }
 }
