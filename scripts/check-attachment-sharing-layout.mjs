@@ -280,17 +280,17 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             }
 
             const panel = paginationOnly
-                ? page.getByRole('region', {
+                ? page.getByRole('group', {
                       name: 'Attached files',
                       exact: true,
                   })
                 : screen === 'agreementfiles'
-                  ? page.getByRole('region', {
+                  ? page.getByRole('group', {
                         name: 'Attached files',
                         exact: true,
                     })
                   : page
-                        .getByRole('region', {
+                        .getByRole('group', {
                             name: [
                                 'parentfiles',
                                 'portalprojectfiles',
@@ -547,7 +547,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     .filter({ has: page.locator('details') })
                     .first();
                 await comment.locator('summary').click();
-                const commentPanel = comment.getByRole('region', {
+                const commentPanel = comment.getByRole('group', {
                     name: 'Files',
                     exact: true,
                 });

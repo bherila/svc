@@ -26,6 +26,10 @@ test('the skip link is the first tab stop and moves focus into main', async () =
 
     await user.keyboard('{Enter}');
 
+    // The link points at a real, focusable element: a skip link to nothing
+    // is itself an accessibility failure.
+    expect(link).toHaveAttribute('href', '#main-content');
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
     expect(screen.getByRole('main')).toHaveFocus();
     expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1');
 });

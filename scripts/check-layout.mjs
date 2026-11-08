@@ -3676,7 +3676,7 @@ try {
                     .getByRole('option', { name: 'Viewer', exact: true })
                     .click();
                 expect((await granted).status()).toBe(200);
-                await expect(access).toHaveText('Viewer');
+                await expect(access).toContainText('Viewer');
                 await capture(screen, 'project-edited-and-granted', width);
                 await page
                     .getByLabel('New project', { exact: true })

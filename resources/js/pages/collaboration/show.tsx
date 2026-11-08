@@ -82,7 +82,11 @@ function TopicEditor({
             </label>
             <CollaborationErrors errors={mutation.errors} />
             <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={mutation.pending}>
+                <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={mutation.pending}
+                >
                     {mutation.unresolved
                         ? 'Check original change'
                         : 'Save content'}

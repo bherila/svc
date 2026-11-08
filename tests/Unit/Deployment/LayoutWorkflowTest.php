@@ -61,7 +61,17 @@ final class LayoutWorkflowTest extends TestCase
         $this->assertSame(array_values(array_unique($scheduled)), $scheduled, 'A group runs in one shard only.');
         $this->assertContains('', array_column($job['strategy']['matrix']['include'], 'groups'), 'The default screens need a shard.');
 
-        $this->assertSame(['layout'], $workflow['jobs']['layout-gate']['needs']);
+        $this->assertSame(['layout', 'layout-scripts'], $workflow['jobs']['layout-gate']['needs']);
+        foreach (glob($root.'/scripts/check-*-layout.mjs') as $script) {
+            $name = 'scripts/'.basename($script);
+            if ($name === 'scripts/check-layout.mjs') {
+                continue;
+            }
+            $scripts = array_column($workflow['jobs']['layout-scripts']['strategy']['matrix']['include'], 'script');
+            if (str_contains(file_get_contents($script), 'accessibilityFindings')) {
+                $this->assertContains($name, $scripts, $name.' gates accessibility, so CI must run it.');
+            }
+        }
         $this->assertContains('layout-gate', $workflow['jobs']['ci']['needs']);
     }
 }

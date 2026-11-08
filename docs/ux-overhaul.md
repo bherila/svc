@@ -1486,8 +1486,15 @@ subscription. Decisions, made unattended and conservatively:
   popups and mid-transition colours as contrast failures.
 - **CI.** Every harness group runs on every push and pull request in eight
   concurrent shards (`layout`), required by `ci` through `layout-gate`;
-  `LayoutWorkflowTest` fails when a group has no shard. The four `workflow_dispatch`
-  layout jobs stay as they were.
+  `LayoutWorkflowTest` fails when a group has no shard. The collaboration,
+  task-organization and attachment-sharing scripts run in `layout-scripts` with
+  the same gate (`scripts/layout/a11y.mjs`). The four `workflow_dispatch` layout
+  jobs stay as they were.
+- **Found by the wider gate.** A task list was a `ul` of `Card`s each holding an
+  `li` (invalid list structure) - now `ul > li > Card`; two "Files" landmarks per
+  comment became a labelled group; an open menu's popup is not counted by axe's
+  `region` rule in the focused scripts (it is a transient widget, not page
+  content).
 
 ## Open questions
 

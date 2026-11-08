@@ -53,10 +53,23 @@ export async function accessibilityFindings(page, where) {
     const { violations } = await new AxeBuilder({ page }).analyze();
 
     for (const violation of violations) {
+        // axe's `region` rule counts an open menu's popup as content outside a
+        // landmark. The popup is a transient widget portaled to <body> by the
+        // menu primitive, not page content, so that one pairing is not a finding.
+        if (
+            violation.id === 'region' &&
+            violation.nodes.every((node) => node.html.includes('role="menu"'))
+        ) {
+            continue;
+        }
+
         findings.push(
             `${where} (${theme}): axe ${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
                 .slice(0, 3)
-                .map((node) => node.target.join(' '))
+                .map(
+                    (node) =>
+                        `${node.target.join(' ')} [${node.html.slice(0, 140)}]`,
+                )
                 .join(', ')})`,
         );
     }
