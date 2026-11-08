@@ -114,6 +114,29 @@ final class WebhookHealthPresenterTest extends TestCase
         $this->assertStringContainsString('signing secret', $view['fix']['confirm_body'] ?? '');
     }
 
+    public function test_an_identity_problem_offers_only_an_explicit_reconnect_that_says_what_it_stores(): void
+    {
+        $expected = [
+            'endpoint_missing' => 'The webhook endpoint SVC was set up with no longer exists',
+            'endpoint_unverified' => 'SVC cannot confirm which webhook endpoint is its own',
+        ];
+        foreach ($expected as $value => $summary) {
+            $view = $this->presenter()->present($this->row(WebhookHealthStatus::from($value), ['ignored']), true, '/check', '/fix');
+
+            $this->assertNotNull($view, $value);
+            $this->assertSame($summary, $view['summary'], $value);
+            $this->assertSame('warning', $view['severity'], $value);
+            $this->assertIsString($view['detail'], $value);
+            $this->assertSame([], $view['missing'], $value);
+            $this->assertSame('reconnect', $view['fix']['action'] ?? null, $value);
+            $this->assertSame('Reconnect webhook', $view['fix']['label'] ?? null, $value);
+            $this->assertSame('Create a new Stripe webhook endpoint?', $view['fix']['confirm_title'] ?? null, $value);
+            $this->assertStringContainsString('its id and its new signing secret (encrypted) together', $view['fix']['confirm_body'] ?? '', $value);
+            $this->assertSame('/fix', $view['fix']['url'] ?? null, $value);
+            $this->assertNull($this->presenter()->present($this->row(WebhookHealthStatus::from($value)), false, '/check', '/fix')['fix'], $value);
+        }
+    }
+
     public function test_every_other_result_has_words_a_severity_and_no_fix(): void
     {
         $expected = [

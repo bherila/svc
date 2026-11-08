@@ -2,6 +2,7 @@
 
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
+use App\Models\ClientAttachment;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
@@ -23,6 +24,7 @@ use App\Models\ClientTaskLabel;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceAutopayAttempt;
 use App\Models\InvoiceReminderLog;
+use App\Models\PaletteRecent;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -1190,12 +1192,82 @@ if (getenv('SVC_LAYOUT_LIGHT') === '1') {
     ];
 }
 
+// The command palette (--palette). Every kind it can find, under one shared word
+// and names that will not break: an expense, an agreement, a proposal, a file, time
+// (one entry with a client-safe description for the portal), a contact and a second
+// portal user, plus the owner's recent items. Read as four people - an owner (with
+// and without a client in context), a member scoped to the one project, and the
+// client contact - each on a page of their own, since the harness picks the viewer
+// by path. The palette's own requests are answered as whoever the page belongs to.
+$palettePages = [];
+if (getenv('SVC_LAYOUT_PALETTE') === '1') {
+    $unbroken = str_repeat('SyntheticPaletteProbe', 5);
+    $project->forceFill(['is_visible_to_client' => true])->save();
+    $invoice->forceFill(['is_visible_to_client' => true])->save();
+
+    $paletteMember = User::factory()->create(['name' => 'Synthetic Palette Member', 'email' => 'layout-palette-member@example.test']);
+    $workspace->memberships()->create(['user_id' => $paletteMember->id, 'role' => 'member']);
+    ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $paletteMember->id, 'role' => 'contributor']);
+
+    ClientExpense::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'created_by_user_id' => $owner->id,
+        'spent_on' => $date, 'amount' => 123456, 'currency' => 'USD', 'status' => 'draft', 'description' => 'Probe expense '.$unbroken,
+    ]);
+    ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'title' => 'Probe agreement '.$unbroken,
+        'status' => 'active', 'currency' => 'USD', 'starts_on' => $date, 'billing_cadence' => 'monthly', 'is_visible_to_client' => true,
+    ]);
+    ClientProposal::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'title' => 'Probe proposal '.$unbroken,
+        'status' => 'sent', 'currency' => 'USD', 'is_visible_to_client' => true,
+    ]);
+    $paletteFile = ClientAttachment::query()->create([
+        'workspace_id' => $workspace->id, 'record_type' => 'project', 'record_public_id' => $project->public_id, 'object_key' => 'synthetic/palette-probe',
+        'original_filename' => 'Probe-'.$unbroken.'.pdf', 'media_type' => 'application/pdf', 'bytes' => 1, 'sha256' => str_repeat('b', 64),
+        'uploader_id' => $owner->id, 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
+    ]);
+    DB::table('client_attachments')->where('id', $paletteFile->id)->update(['is_visible_to_client' => true]);
+    ClientTimeEntry::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $paletteMember->id,
+        'worked_on' => $date, 'minutes' => 90, 'description' => 'Probe internal note '.$unbroken, 'client_visible_description' => 'Probe client summary '.$unbroken,
+        'is_visible_to_client' => true, 'is_billable' => true, 'status' => 'approved',
+    ]);
+    ClientContact::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'first_name' => 'Probe'.$unbroken, 'last_name' => 'Contact',
+    ]);
+    $probePortalUser = User::factory()->create([
+        'name' => 'Probe portal user '.$unbroken, 'email' => 'probe-portal-user@client.example.test',
+        'oauth_provider' => 'synthetic', 'oauth_subject' => 'synthetic-palette-portal-user',
+    ]);
+    app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $company, $probePortalUser, PortalAccessScope::Company);
+    foreach ([['client', $company->public_id], ['project', $project->public_id], ['invoice', $invoice->public_id]] as $index => [$kind, $publicId]) {
+        PaletteRecent::query()->create([
+            'workspace_id' => $workspace->id, 'user_id' => $owner->id, 'kind' => $kind, 'record_public_id' => $publicId,
+            'opened_at' => now()->subMinutes($index + 1),
+        ]);
+    }
+
+    $palettePages = [
+        'palette_owner' => route('workspaces.dashboard', $workspace, absolute: false),
+        'palette_owner_client' => route('clients.show', [$workspace, $company], absolute: false),
+        'palette_member' => route('clients.time', [$workspace, $company], absolute: false),
+        'palette_portal' => route('portal.show', $company, absolute: false),
+        'palette_viewers' => [
+            route('workspaces.dashboard', $workspace, absolute: false) => $owner->id,
+            route('clients.show', [$workspace, $company], absolute: false) => $owner->id,
+            route('clients.time', [$workspace, $company], absolute: false) => $paletteMember->id,
+            route('portal.show', $company, absolute: false) => $squarePortalContact->id,
+        ],
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
     ...$autopayPages,
     ...$lightPages,
     ...$paymentPages,
     ...$reviewerPages,
     ...$workPortal,
+    ...$palettePages,
     ...$sharedPages,
     ...$documentPages,
     'selector' => route('workspaces.index', absolute: false),

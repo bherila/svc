@@ -18,6 +18,11 @@ enum SearchColumn
     case Title;
     case Body;
     case InvoiceNumber;
+    case Description;
+    case ClientVisibleDescription;
+    case FirstName;
+    case LastName;
+    case Email;
 
     /**
      * The escape character, and why it is not a backslash.
@@ -47,6 +52,11 @@ enum SearchColumn
             self::Body => "body LIKE ? ESCAPE '!'",
             self::Title => "title LIKE ? ESCAPE '!'",
             self::InvoiceNumber => "invoice_number LIKE ? ESCAPE '!'",
+            self::Description => "description LIKE ? ESCAPE '!'",
+            self::ClientVisibleDescription => "client_visible_description LIKE ? ESCAPE '!'",
+            self::FirstName => "first_name LIKE ? ESCAPE '!'",
+            self::LastName => "last_name LIKE ? ESCAPE '!'",
+            self::Email => "email LIKE ? ESCAPE '!'",
         };
     }
 }

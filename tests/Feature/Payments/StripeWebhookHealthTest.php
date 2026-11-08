@@ -163,10 +163,14 @@ final class StripeWebhookHealthTest extends TestCase
         $row = $this->activeFor($workspace);
         $this->assertNotNull($row);
 
+        $id = (string) $row->webhook_endpoint_id;
         $cases = [
-            'disabled' => $this->endpointList('we_x', self::BASE.'/'.$token, ['*'], 'disabled'),
-            'not_found' => $this->endpointList('we_x', 'https://elsewhere.example.test/hook', ['*']),
-            'mode_mismatch' => $this->endpointList('we_x', self::BASE.'/'.$token, ['*'], 'enabled', false),
+            'disabled' => $this->endpointList($id, self::BASE.'/'.$token, ['*'], 'disabled'),
+            // The stored endpoint was edited to point somewhere else.
+            'not_found' => $this->endpointList($id, 'https://elsewhere.example.test/hook', ['*']),
+            'mode_mismatch' => $this->endpointList($id, self::BASE.'/'.$token, ['*'], 'enabled', false),
+            // The stored endpoint is gone; a different one has its URL.
+            'endpoint_missing' => $this->endpointList('we_someone_elses', self::BASE.'/'.$token, ['*']),
         ];
         foreach ($cases as $expected => $endpoints) {
             $this->restoreStripeKeys();
@@ -184,7 +188,7 @@ final class StripeWebhookHealthTest extends TestCase
         $this->assertNotNull($row);
         $theirs = 'HTTPS://svc.example.test:443/api/webhooks/stripe/'.$row->endpoint_token.'/';
         $this->restoreStripeKeys();
-        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList('we_wild', $theirs, ['*'])));
+        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList((string) $row->webhook_endpoint_id, $theirs, ['*'])));
 
         $this->assertSame(WebhookHealthStatus::Healthy, app(StripeWebhookHealthService::class)->check($row)->status);
     }
@@ -197,9 +201,14 @@ final class StripeWebhookHealthTest extends TestCase
         $row = $this->activeFor($workspace);
         $this->assertNotNull($row);
         $this->restoreStripeKeys();
-        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList('we_env', self::BASE, StripeWebhookService::REQUIRED_EVENTS)));
+        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList((string) $row->webhook_endpoint_id, self::BASE, StripeWebhookService::REQUIRED_EVENTS)));
 
         $this->assertSame(WebhookHealthStatus::Healthy, app(StripeWebhookHealthService::class)->check($row)->status);
+
+        // Migrated from environment configuration there is no endpoint id: a URL match is not proof.
+        DB::table('workspace_payment_connections')->where('workspace_id', $workspace->id)->update(['webhook_endpoint_id' => null]);
+        $this->assertSame(WebhookHealthStatus::EndpointUnverified, app(StripeWebhookHealthService::class)->check($this->activeFor($workspace) ?? $row)->status);
+        DB::table('workspace_payment_connections')->where('workspace_id', $workspace->id)->update(['webhook_endpoint_id' => $row->webhook_endpoint_id]);
 
         // An entered connection is not served at the legacy URL.
         DB::table('workspace_payment_connections')->where('workspace_id', $workspace->id)->update(['origin' => 'entered']);
@@ -333,6 +342,40 @@ final class StripeWebhookHealthTest extends TestCase
         $this->assertSame(2, Artisan::call('svc:payments:check-stripe-webhooks', ['--limit' => '1001']));
     }
 
+    public function test_a_bounded_run_checks_never_checked_first_then_oldest_first_with_a_stable_tiebreak(): void
+    {
+        $workspaces = [];
+        foreach (['a', 'b', 'c', 'd', 'e'] as $letter) {
+            [$owner, $workspace] = $this->tenant('order-'.$letter);
+            $this->actingAs($owner)->post($this->url($workspace), ['secret' => 'rk_live_synthetic_order_'.$letter.'_x9y8'])->assertNoContent();
+            $workspaces[$letter] = $workspace;
+        }
+        $set = fn (string $letter, ?string $at) => DB::table('workspace_payment_connections')->where('workspace_id', $workspaces[$letter]->id)->update(['webhook_checked_at' => $at]);
+        $set('a', '2026-11-05 10:00:00');
+        $set('b', null);
+        $set('c', '2026-11-03 10:00:00');
+        $set('d', null);
+        $set('e', '2026-11-05 10:00:00');
+        $unchecked = fn (string $letter): string => (string) DB::table('workspace_payment_connections')->where('workspace_id', $workspaces[$letter]->id)->value('webhook_checked_at');
+
+        $this->assertSame(0, Artisan::call('svc:payments:check-stripe-webhooks', ['--apply' => true, '--format' => 'json', '--limit' => '4']));
+
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        // Never-checked first (by id), then the oldest check, equal times by id; the freshest is left for tomorrow.
+        $this->assertSame(
+            [$workspaces['b']->public_id, $workspaces['d']->public_id, $workspaces['c']->public_id, $workspaces['a']->public_id],
+            array_column($report['connections'], 'workspace'),
+        );
+        $this->assertSame('2026-11-05 10:00:00', $unchecked('e'), 'The most recently checked connection was not reached.');
+        $this->assertNotSame('2026-11-05 10:00:00', $unchecked('a'));
+
+        // The preview lists them in the same order.
+        $this->assertSame(0, Artisan::call('svc:payments:check-stripe-webhooks', ['--format' => 'json', '--limit' => '2']));
+        $preview = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertCount(2, $preview['connections']);
+        $this->assertSame('2026-11-05 10:00:00', $unchecked('e'));
+    }
+
     public function test_the_daily_command_is_scheduled_with_apply_and_no_queue(): void
     {
         $event = collect(app(Schedule::class)->events())
@@ -418,7 +461,7 @@ final class StripeWebhookHealthTest extends TestCase
         // The stored key may read webhook endpoints but not change them; one exists, lacking events.
         $row->forceFill(['secret' => 'rk_live_synthetic_x_no_webhook_write'])->save();
         $this->restoreStripeKeys();
-        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList('we_mine', self::BASE.'/'.$row->endpoint_token, ['payment_intent.succeeded'])));
+        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList((string) $row->webhook_endpoint_id, self::BASE.'/'.$row->endpoint_token, ['payment_intent.succeeded'])));
         $this->actingAs($owner)->post($this->checkUrl($workspace))->assertNoContent();
         $this->assertSame('missing_events', $this->activeFor($workspace)?->webhook_check_status);
 
@@ -427,35 +470,48 @@ final class StripeWebhookHealthTest extends TestCase
             ->assertJsonPath('errors.webhook.0', fn (string $message): bool => str_contains($message, 'Webhook Endpoints to Write'));
     }
 
-    public function test_creating_an_endpoint_stores_the_new_signing_secret_encrypted_and_reports_one_line(): void
+    public function test_reconnecting_after_the_stored_endpoint_is_deleted_stores_the_new_id_and_secret_together(): void
     {
         [$owner, $workspace] = $this->tenant('create');
         $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A])->assertNoContent();
         $row = $this->activeFor($workspace);
         $this->assertNotNull($row);
-        // The endpoint was deleted in Stripe: the account lists none at SVC's URL.
+        // The endpoint SVC created was deleted in Stripe, and another one now has its URL.
+        $row->forceFill(['webhook_endpoint_id' => 'we_deleted_in_stripe', 'webhook_secret' => 'whsec_belongs_to_the_deleted_one'])->save();
         $this->restoreStripeKeys();
-        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList('we_other', 'https://elsewhere.example.test/hook', ['charge.refunded'])));
+        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList('we_impostor', self::BASE.'/'.$row->endpoint_token, StripeWebhookService::REQUIRED_EVENTS)));
         $this->actingAs($owner)->post($this->checkUrl($workspace))->assertNoContent();
-        $this->assertSame('not_found', $this->activeFor($workspace)?->webhook_check_status);
+        // Another endpoint at the same URL, fully subscribed, is still not healthy.
+        $this->assertSame('endpoint_missing', $this->activeFor($workspace)?->webhook_check_status);
         $this->actingAs($owner)->get(route('workspaces.payments', $workspace))->assertInertia(fn (Assert $page) => $page
-            ->where('processors.0.connection.webhook.fix.action', 'create')
-            ->where('processors.0.connection.webhook.fix.label', 'Create endpoint'));
+            ->where('processors.0.connection.webhook.severity', 'warning')
+            ->where('processors.0.connection.webhook.summary', 'The webhook endpoint SVC was set up with no longer exists')
+            ->where('processors.0.connection.webhook.missing', [])
+            ->where('processors.0.connection.webhook.fix.action', 'reconnect')
+            ->where('processors.0.connection.webhook.fix.label', 'Reconnect webhook'));
 
-        $response = $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'create']);
+        // The event-patch fix is refused for an endpoint that is not the stored one, and calls nothing.
+        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'add_events'])->assertUnprocessable()->assertJsonValidationErrors('webhook');
+        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'create'])->assertUnprocessable()->assertJsonValidationErrors('webhook');
+        $this->assertSame([], $this->callsTo('post', '/v1/webhook_endpoints/we_impostor'));
+        $this->assertCount(1, $this->callsTo('post', '/v1/webhook_endpoints'), 'Only the save created an endpoint.');
+
+        $response = $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'reconnect']);
 
         $response->assertOk();
-        $this->assertSame('Created the Stripe webhook endpoint and stored its signing secret.', $response->json('message'));
+        $this->assertSame('Created a new Stripe webhook endpoint and stored its id and signing secret together.', $response->json('message'));
         // The first call was the save's; the second is the fix's.
         $created = array_slice($this->callsTo('post', '/v1/webhook_endpoints'), 1);
         $this->assertCount(1, $created);
         $this->assertSame(self::BASE.'/'.$row->endpoint_token, $created[0]['params']['url']);
         $this->assertEqualsCanonicalizing(StripeWebhookService::EVENTS, $created[0]['params']['enabled_events']);
         $this->assertSame(self::KEY_A, $created[0]['key']);
+        $this->assertSame([], $this->callsTo('delete', '/v1/webhook_endpoints/we_impostor'), 'The other endpoint is not touched.');
 
         $fresh = $this->activeFor($workspace);
         $this->assertNotNull($fresh);
         $newSecret = 'whsec_'.$this->suffix(self::KEY_A);
+        // Both halves replaced together.
         $this->assertSame($newSecret, $fresh->webhookSecret());
         $this->assertSame('we_'.$this->suffix(self::KEY_A), $fresh->webhook_endpoint_id);
         // Encrypted at rest exactly like the key: the column never holds the secret itself.
@@ -471,6 +527,60 @@ final class StripeWebhookHealthTest extends TestCase
         $this->assertStringNotContainsString('whsec_', (string) $this->actingAs($owner)->get(route('workspaces.payments', $workspace))->getContent());
     }
 
+    public function test_a_connection_with_no_stored_endpoint_cannot_confirm_a_url_match_and_reconnects_explicitly(): void
+    {
+        [$owner, $workspace] = $this->tenant('unverified');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A])->assertNoContent();
+        $row = $this->activeFor($workspace);
+        $this->assertNotNull($row);
+        // As if migrated from environment configuration: a secret, but no endpoint id.
+        DB::table('workspace_payment_connections')->where('id', $row->id)->update(['webhook_endpoint_id' => null]);
+        $this->restoreStripeKeys();
+        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList('we_by_url', self::BASE.'/'.$row->endpoint_token, StripeWebhookService::REQUIRED_EVENTS)));
+        $this->actingAs($owner)->post($this->checkUrl($workspace))->assertNoContent();
+
+        $this->assertSame('endpoint_unverified', $this->activeFor($workspace)?->webhook_check_status);
+        $this->actingAs($owner)->get(route('workspaces.payments', $workspace))->assertInertia(fn (Assert $page) => $page
+            ->where('processors.0.connection.webhook.severity', 'warning')
+            ->where('processors.0.connection.webhook.summary', 'SVC cannot confirm which webhook endpoint is its own')
+            ->where('processors.0.connection.webhook.fix.action', 'reconnect'));
+        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'add_events'])->assertUnprocessable();
+        $this->assertSame([], $this->callsTo('post', '/v1/webhook_endpoints/we_by_url'));
+
+        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'reconnect'])->assertOk();
+
+        $fresh = $this->activeFor($workspace);
+        $this->assertSame('we_'.$this->suffix(self::KEY_A), $fresh?->webhook_endpoint_id);
+        $this->assertSame('whsec_'.$this->suffix(self::KEY_A), $fresh?->webhookSecret());
+        $this->assertSame('healthy', $fresh?->webhook_check_status);
+    }
+
+    public function test_creating_stores_the_new_id_and_secret_when_nothing_is_at_the_url_and_no_endpoint_is_recorded(): void
+    {
+        [$owner, $workspace] = $this->tenant('createnone');
+        $this->actingAs($owner)->post($this->url($workspace), ['secret' => self::KEY_A])->assertNoContent();
+        $row = $this->activeFor($workspace);
+        $this->assertNotNull($row);
+        DB::table('workspace_payment_connections')->where('id', $row->id)->update(['webhook_endpoint_id' => null]);
+        $this->restoreStripeKeys();
+        $this->fakeStripeKeys(self::stripeAnswers($this->endpointList('we_other', 'https://elsewhere.example.test/hook', ['charge.refunded'])));
+        $this->actingAs($owner)->post($this->checkUrl($workspace))->assertNoContent();
+        $this->assertSame('not_found', $this->activeFor($workspace)?->webhook_check_status);
+        $this->actingAs($owner)->get(route('workspaces.payments', $workspace))->assertInertia(fn (Assert $page) => $page
+            ->where('processors.0.connection.webhook.fix.action', 'create')
+            ->where('processors.0.connection.webhook.fix.label', 'Create endpoint'));
+
+        $response = $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'create']);
+
+        $response->assertOk();
+        $this->assertSame('Created the Stripe webhook endpoint and stored its signing secret.', $response->json('message'));
+        $fresh = $this->activeFor($workspace);
+        $this->assertSame('we_'.$this->suffix(self::KEY_A), $fresh?->webhook_endpoint_id);
+        $this->assertSame('whsec_'.$this->suffix(self::KEY_A), $fresh?->webhookSecret());
+        // Reconnect is for an identity problem only; nothing is wrong now.
+        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'reconnect'])->assertUnprocessable()->assertJsonValidationErrors('webhook');
+    }
+
     public function test_creating_without_write_permission_creates_nothing_and_names_the_permission(): void
     {
         [$owner, $workspace] = $this->tenant('createperm');
@@ -479,13 +589,15 @@ final class StripeWebhookHealthTest extends TestCase
         $this->restoreStripeKeys();
         $this->fakeStripeKeys(self::stripeAnswers([]));
         $this->actingAs($owner)->post($this->checkUrl($workspace))->assertNoContent();
-        $this->assertSame('not_found', $this->activeFor($workspace)?->webhook_check_status);
+        $this->assertSame('endpoint_missing', $this->activeFor($workspace)?->webhook_check_status);
         $secret = $this->activeFor($workspace)?->webhookSecret();
+        $endpointId = $this->activeFor($workspace)?->webhook_endpoint_id;
 
-        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'create'])
+        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'reconnect'])
             ->assertUnprocessable()
             ->assertJsonPath('errors.webhook.0', fn (string $message): bool => str_contains($message, 'Webhook Endpoints to Write'));
         $this->assertSame($secret, $this->activeFor($workspace)?->webhookSecret(), 'The stored secret is untouched.');
+        $this->assertSame($endpointId, $this->activeFor($workspace)?->webhook_endpoint_id, 'And so is the stored endpoint id.');
     }
 
     public function test_a_created_endpoint_is_deleted_again_if_its_secret_cannot_be_stored(): void
@@ -507,9 +619,9 @@ final class StripeWebhookHealthTest extends TestCase
         });
         $created = count($this->callsTo('post', '/v1/webhook_endpoints'));
         $rawBefore = DB::table('workspace_payment_connections')->where('workspace_id', $workspace->id)->value('webhook_secret');
-        $row->forceFill(['webhook_check_status' => 'not_found'])->save();
+        $row->forceFill(['webhook_check_status' => 'endpoint_missing'])->save();
 
-        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'create'])
+        $this->actingAs($owner)->postJson($this->fixUrl($workspace), ['action' => 'reconnect'])
             ->assertUnprocessable()
             ->assertJsonPath('errors.webhook.0', fn (string $message): bool => str_contains($message, 'removed or replaced'));
 
@@ -543,7 +655,7 @@ final class StripeWebhookHealthTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         try {
-            $service->fix($workspace, $member, StripeWebhookHealthService::CREATE);
+            $service->fix($workspace, $member, StripeWebhookHealthService::RECONNECT);
         } finally {
             try {
                 $service->fix($workspace, $owner, StripeWebhookHealthService::CREATE);
