@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useState } from 'react';
+import { SettleDisputeDialog } from '@/components/disputes/settle-dispute-dialog';
 import { ExpenseDialog } from '@/components/expenses/expense-dialog';
 import {
     AlertDialog,
@@ -93,6 +94,7 @@ export default function ClientExpenses({
     // re-read - so it has to be shown. Without this the request finished and
     // the screen said nothing at all.
     const [notice, setNotice] = useState<string | null>(null);
+    const [responding, setResponding] = useState<ClientExpenseRow | null>(null);
 
     const open = (expense: ClientExpenseRow | null) => {
         setDialogExpense(expense);
@@ -206,6 +208,36 @@ export default function ClientExpenses({
                                                      */}
                                                     <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                                         {expense.description}
+                                                        {expense.client_review
+                                                            .state ===
+                                                            'disputed' && (
+                                                            <span className="block text-xs wrap-anywhere text-destructive">
+                                                                Client:{' '}
+                                                                {expense
+                                                                    .client_review
+                                                                    .dispute_note ??
+                                                                    'disputed without a note'}
+                                                                {expense
+                                                                    .client_review
+                                                                    .held &&
+                                                                    ' · held out of billing until you respond'}
+                                                            </span>
+                                                        )}
+                                                        {expense.client_review
+                                                            .reply !== null && (
+                                                            <span className="block text-xs wrap-anywhere text-muted-foreground">
+                                                                {expense
+                                                                    .client_review
+                                                                    .settlement_label ??
+                                                                    'Replied'}
+                                                                :{' '}
+                                                                {
+                                                                    expense
+                                                                        .client_review
+                                                                        .reply
+                                                                }
+                                                            </span>
+                                                        )}
                                                         {expense.billing
                                                             ?.invoice && (
                                                             <a
@@ -272,6 +304,26 @@ export default function ClientExpenses({
                                                                 expense.status,
                                                             )}
                                                         </Badge>
+                                                        {expense.client_review
+                                                            .state ===
+                                                            'disputed' && (
+                                                            <Badge
+                                                                variant="destructive"
+                                                                className="ml-1"
+                                                            >
+                                                                Disputed
+                                                            </Badge>
+                                                        )}
+                                                        {expense.client_review
+                                                            .state ===
+                                                            'written_off' && (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="ml-1"
+                                                            >
+                                                                Written off
+                                                            </Badge>
+                                                        )}
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="flex justify-end gap-1">
@@ -287,6 +339,20 @@ export default function ClientExpenses({
                                                                 >
                                                                     Receipts
                                                                 </Link>
+                                                            )}
+                                                            {expense.settle_dispute !==
+                                                                null && (
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    onClick={() =>
+                                                                        setResponding(
+                                                                            expense,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Respond
+                                                                </Button>
                                                             )}
                                                             {expense.can_approve && (
                                                                 <Button
@@ -379,6 +445,26 @@ export default function ClientExpenses({
                     </CardContent>
                 </Card>
             </main>
+
+            {responding !== null && responding.settle_dispute !== null && (
+                <SettleDisputeDialog
+                    key={responding.id}
+                    open
+                    onOpenChange={(next) => {
+                        if (!next) {
+                            setResponding(null);
+                        }
+                    }}
+                    subject={`${formatDay(responding.spent_on)} · ${formatMoney(responding.amount, responding.currency)} · ${responding.description}`}
+                    note={responding.client_review.dispute_note}
+                    version={responding.version}
+                    settle={responding.settle_dispute}
+                    onSettled={() => {
+                        setResponding(null);
+                        router.reload({ only: ['expenses'] });
+                    }}
+                />
+            )}
 
             <ExpenseDialog
                 // Remounted per opening, so its draft comes from the expense

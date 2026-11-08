@@ -2,10 +2,16 @@
 
 namespace App\Support\AgentApi\Presenters;
 
+use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\TimeEntryAllocation;
+use App\Support\Approval\ClientApprovalVerdict;
+use App\Support\Approval\ClientReview;
+use App\Support\Approval\DisputeHold;
+use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\InvoiceStatus;
 
 final class AgentTimeEntryPresenter
 {
@@ -25,6 +31,41 @@ final class AgentTimeEntryPresenter
 
         return ['id' => $facts['id'], 'worked_on' => $facts['worked_on'], 'project' => $project,
             'description' => $facts['description'], 'minutes' => $facts['minutes']];
+    }
+
+    /**
+     * The client's decision on the entry and any dispute's settlement, read
+     * from the workspace-scoped invoices {@see TimeEntryAllocation::relations()}
+     * already loaded (docs/ux-overhaul.md 7b″).
+     *
+     * @return array<string, mixed>
+     */
+    public static function clientReview(ClientTimeEntry $entry): array
+    {
+        $statuses = [];
+        foreach ($entry->invoiceLines as $line) {
+            $invoice = $line->invoice;
+            if ($invoice instanceof ClientInvoice && (int) $invoice->workspace_id === (int) $entry->workspace_id) {
+                $statuses[] = (string) $invoice->status;
+            }
+        }
+        $settlement = DisputeSettlement::tryFrom((string) $entry->client_dispute_settlement);
+
+        return ClientReview::present(
+            ClientApprovalVerdict::judge(
+                $entry->client_approval_source,
+                $entry->client_approved_at !== null,
+                $entry->client_disputed_at !== null,
+                in_array(InvoiceStatus::Paid->value, $statuses, true),
+                $settlement === DisputeSettlement::WrittenOff,
+            ),
+            DisputeHold::holds($entry->client_disputed_at !== null, array_intersect($statuses, InvoiceStatus::charged()) !== []),
+            $entry->client_dispute_note,
+            $entry->client_disputed_at,
+            $settlement,
+            $entry->client_dispute_reply,
+            $entry->client_dispute_settled_at,
+        );
     }
 
     /** @return array<string, \Closure> */
@@ -63,6 +104,7 @@ final class AgentTimeEntryPresenter
             'project_id' => $entry->project->public_id,
             'task_id' => $taskId,
             'is_visible_to_client' => $entry->is_visible_to_client,
+            'client_review' => self::clientReview($entry),
             'client_visible_description' => $compact ? null : $entry->client_visible_description,
             'version' => AgentApiVersion::for($entry),
             // The time sheet is per client, and an entry here has not loaded its

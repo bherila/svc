@@ -22,6 +22,7 @@ use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\InvoiceChangedDuringPaymentChange;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
@@ -845,7 +846,8 @@ final class InvoiceLifecycleService
     }
 
     /**
-     * Refuse a draft that still charges a disputed hour or expense. Plain
+     * Refuse a draft that still charges a disputed hour or expense, or one a
+     * settlement wrote off. Plain
      * reads, after every lock the issue takes, of this workspace's own rows.
      */
     private function assertChargesNoDisputedRows(ClientInvoice $draft): void
@@ -858,9 +860,11 @@ final class InvoiceLifecycleService
             return;
         }
 
+        $held = fn ($rows) => $rows->where(fn ($open) => $open->whereNotNull('client_disputed_at')
+            ->orWhere('client_dispute_settlement', DisputeSettlement::WrittenOff->value));
         $hours = ClientTimeEntry::query()
             ->where('workspace_id', $draft->workspace_id)
-            ->whereNotNull('client_disputed_at')
+            ->tap($held)
             ->whereIn('id', DB::table('client_invoice_line_time_entries')
                 ->where('workspace_id', $draft->workspace_id)
                 ->whereIn('client_invoice_line_id', $lineIds)
@@ -868,7 +872,7 @@ final class InvoiceLifecycleService
             ->count();
         $expenses = ClientExpense::query()
             ->where('workspace_id', $draft->workspace_id)
-            ->whereNotNull('client_disputed_at')
+            ->tap($held)
             ->whereIn('client_invoice_line_id', $lineIds)
             ->count();
 

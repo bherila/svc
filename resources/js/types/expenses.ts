@@ -1,3 +1,5 @@
+import type { SettleDispute } from '@/components/disputes/settle-dispute-dialog';
+import type { ApiSchema } from '@/lib/api';
 export type ExpenseProject = {
     id: string;
     name: string;
@@ -32,6 +34,10 @@ export type ClientExpenseRow = {
     can_approve: boolean;
     can_unapprove: boolean;
     can_discard: boolean;
+    /** Where the client stands on it, and any dispute (docs/ux-overhaul.md 7b″). */
+    client_review: ApiSchema<'ClientReview'>;
+    /** How a manager settles the client's open dispute, or null. */
+    settle_dispute: SettleDispute | null;
     /**
      * Finished URLs for this row's moves, generated after authorization.
      *

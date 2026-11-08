@@ -1130,6 +1130,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/expenses/{expense}/dispute/settle': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace owners and admins only. Settle a client's dispute on one expense (client_review.state disputed), using its current version and confirm: true, with the reply the client will read (docs/ux-overhaul.md 7b″). A dispute holds the expense out of billing. outcome answered clears it and offers the expense to the client again, so it is claimed by the next cadence draft; outcome written_off means it is never billed and takes it off any draft. 409 for a stale version, or a write-off of an expense an issued invoice already charges (correct the invoice instead); 422 when nothing is disputed. */
+        post: operations['expenses.settle_dispute'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/expenses/{expense}/unapprove': {
         parameters: {
             query?: never;
@@ -2459,7 +2476,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description The caller's own hours and expenses for one calendar month (period, default the current month), each with its state: draft, submitted, approved or disputed, and whether it can be submitted or withdrawn now. Expenses are listed only to a token that also has expenses:read. Bounded to 500 rows of each kind; truncated says when there are more. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned. */
+        /** @description The caller's own hours and expenses for one calendar month (period, default the current month), each with its state: draft, submitted, approved, disputed or written_off (a dispute the business settled by not billing the row), and whether it can be submitted or withdrawn now. Expenses are listed only to a token that also has expenses:read. Bounded to 500 rows of each kind; truncated says when there are more. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned. */
         get: operations['submissions.list'];
         put?: never;
         /** @description Mark the caller's own draft hours and expenses as submitted for review, so a reviewer or the client sees them without anyone in the caller's workspace approving them. Name a calendar month (period) and every eligible row in it is submitted and the rest are left alone, or name rows (time_entry_ids, expense_ids) and each must be eligible or nothing changes. Submitting approves nothing and changes no status; a submitted row cannot be edited until it is withdrawn. Expenses are included only for a token that also has expenses:write while AGENT_API_EXPENSE_WRITES_ENABLED is on; naming an expense without it is a 403. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned. */
@@ -2910,6 +2927,23 @@ export interface paths {
         put?: never;
         /** @description Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true is deprecated and does nothing, because nobody approves their own time: the entries stay unapproved and meta.approval says so. It still requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         post: operations['time_entries.log'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/time-entries/{entry}/dispute/settle': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Settle a client's dispute on one time entry (client_review.state disputed), using its current version and confirm: true, with the reply the client will read (docs/ux-overhaul.md 7b″). A dispute holds the entry out of billing. outcome answered clears it and offers the entry to the client again: it bills on the next draft, and the generated draft whose period covers it is rebuilt to take it back. outcome written_off makes it non-billable for good and takes it off any draft. Answering is open to the person who logged the time or a workspace owner or admin; writing off needs the permission to approve time on its project. 409 for a stale version, or a write-off of time an issued invoice already charges (correct the invoice instead); 422 when nothing is disputed. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
+        post: operations['time_entries.settle_dispute'];
         delete?: never;
         options?: never;
         head?: never;
@@ -3423,6 +3457,32 @@ export interface components {
         ClientCompanyResponse: {
             data: components['schemas']['ClientCompany'];
         };
+        /** @description Where the row stands with the client: their decision, whether a dispute holds it out of billing, and how the provider settled the last dispute. */
+        ClientReview: {
+            /**
+             * @description undecided: waiting for the client (it still bills on schedule). approved: the client approved it. approved_by_payment: the invoice carrying it is paid in full. disputed: the client disputed it. written_off: a dispute was settled by never billing it.
+             * @enum {string}
+             */
+            state:
+                | 'undecided'
+                | 'approved'
+                | 'approved_by_payment'
+                | 'disputed'
+                | 'written_off';
+            state_label: string;
+            /** @description True while a dispute keeps the row off every draft: disputed, and no issued invoice already charges it. */
+            held: boolean;
+            dispute_note: string | null;
+            /** Format: date-time */
+            disputed_at: string | null;
+            /** @enum {string|null} */
+            settlement: 'answered' | 'written_off' | null;
+            settlement_label: string | null;
+            /** @description The provider's reply to the last dispute, as the client reads it. */
+            reply: string | null;
+            /** Format: date-time */
+            settled_at: string | null;
+        };
         CollaborationAttachment: {
             /** Format: uuid */
             id: string;
@@ -3824,6 +3884,21 @@ export interface components {
         DeletionResponse: {
             data: components['schemas']['DeletionReceipt'];
         };
+        DisputeSettleRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description answered: clear the dispute and offer the row to the client again; it bills on the next draft. written_off: never bill it.
+             * @enum {string}
+             */
+            outcome: 'answered' | 'written_off';
+            /** @description What the client reads. Only what the user wrote. */
+            reply: string;
+            /**
+             * @description The user explicitly confirmed this settlement and its reply.
+             * @constant
+             */
+            confirm: true;
+        };
         Error:
             | {
                   message: string;
@@ -3884,6 +3959,7 @@ export interface components {
              * @description Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers.
              */
             readonly external_finance_transaction_uuid: string | null;
+            client_review: components['schemas']['ClientReview'];
         };
         ExpenseApprovalRequest: {
             expected_version: components['schemas']['Version'];
@@ -6741,7 +6817,12 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    state: 'draft' | 'submitted' | 'approved' | 'disputed';
+                    state:
+                        | 'draft'
+                        | 'submitted'
+                        | 'approved'
+                        | 'disputed'
+                        | 'written_off';
                     project: string | null;
                     dispute_note: string | null;
                     can_submit: boolean;
@@ -6757,7 +6838,12 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    state: 'draft' | 'submitted' | 'approved' | 'disputed';
+                    state:
+                        | 'draft'
+                        | 'submitted'
+                        | 'approved'
+                        | 'disputed'
+                        | 'written_off';
                     project: string | null;
                     dispute_note: string | null;
                     can_submit: boolean;
@@ -6774,6 +6860,7 @@ export interface components {
                     submitted: number;
                     approved: number;
                     disputed: number;
+                    written_off: number;
                 };
                 truncated: boolean;
             };
@@ -6793,7 +6880,12 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    state: 'draft' | 'submitted' | 'approved' | 'disputed';
+                    state:
+                        | 'draft'
+                        | 'submitted'
+                        | 'approved'
+                        | 'disputed'
+                        | 'written_off';
                 }[];
             };
         };
@@ -7168,6 +7260,7 @@ export interface components {
                 'flat_hourly' | 'retainer' | 'direct' | null;
             subcontractor_cost_amount?: number | null;
             subcontractor_cost_currency?: string | null;
+            client_review: components['schemas']['ClientReview'];
         };
         /** @description The logged rows exactly as time_entries.list presents them, rates and subcontractor terms included for workspace owners and admins, when the request asks for view=read and the token also holds time:read; the write shape otherwise. The MCP tool asks for the view while time_entries.list is enabled. */
         TimeEntryBatchResponse: {
@@ -12034,6 +12127,36 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.settle_dispute': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['DisputeSettleRequest'];
+            };
+        };
+        responses: {
+            /** @description Dispute settled or replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -18497,6 +18620,36 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'time_entries.settle_dispute': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                entry: components['parameters']['TimeEntryId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['DisputeSettleRequest'];
+            };
+        };
+        responses: {
+            /** @description Dispute settled or replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TimeEntryResponse'];
                 };
             };
             default: components['responses']['Error'];

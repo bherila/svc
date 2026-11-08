@@ -1,12 +1,14 @@
 import { Head, Link } from '@inertiajs/react';
 import {
     CheckIcon,
+    MessageSquareWarningIcon,
     PencilIcon,
     PlusIcon,
     Trash2Icon,
     Undo2Icon,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { SettleDisputeDialog } from '@/components/disputes/settle-dispute-dialog';
 import { InvoiceSelectionDialog } from '@/components/time/invoice-selection-dialog';
 import { TimeEntryDialog } from '@/components/time/time-entry-dialog';
 import {
@@ -51,6 +53,16 @@ function stateOf(entry: TimeEntry): {
     className?: string;
     href?: string;
 } {
+    // A client's dispute outranks where the entry is: it is what the operator
+    // has to act on (docs/ux-overhaul.md 7b″).
+    if (entry.client_review.state === 'disputed') {
+        return { label: 'Disputed', variant: 'destructive' };
+    }
+
+    if (entry.client_review.state === 'written_off') {
+        return { label: 'Written off', variant: 'outline' };
+    }
+
     if (entry.invoice !== null) {
         const sent = entry.invoice.status !== 'draft';
 
@@ -411,6 +423,32 @@ export default function TimeSheet({
     const [notice, setNotice] = useState<string | null>(null);
     const [approving, setApproving] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [responding, setResponding] = useState<TimeEntry | null>(null);
+    const [disputedOnly, setDisputedOnly] = useState(false);
+
+    const disputedCount = useMemo(
+        () =>
+            months
+                .flatMap((month) => month.entries)
+                .filter((entry) => entry.client_review.state === 'disputed')
+                .length,
+        [months],
+    );
+    const shownMonths = useMemo(
+        () =>
+            disputedOnly
+                ? months
+                      .map((month) => ({
+                          ...month,
+                          entries: month.entries.filter(
+                              (entry) =>
+                                  entry.client_review.state === 'disputed',
+                          ),
+                      }))
+                      .filter((month) => month.entries.length > 0)
+                : months,
+        [months, disputedOnly],
+    );
 
     // The route names the client, and the server sends exactly that one. The
     // page used to hold a second picker under the navbar's; two controls for
@@ -556,6 +594,18 @@ export default function TimeSheet({
                     </h1>
 
                     <div className="flex flex-wrap items-center gap-2">
+                        {(disputedCount > 0 || disputedOnly) && (
+                            <Button
+                                variant={disputedOnly ? 'default' : 'outline'}
+                                aria-pressed={disputedOnly}
+                                onClick={() =>
+                                    setDisputedOnly((current) => !current)
+                                }
+                            >
+                                <MessageSquareWarningIcon />
+                                Disputed ({disputedCount})
+                            </Button>
+                        )}
                         {invoiceDraft !== null && (
                             <Button
                                 variant="outline"
@@ -684,7 +734,7 @@ export default function TimeSheet({
                 )}
 
                 <div className="mt-8 grid grid-cols-1 gap-8">
-                    {groupMonths(months).map((group) =>
+                    {groupMonths(shownMonths).map((group) =>
                         group.kind === 'quiet' ? (
                             <QuietMonths
                                 key={group.key}
@@ -709,12 +759,33 @@ export default function TimeSheet({
                                 onDelete={setPendingDelete}
                                 onApprove={(entry) => approve([entry])}
                                 onUnapprove={unapprove}
+                                onRespond={setResponding}
                                 approving={approving}
                             />
                         ),
                     )}
                 </div>
             </main>
+
+            {responding !== null && responding.settle_dispute !== null && (
+                <SettleDisputeDialog
+                    key={responding.id}
+                    open
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setResponding(null);
+                        }
+                    }}
+                    subject={`${formatShortDay(responding.worked_on)} · ${formatHours(responding.minutes)} · ${responding.client_visible_description ?? responding.description}`}
+                    note={responding.client_review.dispute_note}
+                    version={responding.version}
+                    settle={responding.settle_dispute}
+                    onSettled={() => {
+                        setResponding(null);
+                        void refreshPageProps();
+                    }}
+                />
+            )}
 
             {company !== undefined && dialogOpen && (
                 <TimeEntryDialog
@@ -862,6 +933,7 @@ function MonthCard({
     onDelete,
     onApprove,
     onUnapprove,
+    onRespond,
     approving,
 }: {
     month: Month;
@@ -872,6 +944,7 @@ function MonthCard({
     onDelete: (entry: TimeEntry) => void;
     onApprove: (entry: TimeEntry) => void;
     onUnapprove: (entry: TimeEntry) => void;
+    onRespond: (entry: TimeEntry) => void;
     approving: boolean;
 }) {
     return (
@@ -987,6 +1060,27 @@ function MonthCard({
                                                     </Badge>
                                                 )}
                                             </div>
+                                            {entry.client_review.state ===
+                                                'disputed' && (
+                                                <p className="mt-1 text-xs wrap-anywhere text-destructive">
+                                                    Client:{' '}
+                                                    {entry.client_review
+                                                        .dispute_note ??
+                                                        'disputed without a note'}
+                                                    {entry.client_review.held &&
+                                                        ' · held out of billing until you respond'}
+                                                </p>
+                                            )}
+                                            {entry.client_review.reply !==
+                                                null && (
+                                                <p className="mt-1 text-xs wrap-anywhere text-muted-foreground">
+                                                    {entry.client_review
+                                                        .settlement_label ??
+                                                        'Replied'}
+                                                    :{' '}
+                                                    {entry.client_review.reply}
+                                                </p>
+                                            )}
                                         </TableCell>
                                         <TableCell className="text-right font-medium tabular-nums">
                                             {formatHours(entry.minutes)}
@@ -1031,6 +1125,20 @@ function MonthCard({
                                                         }
                                                     >
                                                         <CheckIcon />
+                                                    </Button>
+                                                )}
+                                                {entry.settle_dispute !==
+                                                    null && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon-xs"
+                                                        aria-label="Respond to dispute"
+                                                        title="Respond to the client's dispute"
+                                                        onClick={() =>
+                                                            onRespond(entry)
+                                                        }
+                                                    >
+                                                        <MessageSquareWarningIcon />
                                                     </Button>
                                                 )}
                                                 {entry.unapprove_url !==

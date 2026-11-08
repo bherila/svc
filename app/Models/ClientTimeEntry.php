@@ -8,6 +8,7 @@ use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
 use App\Support\Approval\DisputeHold;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredWorkDisposition;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -48,6 +49,10 @@ use LogicException;
  * @property CarbonImmutable|null $client_disputed_at
  * @property int|null $client_disputed_by_user_id
  * @property string|null $client_dispute_note
+ * @property string|null $client_dispute_settlement `answered` or `written_off`; {@see DisputeSettlement}
+ * @property string|null $client_dispute_reply
+ * @property CarbonImmutable|null $client_dispute_settled_at
+ * @property int|null $client_dispute_settled_by_user_id
  * @property CarbonImmutable|null $submitted_at
  * @property int|null $submitted_by_user_id
  * @property SubcontractorBillingMode|null $subcontractor_billing_mode
@@ -60,9 +65,10 @@ use LogicException;
     'subcontractor_cost_metadata',
     'client_approved_at', 'client_approved_by_user_id', 'client_approval_source',
     'client_disputed_at', 'client_disputed_by_user_id', 'client_dispute_note',
+    'client_dispute_settlement', 'client_dispute_reply', 'client_dispute_settled_at', 'client_dispute_settled_by_user_id',
     'submitted_at', 'submitted_by_user_id',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'submitted_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'client_dispute_settled_by_user_id', 'submitted_by_user_id'])]
 class ClientTimeEntry extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
@@ -79,6 +85,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             'approved_at' => 'immutable_datetime',
             'client_approved_at' => 'immutable_datetime',
             'client_disputed_at' => 'immutable_datetime',
+            'client_dispute_settled_at' => 'immutable_datetime',
             'submitted_at' => 'immutable_datetime',
             'subcontractor_billing_mode' => SubcontractorBillingMode::class,
             'subcontractor_cost_amount' => 'integer',

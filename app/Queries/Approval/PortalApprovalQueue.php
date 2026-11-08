@@ -14,8 +14,10 @@ use App\Support\Approval\ApprovalPeriod;
 use App\Support\Approval\ClientApprovalSource;
 use App\Support\Approval\ClientApprovalVerdict;
 use App\Support\Approval\ConsultantTimeRelease;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\SubcontractorBillingMode;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -51,6 +53,9 @@ final class PortalApprovalQueue
     public const TIME_LIMIT = 300;
 
     public const EXPENSE_LIMIT = 150;
+
+    /** How long a written-off row stays on the list, read-only, after it was settled. */
+    public const int WRITTEN_OFF_DAYS = 30;
 
     public function __construct(
         private readonly PortalApprovalAuthority $authority,
@@ -186,6 +191,7 @@ final class PortalApprovalQueue
             $entry->client_approved_at !== null,
             $entry->client_disputed_at !== null,
             $entry->invoiceLines->contains(fn ($line): bool => $line->invoice?->status === InvoiceStatus::Paid->value),
+            $entry->client_dispute_settlement === DisputeSettlement::WrittenOff->value,
         );
     }
 
@@ -196,6 +202,7 @@ final class PortalApprovalQueue
             $expense->client_approved_at !== null,
             $expense->client_disputed_at !== null,
             $expense->invoiceLine?->invoice?->status === InvoiceStatus::Paid->value,
+            $expense->client_dispute_settlement === DisputeSettlement::WrittenOff->value,
         );
     }
 
@@ -211,7 +218,11 @@ final class PortalApprovalQueue
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->onOffer()
-            ->where('is_billable', true)
+            // A written-off hour is no longer billable, and stays on the list,
+            // read-only, for a while so the client sees how it was settled.
+            ->where(fn (Builder $billable) => $billable->where('is_billable', true)
+                ->orWhere('client_dispute_settlement', DisputeSettlement::WrittenOff->value))
+            ->where(fn (Builder $settled) => $this->recentWriteOffsOnly($settled))
             ->where('is_visible_to_client', true)
             ->whereNotNull('client_visible_description')
             // Every mode but direct, spelled as the pure rule decides it.
@@ -239,6 +250,7 @@ final class PortalApprovalQueue
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->onOffer()
+            ->where(fn (Builder $settled) => $this->recentWriteOffsOnly($settled))
             ->when($scope !== null, fn (Builder $rows) => $rows->whereIn('client_project_id', $scope ?? []))
             ->where(fn (Builder $open) => $open
                 ->whereNotNull('client_disputed_at')
@@ -246,6 +258,19 @@ final class PortalApprovalQueue
                 ->orWhere(fn (Builder $payment) => $payment
                     ->where('client_approval_source', ClientApprovalSource::Payment->value)
                     ->whereDoesntHave('invoiceLine', fn (Builder $line) => $this->paidLine($line, $company))));
+    }
+
+    /**
+     * Leave out a row written off longer ago than {@see WRITTEN_OFF_DAYS}: the
+     * client has had time to read the reply, and the list is for decisions.
+     *
+     * @param  Builder<*>  $rows
+     */
+    private function recentWriteOffsOnly(Builder $rows): void
+    {
+        $rows->whereNull('client_dispute_settlement')
+            ->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value)
+            ->orWhere('client_dispute_settled_at', '>=', CarbonImmutable::now()->subDays(self::WRITTEN_OFF_DAYS));
     }
 
     /**
@@ -307,6 +332,7 @@ final class PortalApprovalQueue
             'project' => $entry->project?->name,
             'state' => $verdict->value,
             'dispute_note' => $verdict === ClientApprovalVerdict::Disputed ? $entry->client_dispute_note : null,
+            ...$this->settlementOf($entry),
             'invoice' => $showInvoices ? $this->invoiceOf($company, $entry->invoiceLines->map->invoice->filter()->first()) : null,
         ];
     }
@@ -325,7 +351,25 @@ final class PortalApprovalQueue
             'project' => $expense->project?->name,
             'state' => $verdict->value,
             'dispute_note' => $verdict === ClientApprovalVerdict::Disputed ? $expense->client_dispute_note : null,
+            ...$this->settlementOf($expense),
             'invoice' => $showInvoices ? $this->invoiceOf($company, $expense->invoiceLine?->invoice) : null,
+        ];
+    }
+
+    /**
+     * How the provider settled the row's last dispute, and the reply the
+     * client reads. A new dispute clears both, so neither outlives it.
+     *
+     * @return array{settlement: string|null, settlement_label: string|null, reply: string|null}
+     */
+    private function settlementOf(ClientTimeEntry|ClientExpense $row): array
+    {
+        $settlement = DisputeSettlement::tryFrom((string) $row->client_dispute_settlement);
+
+        return [
+            'settlement' => $settlement?->value,
+            'settlement_label' => $settlement?->label(),
+            'reply' => $settlement === null ? null : $row->client_dispute_reply,
         ];
     }
 

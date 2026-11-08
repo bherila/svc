@@ -202,6 +202,11 @@ final class ClientApprovals
                 'client_disputed_at' => $this->clock->now($company->workspace),
                 'client_disputed_by_user_id' => $viewer->id,
                 'client_dispute_note' => $note,
+                // The previous answer was to the previous dispute.
+                'client_dispute_settlement' => null,
+                'client_dispute_reply' => null,
+                'client_dispute_settled_at' => null,
+                'client_dispute_settled_by_user_id' => null,
                 'client_approved_at' => null,
                 'client_approved_by_user_id' => null,
                 'client_approval_source' => null,

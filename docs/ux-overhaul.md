@@ -324,7 +324,7 @@ Clients approve **expenses as well as hours** (decided 2026-11-06).
 - **Proforma.** An expense not yet ready to bill is listed on the proforma but
   left out of its total.
 
-### 7b″. A dispute holds the row out of billing (drafted 2026-11-08)
+### 7b″. A dispute holds the row out of billing (decided 2026-11-08)
 
 The help already promises this (`docs/help/time.md`, the glossary and the
 Disputed badge's next step: "it stays out of billing until the question is
@@ -356,13 +356,16 @@ Held is not stored. It is read from the dispute: a row with
 | Where the row is when disputed | What happens |
 | --- | --- |
 | Not on any invoice | No draft takes it: release, hand-picked time, cadence generation, regeneration, the deferred backlog, buy-down and termination collection all skip it. An expense is not allocated. |
-| On a draft invoice | The dispute rebuilds that draft in the same transaction, as editing an entry on a draft does today. The hour is no longer charged; it is listed under the draft's *Still deferred* section with a **Disputed** tag, so the operator sees what was taken off and why. If the rebuild is refused (a buy-down settles the entry, say), the dispute still stands and issuing is refused (409, code `disputed_on_draft`) naming the rows. |
+| On a draft invoice | Once the dispute commits, the draft is rebuilt by the ordinary generators, in their own transaction and lock order (`DisputedDraftRebuilder`). The client's dispute must stand whatever happens to the draft. The hour is no longer charged; it is listed under the draft's *Still deferred* section with a **Disputed** tag, so the operator sees what was taken off and why. If the rebuild is refused (a buy-down settles the entry, say), the refusal is reported, the dispute still stands, and issuing is refused (422, code `disputed_on_draft`) with the count of rows. |
 | On an issued invoice | Unchanged: the correction flow. The issued document is never edited, and paying it never approves the row. |
 
-Each skip is a rule in a pure, database-free class (the release rule, the
-pricing rule, the allocator's candidate filter) with its own unit test, and
-each read query gains `whereNull('client_disputed_at')` with a
-workspace-isolation test.
+The hold is one model scope, `ClientTimeEntry::notHeldForDispute()`, inside
+the three scopes every billing read derives from: `retainerBillable()`,
+`billableForInvoicing()` and `flatHourlySubcontractor()`. It is not a filter
+added to each query. The release rule and the hand-picked pricing rule
+(`ConsultantTimeRelease`, `SelectedTimeInvoiceTerms`) refuse disputed rows in
+their own pure, unit-tested code, and the pure statement of the hold is
+`DisputeHold`. Expense allocation skips disputed and written-off expenses.
 
 #### Settling a dispute
 
@@ -398,10 +401,17 @@ dispute (`SubmissionService`).
   exhaustively.
 
 A new dispute clears the previous reply. Every settlement is a compare-and-set
-on the row's version, and it runs inside the entry's existing serialized
-mutation path, so a row on a draft rebuilds that draft in the same
-transaction. Each settlement is also written to the client history
-(`ClientActivityRecorder`).
+on the row's version, under its lock. After it commits, the drafts it affects
+are rebuilt, as after a dispute: an answered row goes back on the generated
+draft whose period covers it, and a written-off one comes off any draft. A row
+an issued invoice already charges can't be written off (409); answer it, and
+correct the invoice. Each settlement is written to the client history
+(`ClientActivityRecorder`, actions `dispute.answered` and
+`dispute.written_off`) with the client's note and the reply.
+
+The client's verdict gains a `WrittenOff` case, and every `match` over it was
+updated: it awaits nothing, approves nothing and is never on the approved
+timesheet. Submissions gain the matching `written_off` state.
 
 #### Screens
 
@@ -409,29 +419,35 @@ transaction. Each settlement is also written to the client history
   - A **Disputed** badge (destructive), which outranks Approved and Upcoming
     in the status column.
   - The client's note under the description, in the row's prose column.
-  - A **Respond** action that opens a dialog: the reply (required), and Answer
-    or Write off. Write off is shown only when the server sends its URL. The
-    dialog links to the ordinary edit for correcting the row first.
-  - A "Disputed (n)" filter on the month.
+  - A **Respond to dispute** action that opens a dialog: the client's note,
+    the reply (required), and **Send answer** or **Write off**. Write off is
+    shown only when the server lists it among the row's outcomes. The hint
+    says to edit the row first to correct it.
+  - A **Disputed (n)** toggle at the top of the sheet that shows only disputed
+    rows.
 - **Expenses** (`pages/clients/expenses.tsx`): the same badge, note and
   Respond.
-- **Draft invoice** (`pages/clients/invoice.tsx`): held hours appear in the
-  *Still deferred* list with a **Disputed** tag and are not in the total. In
-  the rare case a rebuild was refused, a banner names the rows still charged
-  and the Issue action is withheld by the server until they are settled.
-- **Proforma:** held rows are listed as *Held - disputed* and left out of the
-  total, as 7b′ does for an expense not ready to bill.
-- **Action queue** (2c): "Disputed: 3.5 h and 1 expense", per client, linking
-  to the time sheet filtered to disputed rows.
-- **Portal To approve** (7c): an answered row shows the reply ("Herila
-  replied: …") with Approve and Dispute again. A written-off row stays,
-  read-only, as *Written off* with the reply.
+- **Draft invoice and PDF:** held hours appear in the *Still deferred* list
+  with a **Disputed** tag and are not in the total. The invoice document, the
+  proforma and the PDF share that section.
+- **Portal To approve** (7c): an answered row shows "Your provider replied: …"
+  with Approve and Dispute. A written-off row stays, read-only, as *Written
+  off* with the reply, for `PortalApprovalQueue::WRITTEN_OFF_DAYS` (30) after
+  it was settled.
+- **Client history:** both settlements show with the note and the reply.
 - **Help:** `docs/help/time.md` and the glossary say what held means and what
   each outcome does.
 
-The server sends a finished `respond_url` and `write_off_url`, or null, never
-a flag for the browser to interpret. Settlement outcomes are printed through
-`statusLabel`.
+The server sends a finished `settle_dispute` per row, a URL and the outcomes
+this viewer may choose, or null; the browser interprets no flags. Statuses
+are printed through `statusLabel`.
+
+Not built yet, for a follow-up:
+
+- **Draft invoice banner:** a warning naming the rows still charged after a
+  refused rebuild. The issue refusal says so today, but the page shows no
+  banner.
+- **Action queue** (2c): "Disputed: 3.5 h and 1 expense", per client.
 
 #### REST and MCP
 
@@ -441,50 +457,51 @@ a flag for the browser to interpret. Settlement outcomes are printed through
   ```json
   {
     "state": "undecided",
+    "state_label": "Waiting for the client",
     "held": false,
     "dispute_note": null,
     "disputed_at": null,
-    "reply": null,
     "settlement": null,
+    "settlement_label": null,
+    "reply": null,
     "settled_at": null
   }
   ```
 
-  `state` is `undecided`, `approved` or `disputed`. `settlement` is
-  `answered`, `written_off` or null. The object comes from
-  `ClientApprovalVerdict`, so the operator reads what the client's screen
-  reads. Both lists also take a `client_review=disputed` filter. The time sheet
-  reads the same presenter, so the web page and the API agree.
+  `state` is `undecided`, `approved`, `approved_by_payment`, `disputed` or
+  `written_off`. `settlement` is `answered`, `written_off` or null. The object
+  comes from `ClientApprovalVerdict`, so the operator reads what the client's
+  screen reads. The time sheet and the expenses page read the same
+  presenters, so the web pages and the API agree. The schema is code-owned in
+  `DisputeContract` (`scripts/generate-dispute-contract.php`).
 - **Writes:**
   - `time_entries.settle_dispute`: `POST
     /workspaces/{workspace}/time-entries/{entry}/dispute/settle`, with
-    `{expected_version, outcome: answer|write_off, reply}`. Idempotency key
-    required, scope `time:write`.
+    `{expected_version, outcome: answered|written_off, reply, confirm: true}`.
+    Idempotency key required, scope `time:write`.
   - `expenses.settle_dispute`: the same shape under `expenses:write`.
 
-  `write_off` also requires `confirm: true`, because it changes what the
-  client is billed. A stale version is a 409. A row that is not disputed is
-  a 422.
-- **Invoices:**
-  - `invoices.get` on a draft lists `held_for_dispute` (entry and expense ids
-    with their notes) and reports `can_issue: false` with the reason code.
-  - `invoices.issue` refuses with code `disputed_on_draft`.
-  - `invoices.preview_period` reports `held_minutes` and `held_expense_count`,
-    so a preview can say "3.5 h held for dispute".
+  Both outcomes require `confirm: true`, because the client reads the reply as
+  written. A stale version is a 409. A row that is not disputed, an empty
+  reply, or a missing confirmation is a 422.
+- **Invoices:** `invoices.issue` refuses a draft still charging a disputed or
+  written-off row with 422 and code `disputed_on_draft`. The draft's
+  deferred-work snapshot marks held hours `disputed`. Follow-ups, not built:
+  `held_for_dispute` and `can_issue` on `invoices.get`, `held_minutes` on
+  `invoices.preview_period`, and a `client_review=disputed` filter on the two
+  lists.
 - **MCP:** the two writes join the `time` and `expenses` toolsets, which are
   derived from their scopes, so no toolset changes. The server instructions
-  gain one rule: obtain explicit user confirmation before writing off
-  disputed time or expenses, and never write a reply the user did not give.
+  gain one rule: obtain explicit user confirmation before either settlement,
+  send only the reply the user wrote, and never choose to write a row off for
+  the user.
   `docs/mcp.md` gains a "Disputed time and expenses" section.
 
 #### Delivery (stacked commits)
 
-1. Hold: every billing path skips disputed rows, and issuing a draft that
-   carries one is refused, with unit and isolation tests.
-2. Settle: the migration, the service, REST, MCP and the docs.
-3. Screens: time sheet, expenses, draft invoice, proforma, action queue and
-   portal reply.
-4. Help text.
+1. Hold: every billing path skips disputed rows, a dispute rebuilds its draft,
+   and issuing a draft that still charges one is refused.
+2. Settle: the migration, the service, REST, MCP, the screens, help and docs.
 
 ### 7c. Vetvet's "To approve" (hours and expenses)
 

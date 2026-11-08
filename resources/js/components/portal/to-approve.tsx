@@ -369,7 +369,21 @@ function Row({
                           )}
                 </span>
             </div>
-            {entry.state === 'disputed' ? (
+            {entry.reply !== null && entry.state !== 'written_off' && (
+                <p className="text-xs wrap-anywhere text-muted-foreground">
+                    <span className="font-medium">Your provider replied:</span>{' '}
+                    {entry.reply}
+                </p>
+            )}
+            {entry.state === 'written_off' ? (
+                <p className="text-xs wrap-anywhere text-muted-foreground">
+                    <span className="font-medium">
+                        {statusLabel(entry.state)}; you will not be billed for
+                        it.
+                    </span>
+                    {entry.reply !== null && ` ${entry.reply}`}
+                </p>
+            ) : entry.state === 'disputed' ? (
                 <p className="text-xs wrap-anywhere text-muted-foreground">
                     <span className="font-medium">
                         {statusLabel(entry.state)}.

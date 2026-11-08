@@ -11,7 +11,8 @@ use App\Support\Approval\ClientApprovalVerdict;
  * author sees it. Read from the stored facts every time, never cached.
  *
  * Mirrors the lifecycle in docs/ux-overhaul.md 7b: a row is a draft, then
- * submitted, then either approved or disputed (sent back to its author).
+ * submitted, then either approved or disputed (sent back to its author); a
+ * dispute the provider settles by writing the row off ends it as written off.
  */
 enum SubmissionState: string
 {
@@ -19,11 +20,14 @@ enum SubmissionState: string
     case Submitted = 'submitted';
     case Approved = 'approved';
     case Disputed = 'disputed';
+    /** A dispute the provider settled by writing the row off (docs/ux-overhaul.md 7b″). */
+    case WrittenOff = 'written_off';
 
     public static function of(string $status, bool $submitted, ClientApprovalVerdict $verdict): self
     {
         return match ($verdict) {
             ClientApprovalVerdict::Disputed => self::Disputed,
+            ClientApprovalVerdict::WrittenOff => self::WrittenOff,
             ClientApprovalVerdict::Approved, ClientApprovalVerdict::ApprovedByPayment => self::Approved,
             ClientApprovalVerdict::Pending => $submitted || $status !== SubmissionRules::DRAFT ? self::Submitted : self::Draft,
         };

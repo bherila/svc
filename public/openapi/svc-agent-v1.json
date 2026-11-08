@@ -8246,6 +8246,72 @@
                 "x-mcp-tool": "expenses.receipts.upload_url"
             }
         },
+        "/workspaces/{workspace}/expenses/{expense}/dispute/settle": {
+            "post": {
+                "operationId": "expenses.settle_dispute",
+                "description": "Workspace owners and admins only. Settle a client's dispute on one expense (client_review.state disputed), using its current version and confirm: true, with the reply the client will read (docs/ux-overhaul.md 7b″). A dispute holds the expense out of billing. outcome answered clears it and offers the expense to the client again, so it is claimed by the next cadence draft; outcome written_off means it is never billed and takes it off any draft. 409 for a stale version, or a write-off of an expense an issued invoice already charges (correct the invoice instead); 422 when nothing is disputed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "expenses:read",
+                            "expenses:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DisputeSettleRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/ExpenseId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dispute settled or replayed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "expenses.settle_dispute",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.settle_dispute"
+            }
+        },
         "/workspaces/{workspace}/expenses/{expense}/unapprove": {
             "post": {
                 "operationId": "expenses.unapprove",
@@ -15466,7 +15532,7 @@
         "/workspaces/{workspace}/submissions": {
             "get": {
                 "operationId": "submissions.list",
-                "description": "The caller's own hours and expenses for one calendar month (period, default the current month), each with its state: draft, submitted, approved or disputed, and whether it can be submitted or withdrawn now. Expenses are listed only to a token that also has expenses:read. Bounded to 500 rows of each kind; truncated says when there are more. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned.",
+                "description": "The caller's own hours and expenses for one calendar month (period, default the current month), each with its state: draft, submitted, approved, disputed or written_off (a dispute the business settled by not billing the row), and whether it can be submitted or withdrawn now. Expenses are listed only to a token that also has expenses:read. Bounded to 500 rows of each kind; truncated says when there are more. Only the caller's own hours and expenses are read or changed, in projects the caller can see; another person's row, or another workspace's, is simply not found. Nothing about money crosses to a reviewer: no rate, invoice, agreement or internal note is returned.",
                 "security": [
                     {
                         "oauth2": [
@@ -19808,6 +19874,71 @@
                 "x-mcp-tool": "time_entries.log"
             }
         },
+        "/workspaces/{workspace}/time-entries/{entry}/dispute/settle": {
+            "post": {
+                "operationId": "time_entries.settle_dispute",
+                "description": "Settle a client's dispute on one time entry (client_review.state disputed), using its current version and confirm: true, with the reply the client will read (docs/ux-overhaul.md 7b″). A dispute holds the entry out of billing. outcome answered clears it and offers the entry to the client again: it bills on the next draft, and the generated draft whose period covers it is rebuilt to take it back. outcome written_off makes it non-billable for good and takes it off any draft. Answering is open to the person who logged the time or a workspace owner or admin; writing off needs the permission to approve time on its project. 409 for a stale version, or a write-off of time an issued invoice already charges (correct the invoice instead); 422 when nothing is disputed. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "time:write",
+                            "time:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DisputeSettleRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/TimeEntryId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dispute settled or replayed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TimeEntryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "time_entries.settle_dispute",
+                "x-svc-flags": [
+                    "AGENT_API_TIME_ENTRY_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "time_entries.settle_dispute"
+            }
+        },
         "/workspaces/{workspace}/time-entries/{entry}/unapprove": {
             "post": {
                 "operationId": "time_entries.unapprove",
@@ -22109,6 +22240,86 @@
                     }
                 }
             },
+            "ClientReview": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Where the row stands with the client: their decision, whether a dispute holds it out of billing, and how the provider settled the last dispute.",
+                "required": [
+                    "state",
+                    "state_label",
+                    "held",
+                    "dispute_note",
+                    "disputed_at",
+                    "settlement",
+                    "settlement_label",
+                    "reply",
+                    "settled_at"
+                ],
+                "properties": {
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "undecided",
+                            "approved",
+                            "approved_by_payment",
+                            "disputed",
+                            "written_off"
+                        ],
+                        "description": "undecided: waiting for the client (it still bills on schedule). approved: the client approved it. approved_by_payment: the invoice carrying it is paid in full. disputed: the client disputed it. written_off: a dispute was settled by never billing it."
+                    },
+                    "state_label": {
+                        "type": "string"
+                    },
+                    "held": {
+                        "type": "boolean",
+                        "description": "True while a dispute keeps the row off every draft: disputed, and no issued invoice already charges it."
+                    },
+                    "dispute_note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "disputed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "settlement": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "answered",
+                            "written_off",
+                            null
+                        ]
+                    },
+                    "settlement_label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "reply": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The provider's reply to the last dispute, as the client reads it."
+                    },
+                    "settled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                }
+            },
             "CollaborationAttachment": {
                 "type": "object",
                 "additionalProperties": false,
@@ -23803,6 +24014,40 @@
                     }
                 }
             },
+            "DisputeSettleRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "outcome",
+                    "reply",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "enum": [
+                            "answered",
+                            "written_off"
+                        ],
+                        "description": "answered: clear the dispute and offer the row to the client again; it bills on the next draft. written_off: never bill it."
+                    },
+                    "reply": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000,
+                        "description": "What the client reads. Only what the user wrote."
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "The user explicitly confirmed this settlement and its reply."
+                    }
+                }
+            },
             "Error": {
                 "oneOf": [
                     {
@@ -23931,7 +24176,8 @@
                     "version",
                     "can_edit",
                     "can_delete",
-                    "external_finance_transaction_uuid"
+                    "external_finance_transaction_uuid",
+                    "client_review"
                 ],
                 "properties": {
                     "id": {
@@ -23989,6 +24235,9 @@
                         "format": "uuid",
                         "readOnly": true,
                         "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
+                    },
+                    "client_review": {
+                        "$ref": "#/components/schemas/ClientReview"
                     }
                 }
             },
@@ -35406,7 +35655,8 @@
                                                 "draft",
                                                 "submitted",
                                                 "approved",
-                                                "disputed"
+                                                "disputed",
+                                                "written_off"
                                             ]
                                         },
                                         "project": {
@@ -35483,7 +35733,8 @@
                                                 "draft",
                                                 "submitted",
                                                 "approved",
-                                                "disputed"
+                                                "disputed",
+                                                "written_off"
                                             ]
                                         },
                                         "project": {
@@ -35534,7 +35785,8 @@
                                     "draft",
                                     "submitted",
                                     "approved",
-                                    "disputed"
+                                    "disputed",
+                                    "written_off"
                                 ],
                                 "properties": {
                                     "draft": {
@@ -35550,6 +35802,10 @@
                                         "minimum": 0
                                     },
                                     "disputed": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "written_off": {
                                         "type": "integer",
                                         "minimum": 0
                                     }
@@ -35635,7 +35891,8 @@
                                                 "draft",
                                                 "submitted",
                                                 "approved",
-                                                "disputed"
+                                                "disputed",
+                                                "written_off"
                                             ]
                                         }
                                     }
@@ -37154,7 +37411,8 @@
                     "client_visible_description",
                     "status",
                     "version",
-                    "web_url"
+                    "web_url",
+                    "client_review"
                 ],
                 "properties": {
                     "invoice_id": {
@@ -37268,6 +37526,9 @@
                             "null"
                         ],
                         "pattern": "^[A-Z]{3}$"
+                    },
+                    "client_review": {
+                        "$ref": "#/components/schemas/ClientReview"
                     }
                 }
             },

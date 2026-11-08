@@ -4,7 +4,8 @@
  * decided there.
  */
 
-export type SubmissionState = 'draft' | 'submitted' | 'approved' | 'disputed';
+export type SubmissionState =
+    'draft' | 'submitted' | 'approved' | 'disputed' | 'written_off';
 
 type SubmissionRowBase = {
     id: string;
