@@ -229,7 +229,10 @@ final class StripeTestModeEndToEndTest extends StripeLiveTestCase
         $this->assertSame(['succeeded', 5_000, $customerId, $saved->stripe_payment_method_id], [$intent->status, $intent->amount, $intent->customer, $intent->payment_method]);
         $this->assertSame($workspace->public_id, $intent->metadata['workspace_public_id']);
 
+        // The attachment must be collected too: resetStripeProjection() removes
+        // the saved method, and only payment_method.attached can recreate it.
         $events = $this->collectStripeEvents([$customerId, $intentId, $saved->stripe_payment_method_id], [
+            StripeExpectation::forObject('payment_method.attached', $saved->stripe_payment_method_id),
             'payment_intent.succeeded',
             StripeExpectation::customerDefault($customerId, $saved->stripe_payment_method_id),
         ]);
