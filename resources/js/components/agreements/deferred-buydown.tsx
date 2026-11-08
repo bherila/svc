@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { OptionSelect } from '@/components/ui/option-select';
 import { Switch } from '@/components/ui/switch';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
@@ -117,20 +118,21 @@ export function DeferredBuyDownForm({
                     >
                         <div className="grid grid-cols-1 gap-2">
                             <Label htmlFor="buydown-mode">Target</Label>
-                            <select
+                            <OptionSelect
                                 id="buydown-mode"
-                                className="h-9 rounded-md border bg-background px-3 text-sm"
                                 value={mode}
-                                onChange={(event) => {
-                                    setMode(event.target.value);
+                                options={[
+                                    { value: 'hours', label: 'Hours' },
+                                    {
+                                        value: 'amount',
+                                        label: `Amount (${currency ?? ''})`,
+                                    },
+                                ]}
+                                onValueChange={(next) => {
+                                    setMode(next);
                                     invalidate();
                                 }}
-                            >
-                                <option value="hours">Hours</option>
-                                <option value="amount">
-                                    Amount ({currency})
-                                </option>
-                            </select>
+                            />
                             <Input
                                 aria-label={
                                     mode === 'hours'
@@ -215,6 +217,7 @@ export function DeferredBuyDownForm({
                                 and send it separately when ready.
                             </p>
                             <Button
+                                variant="outline"
                                 type="button"
                                 className="justify-self-start"
                                 disabled={

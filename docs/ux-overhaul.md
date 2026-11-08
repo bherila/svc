@@ -1544,23 +1544,34 @@ subscription. Decisions, made unattended and conservatively:
 - **One list.** `StripeWebhookService::EVENTS` is every type the service handles
   and `REQUIRED_EVENTS` is that list without the legacy alias
   `charge.refund.updated`. The endpoint SVC creates subscribes to `EVENTS`
-  (as before); the check requires `REQUIRED_EVENTS`. `STAND_INS` records that a
-  subscription to `charge.refund.updated` satisfies `refund.updated` (the docs
-  already said it may stand in), so a manually made endpoint with the old name is
-  not reported broken. `StripeWebhookEventsTest` reads the service's source and
+  (as before); the check requires `REQUIRED_EVENTS`. `refund.updated` is required
+  on its own: `charge.refund.updated` is still handled when it arrives but never
+  counts in its place (the earlier `STAND_INS` is gone). `StripeWebhookEventsTest` reads the service's source and
   fails if a handled type is not listed or a listed type is not named in a
   handler. The old `StripeKeyAdapter::EVENTS` is gone.
 - **Required, not minimal.** The dispute hint events (`updated`, `funds_withdrawn`,
   `funds_reinstated`) are handled and registered by SVC today, so they are
   required: an endpoint following only the documented list is told to add them.
-- **One endpoint is judged.** Of the account's endpoints at SVC's URL for the
-  connection, the one SVC created (the stored `webhook_endpoint_id`), else the first
-  enabled one, else the first. Its signing secret is the one SVC holds, so a
-  second endpoint's subscriptions prove nothing. "Missing" is relative to it, and
-  so is the fix. URLs compare by scheme, host, port (default dropped) and path,
-  case-insensitively for scheme and host, trailing slash and query ignored.
-  The connection made from the environment also accepts the legacy
-  `/api/webhooks/stripe` URL.
+- **Only the stored endpoint is judged.** The signing secret SVC holds belongs to
+  the endpoint SVC created (the stored `webhook_endpoint_id`); a different endpoint
+  at the same URL signs with another secret and every delivery would fail
+  verification, so it is never adopted and its subscriptions prove nothing. If the
+  stored id is not listed at Stripe the status is `endpoint_missing` ("The webhook
+  endpoint SVC was set up with no longer exists"), never healthy, with no event
+  patch offered. If the connection has no stored id (migrated from environment
+  configuration), a URL match is reported as `endpoint_unverified` ("SVC cannot
+  confirm which webhook endpoint is its own"): decided conservatively, since even
+  a fully subscribed match at the legacy URL cannot be shown to be the one the
+  stored secret belongs to; with no match at all it stays `not_found`. A stored
+  endpoint that now has another URL is `not_found`. The repair for both identity
+  statuses is the explicit **Reconnect webhook** (`reconnect`), which creates a new
+  endpoint and stores its id and signing secret in one save (the Stripe call is
+  outside any transaction; if the save fails the new endpoint is deleted again).
+  The plain **Create endpoint** (`create`) remains only for `not_found`.
+  **Add missing events** requires the judged endpoint to be the stored one.
+  URLs compare by scheme, host, port (default dropped) and path, case-insensitively
+  for scheme and host, trailing slash and query ignored. The connection made from
+  the environment also accepts the legacy `/api/webhooks/stripe` URL.
 - **Stored on the connection row**, three nullable columns
   (`webhook_check_status`, `webhook_check_missing`, `webhook_checked_at`): the
   row is already workspace-scoped, so no new table or foreign key. A failed check
@@ -1579,13 +1590,16 @@ subscription. Decisions, made unattended and conservatively:
 - **Fix never removes an event and never touches another endpoint.** Add events
   sends the union of what the endpoint has and what it lacks. A disabled endpoint
   is reported with instructions, not re-enabled: the owner may have disabled it
-  on purpose. Create is offered only when no endpoint matches; it creates at the
-  connection's URL with `EVENTS`, stores the new signing secret and endpoint id
-  on the same row through the model's `encrypted` cast (replacing the old
-  secret, which belonged to an endpoint that no longer exists), and deletes the
-  endpoint again if the secret cannot be stored. The browser sends the action
+  on purpose. Create (nothing at the URL, no recorded id) and Reconnect (see above) create at
+  the connection's URL with `EVENTS`, store the new signing secret and endpoint id
+  together on the same row through the model's `encrypted` cast (replacing the old
+  secret, which belonged to an endpoint that no longer exists or could not be
+  confirmed), and delete the endpoint again if they cannot be stored. The browser sends the action
   the person confirmed; the server re-reads Stripe first and refuses (422) a
   fix that the fresh state no longer calls for.
+- **Daily order.** `svc:payments:check-stripe-webhooks` takes connections never
+  checked first, then by `webhook_checked_at` ascending, then by id, so a run bounded
+  by `--limit` does not starve the same workspaces.
 - **Errors name the permission.** A 403 on the read says to set Webhook
   Endpoints to Read; on the write, Write.
 - **Visibility.** Everyone in the workspace sees the sentence and the time; the
@@ -1595,6 +1609,71 @@ subscription. Decisions, made unattended and conservatively:
   there is nothing to sit beside; the check and fix are browser-only routes in
   `WebApiParityTest` with reasons.
 - **No Stripe calls on page load.** The page prints the stored result.
+
+### Accessibility to zero (#624 item 4, 2026-11-08)
+
+- **Every screen gates, in both themes.** The `uiGated` list and the
+  measurement-only exemption for axe and UI-consistency are gone: any axe
+  violation at any impact, and any UI-consistency error, fails the harness on
+  every capture, light and dark. Overflow and navbar assertions keep their
+  existing `measuredOnly` exemptions (only the autopay and consent states use
+  it); axe and the token checks do not honour it.
+- **Advisory stays advisory: a text button with no icon.** `action-button-icon`
+  still reports without failing. About a hundred buttons are legitimately
+  text-only (Cancel, Dismiss, Void, recovery buttons), and putting an icon on
+  each would be a visual redesign, not an accessibility fix. Revisit if the
+  list is ever worth gating.
+- **A modal dialog counts alone for "one filled button".** While a modal is
+  open the page behind it is inert, so only the dialog's own buttons are
+  counted; the page is counted whole again when it closes. This is a change to
+  what the check counts, made because the dialog's confirm button and the
+  page's one primary button are never both actionable. Pages with several
+  independent forms (client settings, task planning, payment connections) went
+  to outlined buttons rather than choosing one form's Save as the primary.
+- **Tokens, not overrides.** Light `--destructive` darkened (0.577 to 0.48
+  lightness) and dark lightened (0.704 to 0.78) so destructive text is 4.5:1 on
+  its own tint and hover tint; light `--muted-foreground` darkened (0.556 to
+  0.5) for text on `--muted`; `--ring` darkened/lightened to 3:1 against the
+  background and card. The operations "bridge" palette gained dark mappings for
+  `text-slate-700` and `text-cyan-700`.
+- **Card titles are level-2 headings by default** (`CardTitle` has
+  `role="heading" aria-level={2}`); a page whose title is a card passes
+  `aria-level={1}`. A page with no visible title (portal billing, portal
+  invoice) has a screen-reader-only `h1`.
+- **Scroll regions** become keyboard-focusable only while they overflow
+  (`useScrollable`), instead of a tab stop on every table.
+- **Native `<select>` is banned, all of them.** The task named the buy-down
+  picker; the grep found nine more (appearance, portal scope, project access,
+  history, three on collaboration, two on expense schedules). All use
+  `OptionSelect`; `native-select.test.ts` guards it. An option whose stored
+  value is the empty string is carried under a stand-in value, because Base UI
+  reads `''` as "nothing chosen".
+- **Skip link finds `<main>`.** Pages draw their own `<main>`, so the link
+  gives the first one an id and `tabindex="-1"` on mount instead of every page
+  naming a target.
+- **Toasts.** The application renders none (the Sonner `Toaster` is unused), so
+  announcements stay `role="status"`/`role="alert"` in the page; nothing was
+  added.
+- **Harness upkeep.** Four groups already failed on a clean `origin/main`
+  (clients, disputes, square, tasks) because the UI had moved on: the client
+  switcher is named "Current client: ...", a disputed invoice offers no "Send to
+  client", a client sees "Still deferred" only when the agreement opts in (the
+  Square fixture's invoice had no agreement), and the section tabs collapse
+  below `xl`. The harness and seed follow the product; no product behaviour
+  changed. The harness now runs with reduced motion and waits for styles to
+  settle after a theme switch, because axe otherwise measured half-faded
+  popups and mid-transition colours as contrast failures.
+- **CI.** Every harness group runs on every push and pull request in eight
+  concurrent shards (`layout`), required by `ci` through `layout-gate`;
+  `LayoutWorkflowTest` fails when a group has no shard. The collaboration,
+  task-organization and attachment-sharing scripts run in `layout-scripts` with
+  the same gate (`scripts/layout/a11y.mjs`). The four `workflow_dispatch` layout
+  jobs stay as they were.
+- **Found by the wider gate.** A task list was a `ul` of `Card`s each holding an
+  `li` (invalid list structure) - now `ul > li > Card`; two "Files" landmarks per
+  comment became a labelled group; an open menu's popup is not counted by axe's
+  `region` rule in the focused scripts (it is a transient widget, not page
+  content).
 
 ## Open questions
 

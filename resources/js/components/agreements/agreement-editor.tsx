@@ -183,6 +183,7 @@ export function AgreementTitle({
                 return save();
             }}
         >
+            <h1 className="sr-only">{agreement.title}</h1>
             <div className="flex flex-wrap items-center gap-2">
                 <Input
                     // Focused on open: the control the reader just clicked is
@@ -659,7 +660,7 @@ export function AgreementTermsForm({
             )}
 
             <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={busy}>
+                <Button variant="outline" type="submit" disabled={busy}>
                     Save terms
                 </Button>
                 <Button type="button" variant="ghost" onClick={onDone}>

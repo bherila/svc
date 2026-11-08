@@ -48,6 +48,7 @@ export default function PortalBilling({
                     'grid grid-cols-1 items-start gap-6 py-8 lg:grid-cols-2',
                 )}
             >
+                <h1 className="sr-only">Billing</h1>
                 <PortalAutopayCard
                     providerName={providerName}
                     autopay={autopay}

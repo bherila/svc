@@ -156,7 +156,7 @@ class WorkspacePaymentConnectionController extends Controller
     {
         $user = $this->user($request);
         $this->stripeRowManagedBy($user, $workspace, $processor);
-        $input = $request->validate(['action' => ['required', 'string', 'in:'.StripeWebhookHealthService::ADD_EVENTS.','.StripeWebhookHealthService::CREATE]]);
+        $input = $request->validate(['action' => ['required', 'string', 'in:'.StripeWebhookHealthService::ADD_EVENTS.','.StripeWebhookHealthService::CREATE.','.StripeWebhookHealthService::RECONNECT]]);
         try {
             $result = $this->health->fix($workspace, $user, (string) $input['action']);
         } catch (AuthorizationException) {

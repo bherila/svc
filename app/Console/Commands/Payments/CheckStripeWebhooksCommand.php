@@ -16,6 +16,10 @@ use Throwable;
  * page. Run daily by the scheduler, with no queue: it makes one read of Stripe
  * per connection, in the scheduler's own process.
  *
+ * Connections are taken oldest-checked first (never-checked first, then by the
+ * time of the last check, then by id) so that a bounded run never starves the same
+ * workspaces.
+ *
  * A preview unless --apply is given, and a preview calls nothing: it lists the
  * connections that would be checked. The command only checks; changing an
  * endpoint is a button an owner or admin presses on the Payments page.
@@ -47,6 +51,9 @@ final class CheckStripeWebhooksCommand extends MutationCommand
 
         $rows = $connections->allActive(PaymentProcessor::Stripe)
             ->filter(fn (WorkspacePaymentConnection $row): bool => $health->checkable($row) && ($workspaceId === null || $row->workspace_id === $workspaceId))
+            // Oldest-checked first, never-checked before all: a bounded run walks the
+            // whole list over successive days instead of re-checking the same first rows.
+            ->sort(fn (WorkspacePaymentConnection $a, WorkspacePaymentConnection $b): int => $this->staleness($a) <=> $this->staleness($b))
             ->take($limit)
             ->values();
         $publicIds = Workspace::query()->whereIn('id', $rows->pluck('workspace_id'))->pluck('public_id', 'id');
@@ -78,5 +85,16 @@ final class CheckStripeWebhooksCommand extends MutationCommand
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * Sort key: never checked first, then the older check, then the row id so the
+     * order is stable.
+     *
+     * @return array{0: int, 1: int, 2: int}
+     */
+    private function staleness(WorkspacePaymentConnection $row): array
+    {
+        return [$row->webhook_checked_at === null ? 0 : 1, $row->webhook_checked_at?->getTimestamp() ?? 0, $row->id];
     }
 }

@@ -191,6 +191,155 @@ jobs:
           path: test-results/layout/
           retention-days: 7
 
+  # Every screen group of the layout harness, on every pull request and push to main.
+  # Each group renders its screens at 390, 820, 1440 and 1920 pixels in the light and
+  # dark themes and fails on horizontal overflow, a wrapped navbar, any axe violation
+  # at any impact, and any UI-consistency error. Shards run concurrently and build the
+  # frontend once each; LayoutWorkflowTest fails if a group in scripts/check-layout.mjs
+  # is missing from this matrix.
+  layout:
+    name: Layout and accessibility (${{ matrix.name }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default screens
+            groups: ''
+          - name: invoice actions
+            groups: '--invoice-actions --invoice-send'
+          - name: invoice recovery
+            groups: '--invoice-history --invoice-recovery --invoice-correction'
+          - name: billing and connections
+            groups: '--autopay --payments --credentials'
+          - name: clients and portal access
+            groups: '--clients --portal-access --reminders --disputes'
+          - name: engagement and history
+            groups: '--engagement --deferred-backlog --time --history --resource-chrome'
+          - name: tasks and expenses
+            groups: '--tasks --task-lookups --expenses --expense-schedules --receipts --projects'
+          - name: dashboards and shared work
+            groups: '--revenue --work-portal --shared-projects --reviewers --light-workspace --workspaces --square --invoice-document --palette'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build the frontend once for the shard
+        run: pnpm run build
+      - name: Check browser layout and accessibility
+        env:
+          GROUPS_TO_RUN: ${{ matrix.groups }}
+        run: |
+          status=0
+          if [ -z "$GROUPS_TO_RUN" ]; then
+            node scripts/check-layout.mjs --skip-build || status=1
+          else
+            for group in $GROUPS_TO_RUN; do
+              node scripts/check-layout.mjs --skip-build "$group" || status=1
+            done
+          fi
+          exit $status
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-${{ strategy.job-index }}
+          path: test-results/layout/
+          retention-days: 7
+
+  # The focused browser scripts with their own fixtures. Each checks the same widths and
+  # both themes, and fails on the same axe and UI-consistency findings as the harness.
+  layout-scripts:
+    name: Layout and accessibility (${{ matrix.name }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: collaboration
+            script: scripts/check-collaboration-layout.mjs
+          - name: task organization
+            script: scripts/check-task-organization-layout.mjs
+          - name: attachment sharing
+            script: scripts/check-attachment-sharing-layout.mjs
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build the frontend
+        run: pnpm run build
+      - name: Check browser layout and accessibility
+        env:
+          LAYOUT_SCRIPT: ${{ matrix.script }}
+          # check-attachment-sharing-layout.mjs runs its own Vite dev server, which
+          # laravel-vite-plugin refuses to start under CI=true without this.
+          LARAVEL_BYPASS_ENV_CHECK: '1'
+        run: node "$LAYOUT_SCRIPT"
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-script-${{ strategy.job-index }}
+          path: test-results/
+          retention-days: 7
+
+  layout-gate:
+    name: Layout and accessibility
+    needs: [layout, layout-scripts]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require every layout shard
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/ci/require-success.sh
+
   checks:
     name: Static and frontend checks
     runs-on: ubuntu-24.04-arm
@@ -653,7 +802,7 @@ jobs:
         run: bash scripts/ci/require-success.sh
 
   ci:
-    needs: [checks, sqlite, mariadb, mcp-smoke, clean-install]
+    needs: [checks, sqlite, mariadb, mcp-smoke, layout-gate, clean-install]
     if: ${{ always() }}
     runs-on: ubuntu-24.04-arm
     steps:

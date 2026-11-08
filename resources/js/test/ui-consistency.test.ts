@@ -50,6 +50,36 @@ describe('uiConsistencyRisks', () => {
         ]);
     });
 
+    it('counts an open modal dialog alone, because the page behind it is inert', () => {
+        const filled = 'style="background-color:var(--primary)"';
+
+        mount(`
+            <button ${filled}>Log time</button>
+            <div role="dialog" data-open>
+                <button ${filled}>Save</button>
+                <button>Cancel</button>
+            </div>`);
+        expect(collectUiConsistencyRisks()).toEqual([]);
+
+        mount(`
+            <button ${filled}>Log time</button>
+            <div role="dialog" data-open>
+                <button ${filled}>Save</button>
+                <button ${filled}>Discard</button>
+            </div>`);
+        expect(collectUiConsistencyRisks().map((risk) => risk.rule)).toEqual([
+            'filled-buttons',
+        ]);
+
+        // A dialog that is closed (or not modal) leaves the page counted whole.
+        mount(`
+            <button ${filled}>Log time</button>
+            <div role="dialog"><button ${filled}>Save</button></div>`);
+        expect(collectUiConsistencyRisks().map((risk) => risk.rule)).toEqual([
+            'filled-buttons',
+        ]);
+    });
+
     it('reports a bordered link in a card body', () => {
         mount(`
             <div data-slot="card-content">

@@ -133,7 +133,11 @@ export function CompanyProfile({
                 </p>
             )}
             <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={change.locked}>
+                <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={change.locked}
+                >
                     Save company profile
                 </Button>
                 {change.unresolved && (

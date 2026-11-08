@@ -9,12 +9,15 @@ namespace App\Support\Payments;
  * database-free: the adapter lists the endpoints and the service hands over the
  * facts; nothing here calls Stripe or reads a table.
  *
- * Which endpoint is judged: of those whose URL is one of SVC's for the
- * connection, the one SVC created for it (the stored endpoint id) because its
- * signing secret is the one SVC holds, otherwise the first enabled one, otherwise
- * the first. Judging one endpoint keeps the answer and the fix about the same
- * thing: an event delivered by an endpoint whose secret SVC does not hold is
- * refused, so a second endpoint's subscriptions prove nothing.
+ * Which endpoint is judged: only the one SVC created for the connection (the
+ * stored endpoint id), because its signing secret is the one SVC holds. An event
+ * delivered by any other endpoint, even at the same URL, is signed with another
+ * secret and refused, so another endpoint's subscriptions prove nothing and it
+ * is never adopted:
+ *
+ * - a stored id that Stripe no longer lists is {@see WebhookHealthStatus::EndpointMissing};
+ * - no stored id, with an endpoint at SVC's URL, is {@see WebhookHealthStatus::EndpointUnverified};
+ * - no stored id and nothing at the URL is {@see WebhookHealthStatus::NotFound}.
  *
  * @phpstan-type Endpoint array{id: string, url: string, status: string, enabled_events: list<string>, livemode: bool}
  */
@@ -22,29 +25,28 @@ final class StripeWebhookHealthDecision
 {
     /**
      * @param  list<string>  $required  event types SVC needs
-     * @param  array<string, string>  $standIns  required type => another type that satisfies it
      * @param  list<string>  $expectedUrls  the URLs SVC's webhook is served at for this connection
      * @param  string|null  $environment  `live` or `test`, the key's mode, when known
      * @param  string|null  $storedEndpointId  the endpoint SVC created for the connection, if it did
      * @param  list<Endpoint>  $endpoints  every endpoint the account lists
      */
-    public static function decide(array $required, array $standIns, array $expectedUrls, ?string $environment, ?string $storedEndpointId, array $endpoints): WebhookHealth
+    public static function decide(array $required, array $expectedUrls, ?string $environment, ?string $storedEndpointId, array $endpoints): WebhookHealth
     {
         $expected = array_filter(array_map(self::normalize(...), $expectedUrls));
-        $matches = array_values(array_filter(
-            $endpoints,
-            static fn (array $endpoint): bool => in_array(self::normalize($endpoint['url']), $expected, true),
-        ));
-        if ($matches === []) {
+        $atOurUrl = static fn (array $endpoint): bool => in_array(self::normalize($endpoint['url']), $expected, true);
+
+        if ($storedEndpointId === null) {
+            return new WebhookHealth(array_any($endpoints, $atOurUrl) ? WebhookHealthStatus::EndpointUnverified : WebhookHealthStatus::NotFound);
+        }
+        $primary = array_find($endpoints, static fn (array $endpoint): bool => $endpoint['id'] === $storedEndpointId);
+        if ($primary === null) {
+            return new WebhookHealth(WebhookHealthStatus::EndpointMissing);
+        }
+        if (! $atOurUrl($primary)) {
             return new WebhookHealth(WebhookHealthStatus::NotFound);
         }
 
-        // The endpoint SVC created holds the signing secret SVC knows, so it is judged first.
-        $primary = array_find($matches, static fn (array $endpoint): bool => $endpoint['id'] === $storedEndpointId)
-            ?? self::firstEnabled($matches)
-            ?? $matches[0];
-
-        $missing = self::missing($required, $standIns, $primary['enabled_events']);
+        $missing = self::missing($required, $primary['enabled_events']);
         $health = static fn (WebhookHealthStatus $status): WebhookHealth => new WebhookHealth($status, $missing, $primary['id'], $primary['enabled_events']);
 
         if ($primary['status'] !== 'enabled') {
@@ -76,14 +78,14 @@ final class StripeWebhookHealthDecision
 
     /**
      * The required types an endpoint's subscriptions do not cover. `*` covers
-     * everything; a stand-in subscription covers the type it stands in for.
+     * everything. Every required type is required on its own: a subscription to
+     * a similarly named event does not stand in for it.
      *
      * @param  list<string>  $required
-     * @param  array<string, string>  $standIns
      * @param  list<string>  $subscribed
      * @return list<string>
      */
-    public static function missing(array $required, array $standIns, array $subscribed): array
+    public static function missing(array $required, array $subscribed): array
     {
         if (in_array('*', $subscribed, true)) {
             return [];
@@ -91,8 +93,7 @@ final class StripeWebhookHealthDecision
 
         return array_values(array_filter(
             $required,
-            static fn (string $type): bool => ! in_array($type, $subscribed, true)
-                && ! (isset($standIns[$type]) && in_array($standIns[$type], $subscribed, true)),
+            static fn (string $type): bool => ! in_array($type, $subscribed, true),
         ));
     }
 
@@ -118,20 +119,5 @@ final class StripeWebhookHealthDecision
         $path = rtrim($parts['path'] ?? '', '/');
 
         return $scheme.'://'.strtolower($parts['host']).($port === null ? '' : ':'.$port).($path === '' ? '/' : $path);
-    }
-
-    /**
-     * @param  list<Endpoint>  $endpoints
-     * @return Endpoint|null
-     */
-    private static function firstEnabled(array $endpoints): ?array
-    {
-        foreach ($endpoints as $endpoint) {
-            if ($endpoint['status'] === 'enabled') {
-                return $endpoint;
-            }
-        }
-
-        return null;
     }
 }
