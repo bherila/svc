@@ -19,10 +19,10 @@ use Illuminate\Http\Request;
  * rather than a 403, because "nothing matched" is the true answer for someone
  * with nothing to search.
  *
- * A portal user has client company memberships and no workspace membership, so
- * this returns nothing for them by the same rule. That is the intended
- * behaviour and not an omission: the palette is operator navigation, and the
- * portal has its own screens.
+ * A portal user has client company memberships and no workspace membership.
+ * They are searched as a client: only what the portal itself would show them,
+ * through the portal's own conditions. A person with no membership of either
+ * kind gets an empty list.
  */
 class SearchController extends Controller
 {

@@ -56,9 +56,6 @@ use Illuminate\Support\Facades\Gate;
  */
 final class WorkspaceSearch
 {
-    /** Rows per kind per workspace, so no one kind crowds the others out. */
-    private const PER_KIND = 5;
-
     public function __construct(
         private readonly ProjectAccess $access,
         private readonly BillingRecordAccess $records,
@@ -67,6 +64,8 @@ final class WorkspaceSearch
         private readonly PortalAccess $portal,
         private readonly PortalInvoiceQuery $portalInvoices,
         private readonly TaskVisibility $taskVisibility,
+        private readonly PaletteRecordSearch $paletteRecords,
+        private readonly PaletteAudiences $audiences,
     ) {}
 
     /**
@@ -88,15 +87,39 @@ final class WorkspaceSearch
 
         $results = [];
 
-        foreach ($this->workspacesFor($user) as $workspace) {
-            foreach ($this->searchOneWorkspace($user, $workspace, $term, [], CollaborationAudience::Internal) as $result) {
+        foreach ($this->audiences->for($user) as [$workspace, $audience]) {
+            foreach ($this->searchOneWorkspace($user, $workspace, SearchLookup::term($term), [], $audience) as $result) {
                 $results[] = $result;
             }
         }
 
         // Grouped by kind in the palette's own order, so a client outranks a
         // task whichever workspace produced it.
-        usort($results, fn (SearchResult $a, SearchResult $b): int => [$a->kind->rank(), $a->title] <=> [$b->kind->rank(), $b->title]);
+        usort($results, fn (SearchResult $a, SearchResult $b): int => [$a->kind->rank(), $a->kind->listedByTitle() ? $a->title : ''] <=> [$b->kind->rank(), $b->kind->listedByTitle() ? $b->title : '']);
+
+        return $results;
+    }
+
+    /**
+     * The viewer's recent items, resolved again through the authorized queries.
+     *
+     * @param  array<string, array<string, list<string>>>  $recents  Public ids by kind value, by workspace public id.
+     * @return list<SearchResult>
+     */
+    public function forRecents(User $user, array $recents): array
+    {
+        $results = [];
+
+        foreach ($this->audiences->for($user) as [$workspace, $audience]) {
+            $ids = $recents[$workspace->public_id] ?? [];
+            if ($ids === []) {
+                continue;
+            }
+            $kinds = array_values(array_filter(SearchResultKind::recentable(), fn (SearchResultKind $kind): bool => ($ids[$kind->value] ?? []) !== []));
+            foreach ($this->searchOneWorkspace($user, $workspace, SearchLookup::ids($ids), $kinds, $audience) as $result) {
+                $results[] = $result;
+            }
+        }
 
         return $results;
     }
@@ -108,27 +131,15 @@ final class WorkspaceSearch
         if (trim($term) === '' || $kinds === []) {
             return [];
         }
-        $results = $this->searchOneWorkspace($user, $workspace, trim($term), $kinds, $audience);
-        usort($results, fn (SearchResult $a, SearchResult $b): int => [$a->kind->rank(), $a->title] <=> [$b->kind->rank(), $b->title]);
+        $results = $this->searchOneWorkspace($user, $workspace, SearchLookup::term(trim($term)), $kinds, $audience);
+        usort($results, fn (SearchResult $a, SearchResult $b): int => [$a->kind->rank(), $a->kind->listedByTitle() ? $a->title : ''] <=> [$b->kind->rank(), $b->kind->listedByTitle() ? $b->title : '']);
 
         return $results;
     }
 
-    /** @return Collection<int, Workspace> */
-    private function workspacesFor(User $user): Collection
-    {
-        /** @var Collection<int, Workspace> $workspaces */
-        $workspaces = Workspace::query()
-            ->whereHas('memberships', fn (Builder $query) => $query->where('user_id', $user->id))
-            ->orderBy('name')
-            ->get();
-
-        return $workspaces;
-    }
-
     /** @param list<SearchResultKind> $kinds Empty means all kinds for the web palette.
      * @return list<SearchResult> */
-    private function searchOneWorkspace(User $user, Workspace $workspace, string $term, array $kinds, CollaborationAudience $audience): array
+    private function searchOneWorkspace(User $user, Workspace $workspace, SearchLookup $lookup, array $kinds, CollaborationAudience $audience): array
     {
         // Null means a manager, who reaches everything here including a client
         // with no projects at all. An empty list means a member added to
@@ -145,20 +156,22 @@ final class WorkspaceSearch
             return [];
         }
 
-        $companies = ClientCompany::query()
-            ->when($kinds !== [] && ! in_array(SearchResultKind::Client, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
+        // A kind that is not asked for (or, for recents, has no ids) is never
+        // queried at all rather than queried and emptied.
+        $wants = static fn (SearchResultKind $kind): bool => ($kinds === [] || in_array($kind, $kinds, true)) && $lookup->wants($kind);
+
+        $companies = ! $wants(SearchResultKind::Client) ? new Collection : ClientCompany::query()
             ->where('workspace_id', $workspace->id)
             ->when($reachableCompanyIds !== null, fn (Builder $q) => $q->whereIn('id', $reachableCompanyIds ?? []))
-            ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::Name, $term))
-            ->orderBy('name')->limit(self::PER_KIND)->get();
+            ->tap(fn (Builder $q) => $lookup->constrain($q, SearchColumn::Name, SearchResultKind::Client))
+            ->orderBy('name')->limit($lookup->limit(SearchResultKind::Client))->get();
 
-        $projects = ClientProject::query()
+        $projects = ! $wants(SearchResultKind::Project) ? new Collection : ClientProject::query()
             ->whereHas('clientCompany', fn (Builder $company) => $company->where('workspace_id', $workspace->id))
-            ->when($kinds !== [] && ! in_array(SearchResultKind::Project, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($viewableProjectIds !== null, fn (Builder $q) => $q->whereIn('id', $viewableProjectIds ?? []))
-            ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::Name, $term))
-            ->orderBy('name')->limit(self::PER_KIND)->get();
+            ->tap(fn (Builder $q) => $lookup->constrain($q, SearchColumn::Name, SearchResultKind::Project))
+            ->orderBy('name')->limit($lookup->limit(SearchResultKind::Project))->get();
 
         // The invoice screens' own rule, not company reachability. Reaching a
         // client through one project does not entitle someone to that client's
@@ -167,21 +180,19 @@ final class WorkspaceSearch
         $invoiceQuery = $isPortal
             ? $this->portalInvoices->visibleInWorkspace($workspace, $user)
             : $this->records->constrainInvoices(ClientInvoice::query()->where('workspace_id', $workspace->id), $user, $workspace);
-        $invoices = $invoiceQuery
-            ->when($kinds !== [] && ! in_array(SearchResultKind::Invoice, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
-            ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::InvoiceNumber, $term))
-            ->orderByDesc('issue_date')->limit(self::PER_KIND)->get();
+        $invoices = ! $wants(SearchResultKind::Invoice) ? new Collection : $invoiceQuery
+            ->tap(fn (Builder $q) => $lookup->constrain($q, SearchColumn::InvoiceNumber, SearchResultKind::Invoice))
+            ->orderByDesc('issue_date')->limit($lookup->limit(SearchResultKind::Invoice))->get();
 
-        $tasks = ClientTask::query()
+        $tasks = ! $wants(SearchResultKind::Task) ? new Collection : ClientTask::query()
             ->when($isPortal, fn (Builder $query) => $this->taskVisibility->constrainPortal($query, $workspace, $user))
-            ->when($kinds !== [] && ! in_array(SearchResultKind::Task, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($viewableProjectIds !== null, fn (Builder $q) => $q->whereIn('client_project_id', $viewableProjectIds ?? []))
             ->whereHas('project', fn (Builder $q) => $q->where('workspace_id', $workspace->id)
                 ->whereHas('clientCompany', fn (Builder $company) => $company->where('workspace_id', $workspace->id)))
             ->with(['project' => fn ($q) => $q->where('workspace_id', $workspace->id)])
-            ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::Title, $term))
-            ->orderByDesc('updated_at')->limit(self::PER_KIND)->get();
+            ->tap(fn (Builder $q) => $lookup->constrain($q, SearchColumn::Title, SearchResultKind::Task))
+            ->orderByDesc('updated_at')->limit($lookup->limit(SearchResultKind::Task))->get();
 
         $parents = $this->parentCompanies($workspace, $companies, $projects, $invoices, $tasks);
         $base = function (mixed $companyId) use ($workspace, $parents, $isPortal): ?string {
@@ -198,7 +209,7 @@ final class WorkspaceSearch
             $href = $base($company->id);
 
             if ($href !== null) {
-                $results[] = new SearchResult(SearchResultKind::Client, $company->public_id, $company->name, null, $href, $workspace->name);
+                $results[] = new SearchResult(SearchResultKind::Client, $company->public_id, $company->name, null, $href, $workspace->name, $workspace->public_id);
             }
         }
 
@@ -207,7 +218,7 @@ final class WorkspaceSearch
 
             if ($href !== null) {
                 $results[] = new SearchResult(SearchResultKind::Project, $project->public_id, $project->name,
-                    $parents[(int) $project->client_company_id]->name, $isPortal ? $href.'/tasks?project='.$project->public_id : $href.'/projects/'.$project->public_id, $workspace->name);
+                    $parents[(int) $project->client_company_id]->name, $isPortal ? $href.'/tasks?project='.$project->public_id : $href.'/projects/'.$project->public_id, $workspace->name, $workspace->public_id);
             }
         }
 
@@ -216,7 +227,7 @@ final class WorkspaceSearch
 
             if ($href !== null) {
                 $results[] = new SearchResult(SearchResultKind::Invoice, $invoice->public_id, $invoice->invoice_number,
-                    $parents[(int) $invoice->client_company_id]->name, $href.'/invoices/'.$invoice->public_id, $workspace->name);
+                    $parents[(int) $invoice->client_company_id]->name, $href.'/invoices/'.$invoice->public_id, $workspace->name, $workspace->public_id);
             }
         }
 
@@ -231,10 +242,19 @@ final class WorkspaceSearch
             if ($href !== null) {
                 $results[] = new SearchResult(SearchResultKind::Task, $task->public_id, $task->title,
                     $project->name.' - '.$parents[(int) $project->client_company_id]->name,
-                    $href.'/tasks?project='.$project->public_id, $workspace->name);
+                    $href.'/tasks?project='.$project->public_id, $workspace->name, $workspace->public_id);
             }
         }
 
+        $results = [...$results, ...$this->paletteRecords->forWorkspace($user, $workspace, $lookup, $kinds, $isPortal, $viewableProjectIds, $reachableCompanyIds)];
+
+        // Notes, comments and history are found by a typed term only; they are
+        // not among the kinds a recent item can name.
+        if ($lookup->term === null) {
+            return $results;
+        }
+
+        $term = $lookup->term;
         $results = [...$results, ...$this->collaboration->forWorkspace($user, $workspace, $term, $kinds, $audience)];
 
         // Source grants are preserved as history, never activated as current
@@ -242,7 +262,7 @@ final class WorkspaceSearch
         if (($kinds === [] || in_array(SearchResultKind::History, $kinds, true)) && Gate::forUser($user)->allows('manage', $workspace)) {
             $history = HistoricalEntry::query()->where('workspace_id', $workspace->id);
             $this->history->matching($history, $term);
-            foreach ($history->orderByDesc('id')->limit(self::PER_KIND)->get() as $entry) {
+            foreach ($history->orderByDesc('id')->limit(SearchLookup::PER_KIND)->get() as $entry) {
                 $results[] = new SearchResult(SearchResultKind::History, $entry->public_id, $entry->title,
                     $entry->kind->label(), route('history.show', [$workspace, $entry], absolute: false), $workspace->name);
             }
@@ -289,24 +309,11 @@ final class WorkspaceSearch
     }
 
     /**
-     * A substring match with the wildcards the caller typed neutralised.
-     *
-     * `%` and `_` are wildcards in LIKE, so a search for "50%" without this
-     * matches everything beginning "50" - and a search for a single "%" would
-     * return the whole table, which is exactly the query the empty-term guard
-     * above exists to prevent. {@see SearchColumn} carries the SQL, and why it
-     * has to name its escape character.
-     *
-     * @param  Builder<covariant \Illuminate\Database\Eloquent\Model>  $query
-     */
-    private function whereContains(Builder $query, SearchColumn $column, string $term): void
-    {
-        $query->whereRaw($column->likeSql(), ['%'.self::escapeForLike($term).'%']);
-    }
-
-    /**
      * Neutralises the LIKE wildcards, using the escape character
-     * {@see SearchColumn::likeSql()} declares.
+     * {@see SearchColumn::likeSql()} declares. {@see SearchLookup::constrain()}
+     * is where a typed term meets the SQL, and `%` and `_` here are what stop
+     * a bare `%` meaning "everything" - the query the empty-term guard exists
+     * to prevent.
      *
      * `addcslashes` is deliberately not used: it emits backslashes, and a
      * backslash cannot be this query's escape character without breaking

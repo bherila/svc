@@ -32,6 +32,12 @@ final readonly class SearchResult
          * single workspace it is noise on every row.
          */
         public string $workspaceName,
+        /**
+         * The workspace's public id. Palette-only: it is how a recent item is
+         * filed under the workspace it was opened in, and it is deliberately
+         * absent from {@see toArray()} so the agent API's row is unchanged.
+         */
+        public string $workspaceId = '',
     ) {}
 
     /** @return array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string} */
@@ -45,5 +51,11 @@ final readonly class SearchResult
             'href' => $this->href,
             'workspace' => $this->workspaceName,
         ];
+    }
+
+    /** @return array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string, workspace_id: string} */
+    public function toPaletteArray(): array
+    {
+        return [...$this->toArray(), 'workspace_id' => $this->workspaceId];
     }
 }

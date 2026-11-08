@@ -19,11 +19,11 @@ final class WorkspaceNavigationPermissions
         /**
          * Whether the command palette has anything to find.
          *
-         * `WorkspaceSearch` searches the workspaces this person is a member of,
-         * and a portal user is deliberately a member of none - so the palette
-         * answers them with an empty list, correctly and always. Offering the
-         * trigger anyway put a control on the client's own screen that could
-         * never return a result.
+         * `WorkspaceSearch` searches the workspaces this person is a member of
+         * as staff, and the ones where they hold a client company membership as
+         * a client (through the portal's own conditions). Someone with neither
+         * has nothing to find, and offering the trigger anyway would put a
+         * control on the screen that could never return a result.
          */
         public readonly bool $search,
     ) {}
