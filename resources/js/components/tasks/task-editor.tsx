@@ -17,7 +17,7 @@ import { useScrollable } from '@/hooks/use-scrollable';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
-import { refreshPageProps } from '@/lib/refresh-page-props';
+import { reloadPageProps } from '@/lib/refresh-page-props';
 
 export type TaskAssignee = { id: string; name: string };
 export type TaskAssigneeOptions = {
@@ -359,40 +359,7 @@ export function TaskEditor({
                 original.accepted = true;
             }
 
-            let synchronized = task === null;
-            await refreshPageProps({
-                requireSuccess: true,
-                onSuccess: (page) => {
-                    if (task === null) {
-                        return;
-                    }
-
-                    const authoritative = page.props.task as EditableTask;
-
-                    if (!authoritative || authoritative.id !== task.id) {
-                        return;
-                    }
-
-                    form.setData('title', authoritative.title);
-                    form.setData(
-                        'description',
-                        authoritative.description ?? '',
-                    );
-                    form.setData('status', authoritative.status);
-                    form.setData(
-                        'is_visible_to_client',
-                        authoritative.is_visible_to_client,
-                    );
-                    form.setData('starts_on', authoritative.starts_on ?? '');
-                    form.setData('due_on', authoritative.due_on ?? '');
-                    form.setData(
-                        'assignee_ids',
-                        authoritative.assignees.map((person) => person.id),
-                    );
-                    setSelected(authoritative.assignees);
-                    form.setData('expected_version', authoritative.version);
-                    synchronized = true;
-                },
+            const page = await reloadPageProps({
                 only: [
                     'task',
                     'tasks',
@@ -403,8 +370,29 @@ export function TaskEditor({
                 ],
             });
 
-            if (!synchronized) {
-                throw new Error('The refreshed task is unavailable.');
+            if (task !== null) {
+                const authoritative = page.props.task as
+                    EditableTask | undefined;
+
+                if (!authoritative || authoritative.id !== task.id) {
+                    throw new Error('The refreshed task is unavailable.');
+                }
+
+                form.setData('title', authoritative.title);
+                form.setData('description', authoritative.description ?? '');
+                form.setData('status', authoritative.status);
+                form.setData(
+                    'is_visible_to_client',
+                    authoritative.is_visible_to_client,
+                );
+                form.setData('starts_on', authoritative.starts_on ?? '');
+                form.setData('due_on', authoritative.due_on ?? '');
+                form.setData(
+                    'assignee_ids',
+                    authoritative.assignees.map((person) => person.id),
+                );
+                setSelected(authoritative.assignees);
+                form.setData('expected_version', authoritative.version);
             }
 
             // Keep the original body/key until the refresh also succeeds, so
