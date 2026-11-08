@@ -4637,6 +4637,7 @@ try {
     }
 
     if (
+        !paletteOnly &&
         !resourceChromeOnly &&
         !invoiceSendOnly &&
         !invoiceRecoveryOnly &&
