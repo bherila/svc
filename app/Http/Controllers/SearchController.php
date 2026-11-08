@@ -48,7 +48,7 @@ class SearchController extends Controller
 
         return response()->json([
             'results' => array_map(
-                static fn (SearchResult $result): array => $result->toArray(),
+                static fn (SearchResult $result): array => $result->toPaletteArray(),
                 $results,
             ),
         ]);

@@ -516,6 +516,24 @@ describe('command palette accessibility', () => {
         expect(String(visit.mock.calls[0][0])).toMatch(/^\/workspaces\//);
     });
 
+    it('highlights the first command, not the last local row, once the commands arrive', async () => {
+        const user = userEvent.setup();
+        render(<CommandPalette />);
+
+        await open(user);
+        await screen.findByText('Go to Payments');
+
+        await waitFor(() =>
+            expect(
+                document.querySelector('[cmdk-item][aria-selected="true"]'),
+            ).toHaveTextContent('Go to Payments'),
+        );
+
+        await user.keyboard('{Enter}');
+
+        expect(visit).toHaveBeenCalledWith('/workspaces/workspace-1/payments');
+    });
+
     it('keeps hostile names inside the window', async () => {
         const long = 'Unbroken'.repeat(30);
         fetchMock.mockImplementation((url: string) =>

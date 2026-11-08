@@ -95,6 +95,7 @@ const sharedProjectsOnly = process.argv.includes('--shared-projects');
 const reviewersOnly = process.argv.includes('--reviewers');
 const lightOnly = process.argv.includes('--light-workspace');
 const autopayOnly = process.argv.includes('--autopay');
+const paletteOnly = process.argv.includes('--palette');
 const revenueScreens = new Set([
     'dashboard',
     'workspace_clients',
@@ -221,6 +222,7 @@ try {
         SVC_LAYOUT_REVIEWERS: reviewersOnly ? '1' : '0',
         SVC_LAYOUT_LIGHT: lightOnly ? '1' : '0',
         SVC_LAYOUT_AUTOPAY: autopayOnly ? '1' : '0',
+        SVC_LAYOUT_PALETTE: paletteOnly ? '1' : '0',
         SVC_LAYOUT_INVOICE_DOCUMENT: invoiceDocumentOnly ? '1' : '0',
         // The portal offers card payment only where the deployment can confirm one.
         STRIPE_PUBLISHABLE_KEY: invoiceDocumentOnly
@@ -1595,6 +1597,170 @@ try {
         }
     }
 
+    // The command palette (--palette), read as four people on four pages: an
+    // owner with no client in context, an owner on a client, a member scoped to
+    // one project, and the client contact in the portal. For each: the palette at
+    // rest (commands and recent items), a search that reaches every kind that
+    // person may see, the keyboard sheet, and the checks the layout cannot see for
+    // itself: nothing a person may not do is offered, the dialog stays inside the
+    // window with unbroken names, the list is operable from the keyboard, the
+    // result count is announced, and axe finds nothing serious or critical inside
+    // the dialog.
+    async function checkPalette(screen, width) {
+        await page.waitForLoadState('networkidle');
+
+        const manager =
+            screen === 'palette_owner' || screen === 'palette_owner_client';
+        const portal = screen === 'palette_portal';
+        const trigger = page
+            .locator('header')
+            .getByRole('button', { name: 'Search', exact: true });
+        const dialog = page.getByRole('dialog', { name: 'Search' });
+
+        async function dialogChecks(label) {
+            const box = await page.getByRole('dialog').first().boundingBox();
+
+            if (!box || box.x < 0 || box.x + box.width > width + 0.5) {
+                failures.push(
+                    `${screen}/${label} at ${width}px: the dialog leaves the window (${JSON.stringify(box)}).`,
+                );
+            }
+
+            const axe = await new AxeBuilder({ page })
+                .include('[role="dialog"]')
+                .analyze();
+            const serious = axe.violations
+                .filter((violation) =>
+                    ['serious', 'critical'].includes(violation.impact ?? ''),
+                )
+                .map(
+                    (violation) =>
+                        `${violation.id} (${violation.impact}: ${violation.nodes
+                            .slice(0, 3)
+                            .map((node) => node.target.join(' '))
+                            .join(', ')})`,
+                );
+
+            if (serious.length > 0) {
+                failures.push(
+                    `${screen}/${label} at ${width}px: axe in the dialog: ${serious.join('; ')}`,
+                );
+            }
+        }
+
+        await trigger.click();
+        await expect(dialog).toBeVisible();
+        await expect(
+            dialog.getByText('Commands', { exact: true }),
+        ).toBeVisible();
+        const status = dialog.getByRole('status');
+        await expect(status).toContainText('available. Type to search.');
+
+        // At rest: what this person may do, and nothing they may not.
+        const atRest = await dialog.innerText();
+        const expectAtRest = (text, present) => {
+            if (atRest.includes(text) !== present) {
+                failures.push(
+                    `${screen}/empty at ${width}px: "${text}" is ${present ? 'missing' : 'offered'}.`,
+                );
+            }
+        };
+
+        expectAtRest('Switch workspace', true);
+        expectAtRest('Keyboard shortcuts', true);
+        expectAtRest('Go to Revenue', manager);
+        expectAtRest('Go to Payments', manager);
+        expectAtRest('New invoice draft', manager);
+        expectAtRest('Log time', !portal);
+        expectAtRest('Pay an invoice', portal);
+        expectAtRest('Billing', portal);
+
+        if (manager) {
+            await expect(
+                dialog.getByText('Recent', { exact: true }),
+            ).toBeVisible();
+        }
+
+        await capture(screen, 'empty', width, false);
+        await dialogChecks('empty');
+
+        // Operable from the keyboard alone: the highlighted row moves.
+        const input = dialog.getByRole('combobox', {
+            name: 'Search and commands',
+        });
+        await expect(input).toBeFocused();
+        const selected = dialog.locator('[cmdk-item][aria-selected="true"]');
+        const before = await selected.first().innerText();
+        await page.keyboard.press('ArrowDown');
+        const after = await selected.first().innerText();
+
+        if (before === after) {
+            failures.push(
+                `${screen}/empty at ${width}px: ArrowDown did not move the highlight.`,
+            );
+        }
+
+        // A search that reaches every kind this person may see.
+        await input.fill('probe');
+        await expect(status).toContainText(/\d+ results?\./);
+
+        for (const heading of [
+            'Agreements',
+            'Proposals',
+            'Files',
+            'Time',
+            ...(portal ? [] : ['Expenses']),
+        ]) {
+            if ((await dialog.getByText(heading, { exact: true }).count()) === 0) {
+                failures.push(
+                    `${screen}/results at ${width}px: "${heading}" is missing from: ${(await dialog.innerText()).replace(/\s+/g, ' ').slice(0, 300)}`,
+                );
+            }
+        }
+
+        for (const heading of ['Contacts', 'Portal users']) {
+            const count = await dialog
+                .getByText(heading, { exact: true })
+                .count();
+
+            if (count > 0 !== manager) {
+                failures.push(
+                    `${screen}/results at ${width}px: "${heading}" is ${count > 0 ? 'offered' : 'missing'}.`,
+                );
+            }
+        }
+
+        if (
+            portal &&
+            (await dialog.getByText('Expenses', { exact: true }).count()) > 0
+        ) {
+            failures.push(
+                `${screen}/results at ${width}px: Expenses reach the portal.`,
+            );
+        }
+
+        await capture(screen, 'results', width, false);
+        await dialogChecks('results');
+
+        // A typed word matches a command locally and shows it above the records.
+        await input.fill(portal ? 'pay' : 'log');
+        await expect(
+            dialog.getByText('Commands', { exact: true }),
+        ).toBeVisible();
+        await capture(screen, 'command-match', width, false);
+
+        // Escape closes it; the shortcut sheet opens on a question mark.
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        await page.keyboard.press('?');
+        const sheet = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+        await expect(sheet).toBeVisible();
+        await capture(screen, 'shortcuts', width, false);
+        await dialogChecks('shortcuts');
+        await page.keyboard.press('Escape');
+        await expect(sheet).toBeHidden();
+    }
+
     // "My work" and the portal home (--work-portal). Both are read as the
     // people they are for: a member who is not an owner or admin, and a client
     // contact. The member's page must carry no price however it is read; the
@@ -1900,7 +2066,9 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of autopayOnly
+        for (const screen of paletteOnly
+            ? ['palette_owner', 'palette_owner_client', 'palette_member', 'palette_portal']
+            : autopayOnly
             ? [
                   'autopay_billing',
                   'autopay_billing_off',
@@ -2117,6 +2285,12 @@ try {
 
             if (paymentsOnly) {
                 await checkPayments(width);
+
+                continue;
+            }
+
+            if (paletteOnly) {
+                await checkPalette(screen, width);
 
                 continue;
             }
@@ -4415,6 +4589,7 @@ try {
     }
 
     if (
+        !paletteOnly &&
         !resourceChromeOnly &&
         !invoiceActionsOnly &&
         !invoiceSendOnly &&

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
+use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,7 +29,7 @@ final class PaletteRecents
 {
     public const KEEP = 8;
 
-    public function __construct(private readonly WorkspaceSearch $search) {}
+    public function __construct(private readonly WorkspaceSearch $search, private readonly WorkspaceClock $clock) {}
 
     /** Records that the viewer opened a record. False when they could not have. */
     public function record(User $user, string $workspacePublicId, SearchResultKind $kind, string $recordPublicId): bool
@@ -50,7 +51,7 @@ final class PaletteRecents
         }
 
         DB::transaction(function () use ($user, $workspace, $kind, $recordPublicId): void {
-            $now = now()->format('Y-m-d H:i:s.u');
+            $now = $this->clock->now($workspace)->utc()->format('Y-m-d H:i:s.u');
             PaletteRecent::query()->upsert(
                 [[
                     'workspace_id' => $workspace->id, 'user_id' => $user->id, 'kind' => $kind->value,

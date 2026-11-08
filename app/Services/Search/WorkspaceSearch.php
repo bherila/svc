@@ -146,10 +146,10 @@ final class WorkspaceSearch
         // nothing, who reaches none of it.
         $isPortal = $audience === CollaborationAudience::Portal;
         $viewableProjectIds = $isPortal
-            ? $this->portal->constrainProjectQuery(ClientProject::query()->where('workspace_id', $workspace->id)->where('is_visible_to_client', true), $user)->pluck('id')->all()
+            ? self::ids($this->portal->constrainProjectQuery(ClientProject::query()->where('workspace_id', $workspace->id)->where('is_visible_to_client', true), $user)->pluck('id')->all())
             : $this->access->viewableProjectIds($user, $workspace);
         $reachableCompanyIds = $isPortal
-            ? ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->pluck('client_company_id')->all()
+            ? self::ids(ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->pluck('client_company_id')->all())
             : $this->access->reachableCompanyIds($user, $workspace);
 
         if ($viewableProjectIds === [] && (! $isPortal || $reachableCompanyIds === [])) {
@@ -306,6 +306,15 @@ final class WorkspaceSearch
         }
 
         return $parents;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $ids
+     * @return list<int>
+     */
+    private static function ids(array $ids): array
+    {
+        return array_values(array_map(static fn (mixed $id): int => (int) $id, $ids));
     }
 
     /**

@@ -311,6 +311,7 @@ export function CommandPalette() {
     // non-blank, no results had arrived and nothing was marked in flight: the
     // palette said "Nothing matched." about a search it had not yet made.
     const [isSearching, setIsSearching] = useState(false);
+    const [highlight, setHighlight] = useState('');
     // One place closes the palette, and closing is what forgets the search.
     // Done here rather than in an effect watching `open` so that reopening
     // cannot briefly show the answer to the previous question between the
@@ -525,6 +526,25 @@ export function CommandPalette() {
             : `${plural(total, 'result', 'results')}.`;
     })();
 
+    // The row that is highlighted when the list (re)appears: the first one on
+    // screen. cmdk picks the first row that has mounted, and the commands arrive
+    // after the dialog does, so without this the highlight sat on the last,
+    // local row ("Keyboard shortcuts") and Enter opened that instead.
+    const firstValue =
+        actions.length > 0
+            ? `action:${actions[0].id}`
+            : shortcutsListed
+              ? 'action:keyboard-shortcuts'
+              : trimmed === '' && recents.length > 0
+                ? `recent:${recents[0].kind}:${recents[0].id}`
+                : results.length > 0
+                  ? `${results[0].kind}:${results[0].id}`
+                  : '';
+
+    useEffect(() => {
+        setHighlight(firstValue);
+    }, [firstValue, open]);
+
     const noMatches =
         trimmed !== '' &&
         results.length === 0 &&
@@ -547,6 +567,8 @@ export function CommandPalette() {
                 commandProps={{
                     shouldFilter: false,
                     label: 'Search and commands',
+                    value: highlight,
+                    onValueChange: setHighlight,
                 }}
             >
                 <CommandInput
@@ -617,7 +639,7 @@ export function CommandPalette() {
                                     </span>
                                     <kbd
                                         aria-hidden="true"
-                                        className="ml-auto shrink-0 rounded border border-border px-1 font-sans text-xs text-muted-foreground"
+                                        className="ml-auto shrink-0 rounded border border-border px-1 font-sans text-xs text-muted-foreground in-data-[selected=true]:text-accent-foreground"
                                     >
                                         ?
                                     </kbd>
@@ -691,7 +713,7 @@ function ActionRow({
             <Icon aria-hidden="true" className="text-muted-foreground" />
             <span className="min-w-0 truncate">{action.label}</span>
             {action.hint !== null && (
-                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                <span className="min-w-0 truncate text-xs text-muted-foreground in-data-[selected=true]:text-accent-foreground">
                     {action.hint}
                 </span>
             )}
@@ -722,14 +744,14 @@ function ResultRow({
             </span>
             {result.subtitle !== null && (
                 <span
-                    className="min-w-0 truncate text-xs text-muted-foreground"
+                    className="min-w-0 truncate text-xs text-muted-foreground in-data-[selected=true]:text-accent-foreground"
                     title={result.subtitle}
                 >
                     {result.subtitle}
                 </span>
             )}
             {showWorkspace && (
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground in-data-[selected=true]:text-accent-foreground">
                     {result.workspace}
                 </span>
             )}

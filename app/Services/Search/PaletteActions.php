@@ -86,7 +86,7 @@ final class PaletteActions
             $logTime = $picker;
             $logTimeHint = 'Choose a client';
         } elseif ($logTime === null && $this->canLogAnywhere($user, $workspace)) {
-            $logTime = $destinations?->myWork ?? $destinations?->timesheet ?? route('workspaces.my-work', $workspace, absolute: false);
+            $logTime = $destinations->myWork ?? $destinations->timesheet ?? route('workspaces.my-work', $workspace, absolute: false);
         }
         if ($logTime !== null) {
             $actions[] = new PaletteAction('log_time', 'Log time', $logTime, ['hours', 'timer', 'track', 'worked'], $logTimeHint);
@@ -121,7 +121,7 @@ final class PaletteActions
             $actions[] = new PaletteAction('approvals', 'Approvals', $navigation->approvalsHref, ['approve', 'review', 'waiting', 'queue']);
         }
 
-        $myWork = $destinations?->myWork ?? ($destinations?->clients !== null ? route('workspaces.my-work', $workspace, absolute: false) : null);
+        $myWork = $destinations->myWork ?? ($destinations?->clients !== null ? route('workspaces.my-work', $workspace, absolute: false) : null);
         if ($myWork !== null) {
             $actions[] = new PaletteAction('my_work', 'My work', $myWork, ['tasks', 'assigned', 'todo', 'queue']);
         }
