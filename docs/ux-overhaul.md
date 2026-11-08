@@ -805,6 +805,47 @@ Settled by the product owner before a period away:
 
 (Appended as they happen: date, PR, question, decision, why.)
 
+- **2026-11-08, command palette v2 (kinds, commands, recents, shortcuts, portal).**
+  - **Kinds.** The palette also finds expenses, agreements, proposals, files,
+    time entries, contacts and portal users. Each asks the page it opens:
+    expenses follow the client Expenses tab (a reachable client and a project
+    the viewer holds), agreements `BillingRecordAccess::constrainAgreements`,
+    files `AttachmentReader`, time `AgentTimeEntryQuery` (the time sheet's own
+    query), proposals the operator proposal page and the portal's conditions.
+    Contacts and portal users are managers only. The agent API's `search` tool
+    does not ask for the new kinds, so its contract is unchanged.
+  - **Portal viewers are searched as clients.** A workspace where someone holds
+    only a client company membership is searched with the portal's own
+    conditions (client-visible, not a draft, approved time matched on the
+    client-safe description only, no expenses, no contacts). Someone who is both
+    staff and a client in one workspace gets the staff view of it.
+  - **Filenames are matched in PHP.** `original_filename` is encrypted at rest,
+    so SQL cannot LIKE it and a plaintext copy would undo the encryption. A
+    search looks through the newest 300 files the viewer may read and matches
+    the term against those; a file older than that is reached by its record.
+  - **Commands are built from the navigation factory**, so they cannot drift
+    from the navbar. "Go to Revenue" is offered only to owners and admins (the
+    Dashboard it sits on is open to every member). "My work" is offered to any
+    member, including managers, though the navbar hides it for them. "Settings"
+    is the current client's settings (managers); no workspace settings screen
+    exists. With several workspaces and no workspace in the page, only
+    "Switch workspace" is offered. A portal viewer with several clients and no
+    client in the page gets no client-specific commands.
+  - **Recents** are a kind and a public id, per person per workspace, newest
+    eight kept. Titles and links are resolved again through the authorized
+    queries on every read, and an id the viewer could not open is never stored.
+    Only the palette records them (opening a record elsewhere does not), and
+    only clients, projects, invoices, tasks, expenses, agreements, proposals and
+    files.
+  - **Shortcuts.** Cmd/Ctrl+K toggles from anywhere except a rich-text editor
+    (a chord types nothing). `/` and `?` never fire while typing in an input,
+    textarea, select, contenteditable or ARIA text widget, with a held
+    modifier, during IME composition, or while another dialog is open.
+  - **Harness.** `node scripts/check-layout.mjs --palette` reads the palette as
+    an owner, an owner on a client, a scoped member and the client contact. The
+    router answers `/search` and `/palette` as whoever the page in the Referer
+    belongs to; recents are seeded because the harness refuses the POST.
+
 - **2026-11-07, #624 item 9: Appendix B (receipts).**
   - **Who is told of a receipt:** operator audience, workspace managers only
     (a scoped member who may read the invoice gets none, because they cannot

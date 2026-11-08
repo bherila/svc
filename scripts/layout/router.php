@@ -81,6 +81,10 @@ if ($file !== false && str_starts_with($file, $public.'/build/') && is_file($fil
 
 $app = require __DIR__.'/bootstrap.php';
 Auth::onceUsingId(match (true) {
+    // The command palette (--palette): a page is read as the person it belongs to,
+    // and the palette's own requests as whoever the page that opened it belongs to.
+    isset($fixture['palette_viewers'][$requestPath]) => $fixture['palette_viewers'][$requestPath],
+    isset($fixture['palette_viewers']) && in_array($requestPath, ['/search', '/palette'], true) => $fixture['palette_viewers'][parse_url((string) ($_SERVER['HTTP_REFERER'] ?? ''), PHP_URL_PATH) ?: ''] ?? $fixture['user_id'],
     // The member who is not a manager reads My work as themselves.
     isset($fixture['my_work']) && $requestPath === $fixture['my_work'] => $fixture['work_member_id'],
     // Autopay's client contacts read their own billing page and invoices as the client.

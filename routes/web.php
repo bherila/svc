@@ -16,6 +16,7 @@ use App\Http\Controllers\McpCredentialSettingsController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
+use App\Http\Controllers\PaletteController;
 use App\Http\Controllers\Payments\WorkspacePaymentConnectionController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SquareExploreController;
@@ -85,6 +86,18 @@ Route::middleware('auth')->group(function (): void {
         ->withoutMiddleware(HandleInertiaRequests::class)
         ->middleware('throttle:120,1')
         ->name('search');
+
+    // What the palette shows before anything is typed - the viewer's commands
+    // as finished URLs, and their recent items - and the write that adds a
+    // record to those recents. Same posture as /search: no Inertia, throttled.
+    Route::get('/palette', [PaletteController::class, 'show'])
+        ->withoutMiddleware(HandleInertiaRequests::class)
+        ->middleware('throttle:120,1')
+        ->name('palette');
+    Route::post('/palette/recents', [PaletteController::class, 'record'])
+        ->withoutMiddleware(HandleInertiaRequests::class)
+        ->middleware('throttle:120,1')
+        ->name('palette.recents');
 
     // A payment's permanent address for an external finance system: the
     // payment's public UUID and nothing else, redirected to whichever screen
