@@ -82,7 +82,7 @@ final class SecurityHeaders
             'frame-src' => ['https://js.stripe.com', 'https://hooks.stripe.com'],
             'object-src' => ["'none'"],
             'base-uri' => ["'self'"],
-            'form-action' => array_values(array_filter(["'self'", $provider])),
+            'form-action' => $provider === null ? ["'self'"] : ["'self'", $provider],
         ];
 
         $policy = implode('; ', array_map(
