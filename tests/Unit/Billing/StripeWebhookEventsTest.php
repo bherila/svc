@@ -78,12 +78,11 @@ final class StripeWebhookEventsTest extends TestCase
         }
     }
 
-    public function test_a_stand_in_names_a_required_type_and_a_handled_one(): void
+    public function test_the_legacy_refund_name_is_handled_but_never_stands_in_for_a_required_event(): void
     {
-        foreach (StripeWebhookService::STAND_INS as $required => $standIn) {
-            $this->assertContains($required, StripeWebhookService::REQUIRED_EVENTS);
-            $this->assertContains($standIn, StripeWebhookService::EVENTS);
-            $this->assertNotContains($standIn, StripeWebhookService::REQUIRED_EVENTS);
-        }
+        $this->assertContains('refund.updated', StripeWebhookService::REQUIRED_EVENTS);
+        $this->assertContains('charge.refund.updated', StripeWebhookService::EVENTS);
+        $this->assertNotContains('charge.refund.updated', StripeWebhookService::REQUIRED_EVENTS);
+        $this->assertFalse(defined(StripeWebhookService::class.'::STAND_INS'));
     }
 }
