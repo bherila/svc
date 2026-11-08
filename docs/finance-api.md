@@ -659,7 +659,10 @@ php artisan svc:payments:migrate-environment [--workspace=PUBLIC_ID] [--apply] [
 ```
 
 It is explicit and manual, a preview unless `--apply` is given (a preview calls
-nothing and writes nothing), and idempotent. With `--apply` it validates each
+nothing and writes nothing; it prints a migration impact inventory of which workspaces
+depend on the environment credentials, also under `inventory` with `--format=json`),
+and idempotent. `--apply` refuses, writing nothing, when no `--workspace` is given and
+more than one workspace could own the connection. With `--apply` it validates each
 environment credential with the same read, then stores it as the named workspace's
 (default `SQUARE_WORKSPACE`) connection with `origin = environment`, copying
 `STRIPE_WEBHOOK_SECRET` and `SQUARE_WEBHOOK_SIGNATURE_KEY`, and prints each new

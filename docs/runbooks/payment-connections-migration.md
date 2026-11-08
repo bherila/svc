@@ -18,11 +18,88 @@ belongs to the chosen workspace, and the environment credentials serve **no
 other workspace** for that processor. Other workspaces become "not connected"
 until their owners enter their own keys or reuse this connection.
 
+## Before you approve
+
+Do this first, whoever will run `--apply`. The preview writes nothing and calls
+neither Stripe nor Square, so it is safe to run as often as you like:
+
+```bash
+php artisan svc:payments:migrate-environment
+php artisan svc:payments:migrate-environment --format=json   # same facts, for a script
+```
+
+Read the inventory it prints, one block per processor, and check these before you
+say yes:
+
+1. **Who would own the connection, and why.** The block says which workspace
+   receives it and the rule: you named it with `--workspace`, or
+   `SQUARE_WORKSPACE` names it and nothing else could plausibly own it. If it
+   says the owner is **not decided**, more than one workspace could own the
+   connection (or none was named). `--apply` refuses in that case and writes
+   nothing; name the owner with `--workspace=<public id>`.
+2. **Who else uses the environment keys today.** The table lists every workspace
+   that currently relies on them, with what would be affected: open invoices a
+   client can pay online, autopay companies, saved cards, pending payments,
+   autopay attempts held for review, and webhook events delivered in the last 90
+   days. Every workspace except the owner **stops being served** the moment
+   `--apply` finishes. Decide, for each one, who connects its own account, and
+   when.
+3. **The account it identifies.** The preview does not call Stripe or Square, so
+   the Stripe account id and Square merchant id read **not checked**. What it
+   does show is the masked key (`sk_live_…9z9z`) and its mode. Confirm that is the
+   key you mean, and that live or test is what you expect. `--apply` reads the
+   account from the processor and stores it; you see it on the Payments page.
+4. **The Square location.** Also not checked in a preview. The rule is the first
+   location Square returns when `--apply` runs; there is no setting. If the
+   inventory says other locations exist, or cannot tell, and payments use any
+   location but the first, enter the Square connection by hand instead.
+5. **Existing connections.** A workspace that already has an active connection
+   at a processor is **skipped**, never replaced (exit code 1). Other
+   workspaces' connections are untouched.
+6. **Rollback.** Read the Rollback section below. It is more than "restore a
+   backup", but a payment already taken or a message already sent cannot be
+   taken back.
+
+An example, synthetic data only (invented names and ids, no real credentials;
+counts trimmed to what fits):
+
+```text
+Migration impact inventory - read only: nothing is written and neither Stripe nor Square is contacted.
+
+Stripe
+ Environment credential: sk_live_…9z9z (live mode).
+ Account: not checked. A preview never calls Stripe; --apply reads the Stripe account id from Stripe and stores it.
+ Owner: not decided. The environment's Stripe key serves every workspace that has not connected its own, and 1 other workspace has Stripe activity; SQUARE_WORKSPACE only names the Square workspace. Choose one with --workspace.
+ Result: Blocked: more than one workspace could own this connection. Re-run with --workspace=<public id>.
+
+ Workspaces that depend on the environment Stripe credential today:
+ | Workspace             | Role                       | Open payable invoices | Autopay companies | Saved cards | Pending payments | Held autopay attempts | Webhook events (90 days) |
+ | Example Studio        | Loses access unless chosen | 3                     | 1                 | 2           | 0                | 0                     | 2                        |
+ | Example Side Business | Loses access unless chosen | 1                     | 0                 | 0           | 0                | 0                     | 0                        |
+ - Example Studio would stop being served by the environment Stripe credential unless it is chosen as the owner; its owner would need to connect Stripe on the Payments page.
+ - Example Side Business would stop being served by the environment Stripe credential unless it is chosen as the owner; its owner would need to connect Stripe on the Payments page.
+
+Square
+ Environment credential: …mple (production mode).
+ Owner: Example Studio (00000000-0000-4000-8000-000000000001). SQUARE_WORKSPACE names it, and it is the only workspace the environment's Square token has ever served.
+ Location: not checked. Rule: The first location Square returns for the access token when --apply runs. The migration has no location setting.
+ Other locations: yes. This workspace's local Square mirror lists 2 (Main Street, Pop-up Stand). If payments use any but the first one Square returns, enter the connection by hand instead.
+
+Name the workspace with --workspace=<public id>: the inventory shows who could own the connection.
+```
+
+Here the owner would pick "Example Studio" with
+`--workspace=<its public id>`, re-read the block (Example Side Business then reads
+**Loses access**), and approve only if that is acceptable. The preview is the
+record of what you approved; keep its output with the change ticket.
+
 ## Before you start
 
 1. **Pick the workspace** that is paid into this account and has its public id
-   (a UUID; shown in the workspace URL). Without `--workspace` the command uses
-   `SQUARE_WORKSPACE`.
+   (a UUID; shown in the workspace URL). Name it with `--workspace`. Without it
+   the command falls back to `SQUARE_WORKSPACE`, but only when no other workspace
+   could plausibly own the Stripe connection; otherwise `--apply` refuses and
+   writes nothing (see Before you approve).
 2. **Check no other workspace takes payments through the environment keys.**
    After the migration they stop. Each of them needs its own connection (or to
    reuse this one; reuse needs the same owner) on the Payments page. Plan that
@@ -39,8 +116,9 @@ until their owners enter their own keys or reuse this connection.
    location setting; it stores the first location Square returns. If the account
    has several and payments use another, enter the connection by hand on the
    Payments page instead.
-6. **Take a database backup or snapshot.** The only full undo is a database
-   change (see Rollback).
+6. **Take a database backup or snapshot.** It is the safety net for the manual
+   database reversal in Rollback, which deletes rows; it is not the only way
+   back (see Rollback for what each option undoes).
 7. **Record the baseline.** `php artisan svc:square:status --format=json` and a
    screenshot of the workspace's Payments page, which says "Using the
    deployment's Stripe account until a workspace connection is set up." for each
@@ -58,9 +136,11 @@ php artisan svc:payments:migrate-environment --workspace=<workspace public id>
 ```
 
 The command is a preview unless `--apply` is given. A preview calls Stripe and
-Square **not at all** and writes nothing. (`--dry-run` and `--pretend` are
-deprecated aliases for the same preview; they cannot be combined with
-`--apply`.) Add `--format=json` for machine-readable output.
+Square **not at all** and writes nothing: it only reads the local database, and
+prints the impact inventory described in Before you approve. (`--dry-run` and
+`--pretend` are deprecated aliases for the same preview; they cannot be combined
+with `--apply`.) Add `--format=json` for machine-readable output; the inventory
+is under the `inventory` key.
 
 Per processor it reports one of:
 
@@ -70,15 +150,18 @@ Per processor it reports one of:
 | `already_migrated` | A connection from the environment already exists for this processor; nothing to do | 0 |
 | `no_environment_credentials` | No secret/token in the environment for this processor | 0 |
 | `workspace_already_connected` | The workspace already has a connection someone entered; the command will never replace it | 1 |
+| `ownership_ambiguous` | Several workspaces could own the connection and none was named; `--apply` refuses | 2 |
+| `needs_workspace` | No workspace was named and `SQUARE_WORKSPACE` does not name one; `--apply` refuses | 2 |
 | `rejected` (apply only) | The processor refused the credential; the reason is printed, never the credential | 1 |
 
 Because a preview calls no processor, `would_migrate` does not prove the
 credentials are valid. A bad key shows up as `rejected` on `--apply`, which
 writes nothing for that processor.
 
-Stop and resolve anything that is not `would_migrate` or `already_migrated`
-before continuing. An exit code of 2 means the workspace was not named or not
-found.
+Stop and resolve anything that is not `would_migrate`, `already_migrated` or
+`no_environment_credentials` before continuing. An exit code of 2 means the
+workspace was not named, not found, or ownership is ambiguous: nothing was
+written, and `--apply` gives the same refusal.
 
 ## Step 2: apply
 
@@ -174,7 +257,20 @@ deployment or a small invoice you intend to refund.
 
 ## Rollback
 
-Choose by what you need. Nothing here touches Stripe or Square.
+Nothing here touches Stripe or Square. The migration changes this deployment's
+own database and routing, and that part can be reversed. What cannot be reversed
+is anything that already left the building under it. Choose by what you need.
+
+### What can be undone, and how
+
+| You want | Use | Undoes | Does not undo |
+| --- | --- | --- | --- |
+| Stop charging for one workspace | **Disconnect** on its Payments page | Charging stops at once; the stored secrets are cleared | It does not hand the workspace back to the environment keys (see below) |
+| Keep the workspace working with a different key, location or mode | **Replace key** on its Payments page | Revokes the environment-origin row and creates an `entered` connection | Nothing already charged |
+| Put every workspace back on the environment keys | The conditional manual database reversal below | Deletes the environment-origin connection rows and resets the Square hint | Anything in "What cannot be undone" |
+
+A backup or snapshot is a safety net for the database reversal, not the only
+route back: Disconnect and Replace key need no restore.
 
 ### Stop using the connection (Disconnect)
 
@@ -195,11 +291,22 @@ restricted key then needs SetupIntents: Write; see
 `docs/help/payments.md`). Use this when the migration worked but the connection
 needs a different key, location or mode.
 
-### Full revert to the environment path
+### Full revert to the environment path (conditional, manual)
 
 Only if the migration must be undone completely and the follow-up that removes
-the environment path has not shipped. There is no command for it. With the
-backup from step 6 in hand, as a database change by the operator:
+the environment path has not shipped. There is no command for it. It is a
+database change by the operator, and it is only safe when **all** of these hold:
+
+- the environment values (`STRIPE_*`, `SQUARE_*`) are still present and still
+  valid, because they serve again as soon as the rows are gone;
+- the second query below returns no rows, so no workspace reuses the connection
+  and would be left pointing at nothing;
+- if you re-pointed a processor dashboard at the per-workspace webhook URL the
+  command printed, you point it back at the legacy URL first, because the
+  per-workspace URL stops working when its row is deleted.
+
+Save the output of the first query (it is the only record of the rows you are
+about to delete besides a backup from step 6), then run:
 
 ```sql
 -- Look first. The second query must return no rows: a workspace that reused the
@@ -218,11 +325,32 @@ UPDATE workspaces SET has_square_connection = EXISTS (
 COMMIT;
 ```
 
-Then wait about a minute for the "any active connection" cache to expire (or
-restart PHP workers), and re-run step 3 in reverse: the Payments pages say
+No other table points at these rows, so nothing else needs repair. Then wait
+about a minute for the "any active connection" cache to expire (or restart PHP
+workers), and re-run step 3 in reverse: the Payments pages say
 "Using the deployment's ... account" again, and the legacy webhook URLs verify
 with `STRIPE_WEBHOOK_SECRET` / `SQUARE_WEBHOOK_SIGNATURE_KEY` for every workspace
 as before. Workspaces that entered their own connections in the meantime keep
 them.
 
 Re-running the migration later is safe after a full revert.
+
+### What cannot be undone
+
+Reverting changes who serves payments from now on. It does not reach back:
+
+- **Anything already charged.** A payment taken while a connection served the
+  workspace stays taken. A charge, a refund or a dispute is a fact at Stripe or
+  Square; reverting does not move money. Refund through the processor if needed.
+- **Anything already sent.** Emails, payment reminders and receipts that went out
+  while the migration was in effect cannot be recalled.
+- **Webhook events** the processor delivered and SVC applied stay applied. While
+  the migration was in effect the legacy webhook URLs were confined to the target
+  workspace, so an event for any other workspace was not applied; a revert does
+  not replay it. Resend it from the processor's dashboard if it matters.
+- **The deleted rows' contents.** A revert deletes the connection rows, including
+  their per-workspace webhook tokens. Only the saved query output or a backup
+  holds them.
+- **Time.** Workspaces other than the owner had no payment connection from the
+  moment `--apply` finished until you reverted or they connected their own.
+  Payments attempted in that window were refused and are not retried.
