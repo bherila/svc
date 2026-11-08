@@ -53,9 +53,22 @@ final readonly class SearchResult
         ];
     }
 
-    /** @return array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string, workspace_id: string} */
+    /**
+     * The row as the palette receives it.
+     *
+     * The heading and whether the row can become a recent item are decided
+     * here, so the browser carries neither a list of headings nor a list of
+     * which kinds are reopenable - a kind added on the server arrives complete.
+     *
+     * @return array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string, workspace_id: string, heading: string, recent: bool}
+     */
     public function toPaletteArray(): array
     {
-        return [...$this->toArray(), 'workspace_id' => $this->workspaceId];
+        return [
+            ...$this->toArray(),
+            'workspace_id' => $this->workspaceId,
+            'heading' => $this->kind->heading(),
+            'recent' => in_array($this->kind, SearchResultKind::recentable(), true),
+        ];
     }
 }

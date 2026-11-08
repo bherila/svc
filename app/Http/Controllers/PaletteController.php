@@ -74,7 +74,7 @@ class PaletteController extends Controller
 
     /**
      * @param  list<SearchResult>  $results
-     * @return list<array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string, workspace_id: string}>
+     * @return list<array{kind: string, id: string, title: string, subtitle: string|null, href: string, workspace: string, workspace_id: string, heading: string, recent: bool}>
      */
     private function rows(array $results): array
     {
